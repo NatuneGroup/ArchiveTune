@@ -381,6 +381,15 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            val qaOptimized = providers.gradleProperty("qaOptimized").orNull?.toBoolean() ?: false
+            isMinifyEnabled = qaOptimized
+            isShrinkResources = qaOptimized
+            if (qaOptimized) {
+                proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro",
+                )
+            }
         }
     }
 

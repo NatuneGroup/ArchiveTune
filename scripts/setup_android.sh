@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/android-sdk}}"
+configured_sdk="$(sed -n 's/^sdk.dir=//p' local.properties 2>/dev/null | head -1 || true)"
+sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-${configured_sdk:-$HOME/android-sdk}}}"
 export ANDROID_HOME="$sdk_root"
 export ANDROID_SDK_ROOT="$sdk_root"
 export JAVA_HOME="${JAVA_HOME:-$(mise where java)}"
@@ -30,7 +31,7 @@ elif ! grep -q '^sdk.dir=' "$properties"; then
 fi
 
 if [[ "${1:-}" == '--emulator' ]]; then
-    "$sdkmanager" 'emulator' 'system-images;android-35;google_atd;x86_64'
+    "$sdkmanager" 'emulator' 'system-images;android-35;default;x86_64'
     if ! python3 -c 'import ctypes; ctypes.CDLL("libxkbfile.so.1"); ctypes.CDLL("libtcmalloc_minimal.so.4")' 2>/dev/null; then
         sudo -n true
         sudo apt-get update -qq
@@ -43,10 +44,10 @@ if [[ "${1:-}" == '--emulator' ]]; then
     export ANDROID_AVD_HOME="$PWD/.hoplite/android-avd"
     export ANDROID_USER_HOME="$PWD/.hoplite/android-user"
     mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
-    if [[ ! -f "$ANDROID_AVD_HOME/ArchiveTuneQA35.ini" ]]; then
+    if [[ ! -f "$ANDROID_AVD_HOME/ArchiveTuneVisualQA35.ini" ]]; then
         printf 'no\n' | "$sdk_root/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n ArchiveTuneQA35 -k 'system-images;android-35;google_atd;x86_64'
+            -n ArchiveTuneVisualQA35 -k 'system-images;android-35;default;x86_64'
     fi
-    printf 'QA AVD: ArchiveTuneQA35\nANDROID_AVD_HOME=%s\nANDROID_USER_HOME=%s\n' \
+    printf 'QA AVD: ArchiveTuneVisualQA35\nANDROID_AVD_HOME=%s\nANDROID_USER_HOME=%s\n' \
         "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
 fi

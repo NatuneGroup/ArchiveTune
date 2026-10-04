@@ -11,6 +11,7 @@ package moe.rukamori.archivetune.utils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import timber.log.Timber
+import moe.rukamori.archivetune.logcat.DiagnosticRedaction
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -38,6 +39,7 @@ object GlobalLog {
     // implementation was burning ~290k element copies + 581 StateFlow emissions
     // in a few minutes — a measurable source of GC pressure and UI jank.
     private val buffer = ArrayDeque<LogEntry>(MAX_ENTRIES)
+    private val diagnosticBuffer = ArrayDeque<LogEntry>(200)
     private val _logs = MutableStateFlow<List<LogEntry>>(emptyList())
     val logs = _logs.asStateFlow()
 
@@ -58,11 +60,15 @@ object GlobalLog {
         tag: String?,
         message: String,
     ) {
-        val entry = LogEntry(System.currentTimeMillis(), level, tag, message)
+        val entry = LogEntry(System.currentTimeMillis(), level, tag, DiagnosticRedaction.redact(message))
         if (buffer.size >= MAX_ENTRIES) {
             buffer.removeFirst()
         }
         buffer.addLast(entry)
+        if (tag != null && (tag.contains("Diagnostics") || tag.contains("Crossfade") || tag.contains("Authenticity"))) {
+            if (diagnosticBuffer.size >= 200) diagnosticBuffer.removeFirst()
+            diagnosticBuffer.addLast(entry)
+        }
         dirty = true
         // CRITICAL PERF: only allocate the snapshot list + emit the StateFlow
         // value when (a) someone is actively collecting _logs AND (b) at least
@@ -86,6 +92,7 @@ object GlobalLog {
     @Synchronized
     fun clear() {
         buffer.clear()
+        diagnosticBuffer.clear()
         dirty = false
         _logs.value = emptyList()
     }
@@ -104,6 +111,13 @@ object GlobalLog {
         }
     }
 
+    @Synchronized
+    fun snapshot(): List<LogEntry> = buffer.toList()
+
+    @Synchronized
+    fun diagnosticSnapshot(): List<LogEntry> = diagnosticBuffer.toList()
+
+    @Synchronized
     fun format(entry: LogEntry): String {
         val ts = timeFormat.format(Date(entry.time))
         val lvl =

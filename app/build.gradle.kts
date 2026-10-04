@@ -55,6 +55,25 @@ if (localPropertiesFile.exists()) {
 val baseVersionName = "15.0.0"
 val baseVersionCode = 1500
 
+val forkRevision = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "rev-parse", "--short=12", "HEAD")
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("unknown")
+val forkBranch = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "branch", "--show-current")
+    }.standardOutput.asText.get().trim().ifEmpty { "detached" }
+}.getOrDefault("unknown").filter { it.isLetterOrDigit() || it in "/._-" }
+val forkDirty = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "status", "--porcelain", "--untracked-files=no")
+    }.standardOutput.asText.get().isNotBlank()
+}.getOrDefault(false)
+
 val discordApplicationId =
     (
         localProperties.getProperty("DISCORD_APPLICATION_ID")
@@ -130,6 +149,9 @@ android {
         versionCode = System.getenv("VERSION_CODE_OVERRIDE")?.trim()?.toIntOrNull() ?: baseVersionCode
         versionName =
             System.getenv("VERSION_NAME_OVERRIDE")?.trim()?.takeIf { it.isNotEmpty() } ?: baseVersionName
+        buildConfigField("String", "FORK_REVISION", "\"$forkRevision\"")
+        buildConfigField("String", "FORK_BRANCH", "\"$forkBranch\"")
+        buildConfigField("boolean", "FORK_DIRTY", forkDirty.toString())
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -295,6 +317,7 @@ android {
         create("tv") {
             dimension = "device"
             buildConfigField("String", "DEVICE", "\"tv\"")
+            ndk { abiFilters += listOf("armeabi-v7a", "x86") }
         }
         create("automotive") {
             dimension = "device"

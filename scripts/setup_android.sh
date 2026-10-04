@@ -30,8 +30,22 @@ elif ! grep -q '^sdk.dir=' "$properties"; then
     printf '\nsdk.dir=%s\n' "$sdk_root" >> "$properties"
 fi
 
-if [[ "${1:-}" == '--emulator' ]]; then
-    "$sdkmanager" 'emulator' 'system-images;android-35;default;x86_64'
+if [[ "${1:-}" == '--emulator' || "${1:-}" == '--emulator-atd' ]]; then
+    emulator_image='system-images;android-35;default;x86_64'
+    avd_name='ArchiveTuneVisualQA35'
+    if [[ "${1:-}" == '--emulator-atd' ]]; then
+        emulator_image='system-images;android-35;google_atd;x86_64'
+        avd_name='ArchiveTuneATDVisualQA35'
+    fi
+    "$sdkmanager" 'emulator' "$emulator_image"
+    if [[ "${1:-}" == '--emulator-atd' ]]; then
+        image_data="$sdk_root/system-images/android-35/google_atd/x86_64/data"
+        mkdir -p "$image_data"
+        touch "$image_data/local.prop"
+        sed -i '/^debug.hwui.drawing_enabled=/d' "$image_data/local.prop"
+        printf 'debug.hwui.drawing_enabled=1\n' >> "$image_data/local.prop"
+        rm -f "$image_data/empty_data_disk"
+    fi
     if ! python3 -c 'import ctypes; ctypes.CDLL("libxkbfile.so.1"); ctypes.CDLL("libtcmalloc_minimal.so.4")' 2>/dev/null; then
         sudo -n true
         sudo apt-get update -qq
@@ -44,10 +58,10 @@ if [[ "${1:-}" == '--emulator' ]]; then
     export ANDROID_AVD_HOME="$PWD/.hoplite/android-avd"
     export ANDROID_USER_HOME="$PWD/.hoplite/android-user"
     mkdir -p "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
-    if [[ ! -f "$ANDROID_AVD_HOME/ArchiveTuneVisualQA35.ini" ]]; then
+    if [[ ! -f "$ANDROID_AVD_HOME/$avd_name.ini" ]]; then
         printf 'no\n' | "$sdk_root/cmdline-tools/latest/bin/avdmanager" create avd \
-            -n ArchiveTuneVisualQA35 -k 'system-images;android-35;default;x86_64'
+            -n "$avd_name" -k "$emulator_image"
     fi
-    printf 'QA AVD: ArchiveTuneVisualQA35\nANDROID_AVD_HOME=%s\nANDROID_USER_HOME=%s\n' \
-        "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
+    printf 'QA AVD: %s\nANDROID_AVD_HOME=%s\nANDROID_USER_HOME=%s\n' \
+        "$avd_name" "$ANDROID_AVD_HOME" "$ANDROID_USER_HOME"
 fi

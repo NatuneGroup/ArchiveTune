@@ -8,7 +8,9 @@
 package moe.rukamori.archivetune.ui.utils
 
 import java.util.Locale
+import moe.rukamori.archivetune.playback.AndroidAudioOutputFormat
 import moe.rukamori.archivetune.playback.DecodedPcmFormat
+import moe.rukamori.archivetune.playback.ReportedAudioFormat
 
 internal fun formatTrackDuration(durationMs: Long?): String? {
     if (durationMs == null || durationMs <= 0L) return null
@@ -63,6 +65,19 @@ internal fun isYouTubeVideoId(value: String): Boolean =
 
 internal fun decodedPcmForTrack(trackId: String, format: DecodedPcmFormat?): DecodedPcmFormat? =
     format?.takeIf { it.mediaId == trackId }
+
+internal fun reportedAudioFormatForTrack(
+    trackId: String,
+    format: ReportedAudioFormat?,
+): ReportedAudioFormat? = format?.takeIf { it.mediaId == trackId }
+
+internal fun reportedAudioSampleRateHz(format: ReportedAudioFormat?, storedSampleRateHz: Int?): Int? =
+    if (format != null) format.sampleRateHz else storedSampleRateHz
+
+internal fun androidAudioOutputFormatForTrack(
+    trackId: String,
+    format: AndroidAudioOutputFormat?,
+): AndroidAudioOutputFormat? = format?.takeIf { it.mediaId == trackId }
 
 private fun formatTenths(tenths: Long): String =
     if (tenths % 10L == 0L) {

@@ -48,6 +48,8 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.playback.DecodedPcmFormat
+import moe.rukamori.archivetune.playback.AndroidAudioOutputFormat
+import moe.rukamori.archivetune.playback.ReportedAudioFormat
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.utils.credits.TrackCredit
 import moe.rukamori.archivetune.utils.credits.TrackCreditRole
@@ -79,6 +81,10 @@ fun TrackInfoAndSpecs(
         }
     val decodedPcmFormat by decodedPcmFlow.collectAsStateWithLifecycle(initialValue = null)
     val trackDecodedPcmFormat = decodedPcmForTrack(trackId, decodedPcmFormat)
+    val reportedFormatFlow = remember(playerConnection) { playerConnection?.reportedAudioFormat ?: flowOf<ReportedAudioFormat?>(null) }
+    val androidOutputFlow = remember(playerConnection) { playerConnection?.androidAudioOutputFormat ?: flowOf<AndroidAudioOutputFormat?>(null) }
+    val reportedFormat by reportedFormatFlow.collectAsStateWithLifecycle(initialValue = null)
+    val androidOutputFormat by androidOutputFlow.collectAsStateWithLifecycle(initialValue = null)
     val mediaInfo = rememberMediaInfo(trackId)
     val (appleExperience) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
     var selectedTab by rememberSaveable(trackId) { mutableStateOf(TrackInfoTab.Overview) }
@@ -139,6 +145,8 @@ fun TrackInfoAndSpecs(
                 TrackInfoTab.AudioSpecs -> TrackInfoAudioSpecs(
                     format = format,
                     decodedPcmFormat = trackDecodedPcmFormat,
+                    reportedFormat = reportedAudioFormatForTrack(trackId, reportedFormat),
+                    androidOutputFormat = androidAudioOutputFormatForTrack(trackId, androidOutputFormat),
                     appleExperience = appleExperience,
                 )
             }
@@ -273,6 +281,8 @@ private fun TrackInfoOverview(
 private fun TrackInfoAudioSpecs(
     format: FormatEntity?,
     decodedPcmFormat: DecodedPcmFormat?,
+    reportedFormat: ReportedAudioFormat?,
+    androidOutputFormat: AndroidAudioOutputFormat?,
     appleExperience: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -283,7 +293,7 @@ private fun TrackInfoAudioSpecs(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            if (format == null) {
+            if (format == null && reportedFormat == null) {
                 Text(
                     text = stringResource(R.string.track_info_no_reported_format),
                     style = MaterialTheme.typography.bodyMedium,
@@ -291,28 +301,29 @@ private fun TrackInfoAudioSpecs(
                 )
             } else {
                 val details = buildList {
-                    format.codecs.takeIf(String::isNotBlank)?.let {
+                    format?.codecs?.takeIf(String::isNotBlank)?.let {
                         add(R.string.track_info_codec to it)
                     }
-                    format.mimeType.takeIf(String::isNotBlank)?.let {
+                    format?.mimeType?.takeIf(String::isNotBlank)?.let {
                         add(R.string.track_info_mime_type to it)
                     }
-                    format.itag.takeIf { it > 0 }?.let {
+                    format?.itag?.takeIf { it > 0 }?.let {
                         add(R.string.track_info_format_id to it.toString())
                     }
-                    formatReportedBitrate(format.bitrate)?.let {
+                    formatReportedBitrate(format?.bitrate)?.let {
                         add(R.string.track_info_reported_bitrate to it)
                     }
-                    formatReportedSampleRate(format.sampleRate)?.let {
+                    val sampleRate = reportedAudioSampleRateHz(reportedFormat, format?.sampleRate)
+                    formatReportedSampleRate(sampleRate)?.let {
                         add(R.string.track_info_reported_sample_rate to it)
                     }
-                    formatReportedByteCount(format.contentLength)?.let {
+                    formatReportedByteCount(format?.contentLength)?.let {
                         add(R.string.track_info_reported_size to it)
                     }
-                    formatReportedLoudness(format.loudnessDb)?.let {
+                    formatReportedLoudness(format?.loudnessDb)?.let {
                         add(R.string.track_info_reported_loudness to it)
                     }
-                    formatReportedLoudness(format.perceptualLoudnessDb)?.let {
+                    formatReportedLoudness(format?.perceptualLoudnessDb)?.let {
                         add(R.string.track_info_reported_perceptual_loudness to it)
                     }
                 }
@@ -329,6 +340,17 @@ private fun TrackInfoAudioSpecs(
                     }
                 }
             }
+            HorizontalDivider()
+            TrackInfoValueRow(
+                stringResource(R.string.track_info_reported_bit_depth),
+                reportedFormat?.bitDepth?.let { stringResource(R.string.track_info_bits, it) }
+                    ?: stringResource(R.string.track_info_unknown),
+            )
+            HorizontalDivider()
+            TrackInfoValueRow(
+                stringResource(R.string.track_info_reported_channel_count),
+                reportedFormat?.channelCount?.toString() ?: stringResource(R.string.track_info_unknown),
+            )
         }
         TrackInfoCard(appleExperience) {
             Text(
@@ -367,9 +389,42 @@ private fun TrackInfoAudioSpecs(
             TrackInfoValueRow(stringResource(R.string.track_info_decoded_sample_format), sampleFormat)
         }
         TrackInfoCard(appleExperience) {
-            Text(stringResource(R.string.track_info_actual_output), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.track_info_android_output), style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.track_info_android_output_note), style = MaterialTheme.typography.bodySmall)
+            val outputPcm = androidOutputFormat?.pcmFormat
+            val unobserved = stringResource(R.string.track_info_not_observed)
+            val outputDepth = outputPcm?.bitsPerSample
             TrackInfoValueRow(
-                label = stringResource(R.string.track_info_output_sample_format),
+                stringResource(R.string.track_info_decoded_sample_rate),
+                androidOutputFormat?.let { formatReportedSampleRate(it.sampleRateHz) } ?: unobserved,
+            )
+            HorizontalDivider()
+            TrackInfoValueRow(
+                stringResource(R.string.track_info_decoded_channel_count),
+                androidOutputFormat?.channelCount?.takeIf { it > 0 }?.toString() ?: unobserved,
+            )
+            HorizontalDivider()
+            TrackInfoValueRow(
+                stringResource(R.string.track_info_output_sample_format),
+                when {
+                    androidOutputFormat == null -> unobserved
+                    outputDepth == null -> stringResource(R.string.track_info_compressed_or_unknown)
+                    outputPcm?.isFloatingPoint == true -> stringResource(R.string.track_info_decoded_pcm_float_format, outputDepth)
+                    else -> stringResource(R.string.track_info_decoded_pcm_integer_format, outputDepth)
+                },
+            )
+            HorizontalDivider()
+            TrackInfoValueRow(
+                stringResource(R.string.track_info_audio_offload),
+                when (androidOutputFormat?.offload) {
+                    true -> stringResource(R.string.track_info_yes)
+                    false -> stringResource(R.string.track_info_no)
+                    null -> unobserved
+                },
+            )
+            HorizontalDivider()
+            TrackInfoValueRow(
+                label = stringResource(R.string.track_info_hardware_output),
                 value = stringResource(R.string.track_info_not_measured),
             )
             Text(

@@ -16,8 +16,12 @@ bash scripts/setup_android.sh --emulator
 ```
 
 Setup reuses `sdk.dir` when present and creates `ArchiveTuneVisualQA35` with the
-render-capable Android 35 AOSP image. ATD images disable drawing by default and
-are not used for this visual-QA path.
+render-capable Android 35 AOSP image. ATD images disable drawing by default. The
+optional `--emulator-atd` setup flag creates a separate `ArchiveTuneATDVisualQA35`
+fallback and enables drawing in the image's preboot configuration. Use that AVD
+name in the run command if the standard image's system apps are unstable. Setting
+the property after boot is not a durable repair; Android 35's empty-data marker
+otherwise skips the image's `data/local.prop`.
 
 ## Run
 
@@ -62,3 +66,41 @@ untracked. Check the exact build's credential fields before sharing an APK.
 queue handoff, decoded-PCM observation and UI behavior; it cannot establish
 physical-device audio quality, USB/DAC output or authenticated-provider behavior.
 Those checks must remain explicitly unverified until there is real evidence.
+
+Media3 1.10.1 reports [the sink's AudioTrack configuration](https://github.com/androidx/media/blob/1.10.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/audio/DefaultAudioSink.java#L871).
+The bit-perfect output provider can change the PCM container after that request.
+Decoded PCM and Android-output rows therefore remain unavailable for the custom
+bypass rather than presenting its pre-conversion configuration as observed output.
+
+## Local verification and remaining checks
+
+The final 2026-10-04 serial Gradle run passed 400 unit tests and assembled both
+`gmsMobileUniversalDebug` and `gmsTvUniversalDebug`. Earlier optimized x86_64 and
+universal debug APKs were installed and precompiled in the QA emulator. These are
+build and installation results, not approval of player behavior or release
+installation on real devices. The final metadata-display checkpoint has no
+verified running-player evidence.
+
+During those earlier UI attempts, the AOSP image produced system and app ANRs.
+The ATD fallback initially returned black or unavailable captures; after enabling
+preboot drawing, a capture showed onboarding beneath an app ANR dialog. No
+completed player interaction was verified. The universal debug APK also timed out
+during launch, returned no UI hierarchy root, and produced a black capture. An app
+trace was blocked in rendering, but that does not rule out an app defect on a
+physical device.
+
+- [x] Fork unit tests and mobile/TV universal debug assembly.
+- [x] Earlier debug emulator installation and precompilation.
+- [ ] Physical mobile and TV installation, including update/signing compatibility.
+- [ ] Authenticated-provider playback, YouTube fallback, downloaded-track
+  reproduction, and source rejection without losing playback position.
+- [ ] Crossfade and Automix playback, pause/resume, seek, manual skips, repeat,
+  queue replacement, background transitions, and Bluetooth route changes.
+- [ ] Player and Home appearance, gestures, lyric-button touch targets, and lyric
+  animation in the running app.
+- [ ] Track Info reported, decoded-PCM, and Android-output observations across
+  track/source changes, offload, and bit-perfect bypass.
+- [ ] Audible transitions and physical device/DAC output checks.
+
+Keep these checks separate from the physical-device release gate in
+[`docs/claude/RELEASES.md`](claude/RELEASES.md).

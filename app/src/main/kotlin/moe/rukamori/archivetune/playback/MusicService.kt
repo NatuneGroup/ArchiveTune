@@ -670,6 +670,8 @@ class MusicService :
 
     val currentMediaMetadata = MutableStateFlow<moe.rukamori.archivetune.models.MediaMetadata?>(null)
     val decodedPcmFormat = MutableStateFlow<DecodedPcmFormat?>(null)
+    val reportedAudioFormat = MutableStateFlow<ReportedAudioFormat?>(null)
+    val androidAudioOutputFormat = MutableStateFlow<AndroidAudioOutputFormat?>(null)
     val queueRestoreCompleted = MutableStateFlow(false)
     val infiniteQueueLoading = MutableStateFlow(false)
     private val playerInitialized = MutableStateFlow(false)
@@ -1130,6 +1132,7 @@ class MusicService :
                     setOffloadEnabled(false)
                 }
         audioAuthenticityContextByPlayer[localPlayer] = primaryAudioAuthenticityContext
+        observeAudioTrackConfiguration(localPlayer)
         castPlaybackRepository = CastPlaybackRepositoryLocator.get(this)
         player =
             castPlaybackRepository
@@ -3377,6 +3380,7 @@ class MusicService :
                 skipSilenceEnabled = localPlayer.skipSilenceEnabled
             }
         audioAuthenticityContextByPlayer[secondaryPlayer] = authenticityContext
+        observeAudioTrackConfiguration(secondaryPlayer)
         return secondaryPlayer
     }
 
@@ -6439,6 +6443,9 @@ class MusicService :
         ConcurrentHashMap<ExoPlayer, AtomicReference<AudioAuthenticityPlaybackContext?>>()
     private val decodedPcmFormatsByContext =
         ConcurrentHashMap<AtomicReference<AudioAuthenticityPlaybackContext?>, DecodedPcmFormat>()
+    private val reportedAudioFormatsByMediaId = android.util.LruCache<String, ReportedAudioFormat>(64)
+    private val audioTrackConfigurationsByPlayer =
+        ConcurrentHashMap<ExoPlayer, androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig>()
     private var nextMediaItemPrefetchJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -8149,6 +8156,7 @@ class MusicService :
                 refreshAudioAuthenticityContexts(mediaId)
                 recordResolvedSource(mediaId, cached.stream.source)
                 val cacheKey = sourceCacheKey(cached.stream.source, mediaId)
+                retainReportedAudioFormat(mediaId, CachedAudioMetadata.from(cached.stream))
                 recordCachedAudioMetadata(cacheKey, cached.stream)
                 cached.stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
                 return dataSpec
@@ -9222,6 +9230,7 @@ class MusicService :
             ?: authenticitySampleRateByMediaId.remove(mediaId)
         refreshAudioAuthenticityContexts(mediaId)
         val cacheKey = sourceCacheKey(stream.source, mediaId)
+        retainReportedAudioFormat(mediaId, CachedAudioMetadata.from(stream))
         recordCachedAudioMetadata(cacheKey, stream)
         stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
         tidalActiveMediaIds.add(mediaId)
@@ -9788,6 +9797,7 @@ class MusicService :
             val metadata = caches.firstNotNullOfOrNull { cache ->
                 CachedAudioMetadata.read(cache.getContentMetadata(matchingKey), source)
             }
+            if (metadata != null) retainReportedAudioFormat(mediaId, metadata) else reportedAudioFormatsByMediaId.remove(mediaId)
             authenticityClaimedLosslessByMediaId[mediaId] = source != AudioSourceType.YOUTUBE && metadata?.claimedLossless == true
             val reportedRate = if (source == AudioSourceType.YOUTUBE) youtubeSampleRateHz else metadata?.sampleRateHz
             resolveAudioAuthenticitySampleRateHz(reportedRate)?.let { authenticitySampleRateByMediaId[mediaId] = it }
@@ -10296,6 +10306,7 @@ class MusicService :
         audioAuthenticityContextByPlayer.values.forEach { contextRef ->
             if (contextRef.get()?.playbackKey == mediaId) contextRef.set(updatedContext)
         }
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
     }
 
     private fun setAudioAuthenticityContext(player: ExoPlayer, mediaId: String?) {
@@ -10305,19 +10316,106 @@ class MusicService :
     }
 
     private fun publishDecodedPcmFormat() {
-        if (!::player.isInitialized || bitPerfectOutputActive) {
+        if (!::player.isInitialized) {
             decodedPcmFormat.value = null
+            reportedAudioFormat.value = null
+            androidAudioOutputFormat.value = null
             return
         }
         val activePlayer = player as? ExoPlayer
         val context = activePlayer?.let(audioAuthenticityContextByPlayer::get)
         val mediaId = activePlayer?.currentMediaItem?.mediaId
-        decodedPcmFormat.value = context?.let(decodedPcmFormatsByContext::get)?.takeIf { it.mediaId == mediaId }
+        decodedPcmFormat.value =
+            if (bitPerfectOutputActive) null else context?.let(decodedPcmFormatsByContext::get)?.takeIf { it.mediaId == mediaId }
+        reportedAudioFormat.value =
+            reportedAudioFormatForPlayback(
+                mediaId = mediaId,
+                source = mediaId?.let(selectedPlaybackSourceByMediaId::get),
+                format = mediaId?.let(reportedAudioFormatsByMediaId::get),
+            )
+        androidAudioOutputFormat.value =
+            androidAudioOutputFormatForPlayback(
+                mediaId = mediaId,
+                configuration = activePlayer?.let(audioTrackConfigurationsByPlayer::get),
+                bitPerfectOutputActive = bitPerfectOutputActive,
+            )
     }
 
     private fun removeAudioAuthenticityContext(releasedPlayer: ExoPlayer) {
         audioAuthenticityContextByPlayer.remove(releasedPlayer)?.let(decodedPcmFormatsByContext::remove)
+        audioTrackConfigurationsByPlayer.remove(releasedPlayer)
         scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun retainReportedAudioFormat(mediaId: String, metadata: CachedAudioMetadata) {
+        reportedAudioFormatsByMediaId.put(
+            mediaId,
+            ReportedAudioFormat(mediaId, metadata.source, metadata.sampleRateHz, metadata.bitDepth, metadata.channelCount),
+        )
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun observeAudioTrackConfiguration(observedPlayer: ExoPlayer) {
+        observedPlayer.addAnalyticsListener(
+            object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+                override fun onAudioInputFormatChanged(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    format: androidx.media3.common.Format,
+                    decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+                ) {
+                    val periodId = eventTime.mediaPeriodId
+                    if (periodId != null && observedPlayer.currentTimeline.getIndexOfPeriod(periodId.periodUid) == C.INDEX_UNSET) return
+                    val mediaId =
+                        if (eventTime.windowIndex in 0 until eventTime.timeline.windowCount) {
+                            eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem.mediaId
+                        } else {
+                            observedPlayer.currentMediaItem?.mediaId ?: return
+                        }
+                    val source = selectedPlaybackSourceByMediaId[mediaId]
+                    val rate = format.sampleRate.takeIf { it > 0 }
+                    val lossless = isClaimedLosslessFormat(format.sampleMimeType.orEmpty(), format.codecs.orEmpty(), "")
+                    val depth =
+                        if (lossless) DecodedPcmFormat(mediaId, format.sampleRate, format.channelCount, format.pcmEncoding).bitsPerSample else null
+                    val previous = reportedAudioFormatsByMediaId[mediaId]?.takeIf { it.source == source }
+                    reportedAudioFormatsByMediaId.put(
+                        mediaId,
+                        ReportedAudioFormat(mediaId, source, rate ?: previous?.sampleRateHz, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 }),
+                    )
+                    if (source != null && source != AudioSourceType.YOUTUBE && rate != null) {
+                        authenticitySampleRateByMediaId[mediaId] = rate
+                        val claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true || lossless
+                        authenticityClaimedLosslessByMediaId[mediaId] = claimedLossless
+                        refreshAudioAuthenticityContexts(mediaId)
+                        val metadata = CachedAudioMetadata(source, rate, claimedLossless, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 })
+                        scope.launch(Dispatchers.IO) {
+                            val key = sourceCacheKey(source, mediaId)
+                            runCatching {
+                                listOf(downloadCache, playerCache).forEach { cache ->
+                                    cache.applyContentMetadataMutations(key, metadata.toMutations())
+                                }
+                            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+                        }
+                    }
+                    publishDecodedPcmFormat()
+                }
+
+                override fun onAudioTrackInitialized(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+                ) {
+                    audioTrackConfigurationsByPlayer[observedPlayer] = audioTrackConfig
+                    publishDecodedPcmFormat()
+                }
+
+                override fun onAudioTrackReleased(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+                ) {
+                    audioTrackConfigurationsByPlayer.remove(observedPlayer, audioTrackConfig)
+                    publishDecodedPcmFormat()
+                }
+            },
+        )
     }
 
     private fun handleAudioAuthenticityResult(

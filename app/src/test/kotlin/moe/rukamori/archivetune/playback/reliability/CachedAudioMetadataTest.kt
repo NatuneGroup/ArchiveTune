@@ -10,6 +10,7 @@
 package moe.rukamori.archivetune.playback.reliability
 
 import androidx.media3.datasource.cache.DefaultContentMetadata
+import androidx.media3.datasource.cache.ContentMetadataMutations
 import moe.rukamori.archivetune.audiosource.DirectStream
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.playback.CachedAudioMetadata
@@ -48,6 +49,31 @@ class CachedAudioMetadataTest {
     @Test
     fun legacyCachedBytesWithoutSourceMetadataRemainUnknown() {
         assertNull(CachedAudioMetadata.read(DefaultContentMetadata.EMPTY, AudioSourceType.TIDAL))
+    }
+
+    @Test
+    fun reportedBitDepthAndObservedChannelCountSurviveCaching() {
+        val record = CachedAudioMetadata.from(stream(96_000).copy(bitDepth = 24)).copy(channelCount = 2)
+        val metadata = DefaultContentMetadata.EMPTY.copyWithMutationsApplied(record.toMutations())
+        val restored = CachedAudioMetadata.read(metadata, AudioSourceType.TIDAL)
+
+        assertEquals(24, restored?.bitDepth)
+        assertEquals(2, restored?.channelCount)
+    }
+
+    @Test
+    fun olderVersionOneMetadataDoesNotInventNewFormatFields() {
+        val mutations = ContentMetadataMutations()
+            .set("archivetune:audio:version", 1L)
+            .set("archivetune:audio:source", AudioSourceType.TIDAL.name)
+            .set("archivetune:audio:sample_rate", 96_000L)
+            .set("archivetune:audio:claimed_lossless", 1L)
+        val metadata = DefaultContentMetadata.EMPTY.copyWithMutationsApplied(mutations)
+        val restored = CachedAudioMetadata.read(metadata, AudioSourceType.TIDAL)
+
+        assertEquals(96_000, restored?.sampleRateHz)
+        assertNull(restored?.bitDepth)
+        assertNull(restored?.channelCount)
     }
 
     private fun stream(sampleRate: Int?): DirectStream =

@@ -1,0 +1,4 @@
+<resources>
+    <string name="audio_authenticity_skip_upscaled_title">Skip suspected upscaled hi-res audio</string>
+    <string name="audio_authenticity_skip_upscaled_description">Checks a short decoded-audio sample for a sharp CD-band cutoff in hi-res streams. This is a heuristic, not proof; silence and low-bandwidth audio remain inconclusive. Bit-perfect output bypasses audio processors and is not checked.</string>
+</resources>

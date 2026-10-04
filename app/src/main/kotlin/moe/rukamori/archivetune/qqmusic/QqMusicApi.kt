@@ -52,6 +52,8 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -635,7 +637,7 @@ internal object QqMusicApi {
                 .post(body.toString().toRequestBody("application/json".toMediaType()))
                 .build()
         return try {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 val text = response.body?.string().orEmpty()
                 when {
                     !response.isSuccessful -> {
@@ -656,6 +658,7 @@ internal object QqMusicApi {
                 }
             }
         } catch (error: IOException) {
+            error.rethrowIfAudioSourceCancelled()
             Timber.tag(TAG).w(error, "musicu.fcg request failed")
             null
         }

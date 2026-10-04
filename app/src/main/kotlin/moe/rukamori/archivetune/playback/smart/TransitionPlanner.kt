@@ -170,6 +170,54 @@ private fun blocked(reason: String, transitionStart: Double = 0.0, transitionEnd
         transitionEnd = transitionEnd,
     )
 
+private data class NaturalFadeWindow(
+    val start: Double,
+    val end: Double,
+) {
+    val duration: Double get() = end - start
+}
+
+private fun naturalFadeWindow(
+    analysis: TrackAnalysis,
+    contentEnd: Double,
+    duration: Double,
+    minFadeSeconds: Double,
+): NaturalFadeWindow? {
+    if (analysis.status != TrackAnalysis.STATUS_READY) return null
+    val end = contentEnd.takeIf { it.isFinite() && it > 0.0 && it <= duration } ?: duration
+    val onset = analysis.finalFadeOnsetTime?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+    val audibleStart = analysis.audibleStartTime?.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+    val introEnd = analysis.introEndTime.takeIf { it.isFinite() && it >= 0.0 } ?: 0.0
+    val earliestFade = max(audibleStart, introEnd)
+    if (!end.isFinite() || end <= onset || onset <= earliestFade) return null
+
+    val detectedDuration = end - onset
+    val minimumDuration = max(1.5, minFadeSeconds.takeIf { it.isFinite() && it > 0.0 } ?: 1.0)
+    if (detectedDuration < minimumDuration || detectedDuration > 45.0) return null
+
+    val fadeDuration = min(detectedDuration, AUTO_TRANSITION_MAX_SECONDS)
+    if (fadeDuration < minimumDuration) return null
+    return NaturalFadeWindow(start = end - fadeDuration, end = end)
+}
+
+private fun naturalFadePlan(
+    window: NaturalFadeWindow,
+    playbackTime: Double,
+    incomingCueTime: Double,
+    reason: String,
+    policyReasons: List<String> = emptyList(),
+) = TransitionPlan(
+    shouldStart = playbackTime >= window.start,
+    markerVisible = true,
+    transitionStart = window.start,
+    transitionEnd = window.end,
+    fadeSeconds = window.duration,
+    transitionStyle = TransitionStyle.EQUAL_POWER,
+    incomingCueTime = incomingCueTime,
+    policyReasons = policyReasons,
+    reason = reason,
+)
+
 private fun trackDurationSeconds(track: TransitionTrackInfo?): Double =
     if (track == null || track.durationMs <= 0) 0.0 else track.durationMs / 1000.0
 
@@ -878,6 +926,7 @@ fun planTransition(
     } else {
         length
     }
+    val naturalFade = naturalFadeWindow(analysis, finalMixAnchor, length, minFadeSeconds)
     val mixOutAnchor = resolveMixOutAnchor(analysis, contentEnd = finalMixAnchor, duration = length)
     val hasInteriorMixOut = mixOutAnchor.time < finalMixAnchor - 1
 
@@ -902,6 +951,14 @@ fun planTransition(
     if (!analysisReadyForTrack(analysis, currentTrack) ||
         !analysisReadyForTrack(nextAnalysis, nextTrack)
     ) {
+        naturalFade?.let {
+            return naturalFadePlan(
+                window = it,
+                playbackTime = playbackTime,
+                incomingCueTime = incomingStartPoint(nextAnalysis),
+                reason = "smart-natural-fade-fallback",
+            )
+        }
         return standardTransition(
             length,
             playbackTime,
@@ -911,9 +968,11 @@ fun planTransition(
         )
     }
 
-    val preferredMixAnchor = min(length, mixOutAnchor.time)
+    val preferredMixAnchor = naturalFade?.end ?: min(length, mixOutAnchor.time)
     val mixAnchor =
-        if (playbackTime >= preferredMixAnchor - 0.05 && preferredMixAnchor < finalMixAnchor - 1) {
+        if (naturalFade != null) {
+            naturalFade.end
+        } else if (playbackTime >= preferredMixAnchor - 0.05 && preferredMixAnchor < finalMixAnchor - 1) {
             finalMixAnchor
         } else {
             preferredMixAnchor
@@ -921,6 +980,15 @@ fun planTransition(
 
     val policy = assessTransitionTier(analysis, nextAnalysis)
     if (policy.tier == TransitionTier.PLAIN_CROSSFADE) {
+        naturalFade?.let {
+            return naturalFadePlan(
+                window = it,
+                playbackTime = playbackTime,
+                incomingCueTime = incomingStartPoint(nextAnalysis),
+                reason = if (playbackTime >= it.start) "smart-natural-fade" else "before-natural-fade",
+                policyReasons = policy.reasons,
+            )
+        }
         val transitionStart = max(0.0, mixAnchor - standardFade)
         val started = playbackTime >= transitionStart
         return TransitionPlan(
@@ -938,16 +1006,18 @@ fun planTransition(
 
     val nextLength = max(nextAnalysis.duration.orZero(), trackDurationSeconds(nextTrack))
 
-    phraseSwitch(analysis, nextAnalysis, length, nextLength)
-        ?.takeIf { playbackTime < it.transitionEnd }
-        ?.let { plan ->
-            val started = playbackTime >= plan.transitionStart
-            return plan.copy(
-                shouldStart = started,
-                policyReasons = policy.reasons,
-                reason = if (started) "smart-phrase-switch" else "before-phrase-switch",
-            )
-        }
+    if (naturalFade == null) {
+        phraseSwitch(analysis, nextAnalysis, length, nextLength)
+            ?.takeIf { playbackTime < it.transitionEnd }
+            ?.let { plan ->
+                val started = playbackTime >= plan.transitionStart
+                return plan.copy(
+                    shouldStart = started,
+                    policyReasons = policy.reasons,
+                    reason = if (started) "smart-phrase-switch" else "before-phrase-switch",
+                )
+            }
+    }
 
     val (overlap, transitionBeats, incomingPlaybackRate) = adaptiveOverlap(analysis, nextAnalysis)
     val currentBpm = analysis.bpm.orZero()
@@ -957,7 +1027,7 @@ fun planTransition(
         abs(1 - normalizedTempoRatio(currentBpm, nextBpm)) <= 0.05 &&
         (analysis.beatConfidence.orZero() >= 0.2 || nextAnalysis.beatConfidence.orZero() >= 0.2)
     val outgoingArrangementOverlap =
-        if (sameBeatBlend && mixOutAnchor.type == "content_end") {
+        if (naturalFade == null && sameBeatBlend && mixOutAnchor.type == "content_end") {
             min(ARRANGEMENT_OVERLAP_BEATS * 60 / currentBpm, MAX_DISCARDED_MUSIC_SECONDS)
         } else {
             0.0
@@ -968,6 +1038,7 @@ fun planTransition(
         AUTO_TRANSITION_MAX_SECONDS,
         mixEnd * 0.4,
         if (nextLength > 0) nextLength * 0.4 else AUTO_TRANSITION_MAX_SECONDS,
+        naturalFade?.duration ?: AUTO_TRANSITION_MAX_SECONDS,
     )
     val handoffBeats = if (sameBeatBlend) 8 else 4
     val beatSeconds = if (handoffBpm > 0) 60 / handoffBpm else 0.5

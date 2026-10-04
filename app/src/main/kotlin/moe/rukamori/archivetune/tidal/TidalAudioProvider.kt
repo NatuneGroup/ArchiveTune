@@ -5,6 +5,10 @@
 
 package moe.rukamori.archivetune.tidal
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
 import moe.rukamori.archivetune.BuildConfig
 import kotlinx.coroutines.CancellationException
@@ -65,6 +69,7 @@ object TidalAudioProvider {
     private const val SEARCH_CACHE_MS = 10 * 60 * 1000L
     private const val MAX_STREAM_CANDIDATES = 2
     private const val MAX_DIRECT_STREAM_CANDIDATES = 3
+    private const val MAX_CONCURRENT_TIDAL_ENDPOINTS = 8
     private const val MIN_MATCH_SCORE = 90
     private const val ARTWORK_MAX_SCORE = 220
 
@@ -199,7 +204,7 @@ object TidalAudioProvider {
             healthClient.newCall(request).execute().use { response ->
                 if (response.code in 200..499) System.currentTimeMillis() - start else null
             }
-        }.getOrNull()
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
     }
 
     /** Result of a deep instance health probe (see [verifyInstance]). */
@@ -231,15 +236,17 @@ object TidalAudioProvider {
 
     /** Finds a real catalog track for a first-run health check when no successful stream is cached. */
     fun findHealthProbeTrackId(): String? =
-        if (activeEndpoints.isEmpty()) {
-            null
-        } else {
-            runCatching {
-                val items = searchTracks("adele hello") ?: return@runCatching null
-                (0 until items.length())
-                    .firstNotNullOfOrNull { items.optJSONObject(it)?.toMatchedTrack()?.trackId }
-                    ?.also { lastResolvedTrackId = it }
-            }.getOrNull()
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            if (activeEndpoints.isEmpty()) {
+                null
+            } else {
+                runCatching {
+                    val items = searchTracks("adele hello") ?: return@runCatching null
+                    (0 until items.length())
+                        .firstNotNullOfOrNull { items.optJSONObject(it)?.toMatchedTrack()?.trackId }
+                        ?.also { lastResolvedTrackId = it }
+                }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
+            }
         }
 
     /**
@@ -377,7 +384,12 @@ object TidalAudioProvider {
      * simply returns an empty list so the caller can keep the manual list. Runs blocking network
      * calls, so invoke it off the main thread.
      */
-    fun discoverInstances(): List<String> {
+    fun discoverInstances(): List<String> =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            discoverInstancesWithinAttempt()
+        }
+
+    private fun discoverInstancesWithinAttempt(): List<String> {
         val discovered = LinkedHashSet<String>()
         for (source in INSTANCE_DISCOVERY_SOURCES) {
             runCatching {
@@ -391,7 +403,7 @@ object TidalAudioProvider {
                     builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                 }
                 val request = builder.get().build()
-                healthClient.newCall(request).execute().use { response ->
+                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) {
                         // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
                         // and an empty body, which otherwise looks identical to a healthy pool
@@ -412,7 +424,7 @@ object TidalAudioProvider {
                         normalizeInstanceUrl(url)?.let(discovered::add)
                     }
                 }
-            }
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }
         }
         return discovered.toList()
     }
@@ -701,6 +713,17 @@ object TidalAudioProvider {
         preferAtmos: Boolean = false,
         preferLiveDash: Boolean = true,
         audioQuality: TidalAudioQuality = TidalAudioQuality.AAC_320,
+    ): Resolved =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveWithinAttempt(query, cacheDir, preferAtmos, preferLiveDash, audioQuality)
+        }
+
+    private fun resolveWithinAttempt(
+        query: Query,
+        cacheDir: File?,
+        preferAtmos: Boolean,
+        preferLiveDash: Boolean,
+        audioQuality: TidalAudioQuality,
     ): Resolved {
         // The public catalog search endpoint is not a playback backend. Avoid a needless network
         // lookup (and song.link fallback) when no configured/discovered instance can serve audio.
@@ -747,6 +770,7 @@ object TidalAudioProvider {
             if (directTrackId != null) MAX_DIRECT_STREAM_CANDIDATES else MAX_STREAM_CANDIDATES
         for (track in tracks.take(streamCandidateLimit)) {
             for (quality in streamQualityCandidates(track, preferAtmos, audioQuality)) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
                 val streamCacheKey = "${query.mediaId}::${track.trackId}::$quality::${if (preferLiveDash) "live" else "temp"}"
                 val trackFailureCacheKey = "track:${track.trackId}::$quality::${if (preferLiveDash) "live" else "temp"}"
                 val cachedStream = streamCache[streamCacheKey]
@@ -779,9 +803,12 @@ object TidalAudioProvider {
                         )
                     }
                 }.onFailure { error ->
+                    error.rethrowIfAudioSourceCancelled()
                     Timber.tag("TidalAudio").w(error, "TIDAL $quality stream failed for ${track.trackId}")
                     errors += "${track.trackId}/$quality: ${error.message ?: error.javaClass.simpleName}"
-                    cacheStreamFailure(now, error, streamCacheKey, trackFailureCacheKey)
+                    if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                        cacheStreamFailure(now, error, streamCacheKey, trackFailureCacheKey)
+                    }
                 }
 
                 streamAttempt.getOrNull()?.let { rawResolved ->
@@ -1045,6 +1072,7 @@ object TidalAudioProvider {
     }
 
     private fun findCandidateTracks(query: Query): List<MatchedTrack> {
+        if (AudioSourceAttemptScope.current()?.isExpired() == true) return emptyList()
         val candidates = mutableListOf<ScoredTrack>()
         val wantedTitle = query.title.titleMatchNormalized()
         val wantedArtists = query.artists.map { it.normalized() }.filter { it.isNotBlank() }
@@ -1062,6 +1090,7 @@ object TidalAudioProvider {
 
         val terms = searchTerms(query)
         for (term in terms) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             val results = searchTracks(term) ?: continue
             candidates += selectCandidateTracks(results, query)
             candidates.losslessFirst()
@@ -1069,17 +1098,19 @@ object TidalAudioProvider {
                 ?.takeIf { it.score >= STRONG_MATCH_SCORE && it.track.losslessRank() > 0 }
                 ?.let { return listOf(it.track) }
         }
-        resolveSongLinkTidalTrackId(query)?.let { tidalId ->
-            val track = resolveTrackById(tidalId) ?: query.toDirectMatchedTrack(tidalId)
-            val score = scoreTrack(track, wantedTitle, wantedArtists, wantedAlbum, wantedIsrc, wantedDurationMs)
-            if (score >= MIN_MATCH_SCORE) {
-                if (track.losslessRank() > 0) {
-                    return listOf(track)
+        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+            resolveSongLinkTidalTrackId(query)?.let { tidalId ->
+                val track = resolveTrackById(tidalId) ?: query.toDirectMatchedTrack(tidalId)
+                val score = scoreTrack(track, wantedTitle, wantedArtists, wantedAlbum, wantedIsrc, wantedDurationMs)
+                if (score >= MIN_MATCH_SCORE) {
+                    if (track.losslessRank() > 0) {
+                        return listOf(track)
+                    }
+                    candidates += ScoredTrack(track, score)
+                    Timber.tag("TidalAudio").w("Deferred lossy song.link TIDAL match $tidalId for ${query.title}: score=$score")
+                } else {
+                    Timber.tag("TidalAudio").w("Ignored weak song.link TIDAL match $tidalId for ${query.title}: score=$score")
                 }
-                candidates += ScoredTrack(track, score)
-                Timber.tag("TidalAudio").w("Deferred lossy song.link TIDAL match $tidalId for ${query.title}: score=$score")
-            } else {
-                Timber.tag("TidalAudio").w("Ignored weak song.link TIDAL match $tidalId for ${query.title}: score=$score")
             }
         }
         return candidates
@@ -1106,7 +1137,8 @@ object TidalAudioProvider {
         val now = System.currentTimeMillis()
         searchCache[cacheKey]?.takeIf { it.expiresAtMs > now }?.let { return it.results }
         val parameter = if (exactIsrc) "i" else "s"
-        for (endpoint in orderedEndpoints()) {
+        for (endpoint in orderedEndpoints().take(MAX_CONCURRENT_TIDAL_ENDPOINTS)) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             val url =
                 endpoint.baseUrl
                     .toHttpUrl()
@@ -1126,14 +1158,14 @@ object TidalAudioProvider {
                     .build()
 
             runCatching {
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) return@use null
                     val body = response.body.string().takeIf { it.isNotBlank() } ?: return@use null
                     val root = JSONObject(body)
                     root.optJSONObject("data")?.optJSONArray("items")
                         ?: root.optJSONArray("items")
                 }
-            }.getOrNull()?.let { results ->
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()?.let { results ->
                 searchCache[cacheKey] = CachedSearch(results, now + SEARCH_CACHE_MS)
                 return results
             }
@@ -1164,12 +1196,12 @@ object TidalAudioProvider {
                 .build()
 
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = response.body.string().takeIf { it.isNotBlank() } ?: return@use null
                 JSONObject(body).optJSONArray("items")
             }
-        }.getOrNull()
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
     }
 
     private fun resolveTrackById(trackId: String): MatchedTrack? {
@@ -1192,12 +1224,12 @@ object TidalAudioProvider {
                 .build()
 
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val body = response.body.string().takeIf { it.isNotBlank() } ?: return@use null
                 JSONObject(body).toMatchedTrack()
             }
-        }.getOrNull()
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
     }
 
     private fun selectCandidateTracks(
@@ -1328,13 +1360,13 @@ object TidalAudioProvider {
         var rateLimitCount = 0
         var longestRetryAfterMs = 0L
         // Healthy instances first; instances on cooldown are only reached if all are down.
-        val endpoints = orderedEndpoints()
+        val endpoints = orderedEndpoints().take(MAX_CONCURRENT_TIDAL_ENDPOINTS)
         
         // Race all instances concurrently. A successful full-quality result returns immediately;
         // waiting for every mirror here made one dead endpoint delay playback even when another
         // mirror had already produced a valid stream. Downgraded AAC results are retained while we
         // wait for a possible full-quality result from another mirror.
-        return runBlocking(Dispatchers.IO) {
+        return runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
             supervisorScope {
                 val results = Channel<Pair<TidalDownloadEndpoint, Result<Resolved>>>(endpoints.size.coerceAtLeast(1))
                 val jobs = endpoints.map { endpoint ->
@@ -1360,6 +1392,7 @@ object TidalAudioProvider {
                             } catch (cancel: CancellationException) {
                                 throw cancel
                             } catch (error: Throwable) {
+                                error.rethrowIfAudioSourceCancelled()
                                 Result.failure(error)
                             }
                         results.send(endpoint to result)
@@ -1383,16 +1416,20 @@ object TidalAudioProvider {
                         }
 
                         val error = result.exceptionOrNull() ?: TidalAudioResolutionException("unknown mirror failure")
-                        if (error is TidalRateLimitedException) {
-                            rateLimitCount += 1
-                            longestRetryAfterMs = maxOf(longestRetryAfterMs, error.retryAfterMs)
+                        if (AudioSourceAttemptScope.current()?.isExpired() == true) {
+                            errors += "${endpoint.name}: source attempt deadline exceeded"
                         } else {
-                            val hardFailure =
-                                error is java.net.UnknownHostException || error is java.net.ConnectException
-                            markInstanceFailed(endpoint.baseUrl, hardFailure = hardFailure)
+                            if (error is TidalRateLimitedException) {
+                                rateLimitCount += 1
+                                longestRetryAfterMs = maxOf(longestRetryAfterMs, error.retryAfterMs)
+                            } else {
+                                val hardFailure =
+                                    error is java.net.UnknownHostException || error is java.net.ConnectException
+                                markInstanceFailed(endpoint.baseUrl, hardFailure = hardFailure)
+                            }
+                            errors += "${endpoint.name}: ${error.message ?: error.javaClass.simpleName}"
+                            Timber.tag("TidalAudio").w(error, "TIDAL resolver ${endpoint.name} failed for ${track.trackId}")
                         }
-                        errors += "${endpoint.name}: ${error.message ?: error.javaClass.simpleName}"
-                        Timber.tag("TidalAudio").w(error, "TIDAL resolver ${endpoint.name} failed for ${track.trackId}")
                     }
                 } finally {
                     jobs.forEach { it.cancel() }
@@ -1514,7 +1551,7 @@ object TidalAudioProvider {
                 .header("User-Agent", DOWNLOAD_USER_AGENT)
                 .build()
 
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             val responseBody = response.body.string()
             if (response.code == 429) {
                 val headerRetryAfterMs = response.header("Retry-After")
@@ -2058,7 +2095,7 @@ object TidalAudioProvider {
                 .header("Accept-Encoding", "identity")
                 .header("User-Agent", BROWSER_USER_AGENT)
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 throw TidalAudioResolutionException("TIDAL segment $index/$total HTTP ${response.code}")
             }
@@ -2200,7 +2237,7 @@ object TidalAudioProvider {
                             .header("Accept-Encoding", "identity")
                             .header("User-Agent", BROWSER_USER_AGENT)
                             .build()
-                    client.newCall(request).execute().use { response ->
+                    client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                         if (!response.isSuccessful) {
                             throw TidalAudioResolutionException(
                                 "TIDAL segment ${index + 1}/${urls.size} HTTP ${response.code}",
@@ -2266,7 +2303,7 @@ object TidalAudioProvider {
                 .header("User-Agent", BROWSER_USER_AGENT)
                 .build()
 
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 throw TidalAudioResolutionException("TIDAL stream probe HTTP ${response.code}")
             }
@@ -2385,14 +2422,14 @@ object TidalAudioProvider {
                 .header("User-Agent", BROWSER_USER_AGENT)
 
         runCatching {
-            client.newCall(builder.head().build()).execute().use { response ->
+            client.newCall(builder.head().build()).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 StreamMetadata(
                     mimeType = response.header("Content-Type")?.substringBefore(';'),
                     contentLength = response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L },
                 )
             }
-        }.getOrNull()?.let { return it }
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()?.let { return it }
 
         return runCatching {
             client.newCall(
@@ -2400,7 +2437,7 @@ object TidalAudioProvider {
                     .get()
                     .header("Range", "bytes=0-0")
                     .build(),
-            ).execute().use { response ->
+            ).withAudioSourceAttemptDeadline().execute().use { response ->
                 StreamMetadata(
                     mimeType = response.header("Content-Type")?.substringBefore(';'),
                     contentLength =
@@ -2411,7 +2448,8 @@ object TidalAudioProvider {
                             ?: response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L && response.code == 206 },
                 )
             }
-        }.getOrElse {
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) throw it
             StreamMetadata("audio/flac", null)
         }
     }
@@ -2425,7 +2463,7 @@ object TidalAudioProvider {
                 .header("Accept", "application/dash+xml,application/xml,text/xml,*/*;q=0.8")
                 .header("User-Agent", DOWNLOAD_USER_AGENT)
                 .build()
-        client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             val body = response.body.string()
             if (!response.isSuccessful) {
                 throw TidalAudioResolutionException("TIDAL manifest fetch HTTP ${response.code}: ${body.take(180)}")
@@ -2496,7 +2534,7 @@ object TidalAudioProvider {
                     .header("User-Agent", BROWSER_USER_AGENT)
                     .build()
             runCatching {
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) return@use null
                     val body = response.body.string().takeIf { it.isNotBlank() } ?: return@use null
                     val root = JSONObject(body)
@@ -2508,7 +2546,7 @@ object TidalAudioProvider {
                             ?.stringOrNull("Tidal")
                             ?.toTidalTrackIdOrNull()
                 }
-            }.getOrNull()?.let { trackId ->
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()?.let { trackId ->
                 Timber.tag("TidalAudio").i("Resolved TIDAL track $trackId through song.link from $sourceUrl")
                 return trackId
             }

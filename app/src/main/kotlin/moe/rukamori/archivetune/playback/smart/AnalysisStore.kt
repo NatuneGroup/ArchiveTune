@@ -14,9 +14,15 @@
 
 package moe.rukamori.archivetune.playback.smart
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
+import android.provider.OpenableColumns
 import android.util.Log
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import moe.rukamori.archivetune.playback.automix.AnalysisCacheEntryIdentity
+import moe.rukamori.archivetune.playback.automix.AnalysisCacheFileMetadata
+import moe.rukamori.archivetune.playback.automix.AnalysisCachePolicy
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 
@@ -44,12 +50,6 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * ## Shape
  *
- * One file per track, named by cache key rather than written into a single
- * index, so a write cannot corrupt anything but its own entry and a prune is a
- * file delete. Coordinates are seconds on the track's own timeline, which are
- * identical across renditions of the same recording — the whole reason an
- * analysis is worth keeping in the first place.
- *
  * Only fields the planner reads are stored, and the curves are rounded to
  * milliseconds: they are the bulk of the payload and nothing downstream can
  * tell the difference.
@@ -67,30 +67,74 @@ class AnalysisStore(private val context: Context) {
     /**
      * Track ids known to have no file, so a track analysed in neither this
      * session nor a previous one does not hit the filesystem on every tick.
-     * Only ever grows within a session, and a write clears the entry.
      */
     private val known = ConcurrentHashMap<String, Boolean>()
+
+    @Volatile
+    private var lastPrunedAtEpochMs = 0L
 
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
 
+    fun sourceFingerprint(trackId: String, uri: Uri): String {
+        val scheme = uri.scheme.orEmpty().lowercase()
+        val authority = uri.authority.orEmpty()
+        val stableUri =
+            if (scheme == "content") {
+                uri.toString()
+            } else {
+                uri.buildUpon().clearQuery().fragment(null).build().toString()
+            }
+        val revision = when (scheme) {
+            "file" -> {
+                val file = uri.path?.let { File(it) }
+                "$stableUri\u0000${file?.length() ?: -1L}\u0000${file?.lastModified() ?: -1L}"
+            }
+            "content" -> "$stableUri\u0000${contentRevision(uri)}"
+            else -> stableUri
+        }
+        return AnalysisCachePolicy.sourceFingerprint(trackId, "$scheme\u0000$authority", revision)
+    }
+
     /** Reads [trackId]'s stored analysis, or null when there isn't one. */
-    fun load(trackId: String): TrackAnalysis? {
+    fun load(trackId: String): TrackAnalysis? =
+        load(trackId, sourceFingerprint(trackId, Uri.EMPTY), Double.NaN)
+
+    fun load(trackId: String, sourceFingerprint: String, expectedDurationSeconds: Double): TrackAnalysis? {
         if (trackId.isBlank()) return null
-        if (known[trackId] == false) return null
-        val file = File(directory, fileNameFor(trackId))
+        pruneIfDue()
+        val cacheFileName = AnalysisCachePolicy.fileNameFor(trackId, sourceFingerprint)
+        if (known[cacheFileName] == false) return null
+        val file = File(directory, cacheFileName)
         if (!file.exists()) {
-            known[trackId] = false
+            rememberMissing(cacheFileName)
+            return null
+        }
+        if (file.length() !in 1L..AnalysisCachePolicy.MAX_BYTES) {
+            file.delete()
+            rememberMissing(cacheFileName)
             return null
         }
         return runCatching {
             val stored = json.decodeFromString(Stored.serializer(), file.readText())
-            // An entry from an older build may hold numbers computed a different
-            // way, and a wrong beat grid is worse than none — so it is dropped
-            // and re-earned rather than migrated.
-            require(stored.version == SCHEMA_VERSION) { "schema ${stored.version}" }
+            val identity = AnalysisCacheEntryIdentity(
+                schemaVersion = stored.version,
+                trackId = stored.trackIdentity,
+                sourceFingerprint = stored.sourceFingerprint,
+                durationSeconds = stored.duration,
+                savedAtEpochMs = stored.savedAtEpochMs,
+            )
+            require(
+                AnalysisCachePolicy.isReusable(
+                    entry = identity,
+                    expectedTrackId = AnalysisCachePolicy.trackIdentity(trackId),
+                    expectedSourceFingerprint = sourceFingerprint,
+                    expectedDurationSeconds = expectedDurationSeconds,
+                    nowEpochMs = System.currentTimeMillis(),
+                ),
+            ) { "cache identity or lifetime mismatch" }
             stored.toAnalysis(trackId)
         }
             .onFailure {
@@ -99,7 +143,7 @@ class AnalysisStore(private val context: Context) {
                 // returned as a partly-filled result.
                 Log.w(TAG, "Discarding unreadable analysis for $trackId", it)
                 file.delete()
-                known[trackId] = false
+                rememberMissing(cacheFileName)
             }
             .getOrNull()
     }
@@ -109,46 +153,92 @@ class AnalysisStore(private val context: Context) {
      * tempo: a failure is cheap to rediscover and worth rediscovering, since
      * the reason for it is usually missing bytes rather than the track itself.
      */
-    fun save(trackId: String, analysis: TrackAnalysis) {
+    fun save(trackId: String, analysis: TrackAnalysis) =
+        save(trackId, sourceFingerprint(trackId, Uri.EMPTY), analysis)
+
+    fun save(trackId: String, sourceFingerprint: String, analysis: TrackAnalysis) {
         if (trackId.isBlank() || !analysis.isUsable) return
         runCatching {
             directory.mkdirs()
-            val file = File(directory, fileNameFor(trackId))
+            val cacheFileName = AnalysisCachePolicy.fileNameFor(trackId, sourceFingerprint)
+            val file = File(directory, cacheFileName)
             // Written aside and renamed, so a kill mid-write leaves the old
             // entry rather than a truncated one.
             val temporary = File(directory, file.name + ".tmp")
-            temporary.writeText(json.encodeToString(Stored.serializer(), Stored.of(analysis)))
+            temporary.writeText(
+                json.encodeToString(
+                    Stored.serializer(),
+                    Stored.of(
+                        AnalysisCachePolicy.trackIdentity(trackId),
+                        sourceFingerprint,
+                        analysis,
+                        System.currentTimeMillis(),
+                    ),
+                ),
+            )
             if (!temporary.renameTo(file)) temporary.delete()
-            known[trackId] = true
+            known.remove(cacheFileName)
         }.onFailure { Log.w(TAG, "Could not store analysis for $trackId", it) }
         prune()
     }
 
-    /**
-     * Keeps the directory under [MAX_ENTRIES], oldest first.
-     *
-     * Cheap because it only lists when the count is plausibly over — a
-     * directory listing per save would otherwise be a filesystem walk on every
-     * analysis.
-     */
     private fun prune() {
-        val files = directory.listFiles() ?: return
-        if (files.size <= MAX_ENTRIES) return
-        files.sortedBy { it.lastModified() }
-            .take(files.size - MAX_ENTRIES)
-            .forEach { it.delete() }
+        prune(System.currentTimeMillis())
     }
 
-    /**
-     * Hashed rather than used raw: a track id is not guaranteed to be a legal filename. A 128-bit
-     * digest, because a 32-bit [String.hashCode] collision would hand one track another's beat grid.
-     */
-    private fun fileNameFor(trackId: String): String =
-        java.security.MessageDigest
-            .getInstance("SHA-256")
-            .digest(trackId.toByteArray(Charsets.UTF_8))
-            .take(16)
-            .joinToString("") { "%02x".format(it) } + ".json"
+    private fun pruneIfDue() {
+        val now = System.currentTimeMillis()
+        if (now >= lastPrunedAtEpochMs && now - lastPrunedAtEpochMs < PRUNE_INTERVAL_MILLIS) return
+        synchronized(this) {
+            if (now >= lastPrunedAtEpochMs && now - lastPrunedAtEpochMs < PRUNE_INTERVAL_MILLIS) return
+            prune(now)
+            lastPrunedAtEpochMs = now
+        }
+    }
+
+    private fun prune(nowEpochMs: Long) {
+        val files = directory.listFiles()?.filter(File::isFile) ?: return
+        val evicted = AnalysisCachePolicy.filesToEvict(
+            files.map { file ->
+                AnalysisCacheFileMetadata(
+                    fileName = file.name,
+                    lastModifiedEpochMs = file.lastModified(),
+                    sizeBytes = file.length(),
+                )
+            },
+            nowEpochMs,
+        )
+        files.filter { it.name in evicted }.forEach { it.delete() }
+    }
+
+    private fun rememberMissing(cacheFileName: String) {
+        if (known.size >= MAX_KNOWN_MISSES) {
+            known.keys.firstOrNull()?.let(known::remove)
+        }
+        known[cacheFileName] = false
+    }
+
+    private fun contentRevision(uri: Uri): String {
+        val lastModified = runCatching {
+            context.contentResolver.query(
+                uri,
+                arrayOf(DocumentsContract.Document.COLUMN_LAST_MODIFIED),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                val column = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+                if (column >= 0 && cursor.moveToFirst() && !cursor.isNull(column)) cursor.getLong(column) else -1L
+            }
+        }.getOrNull() ?: -1L
+        val size = runCatching {
+            context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val column = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (column >= 0 && cursor.moveToFirst() && !cursor.isNull(column)) cursor.getLong(column) else -1L
+            }
+        }.getOrNull() ?: -1L
+        return "$size\u0000$lastModified"
+    }
 
     /**
      * The persisted subset, kept separate from [TrackAnalysis] so that adding a
@@ -161,6 +251,9 @@ class AnalysisStore(private val context: Context) {
     @Serializable
     private data class Stored(
         val version: Int = SCHEMA_VERSION,
+        val trackIdentity: String = "",
+        val sourceFingerprint: String = "",
+        val savedAtEpochMs: Long = 0L,
         val duration: Double = 0.0,
         val bpm: Double = 0.0,
         val beatInterval: Double = 0.0,
@@ -175,6 +268,7 @@ class AnalysisStore(private val context: Context) {
         val introEndTime: Double = 0.0,
         val outroStartTime: Double = 0.0,
         val contentEndTime: Double = 0.0,
+        val finalFadeOnsetTime: Double? = null,
         val mixInTime: Double = 0.0,
         val mixOutTime: Double = 0.0,
         val mixInCandidates: List<StoredCue> = emptyList(),
@@ -201,6 +295,7 @@ class AnalysisStore(private val context: Context) {
             introEndTime = introEndTime,
             outroStartTime = outroStartTime,
             contentEndTime = contentEndTime,
+            finalFadeOnsetTime = finalFadeOnsetTime,
             mixInTime = mixInTime,
             mixOutTime = mixOutTime,
             mixInCandidates = mixInCandidates.map { it.toCue() },
@@ -212,7 +307,10 @@ class AnalysisStore(private val context: Context) {
         )
 
         companion object {
-            fun of(analysis: TrackAnalysis) = Stored(
+            fun of(trackIdentity: String, sourceFingerprint: String, analysis: TrackAnalysis, savedAtEpochMs: Long) = Stored(
+                trackIdentity = trackIdentity,
+                sourceFingerprint = sourceFingerprint,
+                savedAtEpochMs = savedAtEpochMs,
                 duration = analysis.duration,
                 bpm = analysis.bpm,
                 beatInterval = analysis.beatInterval,
@@ -227,6 +325,7 @@ class AnalysisStore(private val context: Context) {
                 introEndTime = analysis.introEndTime,
                 outroStartTime = analysis.outroStartTime,
                 contentEndTime = analysis.contentEndTime,
+                finalFadeOnsetTime = analysis.finalFadeOnsetTime,
                 mixInTime = analysis.mixInTime,
                 mixOutTime = analysis.mixOutTime,
                 mixInCandidates = analysis.mixInCandidates.map(StoredCue::of),
@@ -267,10 +366,9 @@ class AnalysisStore(private val context: Context) {
          * re-analysis costs seconds, and a beat grid interpreted under the wrong
          * assumptions is silently wrong for the life of the file.
          */
-        const val SCHEMA_VERSION = 1
-
-        /** A few thousand tracks' worth, at tens of kilobytes each. */
-        const val MAX_ENTRIES = 2_000
+        const val SCHEMA_VERSION = AnalysisCachePolicy.SCHEMA_VERSION
+        const val PRUNE_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
+        const val MAX_KNOWN_MISSES = AnalysisCachePolicy.MAX_ENTRIES
 
         /** Milliseconds is finer than anything downstream distinguishes. */
         fun round(value: Double): Double =

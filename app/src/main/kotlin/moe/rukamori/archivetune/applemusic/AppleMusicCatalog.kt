@@ -14,6 +14,8 @@
 
 package moe.rukamori.archivetune.applemusic
 
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -62,7 +64,11 @@ object AppleMusicCatalog {
                 val responses =
                     entities
                         .map { entity ->
-                            async { runCatching { request(trimmed, entity, limit, offset) }.getOrNull() }
+                            async {
+                                runCatching { request(trimmed, entity, limit, offset) }
+                                    .onFailure { it.rethrowIfAudioSourceCancelled() }
+                                    .getOrNull()
+                            }
                         }.awaitAll()
 
                 val tracks = responses.getOrNull(0)?.toTracks().orEmpty()
@@ -84,6 +90,7 @@ object AppleMusicCatalog {
             val trimmed = query.trim()
             if (trimmed.isEmpty()) return@withContext emptyList()
             runCatching { request(trimmed, "song", limit, 0) }
+                .onFailure { it.rethrowIfAudioSourceCancelled() }
                 .getOrNull()
                 ?.toTracks()
                 .orEmpty()
@@ -111,7 +118,7 @@ object AppleMusicCatalog {
                 .header("Accept", "application/json")
                 .build()
 
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) error("Apple Music catalog search failed: HTTP ${response.code}")
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) error("Apple Music catalog search returned an empty body")

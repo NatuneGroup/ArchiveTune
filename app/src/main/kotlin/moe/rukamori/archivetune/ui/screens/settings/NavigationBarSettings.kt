@@ -61,6 +61,7 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
+import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT
@@ -79,6 +80,7 @@ import moe.rukamori.archivetune.constants.NavigationBarLabelSpacingKey
 import moe.rukamori.archivetune.constants.NavigationBarOpacityKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
+import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.ui.component.DefaultDialog
@@ -87,6 +89,7 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -101,6 +104,9 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
             NavigationBarStyleKey,
             defaultValue = NavigationBarStyle.DEFAULT,
         )
+    val (compactBottomPills, onCompactBottomPillsChange) =
+        rememberPreference(CompactBottomPillsKey, defaultValue = false)
+    val appleMusicExperience = rememberAppleMusicExperience()
     val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
         rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
     val (navigationBarTintFrostedBlur, onNavigationBarTintFrostedBlurChange) =
@@ -217,6 +223,24 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                             },
                         )
                     }
+                }
+
+                item {
+                    EnumListPreference(
+                        modifier = positions.modifierFor("compact_bottom_pills"),
+                        title = { Text(stringResource(R.string.navigation_bar_layout)) },
+                        description = stringResource(R.string.navigation_bar_layout_desc),
+                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
+                        selectedValue = if (compactBottomPills) CompactLayoutChoice.COMPACT else CompactLayoutChoice.DEFAULT,
+                        onValueSelected = { onCompactBottomPillsChange(it == CompactLayoutChoice.COMPACT) },
+                        valueText = {
+                            when (it) {
+                                CompactLayoutChoice.DEFAULT -> stringResource(R.string.default_style)
+                                CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
+                            }
+                        },
+                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
+                    )
                 }
 
                 item {

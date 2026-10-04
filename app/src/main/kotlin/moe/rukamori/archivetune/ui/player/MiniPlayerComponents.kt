@@ -295,13 +295,14 @@ fun SwipeableMiniPlayerBox(
 fun RowScope.MiniPlayerInfo(
     mediaMetadata: MediaMetadata,
     colors: MiniPlayerContentColors,
+    compact: Boolean = false,
 ) {
     PlayerTextBackdrop(
         textColor = colors.title,
         modifier =
             Modifier
                 .weight(1f)
-                .padding(horizontal = 10.dp),
+                .padding(horizontal = if (compact) 6.dp else 10.dp),
     ) {
         Column(
             modifier = Modifier.fillMaxWidth(),
@@ -325,7 +326,7 @@ fun RowScope.MiniPlayerInfo(
                 ) {
                     Text(
                         text = title,
-                        style = MaterialTheme.typography.titleMediumEmphasized,
+                        style = if (compact) MaterialTheme.typography.titleSmall else MaterialTheme.typography.titleMediumEmphasized,
                         color = colors.title,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -373,11 +374,12 @@ private fun MiniPlayerArtwork(
     progress: () -> Float,
     isLoading: Boolean,
     colors: MiniPlayerContentColors,
+    compact: Boolean,
     modifier: Modifier = Modifier,
 ) {
     Box(
         contentAlignment = Alignment.Center,
-        modifier = modifier.size(52.dp),
+        modifier = modifier.size(if (compact) 44.dp else 52.dp),
     ) {
         if (isLoading) {
             CircularWavyProgressIndicator(
@@ -398,7 +400,7 @@ private fun MiniPlayerArtwork(
             contentAlignment = Alignment.Center,
             modifier =
                 Modifier
-                    .size(42.dp)
+                    .size(if (compact) 34.dp else 42.dp)
                     .clip(CircleShape)
                     .background(colors.artworkContainer)
                     .border(
@@ -441,6 +443,7 @@ private fun MiniPlayerTransportButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     isPrimary: Boolean = false,
+    compact: Boolean,
     colors: MiniPlayerContentColors,
 ) {
     val view = LocalView.current
@@ -468,21 +471,29 @@ private fun MiniPlayerTransportButton(
             }
         }
     val content: @Composable () -> Unit =
-        remember(iconResId, contentDescription, isPrimary) {
+        remember(iconResId, contentDescription, isPrimary, compact) {
             @Composable {
+                val iconSize =
+                    when {
+                        isPrimary && compact -> 20.dp
+                        isPrimary -> 24.dp
+                        compact -> 17.dp
+                        else -> 20.dp
+                    }
                 Icon(
                     painter = painterResource(iconResId),
                     contentDescription = contentDescription,
-                    modifier = Modifier.size(if (isPrimary) 24.dp else 20.dp),
+                    modifier = Modifier.size(iconSize),
                 )
             }
         }
 
+    val buttonSize = if (compact) 40.dp else 48.dp
     if (isPrimary) {
         FilledIconButton(
             onClick = handleClick,
             shapes = IconButtonDefaults.shapes(),
-            modifier = modifier.size(48.dp),
+            modifier = modifier.size(buttonSize),
             enabled = enabled,
             colors = buttonColors,
             content = content,
@@ -491,7 +502,7 @@ private fun MiniPlayerTransportButton(
         IconButton(
             onClick = handleClick,
             shapes = IconButtonDefaults.shapes(),
-            modifier = modifier.size(48.dp),
+            modifier = modifier.size(buttonSize),
             enabled = enabled,
             colors = buttonColors,
             content = content,
@@ -507,6 +518,7 @@ private fun MiniPlayerTransportControls(
     canSkipNext: Boolean,
     playerConnection: PlayerConnection,
     colors: MiniPlayerContentColors,
+    compact: Boolean,
 ) {
     val onPrevious = remember(playerConnection) { { playerConnection.seekToPrevious() } }
     val onNext = remember(playerConnection) { { playerConnection.seekToNext() } }
@@ -523,7 +535,7 @@ private fun MiniPlayerTransportControls(
         }
 
     Row(
-        horizontalArrangement = Arrangement.spacedBy(MiniPlayerTransportButtonSpacing),
+        horizontalArrangement = Arrangement.spacedBy(if (compact) 1.dp else MiniPlayerTransportButtonSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         MiniPlayerTransportButton(
@@ -531,6 +543,7 @@ private fun MiniPlayerTransportControls(
             contentDescription = stringResource(R.string.widget_previous),
             onClick = onPrevious,
             enabled = canSkipPrevious,
+            compact = compact,
             colors = colors,
         )
 
@@ -547,6 +560,7 @@ private fun MiniPlayerTransportControls(
                 ),
             onClick = onPlayPause,
             isPrimary = true,
+            compact = compact,
             colors = colors,
         )
 
@@ -555,6 +569,7 @@ private fun MiniPlayerTransportControls(
             contentDescription = stringResource(R.string.next),
             onClick = onNext,
             enabled = canSkipNext,
+            compact = compact,
             colors = colors,
         )
     }
@@ -566,6 +581,7 @@ fun NewMiniPlayerContent(
     duration: Long,
     playerConnection: PlayerConnection,
     colors: MiniPlayerContentColors,
+    compact: Boolean = false,
 ) {
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
@@ -584,19 +600,26 @@ fun NewMiniPlayerContent(
         modifier =
             Modifier
                 .fillMaxSize()
-                .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                .padding(
+                    start = if (compact) 6.dp else 8.dp,
+                    end = if (compact) 2.dp else 4.dp,
+                    top = if (compact) 10.dp else 8.dp,
+                    bottom = if (compact) 10.dp else 8.dp,
+                ),
     ) {
         MiniPlayerArtwork(
             mediaMetadata = mediaMetadata,
             progress = progressProvider,
             isLoading = isLoading,
             colors = colors,
+            compact = compact,
         )
 
         mediaMetadata?.let {
             MiniPlayerInfo(
                 mediaMetadata = it,
                 colors = colors,
+                compact = compact,
             )
         } ?: Spacer(Modifier.weight(1f))
 
@@ -607,6 +630,7 @@ fun NewMiniPlayerContent(
             canSkipNext = canSkipNext,
             playerConnection = playerConnection,
             colors = colors,
+            compact = compact,
         )
     }
 }

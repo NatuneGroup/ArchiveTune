@@ -47,6 +47,7 @@ import moe.rukamori.archivetune.constants.NavigationBarStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
+import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -117,11 +118,12 @@ class PillStyle(
     val raisedContainerColor: Color,
     val contentColor: Color,
     val tintedContent: Color,
+    val compact: Boolean,
     borderColor: Color?,
 ) {
     val horizontalInset: Dp get() = navigationStyle.pillHorizontalInset
     val bottomInset: Dp get() = navigationStyle.pillBottomInset
-    val maxWidth: Dp get() = navigationStyle.pillMaxWidth
+    val maxWidth: Dp get() = navigationStyle.pillMaxWidth * (if (compact) 0.9f else 1f)
     val isDocked: Boolean get() = navigationStyle == NavigationBarStyle.DEFAULT
     val tonalElevation: Dp get() = NavigationBarDefaults.Elevation
     val shadowElevation: Dp
@@ -141,17 +143,19 @@ class PillStyle(
         }
         if (!isDocked) return RoundedCornerShape(cornerRadius)
         val docking = proximity.coerceIn(0f, 1f)
-        val standalone = FloatingBarStandaloneCornerRadius
+        val standalone = if (compact) 24.dp else FloatingBarStandaloneCornerRadius
+        val outerRadius = if (compact) 20.dp else FloatingBarOuterCornerRadius
+        val junctionRadius = if (compact) 10.dp else FloatingBarJunctionCornerRadius
         return when (role) {
             PillRole.NAVIGATION_BAR -> {
-                val top = lerp(standalone, FloatingBarJunctionCornerRadius, docking)
-                val bottom = lerp(standalone, FloatingBarOuterCornerRadius, docking)
+                val top = lerp(standalone, junctionRadius, docking)
+                val bottom = lerp(standalone, outerRadius, docking)
                 RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
             }
 
             PillRole.MINI_PLAYER -> {
-                val top = lerp(standalone, FloatingBarOuterCornerRadius, docking)
-                val bottom = lerp(standalone, FloatingBarJunctionCornerRadius, docking)
+                val top = lerp(standalone, outerRadius, docking)
+                val bottom = lerp(standalone, junctionRadius, docking)
                 RoundedCornerShape(topStart = top, topEnd = top, bottomStart = bottom, bottomEnd = bottom)
             }
 
@@ -195,6 +199,8 @@ fun rememberPillStyle(
     liquidGlassBackdropAvailable: Boolean,
 ): PillStyle {
     val colors = MaterialTheme.colorScheme
+    val (compactBottomPills) = rememberPreference(CompactBottomPillsKey, defaultValue = false)
+    val useCompactPills = compactBottomPills && style != NavigationBarStyle.APPLE_MUSIC
     val (widthPreference) = rememberPreference(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
     val (opacity) = rememberPreference(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
     val (transparency) =
@@ -220,6 +226,7 @@ fun rememberPillStyle(
         opacity,
         transparency,
         cornerRadiusPreference,
+        useCompactPills,
         surfaceContainer,
         surfaceContainerHigh,
         outlineVariant,
@@ -262,7 +269,9 @@ fun rememberPillStyle(
                 },
             tinted = tintFrostedBlur,
             cornerRadius =
-                if (style == NavigationBarStyle.DEFAULT) {
+                if (useCompactPills) {
+                    20.dp
+                } else if (style == NavigationBarStyle.DEFAULT) {
                     FloatingBarStandaloneCornerRadius
                 } else {
                     cornerRadiusPreference.dp
@@ -274,8 +283,8 @@ fun rememberPillStyle(
                     // untouched slider keeps the wide look; a width the user picked is honoured.
                     NavigationBarStyle.APPLE_MUSIC ->
                         if (widthPreference == NAVIGATION_BAR_WIDTH_DEFAULT) 0.94f else widthPreference.coerceIn(0.6f, 1f)
-                    NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f)
-                    NavigationBarStyle.DEFAULT -> 1f
+                    NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
+                    NavigationBarStyle.DEFAULT -> if (useCompactPills) 0.88f else 1f
                 },
             containerColor = containerColor,
             raisedContainerColor =
@@ -287,6 +296,7 @@ fun rememberPillStyle(
                     else -> onSurface
                 },
             tintedContent = tintedContent,
+            compact = useCompactPills,
             borderColor = if (isAppleMusic) outlineVariant else null,
         )
     }

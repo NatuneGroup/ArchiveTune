@@ -52,7 +52,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -105,7 +107,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -2020,11 +2021,13 @@ private fun SingleActiveLineCluster(
     onLineClick: (ISyncedLine) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(line.start) { scrollState.scrollTo(0) }
     Column(
         modifier =
-            modifier.clickable(enabled = line.start > 0) {
-                onLineClick(line)
-            },
+            modifier
+                .verticalScroll(scrollState)
+                .clickable(enabled = line.start > 0) { onLineClick(line) },
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         when (line) {
@@ -2037,8 +2040,6 @@ private fun SingleActiveLineCluster(
                             text = accompanimentText,
                             style = accompanimentTextStyle,
                             color = textColor.copy(alpha = 0.45f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -2053,8 +2054,6 @@ private fun SingleActiveLineCluster(
                         text = phonetic,
                         style = phoneticTextStyle,
                         color = textColor.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 

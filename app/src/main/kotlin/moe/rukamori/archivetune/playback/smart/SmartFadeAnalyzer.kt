@@ -202,7 +202,8 @@ class SmartFadeAnalyzer(
                     // A usable stored analysis short-circuits the whole pipeline:
                     // without this head-check the first request of a session would
                     // re-earn from audio a result that was already on disk.
-                    val stored = store.load(trackId)
+                    val sourceFingerprint = store.sourceFingerprint(trackId, uri)
+                    val stored = store.load(trackId, sourceFingerprint, durationSeconds)
                     if (stored != null && stored.isUsable) {
                         recordResult(trackId, stored)
                         Log.d(TAG, "Restored analysis for $trackId: bpm=${stored.bpm} conf=${stored.beatConfidence}")
@@ -217,7 +218,7 @@ class SmartFadeAnalyzer(
                             Process.THREAD_PRIORITY_DEFAULT
                         },
                     )
-                    val analysis = analyze(trackId, uri, durationSeconds)
+                    val analysis = analyze(trackId, uri, durationSeconds, sourceFingerprint)
                     if (analysis === Deferred) {
                         // Low heap headroom: retried on a later tick with no
                         // strike recorded. Counting these toward the write-off
@@ -242,9 +243,11 @@ class SmartFadeAnalyzer(
                         recordResult(trackId, result)
                         shortDecodes.remove(trackId)
                         if (result.isUsable) {
-                            store.save(trackId, result)
+                            store.save(trackId, sourceFingerprint, result)
                         }
                     }
+                } catch (t: java.util.concurrent.CancellationException) {
+                    if (!released) Log.d(TAG, "Automix analysis cancelled")
                 } catch (t: Throwable) {
                     Log.w(TAG, "Analysis of $trackId failed", t)
                     recordResult(trackId, empty(trackId, durationSeconds))
@@ -298,6 +301,7 @@ class SmartFadeAnalyzer(
         trackId: String,
         uri: Uri,
         durationSeconds: Double,
+        sourceFingerprint: String,
     ): Any? {
         val local = LocalAudioSource.isLocal(uri)
 
@@ -363,10 +367,11 @@ class SmartFadeAnalyzer(
                 beatInterval = features.beatInterval,
                 beatConfidence = features.beatConfidence,
                 downbeats = features.downbeats,
+                finalFadeOnsetTime = features.finalFadeOnsetTime,
             )
             if (early.isUsable) {
                 recordResult(trackId, early)
-                store.save(trackId, early)
+                store.save(trackId, sourceFingerprint, early)
                 Log.d(TAG, "Early analysis for $trackId: bpm=${features.bpm} (models still refining)")
             }
         }
@@ -405,6 +410,7 @@ class SmartFadeAnalyzer(
             trackId = trackId,
             duration = effectiveDuration,
             contentEndTime = features.contentEndTime.takeIf { it > 0 } ?: effectiveDuration,
+            finalFadeOnsetTime = features.finalFadeOnsetTime,
             bpm = leading?.bpm ?: features.bpm,
             beatInterval = leading?.beatInterval ?: features.beatInterval,
             beatConfidence = leading?.beatConfidence ?: features.beatConfidence,
@@ -487,7 +493,13 @@ class SmartFadeAnalyzer(
         // Samples arrive already folded to the analyzer's rate, so the native
         // whole-track resample pass (and the full-rate native copy it made)
         // is gone entirely.
-        return Structural(TrackFeatures.analyze(pcm.samples, effectiveDuration))
+        return Structural(
+            TrackFeatures.analyze(
+                pcm.samples,
+                effectiveDuration,
+                SmartFadeSettings.performanceMode.value,
+            ),
+        )
     }
 
     /** Everything a decoded region contributes, once its audio is let go of. */

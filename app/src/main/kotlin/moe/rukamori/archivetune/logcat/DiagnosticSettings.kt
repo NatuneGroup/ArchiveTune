@@ -16,6 +16,7 @@ internal val diagnosticPreferenceNames = listOf(
     "crossfadeEnabled", "crossfadeDuration", "crossfadeGapless", "automixEnabled", "automixPerformanceMode",
     "skipSilence", "audioNormalization", "wakelock", "playerDesignStyle", "lyricsAnimationStyle",
     "apple_music_experience", "liquidGlassEnabled", "homeSource", "navigationBarStyle", "miniPlayerBackgroundStyle",
+    "rejectSuspectedUpscaledAudio",
 )
 
 internal fun diagnosticPreferences(values: Map<String, Any>): String =

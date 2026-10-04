@@ -135,6 +135,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
+import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.utils.highRes
 import androidx.compose.foundation.layout.heightIn
 import androidx.navigation.NavController
@@ -1179,7 +1180,7 @@ private fun SpatialFlowArtworkPager(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         onError = { isError = true },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
                     )
                 } else {
                     Box(

@@ -183,53 +183,6 @@ object BitChordIcons {
 
     val HeartFilled: ImageVector by lazy { heart("bc_heart_filled", filled = true) }
 
-    /**
-     * Speech bubble with a pair of quotation marks — the bottom row's way into
-     * the lyrics panel. Drawn at the family's stroke weight rather than at a
-     * lighter one, so it sits with the glyphs it shares that row with.
-     */
-    val LyricsQuote: ImageVector by lazy {
-        ImageVector.Builder(
-            name = "bc_lyrics_quote",
-            defaultWidth = 24.dp, defaultHeight = 24.dp,
-            viewportWidth = 24f, viewportHeight = 24f,
-        ).apply {
-            path(
-                stroke = stroke,
-                strokeLineWidth = STROKE,
-                strokeLineCap = StrokeCap.Round,
-                strokeLineJoin = StrokeJoin.Round,
-            ) {
-                moveTo(6f, 3.5f)
-                lineTo(18f, 3.5f)
-                quadTo(21f, 3.5f, 21f, 6.5f)
-                lineTo(21f, 15f)
-                quadTo(21f, 18f, 18f, 18f)
-                lineTo(10f, 18f)
-                lineTo(6f, 21f)
-                lineTo(6f, 18f)
-                quadTo(3f, 18f, 3f, 15f)
-                lineTo(3f, 6.5f)
-                quadTo(3f, 3.5f, 6f, 3.5f)
-                close()
-            }
-            // The marks themselves: heads solid, tails tapering to a point the
-            // way a comma does.
-            path(fill = stroke) {
-                for (x in listOf(7.6f, 12.8f)) {
-                    moveTo(x, 8f)
-                    lineTo(x + 3f, 8f)
-                    lineTo(x + 3f, 11.1f)
-                    quadTo(x + 3f, 13.2f, x + 0.5f, 13.7f)
-                    lineTo(x + 0.5f, 12.3f)
-                    quadTo(x + 1.7f, 12f, x + 1.7f, 11f)
-                    lineTo(x, 11f)
-                    close()
-                }
-            }
-        }.build()
-    }
-
     private fun heart(name: String, filled: Boolean): ImageVector =
         ImageVector.Builder(
             name = name,

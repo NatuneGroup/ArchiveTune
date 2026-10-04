@@ -94,8 +94,6 @@ import moe.rukamori.archivetune.ui.component.GridItem
 import moe.rukamori.archivetune.ui.component.ItemThumbnail
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.SpotifyTrackListItem
-import moe.rukamori.archivetune.ui.component.glassAwareCardBorder
-import moe.rukamori.archivetune.ui.component.glassAwareCardColor
 import moe.rukamori.archivetune.ui.component.pressScaleClickable
 import moe.rukamori.archivetune.utils.joinByBullet
 
@@ -199,7 +197,7 @@ fun SpotifyHomeScreen(
         }
     }
 
-    Box(
+    SpotifyHomeLayout(
         modifier = Modifier
             .fillMaxSize()
             .then(
@@ -555,7 +553,10 @@ private fun SpotifyHomeCard(
             )
             if (isResolving) SpotifySelectionIndicator()
         },
-        modifier = modifier.pressScaleClickable(onClick = onClick),
+        modifier = modifier
+            .spotifyHomeSurface(RoundedCornerShape(24.dp))
+            .pressScaleClickable(onClick = onClick)
+            .padding(8.dp),
     )
 }
 
@@ -739,18 +740,12 @@ private fun SpotifyQuickGridCell(
     isArtist: Boolean,
     isResolving: Boolean = false,
 ) {
-    // The plate these cells sit on is the page's one card surface: a translucent tint over the glass
-    // backdrop when Liquid Glass is on, the ordinary Material 3 card colour when it is off. It used
-    // to be a fixed white wash, which read as glass whether or not the app was in that look and left
-    // white-on-white text in a light theme.
     val cellShape = RoundedCornerShape(8.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(cellShape)
-            .background(glassAwareCardColor())
-            .glassAwareCardBorder(cellShape)
+            .spotifyHomeSurface(cellShape)
             .pressScaleClickable(onClick = onClick)
     ) {
         AsyncImage(

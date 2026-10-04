@@ -62,6 +62,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
 import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AudioQualityKey
+import moe.rukamori.archivetune.constants.RejectSuspectedUpscaledAudioKey
 import moe.rukamori.archivetune.constants.AudioOffload
 import moe.rukamori.archivetune.constants.AutoSkipNextOnErrorKey
 import moe.rukamori.archivetune.constants.AutoStartOnBluetoothKey
@@ -161,6 +162,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         )
     val (audioQuality, onAudioQualityChange) =
         rememberEnumPreference(AudioQualityKey, AudioQuality.AUTO)
+    val (rejectSuspectedUpscaledAudio, onRejectSuspectedUpscaledAudioChange) =
+        rememberPreference(RejectSuspectedUpscaledAudioKey, defaultValue = false)
     val (audioOffload, onAudioOffloadChange) =
         rememberPreference(
             AudioOffload,
@@ -629,6 +632,16 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             },
                         )
                     }
+                }
+
+                item {
+                    SwitchPreference(
+                        title = { Text(stringResource(R.string.audio_authenticity_skip_upscaled_title)) },
+                        description = stringResource(R.string.audio_authenticity_skip_upscaled_description),
+                        icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                        checked = rejectSuspectedUpscaledAudio,
+                        onCheckedChange = onRejectSuspectedUpscaledAudioChange,
+                    )
                 }
 
                 item {

@@ -22,7 +22,6 @@ class CachedReadWindowTest {
                 position = seekPosition,
                 requestedLength = -1L,
                 knownContentLength = contentLength,
-                cachedLengthFromPosition = { error("known content length must be used") },
             )
 
         assertEquals(seekPosition, window?.position)
@@ -36,7 +35,6 @@ class CachedReadWindowTest {
                 position = 0L,
                 requestedLength = -1L,
                 knownContentLength = 4_096L,
-                cachedLengthFromPosition = { 0L },
             )
 
         assertEquals(CachedReadWindow(position = 0L, length = 4_096L), window)
@@ -49,45 +47,52 @@ class CachedReadWindowTest {
                 position = 1_000L,
                 requestedLength = 256L,
                 knownContentLength = 4_096L,
-                cachedLengthFromPosition = { 0L },
             )
 
         assertEquals(CachedReadWindow(position = 1_000L, length = 256L), window)
     }
 
     @Test
-    fun unknownContentLengthFallsBackToCachedBytesFromPosition() {
-        val window =
-            resolveCachedReadWindow(
-                position = 512L,
-                requestedLength = -1L,
-                knownContentLength = null,
-                cachedLengthFromPosition = { 3_000L },
-            )
-
-        assertEquals(CachedReadWindow(position = 512L, length = 3_000L), window)
-    }
-
-    @Test
-    fun noWindowWhenNothingIsCachedAndLengthIsUnknown() {
+    fun zeroLengthRequestDoesNotExpandToTheKnownContentLength() {
         assertNull(
             resolveCachedReadWindow(
                 position = 0L,
-                requestedLength = -1L,
-                knownContentLength = null,
-                cachedLengthFromPosition = { 0L },
+                requestedLength = 0L,
+                knownContentLength = 4_096L,
             ),
         )
     }
 
     @Test
-    fun positionAtOrPastKnownEndFallsThroughToCachedBytes() {
+    fun unboundedSeekWithoutRecordedLengthHasNoWindow() {
+        val window =
+            resolveCachedReadWindow(
+                position = 512L,
+                requestedLength = -1L,
+                knownContentLength = null,
+            )
+
+        assertNull(window)
+    }
+
+    @Test
+    fun unboundedReadWithoutRecordedLengthHasNoWindow() {
+        assertNull(
+            resolveCachedReadWindow(
+                position = 0L,
+                requestedLength = -1L,
+                knownContentLength = null,
+            ),
+        )
+    }
+
+    @Test
+    fun positionAtOrPastKnownEndReturnsNoWindow() {
         assertNull(
             resolveCachedReadWindow(
                 position = 4_096L,
                 requestedLength = -1L,
                 knownContentLength = 4_096L,
-                cachedLengthFromPosition = { 0L },
             ),
         )
     }

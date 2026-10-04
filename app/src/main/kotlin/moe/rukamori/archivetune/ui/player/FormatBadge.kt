@@ -143,7 +143,7 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
             painter = painterResource(R.drawable.ic_lossless_wave),
             contentDescription = null,
             tint = Color.White.copy(alpha = if (animated) 0.7f else 0.45f),
-            modifier = Modifier.size(13.dp),
+            modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(4.dp))
         if (animated) {

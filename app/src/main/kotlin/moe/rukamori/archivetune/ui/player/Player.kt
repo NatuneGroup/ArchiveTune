@@ -3168,7 +3168,6 @@ private fun LittlePlayerContent(
         val verticalPadding = (10f * scale).dp
 
         val displayPositionMs = sliderPosition ?: positionMs
-        val seekSkip = rememberSeekSkip()
 
         val timeText =
             remember(displayPositionMs, durationMs) {
@@ -3299,24 +3298,6 @@ private fun LittlePlayerContent(
                 )
 
                 Spacer(Modifier.weight(1f))
-
-                if (seekSkip != null) {
-                    SeekSkipButton(
-                        seekSkip = seekSkip,
-                        forward = false,
-                        tint = textColor.copy(alpha = 0.78f),
-                        buttonSize = iconSize + 8.dp,
-                        iconSize = iconSize,
-                    )
-                    SeekSkipButton(
-                        seekSkip = seekSkip,
-                        forward = true,
-                        tint = textColor.copy(alpha = 0.78f),
-                        buttonSize = iconSize + 8.dp,
-                        iconSize = iconSize,
-                    )
-                    Spacer(Modifier.width((10f * scale).dp))
-                }
 
                 Icon(
                     painter = painterResource(if (liked) R.drawable.favorite else R.drawable.favorite_border),

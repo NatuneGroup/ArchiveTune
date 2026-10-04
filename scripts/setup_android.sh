@@ -31,10 +31,14 @@ fi
 
 if [[ "${1:-}" == '--emulator' ]]; then
     "$sdkmanager" 'emulator' 'system-images;android-35;google_atd;x86_64'
-    if ! python3 -c 'import ctypes; ctypes.CDLL("libxkbfile.so.1")' 2>/dev/null; then
+    if ! python3 -c 'import ctypes; ctypes.CDLL("libxkbfile.so.1"); ctypes.CDLL("libtcmalloc_minimal.so.4")' 2>/dev/null; then
         sudo -n true
         sudo apt-get update -qq
-        sudo apt-get install -y -qq libxkbfile1
+        tcmalloc_package='libtcmalloc-minimal4'
+        if apt-cache show libtcmalloc-minimal4t64 > /dev/null 2>&1; then
+            tcmalloc_package='libtcmalloc-minimal4t64'
+        fi
+        sudo apt-get install -y -qq libxkbfile1 "$tcmalloc_package"
     fi
     export ANDROID_AVD_HOME="$PWD/.hoplite/android-avd"
     export ANDROID_USER_HOME="$PWD/.hoplite/android-user"

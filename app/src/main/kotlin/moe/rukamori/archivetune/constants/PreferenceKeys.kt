@@ -145,6 +145,12 @@ val BackdropEnabledKey = booleanPreferencesKey("backdropEnabled")
 val BackdropBlurAmountKey = intPreferencesKey("backdropBlurAmount")
 val MiniPlayerLastAnchorKey = intPreferencesKey("miniPlayerLastAnchor")
 val MiniPlayerBackgroundStyleKey = stringPreferencesKey("miniPlayerBackgroundStyle")
+val CompactMiniPlayerKey = booleanPreferencesKey("compactMiniPlayer")
+
+enum class CompactLayoutChoice {
+    DEFAULT,
+    COMPACT,
+}
 
 // Master toggle: when off, all Liquid Glass surfaces (header pills on detail
 // pages, the Liquid Glass mini player background, and the Liquid Glass nav bar
@@ -1278,6 +1284,7 @@ enum class NavigationBarStyle {
 }
 
 val NavigationBarStyleKey = stringPreferencesKey("navigationBarStyle")
+val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
 
 enum class InterfaceStyle {
     MATERIAL_EXPRESSIVE,

@@ -1024,6 +1024,7 @@ private fun MovingBlurBackground(
                             colorFilter = vibrancyColorFilter,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .playerSeekDoubleTap()
                                 .graphicsLayer {
                                     // Translation only: the pre-S bitmap is screen-shaped, so
                                     // rotating it would uncover the corners (the post-S path
@@ -1044,7 +1045,7 @@ private fun MovingBlurBackground(
                     // what lets it ignore the incoming constraints. The overflow is clipped by the
                     // clipToBounds on the BoxWithConstraints above.
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
                         contentAlignment = Alignment.Center,
                     ) {
                         AsyncImage(
@@ -1152,6 +1153,7 @@ private fun AppleMusicBackground(
                             modifier =
                                 Modifier
                                     .fillMaxSize()
+                                    .playerSeekDoubleTap()
                                     .alpha(0.62f),
                         )
                     }
@@ -1163,6 +1165,7 @@ private fun AppleMusicBackground(
                         modifier =
                             Modifier
                                 .fillMaxSize()
+                                .playerSeekDoubleTap()
                                 .blur(46.dp)
                                 .alpha(0.62f),
                     )
@@ -1412,7 +1415,6 @@ private fun AppleMusicControls(
     val safeDuration = if (hasDuration) duration else 1L
     val currentPosition = (sliderPosition ?: position).coerceIn(0L, safeDuration)
     val remainingPosition = (safeDuration - currentPosition).coerceAtLeast(0L)
-    val seekSkip = rememberSeekSkip()
 
     Column(
         modifier =
@@ -1450,14 +1452,8 @@ private fun AppleMusicControls(
                         style = MaterialTheme.typography.labelMedium,
                         color = foregroundColor.copy(alpha = 0.54f),
                     )
-                    if (seekSkip != null) {
-                        SeekSkipButton(seekSkip = seekSkip, forward = false, tint = foregroundColor.copy(alpha = 0.7f))
-                    }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (seekSkip != null) {
-                        SeekSkipButton(seekSkip = seekSkip, forward = true, tint = foregroundColor.copy(alpha = 0.7f))
-                    }
                     Text(
                         text = if (hasDuration) "-${makeTimeString(remainingPosition)}" else "",
                         style = MaterialTheme.typography.labelMedium,

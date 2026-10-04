@@ -558,7 +558,6 @@ fun V10PlayerContent(
                         )
                     }
 
-                    val seekSkip = rememberSeekSkip(playerConnection)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -570,10 +569,8 @@ fun V10PlayerContent(
                                 style = MaterialTheme.typography.labelMedium,
                                 color = accent.copy(alpha = 0.8f)
                             )
-                            SeekSkipButton(seekSkip = seekSkip, forward = false, tint = accent.copy(alpha = 0.8f))
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            SeekSkipButton(seekSkip = seekSkip, forward = true, tint = accent.copy(alpha = 0.8f))
                             Text(
                                 text = formatEditorialTime(duration.coerceAtLeast(0L)),
                                 style = MaterialTheme.typography.labelMedium,
@@ -742,7 +739,8 @@ private fun EditorialDieCutArt(
                     scaleY = artScale
                 }
                 .clip(dieCutShape)
-                .background(accent),
+                .background(accent)
+                .playerSeekDoubleTap(),
             contentAlignment = Alignment.Center
         ) {
             if (artworkUrl != null) {

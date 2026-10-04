@@ -15,6 +15,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -326,6 +327,7 @@ object SaavnService {
 
             results
         }.onFailure {
+            if (it is CancellationException) throw it
             Log.e(TAG, "searchSongs: failed for query=\"$query\"", it)
         }
 
@@ -400,6 +402,7 @@ object SaavnService {
 
                 selectBestUrl(saavnSong.downloadUrl, quality)
             }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         if (result.isSuccess) {
             return result.getOrNull()
         } else {

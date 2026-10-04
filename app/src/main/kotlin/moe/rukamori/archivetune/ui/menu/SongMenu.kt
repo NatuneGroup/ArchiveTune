@@ -118,7 +118,7 @@ import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.SongListItem
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
-import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
+import moe.rukamori.archivetune.ui.utils.TrackInfoAndSpecs
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.utils.SpeedDialPin
@@ -1406,7 +1406,7 @@ fun SongMenu(
                     }
 
                     ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.details)) },
+                        headlineContent = { Text(text = stringResource(R.string.track_info_menu_action)) },
                         leadingContent = {
                             Icon(
                                 painter = painterResource(R.drawable.info),
@@ -1417,7 +1417,14 @@ fun SongMenu(
                             Modifier.clickable {
                                 onDismiss()
                                 bottomSheetPageState.show {
-                                    ShowMediaInfo(song.id)
+                                    TrackInfoAndSpecs(
+                                        trackId = song.id,
+                                        title = song.title,
+                                        artists = song.artists.joinToString { it.name },
+                                        album = song.album?.title ?: song.song.albumName,
+                                        artwork = song.thumbnailUrl,
+                                        durationMs = song.song.duration.takeIf { it > 0 }?.times(1_000L),
+                                    )
                                 }
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

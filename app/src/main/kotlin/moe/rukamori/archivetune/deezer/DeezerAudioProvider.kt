@@ -14,6 +14,10 @@
 
 package moe.rukamori.archivetune.deezer
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TrackMatching
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -292,6 +296,14 @@ object DeezerAudioProvider {
     fun resolve(
         query: Query,
         format: String,
+    ): Resolved? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveWithinAttempt(query, format)
+        }
+
+    private fun resolveWithinAttempt(
+        query: Query,
+        format: String,
     ): Resolved? {
         val accounts = accounts()
         if (accounts.isEmpty() && !DeezerInstances.hasInstances()) {
@@ -316,22 +328,41 @@ object DeezerAudioProvider {
         // instead of the whole source going silent.
         val ordered = accounts.sortedByDescending { it.premium }
         for (account in ordered) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             val session =
                 runCatching { session(account) }
-                    .onFailure { Timber.tag(TAG).w(it, "session failed for pooled account") }
-                    .getOrNull() ?: continue
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "session failed for pooled account")
+                    }
+                    .getOrNull()
+            if (session == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
+                continue
+            }
 
             val match =
                 runCatching { matchTrack(session, query) }
-                    .onFailure { Timber.tag(TAG).w(it, "search failed") }
-                    .getOrNull() ?: continue
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "search failed")
+                    }
+                    .getOrNull()
+            if (match == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
+                continue
+            }
             val trackId = match.id
 
             val media =
                 runCatching { requestUrl(session, trackId, format) }
-                    .onFailure { Timber.tag(TAG).w(it, "get_url failed for track %s", trackId) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "get_url failed for track %s", trackId)
+                    }
                     .getOrNull()
             if (media == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
                 // The session may have gone stale mid-resolve; drop it so the next attempt re-auths.
                 sessions.remove(account.arl)
                 continue
@@ -369,12 +400,15 @@ object DeezerAudioProvider {
 
         // Accounts first (they report the exact tier), then the API-instance tier, which serves
         // already-decrypted audio from the instance's own accounts.
+        if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
         resolveViaInstance(query)?.let { stream ->
             streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
             return stream
         }
 
-        failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+            failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+        }
         return null
     }
 
@@ -504,7 +538,7 @@ object DeezerAudioProvider {
                 .header("Cookie", "arl=$arl")
                 .post(body)
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) throw java.io.IOException("gateway HTTP ${response.code}")
             return JSONObject(response.body?.string().orEmpty())
         }
@@ -593,7 +627,7 @@ object DeezerAudioProvider {
                 .url("https://api.deezer.com/track/isrc:${java.net.URLEncoder.encode(isrc, "UTF-8")}")
                 .header("Accept", "application/json")
                 .build()
-        client.newCall(req).execute().use { res ->
+        client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
             if (!res.isSuccessful) return null
             val obj = JSONObject(res.body?.string() ?: return null)
             // Not-found and rate-limit responses come back as { "error": { … } } with HTTP 200.
@@ -678,7 +712,7 @@ object DeezerAudioProvider {
                 .build()
 
         val json =
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) throw java.io.IOException("get_url HTTP ${response.code}")
                 JSONObject(response.body?.string().orEmpty())
             }
@@ -724,7 +758,7 @@ object DeezerAudioProvider {
                         .url("https://api.deezer.com/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}&limit=10")
                         .header("Accept", "application/json")
                         .build()
-                client.newCall(req).execute().use { res ->
+                client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
                     if (!res.isSuccessful) {
                         Timber.tag(TAG).w("search HTTP %d for '%s'", res.code, q)
                         return@use null
@@ -782,7 +816,7 @@ object DeezerAudioProvider {
                         .url("https://api.deezer.com/search?q=$encoded&limit=$limit")
                         .header("Accept", "application/json")
                         .build()
-                client.newCall(req).execute().use { res ->
+                client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
                     if (!res.isSuccessful) {
                         Timber.tag(TAG).w("searchCandidates HTTP %d for '%s'", res.code, trimmed)
                         return@use emptyList<Metadata>()

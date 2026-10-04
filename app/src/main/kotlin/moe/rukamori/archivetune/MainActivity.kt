@@ -2602,7 +2602,11 @@ class MainActivity : ComponentActivity() {
                                                     // Sits left of the avatar, and carries the
                                                     // logo of the page it switches TO.
                                                     if (isHomeRoute) {
-                                                        HomeSourceToggleButton()
+                                        HomeSourceToggleButton(
+                                            onOpenSpotifySettings = {
+                                                navController.navigate("settings/integration?scrollTo=spotify")
+                                            },
+                                        )
                                                     }
                                                     Box(
                                                         modifier = Modifier.padding(end = 4.dp),

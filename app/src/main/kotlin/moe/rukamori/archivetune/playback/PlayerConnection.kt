@@ -476,6 +476,19 @@ class PlayerConnection(
         player.playWhenReady = true
     }
 
+    fun seekBy(deltaMs: Long) {
+        if (deltaMs == 0L) return
+        val activePlayer = player
+        if (!activePlayer.isCurrentMediaItemSeekable) return
+        activePlayer.seekTo(
+            resolveSeekByTargetMs(
+                currentPositionMs = activePlayer.currentPosition,
+                deltaMs = deltaMs,
+                durationMs = activePlayer.duration,
+            ),
+        )
+    }
+
     override fun onPlaybackStateChanged(state: Int) {
         playbackState.value = state
         updatePlaybackError(player.playerError)

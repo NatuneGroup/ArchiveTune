@@ -8,7 +8,11 @@
 package moe.rukamori.archivetune.qobuz
 
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -196,7 +200,7 @@ object QobuzAudioProvider {
                     builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                 }
                 val request = builder.get().build()
-                healthClient.newCall(request).execute().use { response ->
+                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) {
                         // A rejected read and a healthy pool with nothing contributed both end up
                         // as zero instances here, so say which one happened — this is the whole
@@ -284,7 +288,7 @@ object QobuzAudioProvider {
                 .build()
         return runCatching {
             val start = System.currentTimeMillis()
-            healthClient.newCall(request).execute().use { response ->
+            healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (response.code in 200..499) System.currentTimeMillis() - start else null
             }
         }.getOrNull()
@@ -354,6 +358,14 @@ object QobuzAudioProvider {
     fun resolve(
         query: Query,
         formatId: Int,
+    ): DirectStream? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveWithinAttempt(query, formatId)
+        }
+
+    private fun resolveWithinAttempt(
+        query: Query,
+        formatId: Int,
     ): DirectStream? {
         val backends = orderedBackends()
         if (backends.isEmpty()) {
@@ -376,6 +388,7 @@ object QobuzAudioProvider {
 
         val available = backends.filterNot { isInstanceCoolingDown(it.id, now) }.ifEmpty { backends }
         for (backend in available) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             // When directTrackId is set (user clicked a specific Qobuz search
             // result), skip the title/artist search entirely and download the
             // exact track. This prevents the resolver from matching a different
@@ -390,15 +403,26 @@ object QobuzAudioProvider {
                 )
             } else {
                 runCatching { resolveTrackId(backend, query) }
-                    .onFailure { markInstanceFailed(backend.id, hardFailure = it is java.io.IOException) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                            markInstanceFailed(backend.id, hardFailure = it is java.io.IOException)
+                        }
+                    }
                     .getOrNull() ?: continue
             }
             val trackId = match.id
             val download =
                 runCatching { backend.download(trackId, formatId) }
-                    .onFailure { markInstanceFailed(backend.id, hardFailure = it is java.io.IOException) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                            markInstanceFailed(backend.id, hardFailure = it is java.io.IOException)
+                        }
+                    }
                     .getOrNull()
             if (download == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
                 markInstanceFailed(backend.id, hardFailure = false)
                 continue
             }
@@ -433,7 +457,9 @@ object QobuzAudioProvider {
             Timber.tag("Qobuz").i("resolved \"%s\" via %s [%s]", query.title, backend.label, stream.label)
             return stream
         }
-        failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+            failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        }
         return null
     }
 
@@ -703,7 +729,7 @@ object QobuzAudioProvider {
                 .header("Accept", "application/json")
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -742,7 +768,7 @@ object QobuzAudioProvider {
                 .header("Accept", "application/json")
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -776,7 +802,7 @@ object QobuzAudioProvider {
                 .addQueryParameter("limit", SEARCH_LIMIT.toString())
                 .addQueryParameter("app_id", token.appId)
                 .build()
-        client.newCall(directRequest(url.toString(), token)).execute().use { response ->
+        client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
                 token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
             }
@@ -798,7 +824,7 @@ object QobuzAudioProvider {
         trackId: String,
         formatId: Int,
     ): DownloadResult? {
-        client.newCall(directDownloadRequest(token, trackId, formatId)).execute().use { response ->
+        client.newCall(directDownloadRequest(token, trackId, formatId)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
                 token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
             }
@@ -906,7 +932,7 @@ object QobuzAudioProvider {
                 .addQueryParameter("app_id", token.appId)
                 .addQueryParameter("user_auth_token", token.token)
                 .build()
-        client.newCall(directRequest(url.toString(), token)).execute().use { response ->
+        client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -923,6 +949,7 @@ object QobuzAudioProvider {
     private fun hasValidAppSecret(token: QobuzToken): Boolean {
         client
             .newCall(directDownloadRequest(token, HEALTH_PROBE_TRACK_ID, HEALTH_PROBE_FORMAT_ID))
+            .withAudioSourceAttemptDeadline()
             .execute()
             .use { response ->
                 val body = response.body?.string().orEmpty().lowercase(Locale.US)

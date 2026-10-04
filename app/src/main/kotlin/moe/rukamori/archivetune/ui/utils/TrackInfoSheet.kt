@@ -41,10 +41,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.LocalDatabase
+import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.playback.DecodedPcmFormat
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.utils.credits.TrackCredit
 import moe.rukamori.archivetune.utils.credits.TrackCreditRole
@@ -69,6 +72,13 @@ fun TrackInfoAndSpecs(
     val database = LocalDatabase.current
     val format by database.format(trackId).collectAsStateWithLifecycle(initialValue = null)
     val lyrics by database.lyrics(trackId).collectAsStateWithLifecycle(initialValue = null)
+    val playerConnection = LocalPlayerConnection.current
+    val decodedPcmFlow =
+        remember(playerConnection) {
+            playerConnection?.decodedPcmFormat ?: flowOf<DecodedPcmFormat?>(null)
+        }
+    val decodedPcmFormat by decodedPcmFlow.collectAsStateWithLifecycle(initialValue = null)
+    val trackDecodedPcmFormat = decodedPcmForTrack(trackId, decodedPcmFormat)
     val mediaInfo = rememberMediaInfo(trackId)
     val (appleExperience) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
     var selectedTab by rememberSaveable(trackId) { mutableStateOf(TrackInfoTab.Overview) }
@@ -128,6 +138,7 @@ fun TrackInfoAndSpecs(
                 )
                 TrackInfoTab.AudioSpecs -> TrackInfoAudioSpecs(
                     format = format,
+                    decodedPcmFormat = trackDecodedPcmFormat,
                     appleExperience = appleExperience,
                 )
             }
@@ -261,6 +272,7 @@ private fun TrackInfoOverview(
 @Composable
 private fun TrackInfoAudioSpecs(
     format: FormatEntity?,
+    decodedPcmFormat: DecodedPcmFormat?,
     appleExperience: Boolean,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -317,6 +329,42 @@ private fun TrackInfoAudioSpecs(
                     }
                 }
             }
+        }
+        TrackInfoCard(appleExperience) {
+            Text(
+                stringResource(R.string.track_info_decoded_audio_observed),
+                style = MaterialTheme.typography.titleMedium,
+            )
+            Text(
+                text = stringResource(R.string.track_info_decoded_audio_note),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val unknownValue = stringResource(R.string.track_info_unknown)
+            val notMeasured = stringResource(R.string.track_info_not_measured)
+            val sampleRate =
+                decodedPcmFormat?.let { formatReportedSampleRate(it.sampleRateHz) }
+                    ?: if (decodedPcmFormat == null) notMeasured else unknownValue
+            val channelCount =
+                when {
+                    decodedPcmFormat == null -> notMeasured
+                    decodedPcmFormat.channelCount > 0 -> decodedPcmFormat.channelCount.toString()
+                    else -> unknownValue
+                }
+            val bitDepth = decodedPcmFormat?.bitsPerSample?.takeIf { it > 0 }
+            val sampleFormat =
+                when {
+                    decodedPcmFormat == null -> notMeasured
+                    bitDepth == null -> unknownValue
+                    decodedPcmFormat.isFloatingPoint ->
+                        stringResource(R.string.track_info_decoded_pcm_float_format, bitDepth)
+                    else -> stringResource(R.string.track_info_decoded_pcm_integer_format, bitDepth)
+                }
+            TrackInfoValueRow(stringResource(R.string.track_info_decoded_sample_rate), sampleRate)
+            HorizontalDivider()
+            TrackInfoValueRow(stringResource(R.string.track_info_decoded_channel_count), channelCount)
+            HorizontalDivider()
+            TrackInfoValueRow(stringResource(R.string.track_info_decoded_sample_format), sampleFormat)
         }
         TrackInfoCard(appleExperience) {
             Text(stringResource(R.string.track_info_actual_output), style = MaterialTheme.typography.titleMedium)

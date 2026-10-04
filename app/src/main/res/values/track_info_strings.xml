@@ -18,7 +18,7 @@
     <string name="track_info_credit_source_description">Video description</string>
     <string name="track_info_credit_source_lyrics">Lyric metadata</string>
     <string name="track_info_reported_stream">Format reported by source</string>
-    <string name="track_info_stream_note">These values describe source metadata, not a verified decoded signal.</string>
+    <string name="track_info_stream_note">These values describe source metadata, not a verified decoded signal. Bit depth and channel count are not exposed in stored format metadata.</string>
     <string name="track_info_codec">Codec</string>
     <string name="track_info_mime_type">MIME type</string>
     <string name="track_info_format_id">Format ID</string>
@@ -28,9 +28,17 @@
     <string name="track_info_reported_loudness">Reported track loudness</string>
     <string name="track_info_reported_perceptual_loudness">Reported perceptual loudness</string>
     <string name="track_info_no_reported_format">No audio-format metadata is available.</string>
-    <string name="track_info_actual_output">Actual playback output</string>
-    <string name="track_info_output_sample_format">Output sample format</string>
+    <string name="track_info_decoded_audio_observed">Decoded audio (observed)</string>
+    <string name="track_info_decoded_audio_note">PCM is observed at the sink-processor input when available. Offload or bit-perfect bypass may leave it unmeasured; this is not device, USB, or Bluetooth output.</string>
+    <string name="track_info_decoded_sample_rate">Sample rate</string>
+    <string name="track_info_decoded_channel_count">Channel count</string>
+    <string name="track_info_decoded_sample_format">Sample format</string>
+    <string name="track_info_decoded_pcm_integer_format">%1$d-bit PCM</string>
+    <string name="track_info_decoded_pcm_float_format">%1$d-bit float PCM</string>
+    <string name="track_info_unknown">Unknown</string>
+    <string name="track_info_actual_output">Device output</string>
+    <string name="track_info_output_sample_format">Device output sample format</string>
     <string name="track_info_not_measured">Not measured by this screen</string>
-    <string name="track_info_output_note">The app does not expose the signal rate or bit depth at the output here; source metadata cannot prove what reaches the device.</string>
+    <string name="track_info_output_note">Device, USB, and Bluetooth output are not measured here. Source metadata and decoded PCM at the processor input cannot establish the format reaching hardware.</string>
     <string name="track_info_more_video_details">YouTube video details and statistics</string>
 </resources>

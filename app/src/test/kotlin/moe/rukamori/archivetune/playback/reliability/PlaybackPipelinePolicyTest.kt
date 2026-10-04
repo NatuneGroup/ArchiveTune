@@ -34,12 +34,13 @@ class PlaybackPipelinePolicyTest {
     }
 
     @Test
-    fun `authenticity sample rate uses actual metadata or a quality tier for category selection`() {
-        assertEquals(48_000, resolveAudioAuthenticitySampleRateHz(48_000, "audio/flac", "flac", "Qobuz HI_RES"))
-        assertEquals(96_000, resolveAudioAuthenticitySampleRateHz(null, "audio/flac", "flac", "Qobuz HI_RES"))
-        assertEquals(96_000, resolveAudioAuthenticitySampleRateHz(null, "audio/flac", "flac", "Qobuz MAX"))
-        assertEquals(44_100, resolveAudioAuthenticitySampleRateHz(null, "audio/flac", "flac", "Qobuz FLAC"))
-        assertEquals(null, resolveAudioAuthenticitySampleRateHz(null, "audio/mp4", "mp4a.40.2", "AAC 320"))
+    fun `authenticity sample rate requires reported metadata and never invents a quality tier rate`() {
+        assertEquals(48_000, resolveAudioAuthenticitySampleRateHz(48_000))
+        assertEquals(96_000, resolveAudioAuthenticitySampleRateHz(96_000))
+        assertEquals(44_100, resolveAudioAuthenticitySampleRateHz(44_100))
+        assertEquals(null, resolveAudioAuthenticitySampleRateHz(null))
+        assertEquals(null, resolveAudioAuthenticitySampleRateHz(0))
+        assertEquals(null, resolveAudioAuthenticitySampleRateHz(-1))
     }
 
     @Test

@@ -174,15 +174,23 @@ class CrossfadePolicyTest {
         fun snapshot(
             generationMatches: Boolean,
             targetIndex: Int,
+            incomingItemMatchesTarget: Boolean = true,
             error: Boolean = false,
             idle: Boolean = false,
             ended: Boolean = false,
+            ready: Boolean = true,
+            playing: Boolean = true,
+            playbackRequested: Boolean = true,
         ) = CrossfadePolicy.PromotionSnapshot(
             generationMatches = generationMatches,
             targetIndex = targetIndex,
+            incomingItemMatchesTarget = incomingItemMatchesTarget,
             hasError = error,
             isIdle = idle,
             isEnded = ended,
+            isReady = ready,
+            isPlaying = playing,
+            playbackRequested = playbackRequested,
             unsetIndex = -1,
         )
 
@@ -195,6 +203,14 @@ class CrossfadePolicyTest {
         // incoming idle/ended (e.g. readiness timeout): refuse the destructive handoff
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, idle = true)))
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, ended = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, incomingItemMatchesTarget = false)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, ready = false)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, playing = false)))
+        assertTrue(
+            CrossfadePolicy.mayPromote(
+                snapshot(true, 3, playing = false, playbackRequested = false),
+            ),
+        )
         // target vanished from the queue (queue replacement): refuse
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, -1)))
     }

@@ -23,6 +23,15 @@ import kotlin.math.sin
  * [MusicService]; every deterministic rule lives here so it can be unit tested.
  */
 object CrossfadePolicy {
+    fun outgoingElapsedMs(
+        startPositionMs: Long,
+        currentPositionMs: Long,
+        durationMs: Long,
+    ): Long {
+        if (startPositionMs < 0L || currentPositionMs <= startPositionMs || durationMs <= 0L) return 0L
+        return minOf(currentPositionMs - startPositionMs, durationMs)
+    }
+
     /** Equal-power fade: constant perceived loudness across the overlap. */
     fun outgoingGain(progress: Float): Float {
         val clamped = progress.coerceIn(0f, 1f)

@@ -25,14 +25,13 @@ internal fun resolveCachedReadWindow(
     position: Long,
     requestedLength: Long,
     knownContentLength: Long?,
-    cachedLengthFromPosition: () -> Long,
 ): CachedReadWindow? {
     if (position < 0L) return null
     val length =
         when {
-            requestedLength > 0L -> requestedLength
+            requestedLength >= 0L -> requestedLength
             knownContentLength != null && knownContentLength > position -> knownContentLength - position
-            else -> cachedLengthFromPosition()
+            else -> return null
         }
     return length.takeIf { it > 0L }?.let { CachedReadWindow(position = position, length = length) }
 }

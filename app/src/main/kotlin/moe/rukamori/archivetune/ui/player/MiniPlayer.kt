@@ -61,6 +61,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
+import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
@@ -71,6 +72,7 @@ import moe.rukamori.archivetune.ui.component.PillFrostBlurRadiusPx
 import moe.rukamori.archivetune.ui.component.PillFrostOverlayAlpha
 import moe.rukamori.archivetune.ui.component.PillRole
 import moe.rukamori.archivetune.ui.component.liquidGlass
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberPillStyle
 import moe.rukamori.archivetune.ui.component.rememberPreSFrostedBitmap
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
@@ -115,6 +117,8 @@ private fun NewMiniPlayer(
         key = MiniPlayerBackgroundStyleKey,
         defaultValue = MiniPlayerBackgroundStyle.THEME,
     )
+    val compactMiniPlayerPreference by rememberPreference(CompactMiniPlayerKey, defaultValue = false)
+    val compactMiniPlayer = compactMiniPlayerPreference && !rememberAppleMusicExperience()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     // Keep the previous valid palette while the next artwork loads; replace only on success.
     var gradientColors by remember {
@@ -267,7 +271,7 @@ private fun NewMiniPlayer(
 
     SwipeableMiniPlayerBox(
         modifier = modifier,
-        contentMaxWidth = if (constrainToNavigationWidth || !pill.isDocked) pill.maxWidth else null,
+        contentMaxWidth = if (constrainToNavigationWidth || !pill.isDocked || pill.compact) pill.maxWidth else null,
         horizontalInset = pill.horizontalInset,
         swipeSensitivity = swipeSensitivity,
         swipeThumbnail = swipeThumbnail,
@@ -298,6 +302,7 @@ private fun NewMiniPlayer(
                 duration = duration,
                 playerConnection = playerConnection,
                 colors = contentColors,
+                compact = compactMiniPlayer,
             )
         }
     }

@@ -87,11 +87,13 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -109,6 +111,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.utils.resize
+import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 import moe.rukamori.archivetune.utils.rememberPreference
 
 /** The inactive gray the reference uses for everything unselected/secondary. */
@@ -161,10 +164,8 @@ internal fun TikTokSongPage(
     bottomSheetPageState: BottomSheetPageState,
 ) {
     val haptics = LocalHapticFeedback.current
-    // The page's one like action — shared by the rail's heart (a plain
-    // toggle) and the artwork's double-tap (like-only, TikTok's rule that
-    // a double-tap never unlikes). Same Room row + sync path the song
-    // menu uses; see rememberTikTokLikeAction in TikTokRail.kt.
+    val seekSkip = rememberSeekSkip(playerConnection)
+    val layoutDirection = LocalLayoutDirection.current
     val likeAction =
         rememberTikTokLikeAction(
             pageMetadata = pageMetadata,
@@ -269,14 +270,6 @@ internal fun TikTokSongPage(
                                                 blendMode = BlendMode.DstIn,
                                             )
                                         }.let { m ->
-                                            // Tap on the hero = play/pause, TikTok's
-                                            // tap-the-video gesture; a double-tap
-                                            // anywhere on it likes the song — the
-                                            // detector disambiguates the two the
-                                            // platform way (the single tap waits
-                                            // out the double-tap timeout first).
-                                            // Only the page that is actually
-                                            // playing responds.
                                             if (isCurrentPage) {
                                                 m.pointerInput(pageMetadata.id) {
                                                     detectTapGestures(
@@ -287,16 +280,36 @@ internal fun TikTokSongPage(
                                                             onTogglePlayPause()
                                                         },
                                                         onDoubleTap = { tap ->
-                                                            haptics.performHapticFeedback(
-                                                                HapticFeedbackType.LongPress,
-                                                            )
-                                                            likeAction(true)
-                                                            heartBursts +=
-                                                                TikTokHeartBurst(
-                                                                    id = nextHeartBurstId++,
-                                                                    x = tap.x.toDp(),
-                                                                    y = tap.y.toDp(),
+                                                            val edgeWidth = size.width * 0.3f
+                                                            val backward =
+                                                                if (layoutDirection == LayoutDirection.Ltr) {
+                                                                    tap.x < edgeWidth
+                                                                } else {
+                                                                    tap.x > size.width - edgeWidth
+                                                                }
+                                                            val forward =
+                                                                if (layoutDirection == LayoutDirection.Ltr) {
+                                                                    tap.x > size.width - edgeWidth
+                                                                } else {
+                                                                    tap.x < edgeWidth
+                                                                }
+                                                            if (backward || forward) {
+                                                                haptics.performHapticFeedback(
+                                                                    HapticFeedbackType.TextHandleMove,
                                                                 )
+                                                                seekSkip.skip(forward)
+                                                            } else {
+                                                                haptics.performHapticFeedback(
+                                                                    HapticFeedbackType.LongPress,
+                                                                )
+                                                                likeAction(true)
+                                                                heartBursts +=
+                                                                    TikTokHeartBurst(
+                                                                        id = nextHeartBurstId++,
+                                                                        x = tap.x.toDp(),
+                                                                        y = tap.y.toDp(),
+                                                                    )
+                                                            }
                                                         },
                                                     )
                                                 }

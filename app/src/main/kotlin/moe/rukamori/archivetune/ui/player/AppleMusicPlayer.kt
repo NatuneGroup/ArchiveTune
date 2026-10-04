@@ -952,17 +952,13 @@ fun AppleMusicPlayerContent(
                         // never auto-hides or tap-summons them over it (4nx3b does both), so
                         // tapping the artwork swaps the right half between lyrics and controls.
                         // The controls' lyrics button and Back keep working as before.
-                        val heroInteraction = remember { MutableInteractionSource() }
                         Box(
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .fillMaxWidth()
-                                    .clickable(
-                                        interactionSource = heroInteraction,
-                                        indication = null,
-                                        onClick = toggleLyrics,
-                                    ).padding(horizontal = AppleMusicContentPadding),
+                                    .playerSeekDoubleTap(onTap = toggleLyrics)
+                                    .padding(horizontal = AppleMusicContentPadding),
                             contentAlignment = Alignment.Center,
                         ) {
                             AppleMusicSharpArtwork(
@@ -1114,7 +1110,7 @@ fun AppleMusicPlayerContent(
                             // transitions, but hoisting it outside AnimatedContent
                             // breaks touch routing (see comment above the lyrics
                             // overlay for details).
-                            Box(modifier = Modifier.fillMaxSize()) {
+                            Box(modifier = Modifier.fillMaxSize().playerSeekDoubleTap()) {
                                 AppleMusicSharpArtwork(
                                     artworkRequest = artworkRequest,
                                     artworkUrl = artworkUrl,
@@ -1652,7 +1648,6 @@ private fun AppleMusicControlsColumn(
     val swipeUpThreshold = 120f
     val swipeActivationThreshold = 72f
     val (swipeUpToOpenQueue) = rememberPreference(SwipeUpToOpenQueueKey, defaultValue = true)
-    val seekSkip = rememberSeekSkip(playerConnection)
     val resetSwipeUp = remember {
         {
             if (swipeUpAccumulated != 0f) swipeUpAccumulated = 0f
@@ -1798,11 +1793,6 @@ private fun AppleMusicControlsColumn(
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.55f),
                 )
-                SeekSkipButton(
-                    seekSkip = seekSkip,
-                    forward = false,
-                    tint = Color.White.copy(alpha = 0.7f),
-                )
             }
             if (currentFormat != null) {
                 AppleMusicQualityChip(
@@ -1815,11 +1805,6 @@ private fun AppleMusicControlsColumn(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterEnd),
             ) {
-                SeekSkipButton(
-                    seekSkip = seekSkip,
-                    forward = true,
-                    tint = Color.White.copy(alpha = 0.7f),
-                )
                 Text(
                     text = "-" + makeTimeString((duration - (sliderPosition ?: currentPosition)).coerceAtLeast(0L)),
                     style = MaterialTheme.typography.labelMedium,

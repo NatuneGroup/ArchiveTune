@@ -124,6 +124,8 @@ import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
+import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
+import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerButtonsStyle
@@ -322,6 +324,8 @@ fun AppearanceSectionSettings(
             MiniPlayerBackgroundStyleKey,
             defaultValue = MiniPlayerBackgroundStyle.THEME,
         )
+    val (compactMiniPlayer, onCompactMiniPlayerChange) =
+        rememberPreference(CompactMiniPlayerKey, defaultValue = false)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
         rememberPreference(
             LiquidGlassEnabledKey,
@@ -1332,6 +1336,24 @@ fun AppearanceSectionSettings(
                             )
                         }
                     }
+                }
+
+                item {
+                    EnumListPreference(
+                        modifier = positions.modifierFor("compact_mini_player"),
+                        title = { Text(stringResource(R.string.mini_player_layout)) },
+                        description = stringResource(R.string.mini_player_layout_desc),
+                        icon = { Icon(painterResource(R.drawable.gradient), null) },
+                        selectedValue = if (compactMiniPlayer) CompactLayoutChoice.COMPACT else CompactLayoutChoice.DEFAULT,
+                        onValueSelected = { onCompactMiniPlayerChange(it == CompactLayoutChoice.COMPACT) },
+                        valueText = {
+                            when (it) {
+                                CompactLayoutChoice.DEFAULT -> stringResource(R.string.default_style)
+                                CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
+                            }
+                        },
+                        isEnabled = interfaceStyle != InterfaceStyle.APPLE_MUSIC,
+                    )
                 }
 
                 item {

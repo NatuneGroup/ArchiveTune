@@ -17,7 +17,9 @@ package moe.rukamori.archivetune.tidal
 import android.content.Context
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -120,8 +122,10 @@ object TidalInstanceHealthManager {
                     val records = mutableListOf<InstanceRecord>()
                     for ((index, url) in candidates.withIndex()) {
                         if (staggered && index > 0) delay(STAGGER_DELAY_MS)
+                        currentCoroutineContext().ensureActive()
                         val start = System.currentTimeMillis()
                         val status = TidalAudioProvider.verifyInstance(url, probeTrackId)
+                        currentCoroutineContext().ensureActive()
                         val latency = System.currentTimeMillis() - start
                         // Apply to the resolver's health map: always demote unreachable/preview-only;
                         // only promote to healthy when we actually verified a FULL stream.

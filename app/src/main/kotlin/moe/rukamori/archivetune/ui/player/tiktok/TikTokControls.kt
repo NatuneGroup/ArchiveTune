@@ -47,8 +47,6 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.C
-import moe.rukamori.archivetune.ui.player.SeekSkipButton
-import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 import moe.rukamori.archivetune.utils.makeTimeString
 
 /** Height of the progress row (time labels + bar). */
@@ -92,7 +90,6 @@ internal fun TikTokProgressRow(
     modifier: Modifier = Modifier,
 ) {
     val seekEnabled = durationMs > 0L && durationMs != C.TIME_UNSET
-    val seekSkip = rememberSeekSkip()
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -102,11 +99,6 @@ internal fun TikTokProgressRow(
                 .height(TIKTOK_PROGRESS_ROW_HEIGHT)
                 .padding(horizontal = 8.dp, vertical = 4.dp),
     ) {
-        if (seekSkip != null) {
-            SeekSkipButton(seekSkip = seekSkip, forward = false, tint = TIKTOK_INACTIVE_GRAY)
-        } else {
-            Spacer(Modifier.width(8.dp))
-        }
         Text(
             text = makeTimeString(positionMs),
             color = TIKTOK_INACTIVE_GRAY,
@@ -129,11 +121,6 @@ internal fun TikTokProgressRow(
             fontSize = 12.sp,
             maxLines = 1,
         )
-        if (seekSkip != null) {
-            SeekSkipButton(seekSkip = seekSkip, forward = true, tint = TIKTOK_INACTIVE_GRAY)
-        } else {
-            Spacer(Modifier.width(8.dp))
-        }
     }
 }
 

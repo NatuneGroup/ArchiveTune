@@ -104,7 +104,6 @@ import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.PlayerHorizontalPadding
-import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.SwipeThumbnailKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.extensions.metadata
@@ -152,6 +151,7 @@ fun Thumbnail(
         key = PlayerDesignStyleKey,
         defaultValue = PlayerDesignStyle.Default,
     )
+    val seekSkip = rememberSeekSkip(playerConnection)
     val (maxCanvasCacheSize, _) =
         rememberPreference(
             key = MaxCanvasCacheSizeKey,
@@ -382,9 +382,6 @@ fun Thumbnail(
                         contentType = { "thumbnailPage" },
                     ) { page ->
                         val item = page.mediaItem
-                        val incrementalSeekSkipEnabled by rememberPreference(SeekExtraSeconds, defaultValue = false)
-                        var skipMultiplier by remember { mutableStateOf(1) }
-                        var lastTapTime by remember { mutableLongStateOf(0L) }
                         val itemMetadata = remember(item) { item.metadata }
                         val storefront = remember { defaultStorefront() }
                         val shouldUseCanvas =
@@ -470,35 +467,20 @@ fun Thumbnail(
                                                         android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
                                                     )
                                                 }
-                                                val currentPosition = playerConnection.player.currentPosition
-                                                val duration = playerConnection.player.duration
-
-                                                val now = System.currentTimeMillis()
-                                                if (incrementalSeekSkipEnabled && now - lastTapTime < 1000) {
-                                                    skipMultiplier++
-                                                } else {
-                                                    skipMultiplier = 1
-                                                }
-                                                lastTapTime = now
-
-                                                val skipAmount = 5000 * skipMultiplier
-
-                                                if ((layoutDirection == LayoutDirection.Ltr && offset.x < size.width / 2) ||
-                                                    (layoutDirection == LayoutDirection.Rtl && offset.x > size.width / 2)
-                                                ) {
-                                                    playerConnection.player.seekTo(
-                                                        (currentPosition - skipAmount).coerceAtLeast(0),
-                                                    )
-                                                    seekDirection =
-                                                        context.getString(R.string.seek_backward_dynamic, skipAmount / 1000)
-                                                } else {
-                                                    playerConnection.player.seekTo(
-                                                        (currentPosition + skipAmount).coerceAtMost(duration),
-                                                    )
-                                                    seekDirection = context.getString(R.string.seek_forward_dynamic, skipAmount / 1000)
-                                                }
-                                                // If a user double-tap skip lands on a new media item, force a centralized Discord sync
-                                                playerConnection.service.forceDiscordSync("thumbnail_double_tap_skip")
+                                                val forward =
+                                                    if (layoutDirection == LayoutDirection.Ltr) {
+                                                        offset.x >= size.width / 2f
+                                                    } else {
+                                                        offset.x < size.width / 2f
+                                                    }
+                                                val skipAmount = seekSkip.skip(forward)
+                                                val description =
+                                                    if (forward) {
+                                                        R.string.seek_forward_dynamic
+                                                    } else {
+                                                        R.string.seek_backward_dynamic
+                                                    }
+                                                seekDirection = context.getString(description, skipAmount / 1000)
 
                                                 showSeekEffect = true
                                             },

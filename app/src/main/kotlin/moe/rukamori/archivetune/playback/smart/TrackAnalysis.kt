@@ -65,6 +65,7 @@ data class TrackAnalysis(
     val introEndTime: Double = 0.0,
     /** Where the content actually ends, excluding trailing silence. */
     val contentEndTime: Double = 0.0,
+    val finalFadeOnsetTime: Double? = null,
     val outroStartTime: Double = 0.0,
 
     val mixInTime: Double = 0.0,

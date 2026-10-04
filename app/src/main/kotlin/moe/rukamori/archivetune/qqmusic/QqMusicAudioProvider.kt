@@ -37,7 +37,11 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TitleMatch
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.QqAudioQuality
@@ -92,7 +96,8 @@ internal object QqMusicAudioProvider {
         cacheDir: File,
         trusted: Boolean,
     ): DirectStream? =
-        withContext(Dispatchers.IO) {
+        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            withContext(Dispatchers.IO) {
             if (title.isBlank()) return@withContext null
             val searchQuery =
                 listOfNotNull(title, artists.firstOrNull())
@@ -122,7 +127,9 @@ internal object QqMusicAudioProvider {
                 return@withContext stream
             }
             null
+            }
         }
+            ?: null
 
     /** The shared metadata gate, with the override bypass the playback layer uses. */
     private fun accepted(
@@ -226,7 +233,7 @@ internal object QqMusicAudioProvider {
                     .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) {
                     Timber.tag(TAG).w("QQ Music container download failed: HTTP %d", response.code)
                     null
@@ -234,7 +241,7 @@ internal object QqMusicAudioProvider {
                     response.body?.bytes()
                 }
             }
-        }.getOrElse { error ->
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse { error ->
             Timber.tag(TAG).w(error, "QQ Music container download error")
             null
         }

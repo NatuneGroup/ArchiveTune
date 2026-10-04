@@ -55,6 +55,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -108,6 +109,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
@@ -141,6 +143,12 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeJapaneseKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeKoreanKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.ui.player.InlineLyricLinesPerPage
+import moe.rukamori.archivetune.ui.player.InlineLyricTimedWord
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkIndexAt
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkText
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkWordText
+import moe.rukamori.archivetune.ui.player.rememberMeasuredInlineLyricPages
 import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.abs
 
@@ -262,16 +270,7 @@ private const val GLOW_FLOOR = 0.22f
 private const val GLOW_ATTACK = 0.18f
 private const val GLOW_RELEASE = 0.38f
 
-/**
- * Height of the strip, in lines, held whether the line fills it or not.
- *
- * At one line every lyric longer than the player is wide ended in an ellipsis, which on a phone is
- * most of them. Letting the strip grow to fit instead would move the scrubber and the transport row
- * under it every time the line changed, so the second row is reserved up front and short lines
- * simply leave it empty.
- */
-private const val STRIP_LINES = 2
-private const val STRIP_MAX_LINES = 3
+private const val STRIP_LINES = InlineLyricLinesPerPage
 
 // ── Mapper from ArchiveTune's parsed lyrics ───────────────────────────────────
 
@@ -575,15 +574,16 @@ private fun ContentDrawScope.sweepTo(layout: TextLayoutResult, revealedChars: Fl
         // anything after them.
         if (revealedChars <= start) return
         val end = layout.getLineEnd(visualLine, visibleEnd = true)
-        val right = if (revealedChars >= end) {
-            layout.getLineRight(visualLine)
+        val isRtl = layout.getParagraphDirection(start) == ResolvedTextDirection.Rtl
+        val edge = if (revealedChars >= end) {
+            if (isRtl) layout.getLineLeft(visualLine) else layout.getLineRight(visualLine)
         } else {
             horizontalAt(layout, revealedChars, start, end)
         }
         clipRect(
-            left = layout.getLineLeft(visualLine),
+            left = if (isRtl) edge else layout.getLineLeft(visualLine),
             top = layout.getLineTop(visualLine),
-            right = right,
+            right = if (isRtl) layout.getLineRight(visualLine) else edge,
             bottom = layout.getLineBottom(visualLine),
         ) {
             this@sweepTo.drawContent()
@@ -630,6 +630,25 @@ internal fun CurrentLyricLine(
         instrumental -> INSTRUMENTAL_MARK
         else -> current!!.text
     }
+    val lyricStyle = MaterialTheme.typography.titleMedium
+    val swept = current?.takeIf { !instrumental && it.isWordSynced }
+    val timedWords =
+        remember(swept?.words) {
+            swept?.words.orEmpty().map { word ->
+                InlineLyricTimedWord(
+                    text = word.text,
+                    startMs = word.startMs,
+                    endMs = word.endMs,
+                )
+            }
+        }
+    val cueStartMs = current?.timeMs ?: 0L
+    val cueEndMs =
+        lines.getOrNull(index + 1)?.timeMs
+            ?: current?.sungUntilMs?.takeIf { it > cueStartMs }
+            ?: current?.words?.lastOrNull()?.endMs?.takeIf { it > cueStartMs }
+            ?: durationMs.takeIf { it > cueStartMs }
+            ?: cueStartMs + 4_000L
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -663,28 +682,49 @@ internal fun CurrentLyricLine(
             )
             Spacer(Modifier.width(6.dp))
         }
-        val swept = current?.takeIf { !instrumental && it.isWordSynced }
-        if (swept != null) {
-            SweptLyricLine(
-                line = swept,
-                clock = clock,
-                style = MaterialTheme.typography.titleMedium,
-                dimAlpha = UNSUNG_ALPHA_STRIP,
-                minLines = STRIP_LINES,
-                maxLines = STRIP_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-        } else {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                minLines = STRIP_LINES,
-                maxLines = STRIP_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
+        BoxWithConstraints(modifier = Modifier.weight(1f)) {
+            val pages =
+                rememberMeasuredInlineLyricPages(
+                    text = text,
+                    words = timedWords,
+                    linesPerPage = InlineLyricLinesPerPage,
+                    cueStartMs = cueStartMs,
+                    cueEndMs = cueEndMs,
+                    style = lyricStyle,
+                    maxWidth = maxWidth,
+                )
+            val chunk = pages.chunks.getOrNull(inlineLyricChunkIndexAt(pages.chunks, clock.longValue))
+            if (chunk != null) {
+                val chunkText = inlineLyricChunkText(text, chunk)
+                if (swept != null) {
+                    val pageWords =
+                        pages.wordRanges.mapNotNull { wordRange ->
+                            val word = swept.words.getOrNull(wordRange.wordIndex) ?: return@mapNotNull null
+                            val pageWordText = inlineLyricChunkWordText(text, chunk, wordRange) ?: return@mapNotNull null
+                            word.copy(text = pageWordText)
+                        }
+                    SweptLyricLine(
+                        line = swept.copy(
+                            timeMs = chunk.startMs,
+                            text = chunkText,
+                            words = pageWords,
+                        ),
+                        clock = clock,
+                        style = lyricStyle,
+                        dimAlpha = UNSUNG_ALPHA_STRIP,
+                        minLines = STRIP_LINES,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Text(
+                        text = chunkText,
+                        style = lyricStyle,
+                        color = Color.White,
+                        minLines = STRIP_LINES,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(6.dp))
         // Disclosure hint: this strip opens the full lyrics screen.

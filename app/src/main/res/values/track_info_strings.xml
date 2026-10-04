@@ -1,0 +1,36 @@
+<resources>
+    <string name="track_info_menu_action">Track info &amp; specs</string>
+    <string name="track_info_title">Track info &amp; specs</string>
+    <string name="track_info_overview">Overview</string>
+    <string name="track_info_audio_specs">Audio specs</string>
+    <string name="track_info_identity">Track</string>
+    <string name="track_info_title_label">Title</string>
+    <string name="track_info_artist">Artist</string>
+    <string name="track_info_album">Album</string>
+    <string name="track_info_duration">Duration</string>
+    <string name="track_info_not_reported">Not reported</string>
+    <string name="track_info_credits">Credits</string>
+    <string name="track_info_no_credits">No writer or composer credits were found in available metadata.</string>
+    <string name="track_info_credit_note">Credits are shown only when present in the video description or lyric metadata.</string>
+    <string name="track_info_credit_written_by">Written by</string>
+    <string name="track_info_credit_composed_by">Composed by</string>
+    <string name="track_info_credit_lyrics_by">Lyrics by</string>
+    <string name="track_info_credit_source_description">Video description</string>
+    <string name="track_info_credit_source_lyrics">Lyric metadata</string>
+    <string name="track_info_reported_stream">Format reported by source</string>
+    <string name="track_info_stream_note">These values describe source metadata, not a verified decoded signal.</string>
+    <string name="track_info_codec">Codec</string>
+    <string name="track_info_mime_type">MIME type</string>
+    <string name="track_info_format_id">Format ID</string>
+    <string name="track_info_reported_bitrate">Reported bitrate</string>
+    <string name="track_info_reported_sample_rate">Reported sample rate</string>
+    <string name="track_info_reported_size">Reported stream size</string>
+    <string name="track_info_reported_loudness">Reported track loudness</string>
+    <string name="track_info_reported_perceptual_loudness">Reported perceptual loudness</string>
+    <string name="track_info_no_reported_format">No audio-format metadata is available.</string>
+    <string name="track_info_actual_output">Actual playback output</string>
+    <string name="track_info_output_sample_format">Output sample format</string>
+    <string name="track_info_not_measured">Not measured by this screen</string>
+    <string name="track_info_output_note">The app does not expose the signal rate or bit depth at the output here; source metadata cannot prove what reaches the device.</string>
+    <string name="track_info_more_video_details">YouTube video details and statistics</string>
+</resources>

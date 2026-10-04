@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -45,6 +46,8 @@ import moe.rukamori.archivetune.ui.component.PreferenceMultiSelectBottomSheet
 import moe.rukamori.archivetune.ui.component.PreferenceSelectionBottomSheet
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.PreferenceStore
+import moe.rukamori.archivetune.utils.dataStore
 
 /**
  * True when the Spotify page is usable at all. Everything Spotify-page-shaped hangs off this: with
@@ -144,18 +147,21 @@ fun rememberHomeSource(): HomeSource {
 /** Matches the account avatar this sits beside, so the two read as one pair of controls. */
 private val ToggleIconSize = 20.dp
 
-/**
- * The Home tab's source control, sized for the top app bar and meant to sit immediately left of the
- * account avatar.
- *
- * Two active pages keep the plain toggle (the icon shows where a tap lands). Three or more open the
- * switcher dialog instead, styled like the account menu, with the current page marked — a toggle
- * cannot express a three-way choice, and cycling through pages on every tap is worse than a menu.
- */
+internal fun homeSwitchTarget(current: HomeSource, active: List<HomeSource>): HomeSource {
+    val resolved = current.takeIf { it in active } ?: active.firstOrNull() ?: HomeSource.YOUTUBE
+    return active.firstOrNull { it != resolved }
+        ?: if (resolved == HomeSource.SPOTIFY) HomeSource.YOUTUBE else HomeSource.SPOTIFY
+}
+
 @Composable
-fun HomeSourceToggleButton(modifier: Modifier = Modifier) {
+fun HomeSourceToggleButton(
+    onOpenSpotifySettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val actives = rememberActiveHomeSources()
-    if (actives.size < 2) return
+    val spotifyAvailable = rememberHomeSourceAvailable()
+    val qqAvailable = rememberQqHomeSourceAvailable()
+    val dataStore = LocalContext.current.dataStore
 
     var source by rememberEnumPreference(HomeSourceKey, defaultValue = HomeSource.YOUTUBE)
     var switcherOpen by remember { mutableStateOf(false) }
@@ -173,10 +179,23 @@ fun HomeSourceToggleButton(modifier: Modifier = Modifier) {
     }
 
     val showsMenu = actives.size > 2
-    val target = if (showsMenu) source else actives.first { it != source }
+    val target = if (showsMenu) source.takeIf { it in actives } ?: actives.first() else homeSwitchTarget(source, actives)
 
     IconButton(
-        onClick = { if (showsMenu) switcherOpen = true else source = target },
+        onClick = {
+            when {
+                showsMenu -> switcherOpen = true
+                !target.isAvailable(spotifyAvailable, qqAvailable) -> onOpenSpotifySettings()
+                else -> PreferenceStore.launchEdit(dataStore) {
+                    if (target !in actives) {
+                        this[ActiveHomeSourcesKey] = canonicalHomeSources(
+                            parseHomeSources(this[ActiveHomeSourcesKey].orEmpty()) + actives + target + HomeSource.YOUTUBE,
+                        ).joinToString(",") { it.name }
+                    }
+                    this[HomeSourceKey] = target.name
+                }
+            }
+        },
         modifier = modifier,
     ) {
         Icon(
@@ -184,6 +203,8 @@ fun HomeSourceToggleButton(modifier: Modifier = Modifier) {
             contentDescription =
                 if (showsMenu) {
                     stringResource(R.string.home_screens)
+                } else if (!target.isAvailable(spotifyAvailable, qqAvailable)) {
+                    stringResource(R.string.home_connect_spotify)
                 } else {
                     stringResource(R.string.home_source_switch_to, stringResource(target.labelResId()))
                 },

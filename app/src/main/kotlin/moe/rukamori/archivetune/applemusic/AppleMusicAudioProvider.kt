@@ -14,6 +14,10 @@
 
 package moe.rukamori.archivetune.applemusic
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -102,7 +106,7 @@ object AppleMusicAudioProvider {
                         .header("User-Agent", UA)
                         .get()
                         .build()
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.w(TAG, "storefront fetch failed: %d".format(response.code))
                         return@use null
@@ -111,7 +115,7 @@ object AppleMusicAudioProvider {
                     root["data"]?.jsonArray?.firstOrNull()
                         ?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
                 }
-            }.getOrNull()
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
         }
 
     fun devToken(): String? = AppleMusicProvider.devTokenProvider?.invoke()?.trim()?.takeIf { it.isNotBlank() }
@@ -206,7 +210,8 @@ object AppleMusicAudioProvider {
         durationMs: Long?,
         quality: AppleMusicQuality = AppleMusicQuality.LOSSLESS,
     ): List<AppleMusicStream> =
-        withContext(Dispatchers.IO) {
+        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            withContext(Dispatchers.IO) {
             // ensureTokenFresh first: it returns an unexpired user token as-is and otherwise the
             // held or a re-scraped web token. usableDevToken() alone would hand back an expired
             // user token whenever nothing had been scraped yet, and every call would 401.
@@ -224,6 +229,7 @@ object AppleMusicAudioProvider {
                     runCatching {
                         resolveWithToken(entry.token, devToken, title, artists, quality)
                     }.getOrElse { error ->
+                        error.rethrowIfAudioSourceCancelled()
                         if (error !is AuthException) {
                             Log.w(TAG, "resolve failed: ${error.message}")
                             return@withContext emptyList()
@@ -245,7 +251,8 @@ object AppleMusicAudioProvider {
                 }
             }
             emptyList()
-        }
+            }
+        } ?: emptyList()
 
     /** One resolve pass with a specific media-user-token. Throws [AuthException] on 401/403. */
     private suspend fun resolveWithToken(
@@ -275,7 +282,7 @@ object AppleMusicAudioProvider {
                     webPlayback(id, devToken, mediaToken, storefront, quality)?.let { out += it }
                 }
                 out
-            }.getOrElse { error ->
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse { error ->
                 // Auth failures must propagate to the rotation loop — swallowing them here
                 // would pin the ring to a dead account.
                 if (error is AuthException) throw error
@@ -308,7 +315,7 @@ object AppleMusicAudioProvider {
                 .header("User-Agent", UA)
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 if (response.code == 401 || response.code == 403) throw AuthException()
                 Log.w(TAG, "search failed: %d".format(response.code))
@@ -341,7 +348,7 @@ object AppleMusicAudioProvider {
                 .header("Referer", "https://music.apple.com/")
                 .header("User-Agent", UA)
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 if (response.code == 401 || response.code == 403) throw AuthException()
                 Log.w(TAG, "webPlayback failed for %s: %d".format(songId, response.code))
@@ -424,7 +431,7 @@ object AppleMusicAudioProvider {
      */
     private fun parsePlaylist(playlistUrl: String): ParsedPlaylist? {
         val request = Request.Builder().url(playlistUrl).header("User-Agent", UA).get().build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 Log.w(TAG, "playlist fetch failed: %d".format(response.code))
                 return null

@@ -96,7 +96,7 @@ import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
-import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
+import moe.rukamori.archivetune.ui.utils.TrackInfoAndSpecs
 import moe.rukamori.archivetune.utils.SpeedDialPin
 import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.joinByBullet
@@ -928,7 +928,7 @@ fun YouTubeSongMenu(
                     )
 
                     ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.details)) },
+                        headlineContent = { Text(text = stringResource(R.string.track_info_menu_action)) },
                         leadingContent = {
                             Icon(
                                 painter = painterResource(R.drawable.info),
@@ -939,7 +939,14 @@ fun YouTubeSongMenu(
                             Modifier.clickable {
                                 onDismiss()
                                 bottomSheetPageState.show {
-                                    ShowMediaInfo(song.id)
+                                    TrackInfoAndSpecs(
+                                        trackId = song.id,
+                                        title = song.title,
+                                        artists = song.artists.joinToString { it.name },
+                                        album = song.album?.name,
+                                        artwork = song.thumbnail,
+                                        durationMs = song.duration?.toLong()?.times(1_000L),
+                                    )
                                 }
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

@@ -329,6 +329,11 @@
     <string name="lyrics_background_default">Default</string>
     <string name="lyrics_background_moving_blur">Moving Blur</string>
     <string name="mini_player_background_style">Mini player background style</string>
+    <string name="compact_mini_player">Compact mini player</string>
+    <string name="compact_mini_player_desc">Use smaller artwork and transport controls in the mini player</string>
+    <string name="mini_player_layout">Mini player layout</string>
+    <string name="mini_player_layout_desc">Choose standard or compact artwork and transport control sizing</string>
+    <string name="compact_layout">Compact</string>
     <string name="follow_theme">Follow theme</string>
     <string name="gradient">Gradient</string>
     <string name="liquid_glass">Liquid Glass</string>

@@ -117,7 +117,7 @@ object AmazonAudioProvider {
                         .header("Origin", TURNSTILE_ORIGIN)
                         .post(bodyJson.toRequestBody("application/json".toMediaType()))
                         .build()
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     val body = response.body?.string().orEmpty()
                     if (!response.isSuccessful || body.isBlank()) {
                         Timber.tag(TAG).w("Turnstile exchange failed: HTTP %d", response.code)
@@ -125,7 +125,7 @@ object AmazonAudioProvider {
                     }
                     JSONObject(body).optString("access_token").ifBlank { null }
                 }
-            }.getOrElse {
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
                 Timber.tag(TAG).w(it, "Turnstile exchange error")
                 null
             }
@@ -156,7 +156,8 @@ object AmazonAudioProvider {
         quality: String = "HD",
         turnstileJwt: String? = null,
     ): DirectStream? =
-        withContext(Dispatchers.IO) {
+        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS) {
+            withContext(Dispatchers.IO) {
             val artist = artists.firstOrNull().orEmpty()
             if (title.isBlank() || artist.isBlank()) {
                 Timber.tag(TAG).d("Missing title/artist; skipping Amazon.")
@@ -171,9 +172,10 @@ object AmazonAudioProvider {
 
             // Gen-2 first, gen-1.5 on 404.
             val resolved =
-                fetchGen2(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
-                    ?: fetchGen1(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
-                    ?: return@withContext null
+                AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+                    fetchGen2(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
+                        ?: fetchGen1(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
+                } ?: return@withContext null
 
             val streamUrl = resolved.streamUrl
             val keyHex = resolved.keyHex
@@ -194,7 +196,8 @@ object AmazonAudioProvider {
                 matchedDurationMs = resolved.matchedDurationMs ?: durationMs,
                 cacheDir = cacheDir,
             )
-        }
+            }
+        } ?: null
 
     /** A normalized instance response across both protocol generations. */
     private data class ResolvedStream(
@@ -246,7 +249,7 @@ object AmazonAudioProvider {
                 .get()
                 .build()
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 when {
                     response.code == 404 -> {
@@ -267,7 +270,7 @@ object AmazonAudioProvider {
                     else -> parseGen2(body, mapped)
                 }
             }
-        }.getOrElse {
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             Timber.tag(TAG).w(it, "gen-2 track lookup error for \"%s\"", title)
             null
         }
@@ -308,7 +311,7 @@ object AmazonAudioProvider {
                 .get()
                 .build()
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 val body = response.body?.string().orEmpty()
                 when {
                     response.code == 401 || response.code == 428 -> {
@@ -324,7 +327,7 @@ object AmazonAudioProvider {
                     else -> parseGen1(body, mapped)
                 }
             }
-        }.getOrElse {
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             Timber.tag(TAG).w(it, "gen-1.5 track lookup error for \"%s\"", title)
             null
         }
@@ -445,14 +448,14 @@ object AmazonAudioProvider {
                         .header("User-Agent", "Mozilla/5.0 (ArchiveTune)")
                         .get()
                         .build()
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) {
                         Timber.tag(TAG).w("Amazon stream download failed: HTTP %d", response.code)
                         return null
                     }
                     response.body?.bytes()
                 }
-            }.getOrElse {
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
                 Timber.tag(TAG).w(it, "Amazon stream download error")
                 null
             } ?: return null

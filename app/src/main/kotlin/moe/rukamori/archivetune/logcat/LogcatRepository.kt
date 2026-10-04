@@ -73,7 +73,7 @@ class LogcatRepository
 
         suspend fun exportText(content: String): Uri =
             withContext(Dispatchers.IO) {
-                require(content.isNotBlank())
+                val report = diagnosticReport(context, content)
 
                 val exportDirectory = File(context.cacheDir, "shared_logs")
                 if (!exportDirectory.exists() && !exportDirectory.mkdirs()) {
@@ -86,7 +86,7 @@ class LogcatRepository
                         "archivetune-log-${System.currentTimeMillis()}.txt",
                     )
                 exportFile.bufferedWriter(Charsets.UTF_8).use { writer ->
-                    writer.write(content)
+                    writer.write(report)
                     writer.newLine()
                 }
 

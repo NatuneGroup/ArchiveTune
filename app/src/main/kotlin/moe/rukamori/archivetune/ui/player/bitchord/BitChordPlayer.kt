@@ -143,6 +143,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import moe.rukamori.archivetune.playback.smart.TrackAnalysisState
 import moe.rukamori.archivetune.playback.smart.SmartFadeRuntimeState
 import moe.rukamori.archivetune.R
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -191,8 +192,7 @@ import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.player.LosslessOrStats
-import moe.rukamori.archivetune.ui.player.SeekSkipButton
-import moe.rukamori.archivetune.ui.player.rememberSeekSkip
+import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -1151,7 +1151,8 @@ fun BitChordPlayerContent(
                                 RoundedCornerShape(lerp(10.dp, 7.dp, p)),
                             )
                             .clip(RoundedCornerShape(lerp(10.dp, 7.dp, p)))
-                            .background(Color.Black.copy(alpha = 0.18f)),
+                            .background(Color.Black.copy(alpha = 0.18f))
+                            .playerSeekDoubleTap(enabled = !queueOpen && !lyricsOpen),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (!artLoaded) {
@@ -1683,10 +1684,11 @@ fun BitChordPlayerContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BottomGlyph(
-                        icon = BitChordIcons.LyricsQuote,
+                        icon = null,
                         // This row only exists while the panel is closed, so
                         // the glyph only ever opens it — no lit state of its own.
                         contentDescription = stringResource(R.string.lyrics),
+                        iconRes = R.drawable.player_lyrics,
                         // One sleeve: opening the queue closes lyrics and vice
                         // versa, so the two glyphs can never be lit at once.
                         onClick = {
@@ -1898,6 +1900,7 @@ private fun BottomGlyph(
     icon: ImageVector?,
     contentDescription: String,
     onClick: () -> Unit,
+    iconRes: Int? = null,
     highlighted: Boolean = false,
     haptic: Haptic = Haptic.Tap,
     label: String? = null,
@@ -1921,7 +1924,14 @@ private fun BottomGlyph(
         contentAlignment = Alignment.Center,
     ) {
         val tint = Color.White.copy(alpha = if (highlighted) 1f else 0.75f)
-        if (icon != null) {
+        if (iconRes != null) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(26.dp),
+            )
+        } else if (icon != null) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
@@ -2083,14 +2093,6 @@ private object OverlayBack {
     }
 }
 
-/**
- * The elapsed/remaining pair under the scrubber, with the quality badge between them.
- *
- * One row, so the timestamps, the seek glyphs and the badge share a centre line; the two ends
- * take equal weight, which pins the badge to the middle however many digits the clock has. The
- * position is read inside [ScrubTime] alone: these labels change once a second, and reading it
- * here, or in the player's body, would invalidate far more than the two labels ten times a second.
- */
 @Composable
 private fun BitChordScrubTimes(
     shownFraction: () -> Float,
@@ -2099,17 +2101,12 @@ private fun BitChordScrubTimes(
     format: FormatEntity?,
     modifier: Modifier = Modifier,
 ) {
-    val seekSkip = rememberSeekSkip()
-    val glyphTint = Color.White.copy(alpha = 0.7f)
     Row(
         modifier = modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             ScrubTime { formatTime((shownFraction() * duration).toLong()) }
-            if (seekSkip != null) {
-                SeekSkipButton(seekSkip = seekSkip, forward = false, tint = glyphTint, buttonSize = 28.dp, iconSize = 18.dp)
-            }
         }
         LosslessOrStats(
             isLoading = isLoading,
@@ -2121,9 +2118,6 @@ private fun BitChordScrubTimes(
             horizontalArrangement = Arrangement.End,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (seekSkip != null) {
-                SeekSkipButton(seekSkip = seekSkip, forward = true, tint = glyphTint, buttonSize = 28.dp, iconSize = 18.dp)
-            }
             ScrubTime { "-" + formatTime(duration - (shownFraction() * duration).toLong()) }
         }
     }

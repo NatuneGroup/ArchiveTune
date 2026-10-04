@@ -76,9 +76,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.codecLabel
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.ui.player.SeekSkipButton
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
-import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -386,7 +384,6 @@ internal fun WavySliderWithLabels(
     val safeDur = if (duration > 0) duration.toFloat() else 1f
     val displayPos = if (isScrubbing) (sliderScrubPos * safeDur).toLong() else currentPosition
     val progressRatio = (currentPosition.toFloat() / safeDur).coerceIn(0f, 1f)
-    val seekSkip = rememberSeekSkip()
 
     Column(
         modifier =
@@ -428,9 +425,6 @@ internal fun WavySliderWithLabels(
                     style = MaterialTheme.typography.labelSmall,
                     color = contentSecondary,
                 )
-                if (seekSkip != null) {
-                    SeekSkipButton(seekSkip = seekSkip, forward = false, tint = contentSecondary)
-                }
             }
 
             if (currentFormat != null) {
@@ -463,9 +457,6 @@ internal fun WavySliderWithLabels(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (seekSkip != null) {
-                    SeekSkipButton(seekSkip = seekSkip, forward = true, tint = contentSecondary)
-                }
                 Text(
                     text = formatDuration(duration),
                     style = MaterialTheme.typography.labelSmall,

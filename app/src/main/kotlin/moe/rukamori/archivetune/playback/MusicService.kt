@@ -158,6 +158,7 @@ import moe.rukamori.archivetune.constants.CrossfadeDurationKey
 import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeGaplessKey
 import moe.rukamori.archivetune.constants.DeviceMutePlaybackRecoveryVolumeKey
+import moe.rukamori.archivetune.constants.RejectSuspectedUpscaledAudioKey
 import moe.rukamori.archivetune.constants.DiscordShowWhenPausedKey
 import moe.rukamori.archivetune.constants.DiscordTokenKey
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
@@ -249,6 +250,10 @@ import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzBackupProvider
 import moe.rukamori.archivetune.qobuz.QobuzToken
 import moe.rukamori.archivetune.audiosource.AmazonInstances
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptDeadline
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimedOutException
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
@@ -361,6 +366,9 @@ import moe.rukamori.archivetune.utils.NetworkConnectivityObserver
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import moe.rukamori.archivetune.utils.SyncUtils
 import moe.rukamori.archivetune.utils.YTPlayerUtils
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPlaybackContext
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPcmProcessor
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityProcessorResult
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.enumPreference
 import moe.rukamori.archivetune.utils.preference
@@ -394,6 +402,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -698,6 +707,9 @@ class MusicService :
     private var crossfadeProgress = 0f
     private var crossfadeHandoffProgress = 0f
     private var crossfadePlaybackRequested = false
+    private val crossfadeFailureTracker = CrossfadeFailureTracker()
+    @Volatile
+    private var rejectSuspectedUpscaledAudioEnabled = false
 
     // Monotonic operation id for crossfades. A cancelled/superseded crossfade coroutine can
     // never complete an older handoff: finishCrossfade validates its captured generation
@@ -748,10 +760,22 @@ class MusicService :
     private val secondaryCrossfadeListener =
         object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Timber.tag(TAG).w(error, "Secondary crossfade player failed")
+                Timber.tag("PlaybackDiagnostics").w(
+                    "Secondary player failed errorCode=%d outgoingPositionMs=%d gain=%.3f",
+                    error.errorCode,
+                    player.currentPosition,
+                    player.volume,
+                )
+                val outgoingMediaId = player.currentMediaItem?.mediaId
+                val incomingMediaId = secondaryCrossfadeTarget?.mediaId
                 scope.launch {
+                    val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
                     cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                    scheduleCrossfade()
+                    if (retryAllowed) {
+                        scheduleCrossfade()
+                    } else {
+                        Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                    }
                 }
             }
         }
@@ -1088,7 +1112,7 @@ class MusicService :
             ExoPlayer
                 .Builder(this)
                 .setMediaSourceFactory(createMediaSourceFactory())
-                .setRenderersFactory(createRenderersFactory(primaryTransitionFilter))
+                .setRenderersFactory(createRenderersFactory(primaryTransitionFilter, primaryAudioAuthenticityContext))
                 .setLoadControl(createPrimaryLoadControl())
                 .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
                 .setHandleAudioBecomingNoisy(true)
@@ -1105,6 +1129,7 @@ class MusicService :
                     addListener(audioEffectPlayerListener)
                     setOffloadEnabled(false)
                 }
+        audioAuthenticityContextByPlayer[localPlayer] = primaryAudioAuthenticityContext
         castPlaybackRepository = CastPlaybackRepositoryLocator.get(this)
         player =
             castPlaybackRepository
@@ -1398,14 +1423,21 @@ class MusicService :
             dataStore.data.map { it[AudioOffload] ?: false },
             dataStore.data.map { it[CrossfadeEnabledKey] ?: false },
             dataStore.data.map { it[AutomixEnabledKey] ?: false },
-        ) { offloadEnabled, crossfadeEnabled, automixEnabled ->
-            Triple(offloadEnabled, crossfadeEnabled, automixEnabled)
+            dataStore.data.map { it[RejectSuspectedUpscaledAudioKey] ?: false },
+        ) { offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled ->
+            listOf(offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled)
         }.distinctUntilChanged()
-            .collectLatest(scope) { (offloadEnabled, crossfadeEnabled, automixEnabled) ->
+            .collectLatest(scope) { (offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled) ->
                 // Offload is incompatible with both blending engines: automix
                 // exercises the same two-player + processor-chain path crossfade
                 // does, plus its own filter riding.
-                val effectiveOffload = offloadEnabled && !crossfadeEnabled && !automixEnabled
+                val effectiveOffload =
+                    resolveAudioOffloadEnabled(
+                        requested = offloadEnabled,
+                        crossfadeEnabled = crossfadeEnabled,
+                        automixEnabled = automixEnabled,
+                        authenticityRejectionEnabled = authenticityRejectionEnabled,
+                    )
                 updateAudioOffload(effectiveOffload)
                 if (effectiveOffload) {
                     val skipSilenceEnabled = dataStore.get(SkipSilenceKey, false)
@@ -1424,6 +1456,26 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { mode ->
                 SmartFadeSettings.performanceMode.value = mode
+            }
+
+        dataStore.data
+            .map { it[RejectSuspectedUpscaledAudioKey] ?: false }
+            .distinctUntilChanged()
+            .collectLatest(scope) { enabled ->
+                rejectSuspectedUpscaledAudioEnabled = enabled
+                if (!enabled) authenticityRejectedSourcesByMediaId.clear()
+                if (resolveAudioAuthenticityProbeAvailability(enabled, pcmTapAvailable = !bitPerfectOutputActive) ==
+                    AudioAuthenticityProbeAvailability.UNKNOWN
+                ) {
+                    Timber.tag("PlaybackDiagnostics").w(
+                        "Audio authenticity verdict=UNKNOWN reason=bit_perfect_usb_pcm_bypass",
+                    )
+                }
+                audioAuthenticityContextByPlayer.values.forEach { contextRef ->
+                    contextRef.get()?.playbackKey?.let { mediaId ->
+                        contextRef.set(audioAuthenticityContextFor(mediaId))
+                    }
+                }
             }
 
         dataStore.data
@@ -2580,11 +2632,12 @@ class MusicService :
         if (expectedVolume <= MIN_AUDIBLE_EFFECTIVE_VOLUME) return
         if (player.volume > STUCK_MUTED_VOLUME_EPSILON) return
 
-        Timber.tag(TAG).w(
-            "Restoring muted primary player volume during active playback: reason=%s expected=%s actual=%s",
+        Timber.tag("PlaybackDiagnostics").w(
+            "Restoring muted primary player volume reason=%s expectedGain=%.3f actualGain=%.3f focusHeld=%s",
             reason,
             expectedVolume,
             player.volume,
+            hasAudioFocus,
         )
         applyEffectiveVolumeImmediately(expectedVolume)
     }
@@ -2669,6 +2722,12 @@ class MusicService :
         }
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(currentMediaId, target.mediaId)) {
+            localPlayer.pauseAtEndOfMediaItems = false
+            releaseSecondaryCrossfadePlayer()
+            Timber.tag("PlaybackDiagnostics").w("Crossfade skipped after repeated transition failures")
+            return
+        }
         val currentIndex = player.currentMediaItemIndex
         val triggerAt = duration - effectiveDuration - CROSSFADE_END_GUARD_MS
 
@@ -2768,6 +2827,12 @@ class MusicService :
         }
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(currentMediaId, target.mediaId)) {
+            localPlayer.pauseAtEndOfMediaItems = false
+            releaseSecondaryCrossfadePlayer()
+            Timber.tag("PlaybackDiagnostics").w("Smart crossfade skipped after repeated transition failures")
+            return
+        }
         val currentIndex = player.currentMediaItemIndex
 
         crossfadeTriggerJob =
@@ -2892,7 +2957,7 @@ class MusicService :
                         // path simply forgot to.
                         val positionMs = player.currentPosition
                         val remainingFadeMs =
-                            (duration - positionMs - CROSSFADE_END_GUARD_MS)
+                            (duration - positionMs)
                                 .coerceAtMost(plan.fadeMs)
                         if (remainingFadeMs >= MIN_CROSSFADE_DURATION_MS) {
                             startCrossfade(target, remainingFadeMs, plan)
@@ -3260,6 +3325,7 @@ class MusicService :
             createSecondaryCrossfadePlayer().also { secondaryPlayer ->
                 secondaryCrossfadePlayer = secondaryPlayer
                 secondaryCrossfadeTarget = target
+                setAudioAuthenticityContext(secondaryPlayer, target.mediaId)
                 // The incoming player must be promotion-capable: it receives the FULL queue
                 // (not just the target item) plus the repeat/shuffle/speed state, so it can
                 // become the active player at the end of the fade without any re-buffering.
@@ -3283,10 +3349,11 @@ class MusicService :
         // Each player owns its filter: an AudioProcessor may belong to one chain only.
         val secondaryTransition = TransitionFilterProcessor()
         secondaryTransitionFilter = secondaryTransition
-        return ExoPlayer
+        val authenticityContext = AtomicReference<AudioAuthenticityPlaybackContext?>(null)
+        val secondaryPlayer = ExoPlayer
             .Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
-            .setRenderersFactory(createRenderersFactory(secondaryTransition))
+            .setRenderersFactory(createRenderersFactory(secondaryTransition, authenticityContext))
             .setLoadControl(createCrossfadeLoadControl())
             .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
             .setHandleAudioBecomingNoisy(true)
@@ -3301,6 +3368,8 @@ class MusicService :
                 setOffloadEnabled(false)
                 skipSilenceEnabled = localPlayer.skipSilenceEnabled
             }
+        audioAuthenticityContextByPlayer[secondaryPlayer] = authenticityContext
+        return secondaryPlayer
     }
 
     private fun startCrossfade(
@@ -3312,8 +3381,12 @@ class MusicService :
 
         val smart = plan != null
         val cueTimeMs = if (smart) (plan!!.incomingCueTime * 1000).roundToLong().coerceAtLeast(0L) else 0L
-        val incomingPlayer = prepareSecondaryCrossfadePlayer(target, cueTimeMs) ?: return
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(outgoingMediaId, target.mediaId)) {
+            Timber.tag("PlaybackDiagnostics").w("Crossfade attempt suppressed after repeated transition failures")
+            return
+        }
+        val incomingPlayer = prepareSecondaryCrossfadePlayer(target, cueTimeMs) ?: return
         val generation = crossfadeGeneration.incrementAndGet()
 
         crossfadeTriggerJob?.cancel()
@@ -3329,6 +3402,17 @@ class MusicService :
                 localPlayer.pauseAtEndOfMediaItems = true
                 crossfadeUserPlaybackParameters = player.playbackParameters
                 crossfadeSmartActive = smart
+                Timber.tag("PlaybackDiagnostics").i(
+                    "Crossfade start smart=%s durationMs=%d cueMs=%d positionMs=%d trackDurationMs=%d playWhenReady=%s gain=%.3f incomingGain=%.3f",
+                    smart,
+                    durationMs,
+                    cueTimeMs,
+                    player.currentPosition,
+                    player.duration,
+                    crossfadePlaybackRequested,
+                    crossfadeBaseVolume,
+                    crossfadeIncomingBaseVolume,
+                )
                 if (smart) {
                     SmartFadeRuntimeState.mixing.value = isRealMix(plan)
                 }
@@ -3361,8 +3445,11 @@ class MusicService :
                             .coerceAtMost(outgoingLeftMs.coerceAtLeast(0L))
                     if (!awaitCrossfadePlayerReady(incomingPlayer, CROSSFADE_READY_TIMEOUT_MS, requiredBufferedMs)) {
                         Timber.tag(TAG).d("crossfade[%d] incoming player not ready in time; aborting", generation)
+                        val retryAllowed =
+                            incomingPlayer.playerError == null &&
+                                crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
                         cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                        scheduleCrossfade()
+                        if (retryAllowed) scheduleCrossfade()
                         return@launch
                     }
 
@@ -3372,7 +3459,8 @@ class MusicService :
                     player.duration
                         .takeIf { it != C.TIME_UNSET && it > 0L }
                         ?.let { fullDuration ->
-                            val leftAfterWaitMs = fullDuration - player.currentPosition - CROSSFADE_END_GUARD_MS
+                            val endGuardMs = if (smart) 0L else CROSSFADE_END_GUARD_MS
+                            val leftAfterWaitMs = fullDuration - player.currentPosition - endGuardMs
                             if (leftAfterWaitMs < fadeMs) {
                                 fadeMs = leftAfterWaitMs.coerceAtLeast(MIN_CROSSFADE_DURATION_MS)
                                 Timber.tag(TAG).d(
@@ -3405,14 +3493,28 @@ class MusicService :
                         // advancing through the audio output. Require the play position to move.
                         if (!awaitAudioPositionAdvancement(incomingPlayer, CROSSFADE_AUDIO_ADVANCE_TIMEOUT_MS)) {
                             Timber.tag(TAG).w("crossfade[%d] no audio advancement on incoming player; aborting", generation)
+                            val retryAllowed =
+                                incomingPlayer.playerError == null &&
+                                    crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
                             cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                            scheduleCrossfade()
+                            if (retryAllowed) scheduleCrossfade()
                             return@launch
                         }
                     }
 
+                    player.duration
+                        .takeIf { it != C.TIME_UNSET && it > 0L }
+                        ?.let { fullDuration ->
+                            val endGuardMs = if (smart) 0L else CROSSFADE_END_GUARD_MS
+                            val leftAtFadeStartMs = fullDuration - player.currentPosition - endGuardMs
+                            if (leftAtFadeStartMs < fadeMs) {
+                                fadeMs = leftAtFadeStartMs.coerceAtLeast(MIN_CROSSFADE_DURATION_MS)
+                            }
+                        }
+
                     var elapsedMs = 0L
                     var lastTickMs = android.os.SystemClock.elapsedRealtime()
+                    val blendStartOutgoingPositionMs = if (smart) player.currentPosition else 0L
                     // Set once the outgoing song has run out underneath the blend (ported from
                     // 4nx3b 998edf62c). From then on there is nothing left to mix out of, so the
                     // rest of the ramp is compressed into CROSSFADE_EARLY_FINISH_MS instead of
@@ -3479,12 +3581,12 @@ class MusicService :
                         if (crossfadePlaybackRequested) {
                             incomingPlayer.playWhenReady = true
                             if (smart) {
-                                // Driven off the incoming player's own position
-                                // relative to its cue, so the ramp tracks what
-                                // is actually audible regardless of buffering.
                                 elapsedMs =
-                                    (incomingPlayer.currentPosition - cueTimeMs)
-                                        .coerceIn(0L, fadeMs)
+                                    CrossfadePolicy.outgoingElapsedMs(
+                                        startPositionMs = blendStartOutgoingPositionMs,
+                                        currentPositionMs = player.currentPosition,
+                                        durationMs = fadeMs,
+                                    )
                             } else {
                                 elapsedMs = (elapsedMs + (nowMs - lastTickMs)).coerceAtMost(fadeMs)
                             }
@@ -3504,6 +3606,58 @@ class MusicService :
                         }
                         lastTickMs = nowMs
                         delay(CROSSFADE_FRAME_MS)
+                    }
+
+                    if (smart) {
+                        val tailDeadlineMs =
+                            android.os.SystemClock.elapsedRealtime() + SMART_FADE_TAIL_WAIT_MS
+                        while (isActive && player.currentMediaItem?.mediaId == outgoingMediaId) {
+                            if (!crossfadePlaybackRequested) {
+                                Timber.tag("PlaybackDiagnostics").d("Smart fade tail wait canceled after playback pause")
+                                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                                return@launch
+                            }
+                            val outgoingDuration = player.duration
+                            if (outgoingDuration == C.TIME_UNSET || outgoingDuration <= 0L) {
+                                Timber.tag("PlaybackDiagnostics").w("Smart fade tail wait canceled because duration became unknown")
+                                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                                return@launch
+                            }
+                            val outgoingPosition = player.currentPosition
+                            if (player.playbackState == Player.STATE_ENDED ||
+                                outgoingPosition >= outgoingDuration - SMART_FADE_TAIL_EPSILON_MS
+                            ) {
+                                break
+                            }
+                            if (!player.playWhenReady &&
+                                player.playbackState == Player.STATE_READY &&
+                                outgoingPosition >= outgoingDuration - 250L
+                            ) {
+                                break
+                            }
+                            if (android.os.SystemClock.elapsedRealtime() >= tailDeadlineMs) {
+                                crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                                Timber.tag("PlaybackDiagnostics").w(
+                                    "Smart fade tail wait timed out positionMs=%d durationMs=%d; restoring outgoing gain",
+                                    outgoingPosition,
+                                    outgoingDuration,
+                                )
+                                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                                return@launch
+                            }
+                            applyCrossfadeVolumes(
+                                1f,
+                                crossfadeBaseVolume,
+                                crossfadeIncomingBaseVolume,
+                                localPlayer,
+                                incomingPlayer,
+                            )
+                            delay(CROSSFADE_FRAME_MS)
+                        }
+                        if (player.currentMediaItem?.mediaId != outgoingMediaId) {
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                            return@launch
+                        }
                     }
 
                     finishCrossfade(target, incomingPlayer, generation)
@@ -3631,6 +3785,15 @@ class MusicService :
             target.mediaId,
         )
         val promoted = promoteIncomingCrossfadePlayer(target, incomingPlayer, targetIndex)
+        Timber.tag("PlaybackDiagnostics").i(
+            "Crossfade promotion success=%s playWhenReady=%s state=%d positionMs=%d gain=%.3f focusHeld=%s",
+            promoted,
+            player.playWhenReady,
+            player.playbackState,
+            player.currentPosition,
+            player.volume,
+            hasAudioFocus,
+        )
         if (!promoted) {
             // A promotion that failed after ownership moved leaves the incoming player audible;
             // its filter becomes the primary one so the cancel below opens the right filter.
@@ -3794,6 +3957,7 @@ class MusicService :
         runCatching { outgoingPlayer.volume = 0f }
         runCatching { outgoingPlayer.stop() }
         runCatching { outgoingPlayer.clearMediaItems() }
+        audioAuthenticityContextByPlayer.remove(outgoingPlayer)
         runCatching { outgoingPlayer.release() }
     }
 
@@ -3862,6 +4026,15 @@ class MusicService :
         resetVolume: Boolean,
         resetPauseAtEnd: Boolean,
     ) {
+        if (isCrossfading || crossfadeHandoffInProgress || secondaryCrossfadePlayer != null) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Crossfade canceled progress=%.3f handoffProgress=%.3f resetVolume=%s resetPauseAtEnd=%s",
+                crossfadeProgress,
+                crossfadeHandoffProgress,
+                resetVolume,
+                resetPauseAtEnd,
+            )
+        }
         // Invalidate any in-flight operation so a cancelled crossfade coroutine can never
         // complete an older handoff later.
         crossfadeGeneration.incrementAndGet()
@@ -3899,6 +4072,7 @@ class MusicService :
         }
         secondaryCrossfadePlayer = null
         secondaryCrossfadeTarget = null
+        audioAuthenticityContextByPlayer.remove(playerToRelease)
         secondaryTransitionFilter?.open()
         secondaryTransitionFilter = null
         runCatching { playerToRelease.removeListener(secondaryCrossfadeListener) }
@@ -4076,6 +4250,16 @@ class MusicService :
                 lastAudioFocusState = focusChange
             }
         }
+        Timber.tag("PlaybackDiagnostics").d(
+            "Audio focus event=%d held=%s playWhenReady=%s isPlaying=%s state=%d gain=%.3f expectedGain=%.3f",
+            focusChange,
+            hasAudioFocus,
+            player.playWhenReady,
+            player.isPlaying,
+            player.playbackState,
+            player.volume,
+            currentEffectivePlayerVolume(),
+        )
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -6032,6 +6216,16 @@ class MusicService :
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
+        crossfadeFailureTracker.reset()
+        setAudioAuthenticityContext(localPlayer, mediaItem?.mediaId)
+        Timber.tag("PlaybackDiagnostics").d(
+            "Media transition reason=%d state=%d playWhenReady=%s positionMs=%d gain=%.3f",
+            reason,
+            player.playbackState,
+            player.playWhenReady,
+            player.currentPosition,
+            player.volume,
+        )
         mediaItem?.metadata?.let { queuedMetadataByMediaId[mediaItem.mediaId] = it }
 
         // New item: reset the initial-buffer-stall watchdog for the next track.
@@ -6149,6 +6343,13 @@ class MusicService :
      * the user skips to it — turning a ~1-3 second Qobuz/Tidal resolution into a cache hit.
      */
     private val directStreamCache = ConcurrentHashMap<String, CachedDirectStream>()
+    private val selectedPlaybackSourceByMediaId = ConcurrentHashMap<String, AudioSourceType>()
+    private val authenticitySampleRateByMediaId = ConcurrentHashMap<String, Int>()
+    private val authenticityClaimedLosslessByMediaId = ConcurrentHashMap<String, Boolean>()
+    private val authenticityRejectedSourcesByMediaId = ConcurrentHashMap<String, MutableSet<AudioSourceType>>()
+    private val primaryAudioAuthenticityContext = AtomicReference<AudioAuthenticityPlaybackContext?>(null)
+    private val audioAuthenticityContextByPlayer =
+        ConcurrentHashMap<ExoPlayer, AtomicReference<AudioAuthenticityPlaybackContext?>>()
     private var nextMediaItemPrefetchJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -6267,6 +6468,22 @@ class MusicService :
         @Player.State playbackState: Int,
     ) {
         super.onPlaybackStateChanged(playbackState)
+        if (playbackState == Player.STATE_READY) {
+            setAudioAuthenticityContext(localPlayer, player.currentMediaItem?.mediaId)
+        }
+        Timber.tag("PlaybackDiagnostics").d(
+            "Playback state=%d buffering=%s playWhenReady=%s isPlaying=%s positionMs=%d bufferedPositionMs=%d durationMs=%d gain=%.3f expectedGain=%.3f focusHeld=%s",
+            playbackState,
+            playbackState == Player.STATE_BUFFERING,
+            player.playWhenReady,
+            player.isPlaying,
+            player.currentPosition,
+            player.bufferedPosition,
+            player.duration,
+            player.volume,
+            currentEffectivePlayerVolume(),
+            hasAudioFocus,
+        )
 
         updateHistoryTrackingPlaybackState()
         updateInitialBufferRecovery(playbackState)
@@ -6671,6 +6888,19 @@ class MusicService :
         val isSeekDiscontinuity =
             reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
         if (isSeekDiscontinuity) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Seek reason=%d fromMs=%d toMs=%d state=%d playWhenReady=%s isPlaying=%s gain=%.3f expectedGain=%.3f focusHeld=%s crossfadeProgress=%.3f",
+                reason,
+                oldPosition.positionMs,
+                newPosition.positionMs,
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                player.volume,
+                currentEffectivePlayerVolume(),
+                hasAudioFocus,
+                crossfadeProgress,
+            )
             if (!crossfadeHandoffInProgress) {
                 cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
             }
@@ -6741,6 +6971,18 @@ class MusicService :
 
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
+        Timber.tag("PlaybackDiagnostics").w(
+            "Playback error code=%d state=%d playWhenReady=%s isPlaying=%s positionMs=%d bufferedPositionMs=%d gain=%.3f expectedGain=%.3f focusHeld=%s",
+            error.errorCode,
+            player.playbackState,
+            player.playWhenReady,
+            player.isPlaying,
+            player.currentPosition,
+            player.bufferedPosition,
+            player.volume,
+            currentEffectivePlayerVolume(),
+            hasAudioFocus,
+        )
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
         val isLocalMedia = currentMediaId.isLocalMediaId()
@@ -7416,6 +7658,7 @@ class MusicService :
         mediaId: String,
         source: AudioSourceType,
     ) {
+        Timber.tag("PlaybackDiagnostics").i("Source selected provider=%s", source.name)
         val set = resolvedSourcesByMediaId.getOrPut(mediaId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }
         if (set.add(source)) {
             _resolvedSourcesRevision.value = _resolvedSourcesRevision.value + 1L
@@ -7499,6 +7742,7 @@ class MusicService :
         mediaId: String,
         source: AudioSourceType?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = null)
     }
 
@@ -7508,6 +7752,7 @@ class MusicService :
         source: AudioSourceType?,
         qobuzTrackId: String?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId, qobuzBackupVideoId = null)
     }
 
@@ -7521,7 +7766,16 @@ class MusicService :
         source: AudioSourceType?,
         qobuzBackupVideoId: String?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = qobuzBackupVideoId)
+    }
+
+    private fun clearAudioAuthenticitySourceFailures(mediaId: String) {
+        authenticityRejectedSourcesByMediaId.remove(mediaId)
+        selectedPlaybackSourceByMediaId.remove(mediaId)
+        authenticitySampleRateByMediaId.remove(mediaId)
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
     }
 
     private fun setSongSourceOverrideInternal(
@@ -7529,13 +7783,23 @@ class MusicService :
         source: AudioSourceType?,
         qobuzTrackId: String?,
         qobuzBackupVideoId: String?,
+        authenticityRejectedSource: AudioSourceType? = null,
+        preservedPositionMs: Long? = null,
     ) {
+        Timber.tag("PlaybackDiagnostics").i(
+            "Source override changed provider=%s currentItem=%s state=%d positionMs=%d gain=%.3f",
+            source?.name ?: "automatic",
+            ::player.isInitialized && player.currentMediaItem?.mediaId == mediaId,
+            if (::player.isInitialized) player.playbackState else Player.STATE_IDLE,
+            if (::player.isInitialized) player.currentPosition else 0L,
+            if (::player.isInitialized) player.volume else 0f,
+        )
         // A direct Qobuz selection is an explicit user choice. A failed
         // background probe may have left the provider's negative cache or an
         // instance cooldown in place, causing this fresh selection to resolve
         // as YouTube instead. Clear only transient failures before recreating
         // the media source; successful stream/search caches remain intact.
-        if (source == AudioSourceType.QOBUZ && !qobuzTrackId.isNullOrBlank()) {
+        if (authenticityRejectedSource == null && source == AudioSourceType.QOBUZ && !qobuzTrackId.isNullOrBlank()) {
             QobuzAudioProvider.clearTransientCaches()
         }
         // Persist the exact-track ids (if any) BEFORE triggering re-resolution.
@@ -7586,24 +7850,22 @@ class MusicService :
             sourceSwitchPending = true
             sourceSwitchExpectedVolume = expectedVolume
 
-            playbackUrlCache.remove(mediaId)
-            YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
-            tidalActiveMediaIds.remove(mediaId)
-
-            // Evict the resolved DirectStream so the slow path re-resolves through the new
-            // override instead of serving the previous source's URL.
-            directStreamCache.remove(mediaId)
-            // Evict the bare-keyed content length so [resolveCachedDataSpec] can't conclude the
-            // request is fully cached based on the previous source's byte size.
-            contentLengthCache.remove(mediaId)
-            runCatching { playerCache.removeResource(mediaId) }
-            runCatching { downloadCache.removeResource(mediaId) }
-            AudioSourceType.entries.forEach { src ->
-                val key = sourceCacheKey(src, mediaId)
-                runCatching { playerCache.removeResource(key) }
-                runCatching { downloadCache.removeResource(key) }
-                // Source-prefixed content-length entries are also stale after a source switch.
-                contentLengthCache.remove(key)
+            if (authenticityRejectedSource != null) {
+                evictAudioAuthenticityRejectedSource(mediaId, authenticityRejectedSource)
+            } else {
+                playbackUrlCache.remove(mediaId)
+                YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
+                tidalActiveMediaIds.remove(mediaId)
+                directStreamCache.remove(mediaId)
+                contentLengthCache.remove(mediaId)
+                runCatching { playerCache.removeResource(mediaId) }
+                runCatching { downloadCache.removeResource(mediaId) }
+                AudioSourceType.entries.forEach { src ->
+                    val key = sourceCacheKey(src, mediaId)
+                    runCatching { playerCache.removeResource(key) }
+                    runCatching { downloadCache.removeResource(key) }
+                    contentLengthCache.remove(key)
+                }
             }
             // Cancel any in-flight crossfade so its volume ramp / secondary player can't pin the
             // primary player's volume low while the new source is preparing.
@@ -7619,7 +7881,9 @@ class MusicService :
             // new source's MediaSource is built from scratch) while preserving the rest of the
             // queue.
             val currentIndex = player.currentMediaItemIndex
-            val capturedPositionMs = player.currentPosition.coerceAtLeast(0L)
+            val capturedPositionMs =
+                preservedPositionMs?.let(::resolveAudioAuthenticityRetryPositionMs)
+                    ?: player.currentPosition.coerceAtLeast(0L)
             val allItems = ArrayList(player.mediaItems)
             if (currentIndex in allItems.indices) {
                 allItems[currentIndex] = item
@@ -7700,6 +7964,16 @@ class MusicService :
         mediaId: String,
         lowDataModeActive: Boolean,
         isPrefetch: Boolean = false,
+    ): DataSpec? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
+            resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch)
+        }
+
+    private fun resolveMultiSourceDataSpecWithinDeadline(
+        dataSpec: DataSpec,
+        mediaId: String,
+        lowDataModeActive: Boolean,
+        isPrefetch: Boolean,
     ): DataSpec? {
         if (mediaId.isLocalMediaId() || mediaId.isTelegramMediaId()) {
             Timber.tag("MusicService").d("Multi-source skip: %s is a local/telegram media id", mediaId)
@@ -7741,6 +8015,7 @@ class MusicService :
         // A song can only be pinned to one source at a time, so at most one of these is
         // set; `isDirectPick` is the shared "the user chose this exact track" signal.
         val isDirectPick = isDirectQobuzTrack || isDirectQobuzBackupTrack
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         // Read the source override FRESH from DataStore — not from the stale
         // PreferenceStore cache. The PreferenceStore collector is async and
         // may not have received the write from setSongSourceOverride yet.
@@ -7757,7 +8032,9 @@ class MusicService :
         // re-resolve through Qobuz even if a cached YouTube stream exists.
         val now = System.currentTimeMillis()
         val cached = directStreamCache[mediaId]
-        if (!isDirectPick && cached != null && cached.expiresAtMs > now) {
+        if (!isDirectPick && cached != null && cached.expiresAtMs > now &&
+            cached.stream.source !in authenticityRejectedSources
+        ) {
             val override = SongSourceOverride.get(sourceOverrideRaw, mediaId)
             val cacheHitsOverride =
                 if (override != null) {
@@ -7774,6 +8051,17 @@ class MusicService :
                 )
                 tidalActiveMediaIds.add(mediaId)
                 audioNormalizationFactorCache[mediaId] = 1f
+                selectedPlaybackSourceByMediaId[mediaId] = cached.stream.source
+                authenticityClaimedLosslessByMediaId[mediaId] =
+                    isClaimedLosslessFormat(cached.stream.mimeType, cached.stream.codecs, cached.stream.label)
+                resolveAudioAuthenticitySampleRateHz(
+                    sampleRateHz = cached.stream.sampleRate,
+                    mimeType = cached.stream.mimeType,
+                    codecs = cached.stream.codecs,
+                    label = cached.stream.label,
+                )?.let { authenticitySampleRateByMediaId[mediaId] = it }
+                    ?: authenticitySampleRateByMediaId.remove(mediaId)
+                refreshAudioAuthenticityContexts(mediaId)
                 recordResolvedSource(mediaId, cached.stream.source)
                 val cacheKey = sourceCacheKey(cached.stream.source, mediaId)
                 cached.stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
@@ -7802,14 +8090,16 @@ class MusicService :
         val overrideStillEnabled =
             override == null ||
                 isSourceEnabled(override)
-        val chain =
+        val configuredChain =
             if (isDirectPick) {
                 // `override` was pinned to the picked source above.
                 listOfNotNull(override)
             } else when (override) {
                 null -> sourceResolutionChain()
                 AudioSourceType.YOUTUBE -> {
-                    if (overrideStillEnabled) {
+                    if (AudioSourceType.YOUTUBE in authenticityRejectedSources) {
+                        sourceResolutionChain()
+                    } else if (overrideStillEnabled) {
                         Timber.tag("MusicService").d("Per-song override: %s pinned to YouTube; skipping lossless", mediaId)
                         emptyList()
                     } else {
@@ -7831,6 +8121,12 @@ class MusicService :
                     sourceResolutionChain()
                 }
             }
+        val chain =
+            AudioAuthenticitySourceRetryPolicy.nextChain(
+                configuredChain = configuredChain,
+                fallbackChain = sourceResolutionChain(),
+                rejectedSources = authenticityRejectedSources,
+            )
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -7868,32 +8164,59 @@ class MusicService :
         var best: DirectStream? = null
         var bestSource: AudioSourceType? = null
         var bestScore = 0.0
-        for (source in chain) {
+        val chainDeadline =
+            AudioSourceAttemptScope.current()
+                ?: AudioSourceAttemptDeadline.start(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS)
+        for ((sourceIndex, source) in chain.withIndex()) {
+            if (chainDeadline.isExpired()) {
+                Timber.tag("PlaybackDiagnostics").w(
+                    "Source fallback chain timed out remainingProviders=%d",
+                    chain.size - sourceIndex,
+                )
+                break
+            }
             Timber.tag("MusicService").d("Trying source: %s for \"%s\"", source.name, query.title)
-            val stream: DirectStream? =
-                when (source) {
-                    AudioSourceType.TIDAL -> resolveTidalStream(query)
-                    AudioSourceType.QOBUZ -> resolveQobuzStream(query)
-                    AudioSourceType.QOBUZ_BACKUP -> resolveQobuzBackupStream(query)
-                    AudioSourceType.DEEZER -> resolveDeezerStream(query)
-                    AudioSourceType.APPLE ->
-                        resolveAppleStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.APPLE,
-                        )
-                    AudioSourceType.AMAZON ->
-                        resolveAmazonStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.AMAZON,
-                        )
-                    AudioSourceType.JIOSAAVN -> resolveJioSaavnStream(query)
-                    AudioSourceType.QQ ->
-                        resolveQqStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.QQ,
-                        )
-                    AudioSourceType.YOUTUBE -> null
+            val sourceAttemptStartedAtMs = android.os.SystemClock.elapsedRealtime()
+            val attemptDeadline = chainDeadline.child(resolveAudioSourceAttemptTimeoutMs(source))
+            val attemptResult =
+                try {
+                    AudioSourceAttemptScope.withDeadline(attemptDeadline) {
+                        when (source) {
+                            AudioSourceType.TIDAL -> resolveTidalStream(query)
+                            AudioSourceType.QOBUZ -> resolveQobuzStream(query)
+                            AudioSourceType.QOBUZ_BACKUP -> resolveQobuzBackupStream(query)
+                            AudioSourceType.DEEZER -> resolveDeezerStream(query)
+                            AudioSourceType.APPLE ->
+                                resolveAppleStream(
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.APPLE,
+                                )
+                            AudioSourceType.AMAZON ->
+                                resolveAmazonStream(
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.AMAZON,
+                                )
+                            AudioSourceType.JIOSAAVN -> resolveJioSaavnStream(query)
+                            AudioSourceType.QQ ->
+                                resolveQqStream(
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.QQ,
+                                )
+                            AudioSourceType.YOUTUBE -> null
+                        }
+                    }
+                } catch (_: AudioSourceAttemptTimedOutException) {
+                    null
                 }
+            val attemptTimedOut = attemptDeadline.isExpired()
+            val stream = attemptResult.takeUnless { attemptTimedOut }
+            Timber.tag("PlaybackDiagnostics").d(
+                "Source attempt provider=%s resolved=%s timedOut=%s elapsedMs=%d",
+                source.name,
+                stream != null,
+                attemptTimedOut,
+                android.os.SystemClock.elapsedRealtime() - sourceAttemptStartedAtMs,
+            )
             if (stream == null) {
                 Timber.tag("MusicService").d("Source %s did not resolve \"%s\"", source.name, query.title)
                 continue
@@ -8012,7 +8335,11 @@ class MusicService :
             }
             Timber.tag("MusicService").d("Tidal access token expired; refreshing via stored refresh token (flow=%s)", flow)
             val refreshed =
-                runCatching { runBlocking(Dispatchers.IO) { TidalAccountManager.refreshAccessToken(refresh, flow) } }
+                runCatching {
+                    runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                        TidalAccountManager.refreshAccessToken(refresh, flow)
+                    }
+                }
                     .onFailure { Timber.tag("MusicService").w(it, "Tidal token refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
@@ -8094,7 +8421,11 @@ class MusicService :
             }
             Timber.tag("MusicService").d("Force-refreshing Tidal token after 401 (flow=%s)", flow)
             val refreshed =
-                runCatching { runBlocking(Dispatchers.IO) { TidalAccountManager.refreshAccessToken(refresh, flow) } }
+                runCatching {
+                    runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                        TidalAccountManager.refreshAccessToken(refresh, flow)
+                    }
+                }
                     .onFailure { Timber.tag("MusicService").w(it, "Force refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
@@ -8119,7 +8450,7 @@ class MusicService :
         }
         val appleQuality = parseAppleMusicQuality()
         val candidates =
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 AppleMusicAudioProvider.resolveCandidates(
                     title = query.title,
                     artists = query.artists,
@@ -8182,7 +8513,7 @@ class MusicService :
             // contentLength backfill pattern; the YouTube resolver rewrites the row whenever
             // the song is played from YouTube again).
             runCatching {
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     val row = database.getFormatsByIds(listOf(query.mediaId)).firstOrNull()
                     if (row != null) {
                         val bitrate = measuredBitrate(file.length(), candidate.matchedDurationMs)
@@ -8264,7 +8595,7 @@ class MusicService :
 
         for (instance in instances) {
             val stream =
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     AmazonAudioProvider.resolveByMetadata(
                         title = query.title,
                         artists = query.artists,
@@ -8314,7 +8645,11 @@ class MusicService :
         trusted: Boolean,
     ): DirectStream? {
         val session =
-            runCatching { runBlocking(Dispatchers.IO) { QqMusicSession.read(dataStore) } }.getOrNull()
+            runCatching {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                    QqMusicSession.read(dataStore)
+                }
+            }.getOrNull()
         if (session == null) {
             Timber.tag("MusicService").d("QQ Music: no account connected; skipping")
             return null
@@ -8328,7 +8663,7 @@ class MusicService :
             }.getOrDefault(QqAudioQuality.Default)
 
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 QqMusicAudioProvider.resolveByMetadata(
                     title = query.title,
                     artists = query.artists,
@@ -8394,7 +8729,7 @@ class MusicService :
                     TidalAudioQuality.AAC_320 -> "HIGH"
                 }
             fun attempt(accessToken: String, countryCode: String): DirectStream? =
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     TidalAccountManager.resolveDirectStream(
                         accessToken = accessToken,
                         title = query.title,
@@ -8568,7 +8903,7 @@ class MusicService :
         QobuzAudioProvider.setTokens(configuredTokens)
         QobuzAudioProvider.setInstances(configuredInstances)
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 QobuzAudioProvider.resolve(
                     query =
                         QobuzAudioProvider.Query(
@@ -8598,7 +8933,7 @@ class MusicService :
         val ytId = (query.directQobuzBackupVideoId ?: query.mediaId).trim()
         val resolved =
             runCatching {
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     QobuzBackupProvider.resolveStream(ytId, mediaOkHttpClient)
                 }
             }.onFailure { error ->
@@ -8657,7 +8992,7 @@ class MusicService :
         val quality = parseDeezerAudioQuality()
         Timber.tag("MusicService").d("Deezer resolve start | quality=%s", quality.name)
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 DeezerAudioProvider
                     .resolve(
                         query =
@@ -8726,7 +9061,7 @@ class MusicService :
             }.trim()
 
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 val searchResult = SaavnService.searchSongs(searchQuery).getOrNull() ?: return@runBlocking null
                 if (searchResult.isEmpty()) return@runBlocking null
 
@@ -8794,6 +9129,16 @@ class MusicService :
         stream: DirectStream,
     ): DataSpec {
         Timber.tag("MusicService").i("Using %s stream for %s: %s", stream.source, mediaId, stream.label)
+        selectedPlaybackSourceByMediaId[mediaId] = stream.source
+        authenticityClaimedLosslessByMediaId[mediaId] = isClaimedLosslessFormat(stream.mimeType, stream.codecs, stream.label)
+        resolveAudioAuthenticitySampleRateHz(
+            sampleRateHz = stream.sampleRate,
+            mimeType = stream.mimeType,
+            codecs = stream.codecs,
+            label = stream.label,
+        )?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
         val cacheKey = sourceCacheKey(stream.source, mediaId)
         stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
         tidalActiveMediaIds.add(mediaId)
@@ -8842,12 +9187,7 @@ class MusicService :
         // songs showed the same bitrate/sample rate in the player's Details tab
         // even when they were different (e.g. a 48kHz/24-bit track showed as
         // 44.1kHz/16-bit).
-        val sampleRate = stream.sampleRate?.takeIf { it > 0 }
-            ?: when {
-                label.contains("HI_RES") || label.contains("MASTER") || label.contains("MQA") -> 96_000
-                label.contains("LOSSLESS") || codecs.contains("flac", true) || codecs.contains("alac", true) -> 44_100
-                else -> null
-            }
+        val sampleRate = resolveAudioAuthenticitySampleRateHz(stream.sampleRate, mime, codecs, stream.label)
         val knownContentLength = stream.contentLength?.takeIf { it > 0L }
         val bitrate =
             measuredBitrate(knownContentLength, stream.matchedDurationMs)
@@ -8965,6 +9305,27 @@ class MusicService :
             else -> "${source.name.lowercase()}:$mediaId"
         }
 
+    private fun evictAudioAuthenticityRejectedSource(mediaId: String, source: AudioSourceType) {
+        directStreamCache.computeIfPresent(mediaId) { _, cached ->
+            cached.takeUnless { it.stream.source == source }
+        }
+        if (source == AudioSourceType.YOUTUBE) {
+            playbackUrlCache.remove(mediaId)
+            YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
+            contentLengthCache.remove(mediaId)
+            runCatching { playerCache.removeResource(mediaId) }
+        }
+        val sourceKey = sourceCacheKey(source, mediaId)
+        contentLengthCache.remove(sourceKey)
+        runCatching { playerCache.removeResource(sourceKey) }
+        if (source == AudioSourceType.TIDAL) tidalActiveMediaIds.remove(mediaId)
+    }
+
+    private fun sourceForCacheKey(key: String, mediaId: String): AudioSourceType? {
+        if (key == mediaId) return AudioSourceType.YOUTUBE
+        return AudioSourceType.values().firstOrNull { sourceCacheKey(it, mediaId) == key }
+    }
+
     /**
      * Cheap check (no network) for whether an external lossless source (Tidal) should be preferred
      * for [mediaId]. Gates the ephemeral YouTube player-cache short-circuit so enabling a
@@ -8994,6 +9355,7 @@ class MusicService :
         }
         val mediaId = dataSpec.key ?: return dataSpec
         val lowDataModeActive = isLowDataModeActive()
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val storedFormat =
             runBlocking(Dispatchers.IO) {
                 database.format(mediaId).first()
@@ -9025,9 +9387,15 @@ class MusicService :
             resolveCachedDataSpec(
                 dataSpec = dataSpec,
                 mediaId = mediaId,
-                knownContentLength = knownContentLength,
                 includePlayerCache = allowPlayerCacheShortCircuit,
+                youtubeSampleRateHz = storedFormat?.sampleRate,
             )?.let { cachedDataSpec ->
+                Timber.tag("PlaybackDiagnostics").d(
+                    "Cached source selected position=%d length=%d playerCacheAllowed=%s",
+                    cachedDataSpec.position,
+                    cachedDataSpec.length,
+                    allowPlayerCacheShortCircuit,
+                )
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 return cachedDataSpec
             }
@@ -9042,7 +9410,7 @@ class MusicService :
                 }
             }
 
-        if (allowCacheShortCircuit && requiredCachedLength != null) {
+        if (allowCacheShortCircuit && AudioSourceType.YOUTUBE !in authenticityRejectedSources && requiredCachedLength != null) {
             val isFullyCached =
                 downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
                     (
@@ -9065,13 +9433,24 @@ class MusicService :
         // source like the others, so a user who turned it off gets the standard no-stream failure
         // here rather than a YouTube stream they explicitly declined. Everything below this gate
         // is YouTube resolution (cached URL short-circuit or a fresh player response).
-        if (!isSourceEnabled(AudioSourceType.YOUTUBE)) {
+        if (!isSourceEnabled(AudioSourceType.YOUTUBE) || AudioSourceType.YOUTUBE in authenticityRejectedSources) {
+            Timber.tag("PlaybackDiagnostics").w(
+                "Terminal source unavailable provider=youtube enabled=%s previouslyRejected=%s",
+                isSourceEnabled(AudioSourceType.YOUTUBE),
+                AudioSourceType.YOUTUBE in authenticityRejectedSources,
+            )
             throw PlaybackException(
                 getString(R.string.error_no_stream),
                 null,
                 PlaybackException.ERROR_CODE_REMOTE_ERROR,
             )
         }
+        selectedPlaybackSourceByMediaId[mediaId] = AudioSourceType.YOUTUBE
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        storedFormat?.sampleRate?.takeIf { it > 0 }?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
+        Timber.tag("PlaybackDiagnostics").i("Source selected provider=youtube route=terminal_fallback")
 
 
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
@@ -9221,6 +9600,11 @@ class MusicService :
             ?.remotePlaybackTrackingUrl()
             ?.let { remotePlaybackTrackingUrlCache[mediaId] = it }
         val format = nonNullPlayback.format
+        selectedPlaybackSourceByMediaId[mediaId] = AudioSourceType.YOUTUBE
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        format.audioSampleRate?.takeIf { it > 0 }?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
         val loudnessDb = nonNullPlayback.audioConfig?.loudnessDb
         val perceptualLoudnessDb = nonNullPlayback.audioConfig?.perceptualLoudnessDb
         val resolvedContentLength = format.contentLength ?: 0L
@@ -9296,34 +9680,9 @@ class MusicService :
     private fun resolveCachedDataSpec(
         dataSpec: DataSpec,
         mediaId: String,
-        knownContentLength: Long?,
         includePlayerCache: Boolean = true,
+        youtubeSampleRateHz: Int? = null,
     ): DataSpec? {
-        val readWindow =
-            resolveCachedReadWindow(
-                position = dataSpec.position,
-                requestedLength = dataSpec.length,
-                knownContentLength = knownContentLength,
-            ) {
-                DownloadSourceConfig.cacheKeysFor(mediaId).maxOfOrNull { key ->
-                    runCatching {
-                        val spans = downloadCache.getCachedSpans(key).toList() +
-                            (if (includePlayerCache) playerCache.getCachedSpans(key).toList() else emptyList())
-                        var total = 0L
-                        var cursor = dataSpec.position
-                        for (span in spans.sortedBy { it.position }) {
-                            if (span.position > cursor) break
-                            val spanEnd = span.position + span.length
-                            if (spanEnd > cursor) {
-                                total += (spanEnd - cursor)
-                                cursor = spanEnd
-                            }
-                        }
-                        total
-                    }.getOrDefault(0L)
-                } ?: 0L
-            } ?: return null
-
         // Find the first key (every download source's prefix, then the bare mediaId, as
         // DownloadSourceConfig.cacheKeysFor orders them) that has the requested byte range fully
         // cached. Returning the DataSpec with the matching key is critical — without it the
@@ -9334,12 +9693,20 @@ class MusicService :
         // this replaces skipped qobuz_backup: and jiosaavn:, so those downloads never played
         // offline.
         val candidateKeys = DownloadSourceConfig.cacheKeysFor(mediaId)
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val (matchingKey, matchingWindow) =
             candidateKeys.firstNotNullOfOrNull { key ->
+                val cacheSource = sourceForCacheKey(key, mediaId)
+                if (cacheSource != null && cacheSource in authenticityRejectedSources) {
+                    return@firstNotNullOfOrNull null
+                }
+                val recordedLength = recordedContentLength(key, includePlayerCache)
                 val keyWindow =
-                    recordedContentLength(key, includePlayerCache)
-                        ?.let { readWindow.coveringRecordedLength(it, explicitRequest = dataSpec.length > 0L) }
-                        ?: readWindow
+                    resolveCachedReadWindow(
+                        position = dataSpec.position,
+                        requestedLength = dataSpec.length,
+                        knownContentLength = if (dataSpec.length >= 0L) null else recordedLength,
+                    ) ?: return@firstNotNullOfOrNull null
                 val cachedLength =
                     getContinuousCachedLengthForKey(
                         key = key,
@@ -9349,6 +9716,21 @@ class MusicService :
                     )
                 if (cachedLength >= keyWindow.length) key to keyWindow else null
             } ?: return null
+
+        sourceForCacheKey(matchingKey, mediaId)?.let { source ->
+            val previouslySelectedSource = selectedPlaybackSourceByMediaId[mediaId]
+            selectedPlaybackSourceByMediaId[mediaId] = source
+            if (source == AudioSourceType.YOUTUBE || previouslySelectedSource != source) {
+                authenticityClaimedLosslessByMediaId.remove(mediaId)
+            }
+            if (source == AudioSourceType.YOUTUBE) {
+                youtubeSampleRateHz?.takeIf { it > 0 }?.let { authenticitySampleRateByMediaId[mediaId] = it }
+                    ?: authenticitySampleRateByMediaId.remove(mediaId)
+            } else {
+                authenticitySampleRateByMediaId.remove(mediaId)
+            }
+            refreshAudioAuthenticityContexts(mediaId)
+        }
 
         return dataSpec.buildUpon()
             .setKey(matchingKey)
@@ -9757,8 +10139,24 @@ class MusicService :
         val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
         if (shouldHold && !wl.isHeld) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Playback wake lock acquired state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                hasAudioFocus,
+                player.volume,
+            )
             wl.acquire()
         } else if (!shouldHold && wl.isHeld) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Playback wake lock released state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                hasAudioFocus,
+                player.volume,
+            )
             wl.release()
         }
     }
@@ -9803,7 +10201,106 @@ class MusicService :
         return activityManager?.isLowRamDevice == true || powerManager?.isPowerSaveMode == true
     }
 
-    private fun createRenderersFactory(transitionFilter: TransitionFilterProcessor) =
+    private fun audioAuthenticityContextFor(mediaId: String): AudioAuthenticityPlaybackContext =
+        AudioAuthenticityPlaybackContext(
+            playbackKey = mediaId,
+            sourceId = selectedPlaybackSourceByMediaId[mediaId]?.name.orEmpty(),
+            rejectSuspectedUpscaled =
+                resolveAudioAuthenticityProbeAvailability(
+                    rejectionEnabled = rejectSuspectedUpscaledAudioEnabled,
+                    pcmTapAvailable = !bitPerfectOutputActive,
+                ) == AudioAuthenticityProbeAvailability.AVAILABLE,
+            advertisedSampleRateHz = authenticitySampleRateByMediaId[mediaId],
+            claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true,
+        )
+
+    private fun refreshAudioAuthenticityContexts(mediaId: String) {
+        val updatedContext = audioAuthenticityContextFor(mediaId)
+        audioAuthenticityContextByPlayer.values.forEach { contextRef ->
+            if (contextRef.get()?.playbackKey == mediaId) contextRef.set(updatedContext)
+        }
+    }
+
+    private fun setAudioAuthenticityContext(player: ExoPlayer, mediaId: String?) {
+        val contextRef = audioAuthenticityContextByPlayer[player] ?: return
+        contextRef.set(mediaId?.let(::audioAuthenticityContextFor))
+    }
+
+    private fun handleAudioAuthenticityResult(
+        contextRef: AtomicReference<AudioAuthenticityPlaybackContext?>,
+        result: AudioAuthenticityProcessorResult,
+    ) {
+        scope.launch {
+            val owner =
+                audioAuthenticityContextByPlayer.entries
+                    .firstOrNull { it.value === contextRef }
+                    ?.key ?: return@launch
+            val activeContext = contextRef.get()
+            if (activeContext?.playbackKey != result.playbackKey || activeContext.sourceId != result.sourceId) return@launch
+            if (result.shouldReject && !activeContext.rejectSuspectedUpscaled) return@launch
+            if (owner.currentMediaItem?.mediaId != result.playbackKey) return@launch
+            val source = runCatching { AudioSourceType.valueOf(result.sourceId) }.getOrNull() ?: return@launch
+            if (selectedPlaybackSourceByMediaId[result.playbackKey] != source) return@launch
+            Timber.tag("PlaybackDiagnostics").i(
+                "Audio authenticity verdict=%s provider=%s confidence=%.3f cutoffHz=%s activeWindows=%d rejected=%s",
+                result.assessment.verdict.name,
+                source.name,
+                result.assessment.confidence,
+                result.assessment.cutoffFrequencyHz,
+                result.assessment.activeWindows,
+                result.shouldReject,
+            )
+            if (!result.shouldReject) return@launch
+
+            val isSecondaryPlayer = owner === secondaryCrossfadePlayer
+            if (isSecondaryPlayer && secondaryCrossfadeTarget?.mediaId != result.playbackKey) return@launch
+            if (!isSecondaryPlayer && (owner !== localPlayer || player.currentMediaItem?.mediaId != result.playbackKey)) {
+                return@launch
+            }
+            val rejectedSources =
+                authenticityRejectedSourcesByMediaId.getOrPut(result.playbackKey) {
+                    ConcurrentHashMap.newKeySet()
+                }
+            if (!rejectedSources.add(source)) return@launch
+
+            selectedPlaybackSourceByMediaId.remove(result.playbackKey, source)
+            authenticitySampleRateByMediaId.remove(result.playbackKey)
+            authenticityClaimedLosslessByMediaId.remove(result.playbackKey)
+            refreshAudioAuthenticityContexts(result.playbackKey)
+            Timber.tag("PlaybackDiagnostics").w(
+                "Rejected suspected upscaled audio provider=%s confidence=%.3f; retrying another source",
+                source.name,
+                result.assessment.confidence,
+            )
+
+            if (isSecondaryPlayer) {
+                evictAudioAuthenticityRejectedSource(result.playbackKey, source)
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                scheduleCrossfade()
+                return@launch
+            }
+
+            val sourceOverride =
+                SongSourceOverride.get(dataStore.get(SongSourceOverrideKey, ""), result.playbackKey)
+            val qobuzTrackId =
+                SongSourceQobuzTrackId.get(dataStore.get(SongSourceQobuzTrackIdKey, ""), result.playbackKey)
+            val qobuzBackupVideoId =
+                SongSourceQobuzBackupVideoId.get(dataStore.get(SongSourceQobuzBackupVideoIdKey, ""), result.playbackKey)
+            setSongSourceOverrideInternal(
+                mediaId = result.playbackKey,
+                source = sourceOverride,
+                qobuzTrackId = qobuzTrackId,
+                qobuzBackupVideoId = qobuzBackupVideoId,
+                authenticityRejectedSource = source,
+                preservedPositionMs = resolveAudioAuthenticityRetryPositionMs(player.currentPosition),
+            )
+        }
+    }
+
+    private fun createRenderersFactory(
+        transitionFilter: TransitionFilterProcessor,
+        authenticityContext: AtomicReference<AudioAuthenticityPlaybackContext?>,
+    ) =
         object : DefaultRenderersFactory(this) {
             init {
                 // Enable decoder fallback so that when a primary (typically hardware) decoder fails
@@ -9855,6 +10352,10 @@ class MusicService :
                         // untouched. A fresh instance per sink — an AudioProcessor may belong to
                         // only one chain.
                         HapticsPcmProcessor(engineProvider = { musicHapticsEngine }),
+                        AudioAuthenticityPcmProcessor(
+                            playbackContextProvider = { authenticityContext.get() },
+                            resultListener = { result -> handleAudioAuthenticityResult(authenticityContext, result) },
+                        ),
                         // Automix's transition filters ride last in the chain, as in 4nx3b and
                         // BitChord. Wide open (a pass-through) whenever no smart blend runs.
                         transitionFilter,
@@ -10628,6 +11129,8 @@ class MusicService :
         const val MIN_CROSSFADE_DURATION_MS = 500L
         const val CROSSFADE_END_GUARD_MS = 150L
         const val CROSSFADE_EARLY_FINISH_MS = 350L
+        const val SMART_FADE_TAIL_WAIT_MS = 2_000L
+        const val SMART_FADE_TAIL_EPSILON_MS = 8L
         const val CROSSFADE_PREPARE_AHEAD_MS = 30_000L
         const val CROSSFADE_READY_TIMEOUT_MS = 5_000L
         const val CROSSFADE_HANDOFF_BUFFER_MS = 5_000L

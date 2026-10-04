@@ -14,7 +14,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.QobuzInstancesKey
 import moe.rukamori.archivetune.constants.QobuzTokensKey
@@ -389,10 +392,12 @@ object LosslessStreamResolver {
                 if (albumHint.isNotBlank()) append(' ').append(albumHint)
             }.trim()
 
-        return runCatching {
-            runBlocking(Dispatchers.IO) {
+        return AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            runCatching {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                    AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
                 val results = SaavnService.searchSongs(searchQuery).getOrNull().orEmpty()
-                if (results.isEmpty()) return@runBlocking null
+                if (results.isEmpty()) return@withinSuspending null
                 val wantedDurationSec = durationMs?.let { it / 1000 }
                 val candidate =
                     results
@@ -408,10 +413,10 @@ object LosslessStreamResolver {
                                 wantedArtist = artistHint,
                                 wantedDurationSec = wantedDurationSec,
                             )
-                        } ?: return@runBlocking null
+                        } ?: return@withinSuspending null
                 val streamUrl =
                     SaavnService.selectBestUrl(candidate.downloadUrl, qualityApiValue)
-                        ?: return@runBlocking null
+                        ?: return@withinSuspending null
                 DirectStream(
                     uri = streamUrl,
                     mimeType = "audio/mp4",
@@ -424,10 +429,14 @@ object LosslessStreamResolver {
                     matchedAlbum = candidate.album?.name,
                     matchedDurationMs = candidate.duration?.toLong()?.times(1000L),
                 )
+                    }
+                }
+            }.onFailure { error ->
+                error.rethrowIfAudioSourceCancelled()
+                Timber.tag("LosslessResolver").w(error, "JioSaavn resolve failed for %s", mediaId)
             }
-        }.onFailure { error ->
-            Timber.tag("LosslessResolver").w(error, "JioSaavn resolve failed for %s", mediaId)
-        }.getOrNull()
+                .getOrNull()
+        }
     }
 
     /**

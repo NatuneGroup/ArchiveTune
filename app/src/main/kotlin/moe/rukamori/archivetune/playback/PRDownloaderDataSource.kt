@@ -18,9 +18,7 @@ import androidx.media3.datasource.FileDataSource
 import com.downloader.Error
 import com.downloader.OnDownloadListener
 import com.downloader.PRDownloader
-import com.downloader.Status
 import com.downloader.request.DownloadRequest
-import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -32,6 +30,7 @@ import java.security.MessageDigest
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import timber.log.Timber
 
 /**
  * A Media3 [DataSource] that delegates the actual HTTP fetching to
@@ -127,7 +126,8 @@ internal class PRDownloaderDataSource private constructor(
                 lower != "user-agent" &&
                 lower != "origin" &&
                 lower != "referer" &&
-                lower != "accept-encoding"
+                lower != "accept-encoding" &&
+                lower != "x-expected-content-length"
             ) {
                 requestBuilder.setHeader(k, v)
             }
@@ -165,41 +165,47 @@ internal class PRDownloaderDataSource private constructor(
         // a restart.
         if (!latch.await(DOWNLOAD_WAIT_TIMEOUT_MINUTES, TimeUnit.MINUTES)) {
             runCatching { PRDownloader.cancel(activeDownloadId) }
+            activeDownloadId = -1
             runCatching { target.delete() }
-            throw IOException("PRDownloader timed out after $DOWNLOAD_WAIT_TIMEOUT_MINUTES min for $url")
+            throw IOException("PRDownloader timed out after $DOWNLOAD_WAIT_TIMEOUT_MINUTES min")
         }
+        activeDownloadId = -1
 
         errorRef.get()?.let { err ->
             runCatching { target.delete() }
             val msg = buildString {
-                append("PRDownloader failed for $url")
+                append("PRDownloader failed")
                 if (err.isConnectionError) append(" (connection error)")
                 if (err.isServerError) append(" (server error)")
-                err.serverErrorMessage?.takeIf(String::isNotBlank)?.let { append(": $it") }
-                err.connectionException?.message?.takeIf(String::isNotBlank)?.let { append(" — $it") }
                 if (err.responseCode > 0) append(" (HTTP ${err.responseCode})")
             }
+            Timber.tag("PlaybackDiagnostics").w(
+                "Download request failed connectionError=%s serverError=%s responseCode=%d",
+                err.isConnectionError,
+                err.isServerError,
+                err.responseCode,
+            )
             throw IOException(msg)
         }
 
         if (!target.exists() || target.length() == 0L) {
             runCatching { target.delete() }
-            throw IOException("PRDownloader reported success but temp file is missing/empty: $target")
+            throw IOException("PRDownloader reported success but the downloaded file is missing or empty")
         }
 
         // ── Real integrity verification ── PRDownloader 1.0.2 has a known issue where
         // `onDownloadComplete()` can fire on a partial file when the upstream connection drops
         // mid-stream (especially on chunked-transfer CDNs that don't send Content-Length).
         val expectedLength = resolveExpectedContentLength(url, dataSpec)
-        if (expectedLength > 0L) {
-            val actualLength = target.length()
-            if (actualLength < expectedLength) {
-                runCatching { target.delete() }
-                throw IOException(
-                    "Partial download for $url: got $actualLength / $expectedLength bytes " +
-                        "(" + (actualLength * 100 / expectedLength) + "%)",
-                )
-            }
+        val actualLength = target.length()
+        if (isDownloadedContentTruncated(actualLength, expectedLength)) {
+            Timber.tag("PlaybackDiagnostics").w(
+                "Download incomplete expectedBytes=%d actualBytes=%d",
+                expectedLength,
+                actualLength,
+            )
+            runCatching { target.delete() }
+            throw IOException("PRDownloader returned an incomplete response")
         }
 
         tempFile = target
@@ -268,40 +274,69 @@ internal class PRDownloaderDataSource private constructor(
      * didn't silently truncate the file.
      */
     private fun resolveExpectedContentLength(url: String, dataSpec: DataSpec): Long {
-        // (1) Upstream-provided hint (set by prewarm from FormatEntity).
-        dataSpec.httpRequestHeaders["X-Expected-Content-Length"]?.toLongOrNull()
-            ?.let { if (it > 0L) return it }
+        val expectedLengthHeader =
+            dataSpec.httpRequestHeaders.entries
+                .firstOrNull { it.key.equals("X-Expected-Content-Length", ignoreCase = true) }
+                ?.value
+        val explicitLength = resolveExpectedDownloadedLength(expectedLengthHeader, null, null, null, null)
+        if (explicitLength > 0L) return explicitLength
 
-        // (2) HEAD request — best-effort. Some CDNs (e.g. YouTube
-        // googlevideo) reject HEAD on media URLs, so we silently fall
-        // through if the request fails.
-        return runCatching {
-            // Resolve stream-client profile (UA / Origin / Referer) for
-            // YouTube URLs, mirroring the main download path.
-            val youTubeMediaProfile = runCatching {
-                StreamClientUtils.resolveRequestProfile(url)
-            }.getOrNull()
-            val resolvedUserAgent = youTubeMediaProfile?.userAgent?.takeIf(String::isNotBlank)
-                ?: userAgent
-            val builder = Request.Builder().url(url).head()
-                .header("User-Agent", resolvedUserAgent)
-                .header("Accept-Encoding", "identity")
+        val youTubeMediaProfile = runCatching {
+            StreamClientUtils.resolveRequestProfile(url)
+        }.getOrNull()
+        val resolvedUserAgent = youTubeMediaProfile?.userAgent?.takeIf(String::isNotBlank)
+            ?: userAgent
+
+        fun probeRequest(rangeProbe: Boolean): Request {
+            val builder = Request.Builder().url(url)
+            if (rangeProbe) {
+                builder.get().header("Range", "bytes=0-0")
+            } else {
+                builder.head()
+            }
+            dataSpec.httpRequestHeaders.forEach { (name, value) ->
+                val lower = name.lowercase()
+                if (lower != "range" &&
+                    lower != "user-agent" &&
+                    lower != "origin" &&
+                    lower != "referer" &&
+                    lower != "accept-encoding" &&
+                    lower != "x-expected-content-length"
+                ) {
+                    builder.header(name, value)
+                }
+            }
+            builder.header("User-Agent", resolvedUserAgent)
+            builder.header("Accept-Encoding", "identity")
             youTubeMediaProfile?.origin?.takeIf(String::isNotBlank)?.let {
                 builder.header("Origin", it)
             }
             youTubeMediaProfile?.referer?.takeIf(String::isNotBlank)?.let {
                 builder.header("Referer", it)
             }
-            headClient.newCall(builder.build()).execute().use { response ->
-                val cl = response.header("Content-Length")?.toLongOrNull() ?: 0L
-                if (!response.isSuccessful && response.code != 200 && response.code != 206) {
-                    // HEAD not supported / rejected — don't fail the download.
-                    0L
-                } else {
-                    cl
+            return builder.build()
+        }
+
+        val headLength =
+            runCatching {
+                headClient.newCall(probeRequest(rangeProbe = false)).execute().use { response ->
+                    response.header("Content-Length").takeIf { response.code == 200 }
                 }
+            }.getOrNull()
+        val knownHeadLength = resolveExpectedDownloadedLength(expectedLengthHeader, headLength, null, null, null)
+        if (knownHeadLength > 0L) return knownHeadLength
+
+        return runCatching {
+            headClient.newCall(probeRequest(rangeProbe = true)).execute().use { response ->
+                resolveExpectedDownloadedLength(
+                    explicitExpectedLength = expectedLengthHeader,
+                    headContentLength = headLength,
+                    rangeResponseCode = response.code,
+                    rangeContentRange = response.header("Content-Range"),
+                    rangeContentLength = response.header("Content-Length"),
+                )
             }
-        }.getOrDefault(0L)
+        }.getOrDefault(knownHeadLength)
     }
 
     /**

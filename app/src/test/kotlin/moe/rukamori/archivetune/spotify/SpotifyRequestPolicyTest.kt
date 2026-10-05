@@ -153,6 +153,7 @@ class SpotifyRequestPolicyTest {
     fun reportedExplicitMetadataDoesNotDependOnRestHydration() {
         assertTrue(spotifyReportedExplicit(json("""{"contentRating":{"label":"EXPLICIT"}}""")))
         assertTrue(spotifyReportedExplicit(json("""{"explicit":true}""")))
+        assertTrue(spotifyReportedExplicit(json("""{"explicit":false,"contentRating":{"label":"EXPLICIT"}}""")))
         assertFalse(spotifyReportedExplicit(json("""{"contentRating":{"label":"NONE"}}""")))
         assertFalse(spotifyReportedExplicit(json("{}")))
     }
@@ -163,6 +164,7 @@ class SpotifyRequestPolicyTest {
         assertEquals("USAAA2600001", spotifyReportedExternalIds(json("""{"external_ids":{"isrc":"USAAA2600001"}}"""))?.isrc)
         assertNull(spotifyReportedExternalIds(json("{}")))
         assertNull(spotifyReportedExternalIds(json("""{"externalIds":{"isrc":null}}""")))
+        assertNull(spotifyReportedExternalIds(json("""{"externalIds":{"isrc":123}}""")))
     }
 
     private fun json(value: String) = Json.parseToJsonElement(value).jsonObject

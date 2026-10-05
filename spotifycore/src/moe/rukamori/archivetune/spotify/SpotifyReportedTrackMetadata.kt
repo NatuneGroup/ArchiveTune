@@ -13,15 +13,15 @@ import kotlinx.serialization.json.booleanOrNull
 import moe.rukamori.archivetune.spotify.models.SpotifyExternalIds
 
 fun spotifyReportedExplicit(track: JsonObject): Boolean {
-    (track["explicit"] as? JsonPrimitive)?.booleanOrNull?.let { return it }
     val rating = track["contentRating"] as? JsonObject
-    return (rating?.get("label") as? JsonPrimitive)?.content.equals("EXPLICIT", ignoreCase = true)
+    return (track["explicit"] as? JsonPrimitive)?.booleanOrNull == true ||
+        (rating?.get("label") as? JsonPrimitive)?.content.equals("EXPLICIT", ignoreCase = true)
 }
 
 fun spotifyReportedExternalIds(track: JsonObject): SpotifyExternalIds? {
     val values = track["externalIds"] as? JsonObject ?: track["external_ids"] as? JsonObject ?: return null
     fun value(name: String): String? =
-        (values[name] as? JsonPrimitive)?.takeUnless { it.content == "null" }?.content?.takeIf(String::isNotBlank)
+        (values[name] as? JsonPrimitive)?.takeIf { it.isString && it.content != "null" }?.content?.takeIf(String::isNotBlank)
     val ids = SpotifyExternalIds(isrc = value("isrc"), ean = value("ean"), upc = value("upc"))
     return ids.takeIf { it.isrc != null || it.ean != null || it.upc != null }
 }

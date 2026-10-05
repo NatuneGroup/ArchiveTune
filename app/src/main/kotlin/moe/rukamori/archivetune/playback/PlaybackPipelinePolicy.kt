@@ -42,19 +42,7 @@ internal fun isClaimedLosslessFormat(
 
 internal fun resolveAudioAuthenticitySampleRateHz(
     sampleRateHz: Int?,
-    mimeType: String,
-    codecs: String,
-    label: String,
-): Int? {
-    sampleRateHz?.takeIf { it > 0 }?.let { return it }
-    val normalizedLabel = label.lowercase().replace('-', '_').replace(' ', '_')
-    return when {
-        listOf("hi_res", "hires", "high_res", "master", "mqa").any { marker -> normalizedLabel.contains(marker) } ||
-            normalizedLabel.endsWith("_max") || normalizedLabel == "max" -> 96_000
-        isClaimedLosslessFormat(mimeType, codecs, label) -> 44_100
-        else -> null
-    }
-}
+): Int? = sampleRateHz?.takeIf { it > 0 }
 
 internal fun resolveAudioOffloadEnabled(
     requested: Boolean,

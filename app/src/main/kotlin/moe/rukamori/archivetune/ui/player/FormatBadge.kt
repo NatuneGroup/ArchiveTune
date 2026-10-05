@@ -142,8 +142,8 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
         Icon(
             painter = painterResource(R.drawable.ic_lossless_wave),
             contentDescription = null,
-            tint = Color.White.copy(alpha = if (animated) 0.7f else 0.45f),
-            modifier = Modifier.size(16.dp),
+            tint = Color.White.copy(alpha = if (animated) 0.78f else 0.68f),
+            modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(4.dp))
         if (animated) {
@@ -154,7 +154,7 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = (MaterialTheme.typography.labelMedium.fontSize.value + 1).sp,
                 ),
-                color = Color.White.copy(alpha = 0.45f),
+                color = Color.White.copy(alpha = 0.68f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -183,7 +183,7 @@ private fun ShimmerText(text: String) {
         ),
         label = "lossless-shimmer-progress",
     )
-    val baseColor = Color.White.copy(alpha = 0.55f)
+    val baseColor = Color.White.copy(alpha = 0.68f)
     val brush = if (widthPx <= 0) {
         Brush.linearGradient(listOf(baseColor, baseColor))
     } else {

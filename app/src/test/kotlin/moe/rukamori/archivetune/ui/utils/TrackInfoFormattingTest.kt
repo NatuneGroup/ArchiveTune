@@ -7,11 +7,13 @@
 
 package moe.rukamori.archivetune.ui.utils
 
+import androidx.media3.common.C
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import moe.rukamori.archivetune.playback.DecodedPcmFormat
 
 class TrackInfoFormattingTest {
     @Test
@@ -41,5 +43,14 @@ class TrackInfoFormattingTest {
         assertTrue(isYouTubeVideoId("dQw4w9WgXcQ"))
         assertFalse(isYouTubeVideoId("LPtg12345"))
         assertFalse(isYouTubeVideoId("https://youtube.com/watch?v=dQw4w9WgXcQ"))
+    }
+
+    @Test
+    fun decodedPcmFormatIsScopedToTheCurrentTrack() {
+        val observed = DecodedPcmFormat("current-track", 44_100, 2, C.ENCODING_PCM_16BIT)
+
+        assertEquals(observed, decodedPcmForTrack("current-track", observed))
+        assertNull(decodedPcmForTrack("next-track", observed))
+        assertNull(decodedPcmForTrack("current-track", null))
     }
 }

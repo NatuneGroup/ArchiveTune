@@ -32,6 +32,35 @@ object CrossfadePolicy {
         return minOf(currentPositionMs - startPositionMs, durationMs)
     }
 
+    fun advanceFadeElapsedMs(
+        elapsedMs: Long,
+        previousPositionMs: Long,
+        currentPositionMs: Long,
+        durationMs: Long,
+        incomingAdvancing: Boolean,
+    ): Long {
+        if (durationMs <= 0L) return 0L
+        val boundedElapsedMs = elapsedMs.coerceIn(0L, durationMs)
+        if (!incomingAdvancing) return boundedElapsedMs
+        val elapsedDeltaMs = outgoingElapsedMs(
+            startPositionMs = previousPositionMs,
+            currentPositionMs = currentPositionMs,
+            durationMs = durationMs - boundedElapsedMs,
+        )
+        return boundedElapsedMs + elapsedDeltaMs
+    }
+
+    fun shouldAbortForIncomingStall(
+        playbackRequested: Boolean,
+        incomingAdvancing: Boolean,
+        stallElapsedMs: Long,
+        maximumStallMs: Long,
+    ): Boolean =
+        playbackRequested &&
+            !incomingAdvancing &&
+            maximumStallMs >= 0L &&
+            stallElapsedMs >= maximumStallMs
+
     /** Equal-power fade: constant perceived loudness across the overlap. */
     fun outgoingGain(progress: Float): Float {
         val clamped = progress.coerceIn(0f, 1f)
@@ -127,9 +156,13 @@ object CrossfadePolicy {
     data class PromotionSnapshot(
         val generationMatches: Boolean,
         val targetIndex: Int,
+        val incomingItemMatchesTarget: Boolean,
         val hasError: Boolean,
         val isIdle: Boolean,
         val isEnded: Boolean,
+        val isReady: Boolean,
+        val isPlaying: Boolean,
+        val playbackRequested: Boolean,
         val unsetIndex: Int,
     )
 
@@ -142,9 +175,11 @@ object CrossfadePolicy {
     fun mayPromote(snapshot: PromotionSnapshot): Boolean =
         snapshot.generationMatches &&
             snapshot.targetIndex != snapshot.unsetIndex &&
+            snapshot.incomingItemMatchesTarget &&
             !snapshot.hasError &&
             !snapshot.isIdle &&
-            !snapshot.isEnded
+            !snapshot.isEnded &&
+            (!snapshot.playbackRequested || (snapshot.isReady && snapshot.isPlaying))
 
     fun shouldResumeAfterEnded(
         playbackRequested: Boolean,

@@ -1929,14 +1929,14 @@ private fun BottomGlyph(
                 painter = painterResource(iconRes),
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(24.dp),
             )
         } else if (icon != null) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(24.dp),
             )
         } else if (label != null) {
             Text(
@@ -1950,7 +1950,7 @@ private fun BottomGlyph(
 }
 
 /** Diameter of the glyphs flanking the capsule, which the row is sized around. */
-private val BOTTOM_GLYPH_DIAMETER = 44.dp
+private val BOTTOM_GLYPH_DIAMETER = 48.dp
 
 /**
  * Height of the capsule. The reference draws it as tall as the glyphs; each

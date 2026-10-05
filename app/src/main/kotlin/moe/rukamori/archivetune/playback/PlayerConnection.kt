@@ -134,6 +134,9 @@ class PlayerConnection(
         mediaMetadata.flatMapLatest { mediaMetadata ->
             database.format(mediaMetadata?.id)
         }
+    val decodedPcmFormat = service.decodedPcmFormat
+    val reportedAudioFormat = service.reportedAudioFormat
+    val androidAudioOutputFormat = service.androidAudioOutputFormat
 
     val queueTitle = MutableStateFlow<String?>(null)
     val queueWindows = MutableStateFlow<List<Timeline.Window>>(emptyList())

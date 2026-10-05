@@ -28,6 +28,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import moe.rukamori.archivetune.db.entities.Song
+import moe.rukamori.archivetune.discord.DiscordAuthorizationRequiredException
 import moe.rukamori.archivetune.discord.DiscordOAuthRepository
 import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.utils.DiscordImageResolver
@@ -89,11 +90,10 @@ object DiscordPresenceManager {
         }
     }
 
-    private suspend fun getOrCreateRpc(
-        context: Context,
-        token: String,
-    ): DiscordRPC {
-        val activeToken = DiscordOAuthRepository.getValidAccessToken(context) ?: token
+    private suspend fun getOrCreateRpc(context: Context): DiscordRPC {
+        val activeToken =
+            DiscordOAuthRepository.getValidAccessToken(context)
+                ?: throw DiscordAuthorizationRequiredException()
         if (rpcInstance == null || rpcToken != activeToken) {
             runCatching { rpcInstance?.stopActivity() }
                 .onFailure { Timber.tag(LOG_TAG).v(it, "failed to stop previous activity") }
@@ -129,6 +129,11 @@ object DiscordPresenceManager {
         token: String? = null,
     ): Boolean =
         withContext(Dispatchers.IO) {
+            if (!DiscordSocialPresenceClient.isAvailable) {
+                setLastRpcTimestamps(null, null)
+                return@withContext true
+            }
+
             val appContext = context.applicationContext
             rpcMutex.withLock {
                 try {
@@ -137,7 +142,7 @@ object DiscordPresenceManager {
                         !token.isNullOrBlank(),
                         rpcInstance != null,
                     )
-                    clearPresenceLocked(appContext, token)
+                    clearPresenceLocked(appContext)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -157,6 +162,8 @@ object DiscordPresenceManager {
         generation: Long,
     ): Boolean =
         withContext(Dispatchers.IO) {
+            if (!DiscordSocialPresenceClient.isAvailable) return@withContext false
+
             val appContext = context.applicationContext
             rpcMutex.withLock {
                 if (generation != updateGeneration.get()) {
@@ -165,14 +172,14 @@ object DiscordPresenceManager {
                 }
 
                 try {
-                    val activeToken = DiscordOAuthRepository.getValidAccessToken(appContext) ?: token
+                    val activeToken = DiscordOAuthRepository.getValidAccessToken(appContext) ?: return@withLock false
                     if (activeToken.isBlank()) {
                         Timber.tag(LOG_TAG).w("updatePresence skipped because token is missing")
                         return@withLock false
                     }
 
                     if (song == null) {
-                        val rpc = getOrCreateRpc(appContext, activeToken)
+                        val rpc = getOrCreateRpc(appContext)
                         rpc.stopActivity()
                         setLastRpcTimestamps(null, null)
                         consecutiveFailures = 0
@@ -193,7 +200,7 @@ object DiscordPresenceManager {
                         return@withLock true
                     }
 
-                    val rpc = getOrCreateRpc(appContext, activeToken)
+                    val rpc = getOrCreateRpc(appContext)
                     val result =
                         rpc.updateSong(
                             song = song,
@@ -227,6 +234,7 @@ object DiscordPresenceManager {
         context: Context,
         token: String,
     ) {
+        if (!DiscordSocialPresenceClient.isAvailable) return
         if (!started.getAndSet(true)) {
             consecutiveFailures = 0
             scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -268,8 +276,12 @@ object DiscordPresenceManager {
 
     private suspend fun clearPresenceLocked(
         context: Context,
-        token: String? = null,
     ): Boolean {
+        if (!DiscordSocialPresenceClient.isAvailable) {
+            setLastRpcTimestamps(null, null)
+            return true
+        }
+
         val existingRpc = rpcInstance
         if (existingRpc != null) {
             Timber.tag(LOG_TAG).d("clearPresenceLocked using existing RPC instance")
@@ -279,14 +291,14 @@ object DiscordPresenceManager {
             return true
         }
 
-        val activeToken = DiscordOAuthRepository.getValidAccessToken(context) ?: token.orEmpty()
+        val activeToken = DiscordOAuthRepository.getValidAccessToken(context) ?: return false
         if (activeToken.isBlank()) {
             Timber.tag(LOG_TAG).w("clearPresenceLocked skipped because token is missing")
             return false
         }
 
         Timber.tag(LOG_TAG).d("clearPresenceLocked creating RPC instance for clear")
-        val rpc = getOrCreateRpc(context, activeToken)
+        val rpc = getOrCreateRpc(context)
         rpc.stopActivity()
         setLastRpcTimestamps(null, null)
         consecutiveFailures = 0
@@ -316,7 +328,7 @@ object DiscordPresenceManager {
                 rpcMutex.withLock {
                     runCatching {
                         withTimeout(STOP_TIMEOUT_MS) {
-                            if (clearActivity) {
+                            if (clearActivity && DiscordSocialPresenceClient.isAvailable) {
                                 rpcToClose.stopActivity()
                             }
                             rpcToClose.closeRPC()

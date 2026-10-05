@@ -146,8 +146,11 @@ object AppleMusicAudioProvider {
     /** Thrown by [searchSongIds]/[webPlayback] on 401/403 — the media-user-token is dead. */
     private class AuthException : Exception("apple media-user-token rejected (401/403)")
 
-    /** One entry of the account ring: a media-user-token plus its pool id (null = personal). */
-    private data class RingEntry(val token: String, val poolId: Long?)
+    private data class RingEntry(
+        val token: String,
+        val poolId: Long?,
+        val pooled: Boolean,
+    )
 
     @Volatile
     private var ring: List<RingEntry> = emptyList()
@@ -155,9 +158,20 @@ object AppleMusicAudioProvider {
     @Volatile
     private var ringBuiltAt = 0L
 
+    @Volatile
+    private var ringPoolEnabled: Boolean? = null
+
     /** Sticky index of the last account that resolved successfully; rotation starts here. */
     @Volatile
     private var ringIndex = 0
+
+    fun invalidatePoolAccountCache() {
+        ring = ring.filterNot { it.pooled }
+        ringBuiltAt = 0L
+        ringPoolEnabled = false
+        ringIndex = 0
+        AppleMusicProvider.clearStorefrontCache()
+    }
 
     /**
      * The account ring: the personal media-user-token first (when signed in), then the shared
@@ -167,13 +181,20 @@ object AppleMusicAudioProvider {
     private fun accountRing(): List<RingEntry> {
         val now = System.currentTimeMillis()
         val cached = ring
-        if (cached.isNotEmpty() && now - ringBuiltAt < 60_000L) return cached
+        val poolEnabled = PoolAccountManager.isPoolEnabled()
+        if (cached.isNotEmpty() && ringPoolEnabled == poolEnabled && now - ringBuiltAt < 60_000L) return cached
         val personal = mediaUserToken()
-        val pool = PoolAccountManager.appleMusicAccounts().map { RingEntry(it.mediaUserToken, it.id) }
-        val built = ((personal?.let { listOf(RingEntry(it, null)) } ?: emptyList()) + pool)
+        val pool =
+            if (poolEnabled) {
+                PoolAccountManager.appleMusicAccounts().map { RingEntry(it.mediaUserToken, it.id, pooled = true) }
+            } else {
+                emptyList()
+            }
+        val built = ((personal?.let { listOf(RingEntry(it, null, pooled = false)) } ?: emptyList()) + pool)
             .distinctBy { it.token }
         ring = built
         ringBuiltAt = now
+        ringPoolEnabled = poolEnabled
         if (ringIndex >= built.size) ringIndex = 0
         return built
     }
@@ -225,6 +246,7 @@ object AppleMusicAudioProvider {
             for (attempt in ringEntries.indices) {
                 val index = (ringIndex + attempt) % ringEntries.size
                 val entry = ringEntries[index]
+                if (entry.pooled && !PoolAccountManager.isPoolEnabled()) continue
                 val streams =
                     runCatching {
                         resolveWithToken(entry.token, devToken, title, artists, quality)

@@ -88,6 +88,18 @@ class SourceOrderTest {
     }
 
     @Test
+    fun optInSourcesCanBeEnabledAndRestoredWithoutDuplicates() {
+        val withAmazon = AudioSourceConfig.withSourceAdded(null, AudioSourceType.AMAZON)
+        val withQq = AudioSourceConfig.withSourceAdded(withAmazon, AudioSourceType.QQ)
+        val order = AudioSourceConfig.parseOrder(withQq)
+
+        assertTrue(order.indexOf(AudioSourceType.AMAZON) < order.indexOf(AudioSourceType.YOUTUBE))
+        assertTrue(order.indexOf(AudioSourceType.QQ) < order.indexOf(AudioSourceType.YOUTUBE))
+        assertEquals(withQq, AudioSourceConfig.withSourceAdded(withQq, AudioSourceType.AMAZON))
+        assertEquals(withQq, AudioSourceConfig.withSourceAdded(withQq, AudioSourceType.QQ))
+    }
+
+    @Test
     fun unknownAndDuplicateEntriesAreIgnored() {
         val merged = AudioSourceConfig.parseOrder("TIDAL,NOT_A_SOURCE,tidal, youtube ")
 

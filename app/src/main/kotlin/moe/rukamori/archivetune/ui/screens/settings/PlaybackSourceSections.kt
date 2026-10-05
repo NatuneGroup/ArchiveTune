@@ -148,7 +148,7 @@ internal fun PlaybackSourceSections(
     val (deezerEnabled, onDeezerEnabledChangeRaw) = rememberPreference(DeezerEnabledKey, false)
     val (appleMusicEnabled, onAppleMusicEnabledChangeRaw) = rememberPreference(AppleMusicSourceEnabledKey, false)
     val (amazonEnabled, onAmazonEnabledChangeRaw) = rememberPreference(AmazonEnabledKey, false)
-    val (qqMusicEnabled, onQqMusicEnabledChange) = rememberPreference(QqMusicEnabledKey, false)
+    val (qqMusicEnabled, onQqMusicEnabledChangeRaw) = rememberPreference(QqMusicEnabledKey, false)
     val (deezerQuality, onDeezerQualityChange) =
         rememberEnumPreference(DeezerAudioQualityKey, DeezerAudioQuality.FLAC)
     val (jioSaavnEnabled, onJioSaavnEnabledChange) = rememberPreference(JioSaavnEnabledKey, false)
@@ -173,7 +173,7 @@ internal fun PlaybackSourceSections(
         onQobuzEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
@@ -181,7 +181,7 @@ internal fun PlaybackSourceSections(
         onDeezerEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
@@ -189,16 +189,25 @@ internal fun PlaybackSourceSections(
         onAppleMusicEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
     val onAmazonEnabledChange: (Boolean) -> Unit = { enabled ->
         onAmazonEnabledChangeRaw(enabled)
+        if (enabled) {
+            onSourceOrderChange(AudioSourceConfig.withSourceAdded(sourceOrderRaw, AudioSourceType.AMAZON))
+        }
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
+        }
+    }
+    val onQqMusicEnabledChange: (Boolean) -> Unit = { enabled ->
+        onQqMusicEnabledChangeRaw(enabled)
+        if (enabled) {
+            onSourceOrderChange(AudioSourceConfig.withSourceAdded(sourceOrderRaw, AudioSourceType.QQ))
         }
     }
 

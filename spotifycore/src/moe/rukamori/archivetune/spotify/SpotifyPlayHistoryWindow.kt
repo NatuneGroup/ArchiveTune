@@ -137,7 +137,7 @@ fun needsFullHistoryRead(
  * [SPOTIFY_RATE_LIMIT_MAX_MS] for the one value that is not honoured.
  */
 fun rateLimitCooldownMillis(retryAfterSec: Long?): Long {
-    val fromHeader = retryAfterSec?.takeIf { it > 0 }?.let { it * 1000L }
+    val fromHeader = retryAfterSec?.takeIf { it > 0 }?.let { it.coerceAtMost(SPOTIFY_RATE_LIMIT_MAX_MS / 1_000L) * 1_000L }
     return when {
         fromHeader == null -> SPOTIFY_RATE_LIMIT_FALLBACK_MS
         fromHeader > SPOTIFY_RATE_LIMIT_MAX_MS -> SPOTIFY_RATE_LIMIT_MAX_MS

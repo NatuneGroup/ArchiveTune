@@ -9,8 +9,12 @@ package moe.rukamori.archivetune.spotify
 
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 
 suspend fun <T> spotifyRequestResult(request: suspend () -> T): Result<T> =
@@ -48,18 +52,35 @@ fun spotifyRetryAfterSeconds(value: String?, nowMillis: Long): Long? {
     }.getOrNull()
 }
 
+fun isSpotifyQuotaExceededResponse(body: String): Boolean =
+    runCatching {
+        val root = Json.parseToJsonElement(body) as? JsonObject
+        val error = root?.get("error") as? JsonObject
+        (error?.get("status") as? JsonPrimitive)?.intOrNull == 429 &&
+            (error?.get("reason") as? JsonPrimitive)?.content == "QUOTA_EXCEEDED"
+    }.getOrDefault(false)
+
 class SpotifyRequestCooldown(private val nowMillis: () -> Long = System::currentTimeMillis) {
-    private val blockedUntilMillis = AtomicLong(0L)
+    private data class State(val untilMillis: Long = 0L, val quotaExceeded: Boolean = false)
+    private val state = AtomicReference(State())
+
+    val quotaExceeded: Boolean
+        get() = state.get().let { it.quotaExceeded && it.untilMillis > nowMillis() }
 
     fun remainingSeconds(): Long {
-        val remaining = (blockedUntilMillis.get() - nowMillis()).coerceAtLeast(0L)
+        val remaining = (state.get().untilMillis - nowMillis()).coerceAtLeast(0L)
         return remaining / 1_000L + if (remaining % 1_000L == 0L) 0L else 1L
     }
 
-    fun recordRateLimit(retryAfter: String?): Long {
+    fun recordRateLimit(retryAfter: String?, quotaExceeded: Boolean = false): Long {
         val now = nowMillis()
         val cooldown = rateLimitCooldownMillis(spotifyRetryAfterSeconds(retryAfter, now))
-        blockedUntilMillis.accumulateAndGet(now + cooldown, ::maxOf)
+        state.updateAndGet { previous ->
+            State(
+                untilMillis = maxOf(previous.untilMillis, now + cooldown),
+                quotaExceeded = quotaExceeded || (previous.quotaExceeded && previous.untilMillis > now),
+            )
+        }
         return remainingSeconds()
     }
 }

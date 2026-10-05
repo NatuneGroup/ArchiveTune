@@ -121,6 +121,35 @@ class SpotifyRequestPolicyTest {
     }
 
     @Test
+    fun explicitQuotaExceededResponsesAreDistinguishedFromTransientThrottles() {
+        assertTrue(isSpotifyQuotaExceededResponse("""{"error":{"status":429,"reason":"QUOTA_EXCEEDED"}}"""))
+        assertFalse(isSpotifyQuotaExceededResponse("""{"error":{"status":429,"message":"Too many requests"}}"""))
+        assertFalse(isSpotifyQuotaExceededResponse("""{"error":{"status":403,"reason":"QUOTA_EXCEEDED"}}"""))
+        assertFalse(isSpotifyQuotaExceededResponse("not JSON"))
+    }
+
+    @Test
+    fun quotaReasonRemainsVisibleDuringTheGateAndExpiresWithIt() {
+        var now = 1_000_000L
+        val cooldown = SpotifyRequestCooldown { now }
+        cooldown.recordRateLimit("60", quotaExceeded = true)
+        assertTrue(cooldown.quotaExceeded)
+        now += 1_000L
+        cooldown.recordRateLimit("1")
+        assertTrue(cooldown.quotaExceeded)
+        now += 59_000L
+        assertFalse(cooldown.quotaExceeded)
+        cooldown.recordRateLimit("30")
+        assertFalse(cooldown.quotaExceeded)
+    }
+
+    @Test
+    fun quotaExhaustionDoesNotScheduleTheShortHistoryRetry() {
+        assertNull(historyRetryWaitMillis(30, hasCachedRows = false, quotaExceeded = true))
+        assertEquals(30_000L, historyRetryWaitMillis(30, hasCachedRows = false))
+    }
+
+    @Test
     fun reportedExplicitMetadataDoesNotDependOnRestHydration() {
         assertTrue(spotifyReportedExplicit(json("""{"contentRating":{"label":"EXPLICIT"}}""")))
         assertTrue(spotifyReportedExplicit(json("""{"explicit":true}""")))

@@ -131,6 +131,7 @@ object Spotify {
         override val message: String,
         val retryAfterSec: Long = 0,
         cause: Throwable? = null,
+        val quotaExceeded: Boolean = false,
     ) : Exception(message, cause)
 
     @Volatile
@@ -247,7 +248,9 @@ object Spotify {
         body: JsonObject,
     ): GqlResult {
         val blockedSeconds = graphQlCooldown.remainingSeconds()
-        if (blockedSeconds > 0L) throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSeconds)
+        if (blockedSeconds > 0L) {
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSeconds, quotaExceeded = graphQlCooldown.quotaExceeded)
+        }
         log("D", "GQL POST $operationName")
 
         val response =
@@ -267,9 +270,15 @@ object Spotify {
             throw SpotifyException(401, "Token expired or invalid")
         }
         if (response.status == HttpStatusCode.TooManyRequests) {
-            val retryAfter = graphQlCooldown.recordRateLimit(response.headers["Retry-After"])
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val retryAfter = graphQlCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
             log("W", "GQL $operationName -> 429, GraphQL calls are blocked for ${retryAfter}s")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter)
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = retryAfter,
+                quotaExceeded = quotaExceeded,
+            )
         }
         if (response.status == HttpStatusCode.PreconditionFailed) {
             return GqlResult(json = null, isPersistedQueryNotFound = true)
@@ -332,7 +341,7 @@ object Spotify {
         val blockedSec = restCooldownSecondsRemaining()
         if (blockedSec > 0) {
             log("W", "REST $endpoint — skipping, app-wide REST cooldown has ${blockedSec}s left")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec)
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec, quotaExceeded = restCooldown.quotaExceeded)
         }
 
         log("D", "REST GET $endpoint")
@@ -347,9 +356,15 @@ object Spotify {
             throw SpotifyException(401, "Token expired or invalid")
         }
         if (response.status == HttpStatusCode.TooManyRequests) {
-            val remainingSec = restCooldown.recordRateLimit(response.headers["Retry-After"])
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val remainingSec = restCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
             log("W", "REST $endpoint -> 429, every REST call is blocked for ${remainingSec}s")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = remainingSec)
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = remainingSec,
+                quotaExceeded = quotaExceeded,
+            )
         }
         if (response.status.value !in 200..299) {
             val bodyText = response.bodyAsText()

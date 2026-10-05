@@ -158,16 +158,26 @@ fun IntegrationScreen(
                 modifier = positions.modifierFor("music_sources"),
                 title = stringResource(R.string.music_sources),
             ) {
-                // Only where a pool is baked in: without SOURCE_PROVIDER_URL there is no pool to
-                // switch off, and PoolAccountManager already answers no accounts.
-                item(visible = PoolAccountManager.isEnabled) {
+                val poolConfigured = PoolAccountManager.isEnabled
+                item {
                     SwitchPreference(
                         modifier = positions.modifierFor("use_pool_accounts"),
                         title = { Text(stringResource(R.string.use_pool_accounts)) },
-                        description = stringResource(R.string.use_pool_accounts_desc),
+                        description =
+                            if (poolConfigured) {
+                                stringResource(R.string.source_pool_enabled_description)
+                            } else {
+                                stringResource(R.string.source_pool_unavailable_description)
+                            },
                         icon = { Icon(painterResource(R.drawable.group), null) },
-                        checked = usePoolAccounts,
-                        onCheckedChange = onUsePoolAccountsChange,
+                        checked = poolConfigured && usePoolAccounts,
+                        onCheckedChange = {
+                            if (poolConfigured) {
+                                onUsePoolAccountsChange(it)
+                                PoolAccountManager.setPoolAccountsEnabled(it)
+                            }
+                        },
+                        isEnabled = poolConfigured,
                     )
                 }
 

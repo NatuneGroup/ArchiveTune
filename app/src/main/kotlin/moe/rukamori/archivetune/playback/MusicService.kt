@@ -202,6 +202,7 @@ import moe.rukamori.archivetune.constants.AppleMusicQuality
 import moe.rukamori.archivetune.constants.AppleMusicQualityKey
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
+import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.TidalInstancesKey
 import moe.rukamori.archivetune.constants.AudioSourceType
@@ -262,6 +263,8 @@ import moe.rukamori.archivetune.audiosource.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.audiosource.TitleMatch
 import moe.rukamori.archivetune.audiosource.pcmBitrateOrNull
+import moe.rukamori.archivetune.audiosource.enabledPlaybackSources
+import moe.rukamori.archivetune.audiosource.canUseCachedPlaybackSource
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.audiosource.AmazonAudioProvider
@@ -350,6 +353,7 @@ import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
+import moe.rukamori.archivetune.playback.queues.appendableQueuePage
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.filterBlockedArtists
@@ -361,6 +365,7 @@ import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
+import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
 import moe.rukamori.archivetune.utils.AuthScopedCacheValue
 import moe.rukamori.archivetune.utils.CoilBitmapLoader
@@ -1148,6 +1153,12 @@ class MusicService :
                 }
         _playerFlow.value = player
         playerInitialized.value = true
+        scope.launch {
+            dataStore.data
+                .map { it[UsePoolAccountsKey] ?: true }
+                .distinctUntilChanged()
+                .collect { directStreamCache.clear() }
+        }
         // ioScope, not scope: the lookup is network plus a JSON parse, and the controller hops to
         // the main thread itself for every player read.
         sponsorBlockPlaybackController.attach(player, ioScope)
@@ -1765,6 +1776,7 @@ class MusicService :
         reason: String,
         force: Boolean = false,
     ) {
+        if (!DiscordSocialPresenceClient.isAvailable) return
         val request =
             DiscordSyncRequest(
                 epoch = discordSyncEpoch.incrementAndGet(),
@@ -1897,6 +1909,7 @@ class MusicService :
     }
 
     suspend fun refreshDiscordNow(): Boolean {
+        if (!DiscordSocialPresenceClient.isAvailable) return false
         val waiter = CompletableDeferred<Boolean>()
         addPendingDiscordRefreshWaiter(waiter)
         requestDiscordSync(
@@ -1914,6 +1927,10 @@ class MusicService :
 
     private suspend fun syncDiscordStateInternal(request: DiscordSyncRequest) {
         val refreshWaiters = takePendingDiscordRefreshWaiters()
+        if (!DiscordSocialPresenceClient.isAvailable) {
+            completeDiscordRefreshWaiters(refreshWaiters, false)
+            return
+        }
         try {
             ensureDiscordSyncFresh(request.epoch)
 
@@ -2353,6 +2370,7 @@ class MusicService :
     }
 
     private fun ensurePresenceManager() {
+        if (!DiscordSocialPresenceClient.isAvailable) return
         if (DiscordPresenceManager.isRunning() && lastPresenceToken != null) return
 
         // Launch in scope to avoid blocking
@@ -6374,16 +6392,19 @@ class MusicService :
             currentQueue.hasNextPage() &&
             player.repeatMode == REPEAT_MODE_OFF
         ) {
+            val pageQueue = currentQueue
+            val pageGeneration = initialQueueLoadGeneration
             scope.launch(SilentHandler) {
                 val mediaItems =
-                    currentQueue
+                    pageQueue
                         .nextPage()
                         .filterPlaybackContent(
                             hideExplicit = dataStore.get(HideExplicitKey, false),
                             hideVideo = dataStore.get(HideVideoKey, false),
                         )
+                if (currentQueue !== pageQueue || initialQueueLoadGeneration != pageGeneration) return@launch
                 if (player.playbackState != STATE_IDLE) {
-                    player.addMediaItems(mediaItems.drop(1))
+                    player.addMediaItems(appendableQueuePage(mediaItems, pageQueue.nextPageRepeatsCurrentItem))
                 } else {
                     requestDiscordSync(
                         reason = "player_idle_after_queue_extension",
@@ -7793,12 +7814,12 @@ class MusicService :
             (AudioSourceConfig.DEFAULT_ORDER.filterNot { it == AudioSourceType.YOUTUBE } +
                 listOf(AudioSourceType.AMAZON, AudioSourceType.QQ) +
                 AudioSourceType.YOUTUBE).distinct()
-        return chooserOrder.filter {
-            (it == AudioSourceType.YOUTUBE && isSourceEnabled(AudioSourceType.YOUTUBE)) ||
-                it in resolved ||
-                it == override ||
-                isSourceEnabled(it)
-        }
+        return enabledPlaybackSources(
+            candidates = chooserOrder.filter {
+                it in resolved || it == override || isSourceEnabled(it)
+            },
+            enabledSources = AudioSourceType.entries.filter(::isSourceEnabled).toSet(),
+        )
     }
 
     /**
@@ -8135,7 +8156,7 @@ class MusicService :
         val now = System.currentTimeMillis()
         val cached = directStreamCache[mediaId]
         if (!isDirectPick && cached != null && cached.expiresAtMs > now &&
-            cached.stream.source !in authenticityRejectedSources
+            canUseCachedPlaybackSource(cached.stream.source, isSourceEnabled(cached.stream.source), authenticityRejectedSources)
         ) {
             val override = SongSourceOverride.get(sourceOverrideRaw, mediaId)
             val cacheHitsOverride =

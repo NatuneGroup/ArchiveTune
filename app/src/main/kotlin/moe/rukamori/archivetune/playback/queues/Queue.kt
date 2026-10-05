@@ -15,6 +15,8 @@ import moe.rukamori.archivetune.models.MediaMetadata
 
 interface Queue {
     val preloadItem: MediaMetadata?
+    val nextPageRepeatsCurrentItem: Boolean
+        get() = true
 
     suspend fun getInitialStatus(): Status
 

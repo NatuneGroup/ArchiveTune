@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="source_pool_enabled_description">Use shared Tidal, Qobuz, Deezer, and Apple Music accounts, plus community instances for Tidal, Qobuz, Deezer, and Amazon Music. When off, only personal accounts and manually configured instances are used.</string>
+    <string name="source_pool_unavailable_description">No Source Pool URL is configured for this build. Ask the app owner to configure it; Pool credentials are never shown in settings.</string>
+</resources>

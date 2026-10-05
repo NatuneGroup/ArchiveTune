@@ -87,6 +87,11 @@ object DeezerInstances {
         userInstances = parse(raw)
     }
 
+    fun invalidatePoolInstancesCache() {
+        discovered = emptyList()
+        discoveredAt = 0L
+    }
+
     /**
      * True when a resolve could reach at least one instance. Cheap, no network: counts user entries,
      * cached pool entries, and a configured pool whose feed has not been fetched yet.
@@ -240,10 +245,18 @@ object DeezerInstances {
 
     /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
     private fun discoverIfStale(): List<String> {
+        if (!PoolAccountManager.isPoolEnabled()) {
+            invalidatePoolInstancesCache()
+            return emptyList()
+        }
         val now = System.currentTimeMillis()
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
         val url = poolFeedUrl() ?: return emptyList()
         synchronized(this) {
+            if (!PoolAccountManager.isPoolEnabled()) {
+                invalidatePoolInstancesCache()
+                return emptyList()
+            }
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {
@@ -252,6 +265,7 @@ object DeezerInstances {
                         builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                     }
                     client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
+                        if (!PoolAccountManager.isPoolEnabled()) return@use null
                         if (!response.isSuccessful) {
                             Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
                             return@use null
@@ -263,6 +277,10 @@ object DeezerInstances {
                     Timber.tag(TAG).w(it, "pool instance feed failed")
                 }
                     .getOrNull()
+            if (!PoolAccountManager.isPoolEnabled()) {
+                invalidatePoolInstancesCache()
+                return emptyList()
+            }
             // A failed fetch keeps the previous list: a transient error should not drop instances
             // that were working a moment ago.
             if (result != null) discovered = result

@@ -10,10 +10,8 @@ package moe.rukamori.archivetune.spotify
 
 import androidx.media3.common.MediaItem
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
@@ -33,6 +31,7 @@ class SpotifyPlaylistQueue(
     private val startIndex: Int = 0,
     override val preloadItem: MediaMetadata? = null,
 ) : Queue {
+    override val nextPageRepeatsCurrentItem = false
     private val allTracks = mutableListOf<SpotifyTrack>()
     private var resolveOffset = 0
     private var apiFetchOffset = 0
@@ -96,24 +95,12 @@ class SpotifyPlaylistQueue(
     private suspend fun resolveTracks(tracks: List<SpotifyTrack>): List<MediaItem> = resolveTrackEntries(tracks).map { it.second }
 
     private suspend fun resolveTrackEntries(tracks: List<SpotifyTrack>): List<Pair<Int, MediaItem>> =
-        buildList {
-            tracks.chunked(RESOLVE_BATCH_SIZE).forEachIndexed { chunkIndex, chunk ->
-                val chunkOffset = chunkIndex * RESOLVE_BATCH_SIZE
-                val resolvedChunk =
-                    coroutineScope {
-                        chunk
-                            .mapIndexed { index, track ->
-                                async {
-                                    SpotifyPlaybackResolver
-                                        .resolveToMediaItem(track)
-                                        ?.let { mediaItem -> chunkOffset + index to mediaItem }
-                                }
-                            }.awaitAll()
-                            .filterNotNull()
-                    }
-                addAll(resolvedChunk)
-            }
-        }
+        resolveSpotifyQueueEntries(
+            tracks = tracks,
+            preloadTrackId = preloadItem?.spotifyTrackId,
+            preloadItem = preloadItem?.toMediaItem(),
+            resolveTrack = SpotifyPlaybackResolver::resolveToMediaItem,
+        )
 
     private suspend fun fetchNextApiPage() {
         if (!apiHasMore) return
@@ -141,6 +128,6 @@ class SpotifyPlaylistQueue(
 
     companion object {
         private const val SPOTIFY_PAGE_SIZE = 50
-        private const val RESOLVE_BATCH_SIZE = 20
+        private const val RESOLVE_BATCH_SIZE = 4
     }
 }

@@ -7,8 +7,15 @@
 
 package moe.rukamori.archivetune.playback
 
+import androidx.media3.common.DeviceInfo
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.rukamori.archivetune.constants.AudioSourceType
+
+internal fun localAudioObservationMediaId(
+    sessionMediaId: String?,
+    localMediaId: String?,
+    playbackType: Int,
+): String? = sessionMediaId?.takeIf { playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL && it == localMediaId }
 
 data class ReportedAudioFormat(
     val mediaId: String,

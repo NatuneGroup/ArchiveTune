@@ -48,6 +48,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
@@ -6302,6 +6303,11 @@ class MusicService :
         cacheQueuedMetadata()
     }
 
+    override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+        super.onDeviceInfoChanged(deviceInfo)
+        publishDecodedPcmFormat()
+    }
+
     override fun onMediaItemTransition(
         mediaItem: MediaItem?,
         reason: Int,
@@ -10322,9 +10328,14 @@ class MusicService :
             androidAudioOutputFormat.value = null
             return
         }
-        val activePlayer = player as? ExoPlayer
+        val mediaId =
+            localAudioObservationMediaId(
+                sessionMediaId = player.currentMediaItem?.mediaId,
+                localMediaId = localPlayer.currentMediaItem?.mediaId,
+                playbackType = player.deviceInfo.playbackType,
+            )
+        val activePlayer = localPlayer.takeIf { mediaId != null }
         val context = activePlayer?.let(audioAuthenticityContextByPlayer::get)
-        val mediaId = activePlayer?.currentMediaItem?.mediaId
         decodedPcmFormat.value =
             if (bitPerfectOutputActive) null else context?.let(decodedPcmFormatsByContext::get)?.takeIf { it.mediaId == mediaId }
         reportedAudioFormat.value =

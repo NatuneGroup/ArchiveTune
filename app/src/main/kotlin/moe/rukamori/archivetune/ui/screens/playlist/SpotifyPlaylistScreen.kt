@@ -75,6 +75,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.google.common.collect.ImmutableList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -113,6 +114,7 @@ import moe.rukamori.archivetune.ui.utils.HeaderDownloadState
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.headerDownloadState
 import moe.rukamori.archivetune.ui.utils.resize
+import timber.log.Timber
 import moe.rukamori.archivetune.ui.utils.sendAddMissingDownloads
 import moe.rukamori.archivetune.ui.utils.sendRemoveDownloads
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -140,6 +142,7 @@ fun SpotifyPlaylistScreen(
     val systemBarsTopPadding = LocalStableSystemBarsTopPadding.current
     val snackbarHostState = remember { SnackbarHostState() }
     val downloadActionFailedMessage = stringResource(R.string.download_action_failed)
+    val trackUnavailableMessage = stringResource(R.string.spotify_track_unavailable)
     val latestDownloads by rememberUpdatedState(downloads)
 
     // Save scroll position when entering search, restore when leaving.
@@ -335,6 +338,10 @@ fun SpotifyPlaylistScreen(
             resolvingTrackId = preloadTrack.id
             try {
                 val preloadItem = SpotifyPlaybackResolver.resolveToMetadata(preloadTrack)
+                if (preloadItem == null) {
+                    snackbarHostState.showSnackbar(trackUnavailableMessage)
+                    return@launch
+                }
                 playerConnection?.playQueue(
                     SpotifyPlaylistQueue(
                         playlistId = currentPlaylist.id,
@@ -344,6 +351,11 @@ fun SpotifyPlaylistScreen(
                         preloadItem = preloadItem,
                     ),
                 )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.tag("SpotifyPlayback").w("Selected track resolution failed: %s", error::class.java.simpleName)
+                snackbarHostState.showSnackbar(trackUnavailableMessage)
             } finally {
                 resolvingTrackId = null
             }

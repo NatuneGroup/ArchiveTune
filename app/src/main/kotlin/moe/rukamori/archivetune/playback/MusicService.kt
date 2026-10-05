@@ -350,6 +350,7 @@ import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
+import moe.rukamori.archivetune.playback.queues.appendableQueuePage
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.filterBlockedArtists
@@ -6383,7 +6384,7 @@ class MusicService :
                             hideVideo = dataStore.get(HideVideoKey, false),
                         )
                 if (player.playbackState != STATE_IDLE) {
-                    player.addMediaItems(mediaItems.drop(1))
+                            player.addMediaItems(appendableQueuePage(mediaItems, currentQueue.nextPageRepeatsCurrentItem))
                 } else {
                     requestDiscordSync(
                         reason = "player_idle_after_queue_extension",

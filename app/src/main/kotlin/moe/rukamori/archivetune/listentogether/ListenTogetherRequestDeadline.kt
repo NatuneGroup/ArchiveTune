@@ -32,6 +32,18 @@ internal class ListenTogetherRequestDeadline(private val scope: CoroutineScope) 
     fun isCurrent(attempt: Long): Boolean = generation.get() == attempt
 
     @Synchronized
+    fun startIfIdle(timeoutMs: Long, onTimeout: () -> Unit): Long? {
+        if (timeoutJob?.isActive == true) return null
+        return start(timeoutMs, onTimeout)
+    }
+
+    @Synchronized
+    fun <T : Any> completeWithPayload(payload: T?): T? {
+        if (payload != null) complete()
+        return payload
+    }
+
+    @Synchronized
     fun complete() {
         timeoutJob?.cancel()
         timeoutJob = null

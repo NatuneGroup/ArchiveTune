@@ -1169,8 +1169,12 @@ class ListenTogetherClient @Inject constructor(
 
             when (msgType) {
                 MessageTypes.ROOM_CREATED -> {
-                    roomActionDeadline.complete()
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? RoomCreatedPayload ?: return
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? RoomCreatedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
                     lastRoomAction = null
                     _userId.value = payload.userId
                     _role.value = RoomRole.HOST
@@ -1239,8 +1243,12 @@ class ListenTogetherClient @Inject constructor(
                 }
 
                 MessageTypes.JOIN_APPROVED -> {
-                    roomActionDeadline.complete()
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinApprovedPayload ?: return
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinApprovedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
                     lastRoomAction = null
                     _userId.value = payload.userId
                     _role.value = RoomRole.GUEST
@@ -1260,9 +1268,13 @@ class ListenTogetherClient @Inject constructor(
                 }
 
                 MessageTypes.JOIN_REJECTED -> {
-                    roomActionDeadline.complete()
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRejectedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
                     lastRoomAction = null
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRejectedPayload ?: return
                     log(LogLevel.WARNING, "Join rejected", payload.reason)
                     scope.launch { _events.emit(ListenTogetherEvent.JoinRejected(payload.reason)) }
                 }
@@ -1512,7 +1524,13 @@ class ListenTogetherClient @Inject constructor(
                         else -> {}
                     }
 
-                    scope.launch { _events.emit(ListenTogetherEvent.ServerError(payload.code, payload.message)) }
+                    val message =
+                        if (payload.code == "host_not_allowed") {
+                            context.getString(R.string.listen_together_host_not_allowed)
+                        } else {
+                            payload.message
+                        }
+                    scope.launch { _events.emit(ListenTogetherEvent.ServerError(payload.code, message)) }
                 }
 
                 MessageTypes.PONG -> {
@@ -1657,9 +1675,9 @@ class ListenTogetherClient @Inject constructor(
      * If not connected, will queue the action and connect first.
      */
     fun createRoom(username: String) {
-        roomActionDeadline.start(ROOM_ACTION_DEADLINE_MS) {
+        roomActionDeadline.startIfIdle(ROOM_ACTION_DEADLINE_MS) {
             failPendingConnection(context.getString(R.string.listen_together_room_request_timeout))
-        }
+        } ?: return
         // Clear any existing session to ensure we create a new room instead of reconnecting
         clearPersistedSession()
         sessionToken = null
@@ -1686,9 +1704,9 @@ class ListenTogetherClient @Inject constructor(
      * If not connected, will queue the action and connect first.
      */
     fun joinRoom(roomCode: String, username: String) {
-        roomActionDeadline.start(ROOM_ACTION_DEADLINE_MS) {
+        roomActionDeadline.startIfIdle(ROOM_ACTION_DEADLINE_MS) {
             failPendingConnection(context.getString(R.string.listen_together_room_request_timeout))
-        }
+        } ?: return
         // Clear any existing session to ensure we join the new room instead of reconnecting
         clearPersistedSession()
         sessionToken = null
@@ -2057,6 +2075,9 @@ class ListenTogetherClient @Inject constructor(
      */
     fun forceReconnect() {
         connectionDeadline.cancel()
+        roomActionDeadline.cancel()
+        pendingAction = null
+        lastRoomAction = null
         reconnectJob?.cancel()
         reconnectJob = null
         log(LogLevel.INFO, "Forcing reconnection to server")

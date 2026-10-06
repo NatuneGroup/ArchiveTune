@@ -2,4 +2,6 @@
 <resources>
     <string name="listen_together_connection_timeout">The Listen Together server did not connect in time. Try again or choose another server in settings.</string>
     <string name="listen_together_room_request_timeout">The room request timed out. Check the room code and host, then try again.</string>
+    <string name="listen_together_host_not_allowed">This server does not allow this client to host a room. Choose another server to create a room.</string>
+    <string name="listen_together_invalid_room_response">The server returned an invalid room response. Try reconnecting or choose another server.</string>
 </resources>

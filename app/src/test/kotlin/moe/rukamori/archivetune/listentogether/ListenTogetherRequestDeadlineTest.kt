@@ -79,7 +79,46 @@ class ListenTogetherRequestDeadlineTest {
     fun connectionAndServerFailuresReleasePendingRoomLoading() {
         assertEquals("Connection failed", listenTogetherRequestFailure(ListenTogetherEvent.ConnectionError("Connection failed")))
         assertEquals("Room not found", listenTogetherRequestFailure(ListenTogetherEvent.ServerError("room_not_found", "Room not found")))
+        assertEquals("Hosting denied", listenTogetherRequestFailure(ListenTogetherEvent.ServerError("host_not_allowed", "Hosting denied")))
         assertNull(listenTogetherRequestFailure(ListenTogetherEvent.ServerError("invalid_message", "Protocol upgrade")))
         assertNull(listenTogetherRequestFailure(ListenTogetherEvent.RoomCreated("TEST", "synthetic-user")))
+    }
+
+    @Test
+    fun overlappingRoomRequestsCannotReplaceAnUnansweredRequestsDeadline() = runTest {
+        val deadline = ListenTogetherRequestDeadline(this)
+        var originalTimeouts = 0
+        var replacementTimeouts = 0
+        val original = deadline.startIfIdle(30_000L) { originalTimeouts++ }
+        assertTrue(original != null)
+        assertNull(deadline.startIfIdle(90_000L) { replacementTimeouts++ })
+        advanceTimeBy(30_000L)
+        runCurrent()
+        assertEquals(1, originalTimeouts)
+        assertEquals(0, replacementTimeouts)
+    }
+
+    @Test
+    fun aMissingOrMalformedReplyCannotCancelTheRequestDeadline() = runTest {
+        val deadline = ListenTogetherRequestDeadline(this)
+        var timeouts = 0
+        deadline.start(30_000L) { timeouts++ }
+        assertNull(deadline.completeWithPayload<String>(null))
+        advanceTimeBy(30_000L)
+        runCurrent()
+        assertEquals(1, timeouts)
+    }
+
+    @Test
+    fun aDecodedReplyCompletesTheDeadlineAndAllowsTheNextRoomRequest() = runTest {
+        val deadline = ListenTogetherRequestDeadline(this)
+        var firstTimeouts = 0
+        deadline.startIfIdle(30_000L) { firstTimeouts++ }
+        assertEquals("valid reply", deadline.completeWithPayload("valid reply"))
+        assertTrue(deadline.startIfIdle(90_000L) {} != null)
+        deadline.cancel()
+        advanceTimeBy(90_000L)
+        runCurrent()
+        assertEquals(0, firstTimeouts)
     }
 }

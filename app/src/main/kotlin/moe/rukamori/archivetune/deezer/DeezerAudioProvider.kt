@@ -28,6 +28,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
+import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -123,6 +124,18 @@ object DeezerAudioProvider {
             failureCache.clear()
         }
     }
+
+    fun invalidatePoolAccountCache() {
+        pooledSessionKeysToEvict(sessions.keys, manualAccount?.arl).forEach(sessions::remove)
+        streamCache.clear()
+        failureCache.clear()
+    }
+
+    internal fun pooledSessionKeysToEvict(
+        sessionArls: Collection<String>,
+        manualArl: String?,
+    ): Set<String> =
+        sessionArls.filterTo(LinkedHashSet()) { it != manualArl }
 
     /** True when at least one credential (manual or pooled) is available. Cheap: no network. */
     fun hasAccounts(): Boolean = manualAccount != null || PoolAccountManager.deezerAccounts().isNotEmpty()
@@ -466,7 +479,8 @@ object DeezerAudioProvider {
     }
 
     /** Returns a live session for [account], reusing a cached one until it ages out. */
-    private fun session(account: PoolAccountManager.DeezerPoolAccount): Session {
+    private fun session(account: PoolAccountManager.DeezerPoolAccount): Session? {
+        if (account.arl != manualAccount?.arl && !PoolAccountManager.isPoolEnabled()) return null
         val now = System.currentTimeMillis()
         sessions[account.arl]?.let { if (now - it.establishedAt < SESSION_TTL_MS) return it }
 
@@ -510,6 +524,7 @@ object DeezerAudioProvider {
                 masterSecret = account.masterSecret,
                 establishedAt = now,
             )
+        if (account.arl != manualAccount?.arl && !PoolAccountManager.isPoolEnabled()) return null
         sessions[account.arl] = session
         return session
     }
@@ -916,7 +931,7 @@ object DeezerAudioProvider {
             runCatching {
                 val account = accounts().firstOrNull()
                     ?: throw java.io.IOException("no Deezer account for lyrics")
-                val session = session(account)
+                val session = session(account) ?: throw java.io.IOException("Deezer account is no longer available")
 
                 val query = Query(mediaId = "lyrics", title = title, artists = listOfNotNull(artist), album = album, durationMs = durationMs)
                 val match = lookup(query) ?: throw java.io.IOException("no Deezer match for lyrics")

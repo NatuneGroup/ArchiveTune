@@ -10,7 +10,9 @@ package moe.rukamori.archivetune.utils
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -49,7 +51,58 @@ object PoolAccountManager {
 
     /** Called by App's preference collector whenever [UsePoolAccountsKey] changes. */
     fun setPoolAccountsEnabled(enabled: Boolean) {
+        val changed = poolAccountsEnabled != enabled
         poolAccountsEnabled = enabled
+        if (!changed) return
+        if (enabled) {
+            loadedFromDisk = false
+        } else {
+            tidalCache = emptyList()
+            qobuzCache = emptyList()
+            deezerCache = emptyList()
+            appleMusicCache = emptyList()
+            amazonCache = emptyList()
+            loadedFromDisk = true
+        }
+    }
+
+    suspend fun applyPoolAccountsEnabled(
+        context: Context,
+        enabled: Boolean,
+    ) {
+        setPoolAccountsEnabled(enabled)
+        if (!isPoolEnabled()) clearCachedPoolAccounts(context)
+    }
+
+    suspend fun clearCachedPoolAccounts(context: Context) {
+        withContext(Dispatchers.IO) {
+            refreshMutex.withLock {
+                tidalCache = emptyList()
+                qobuzCache = emptyList()
+                deezerCache = emptyList()
+                appleMusicCache = emptyList()
+                amazonCache = emptyList()
+                loadedFromDisk = true
+                try {
+                    context.dataStore.edit { prefs ->
+                        lastRefreshAtMillis = PoolRefreshPolicy.latestAttemptAtMs(
+                            lastRefreshAtMillis,
+                            prefs[CACHE_LAST_REFRESH_KEY] ?: 0L,
+                        )
+                        prefs.remove(CACHE_TIDAL_KEY)
+                        prefs.remove(CACHE_QOBUZ_KEY)
+                        prefs.remove(CACHE_DEEZER_KEY)
+                        prefs.remove(CACHE_APPLE_KEY)
+                        prefs.remove(CACHE_AMAZON_KEY)
+                    }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.tag(TAG).w(error, "Failed to clear cached pool accounts")
+                }
+                AppleMusicProvider.clearStorefrontCache()
+            }
+        }
     }
 
     /**
@@ -59,34 +112,20 @@ object PoolAccountManager {
     fun isPoolEnabled(): Boolean = poolAccountsEnabled && isEnabled
 
     private suspend fun syncPoolAccountsEnabled(context: Context) {
-        poolAccountsEnabled = context.dataStore.getAsync(UsePoolAccountsKey) ?: true
+        val enabled = context.dataStore.getAsync(UsePoolAccountsKey) ?: true
+        val wasEnabled = poolAccountsEnabled
+        setPoolAccountsEnabled(enabled)
+        if (wasEnabled && !enabled) clearCachedPoolAccounts(context)
     }
 
     private const val TAG = "PoolAccounts"
-    // Pool credentials change slowly (submissions + hourly health sweeps on the server). Fetching
-    // more than once a day mostly re-reads the same bytes, so 24h keeps the pool's database from
-    // being woken for nothing on every app start. `force = true` (the settings refresh button)
-    // still bypasses this.
-    private const val MIN_REFRESH_INTERVAL_MS = 24 * 60 * 60 * 1000L
-    // …but only once every service actually has something cached. The 24h throttle was gated on
-    // `hasAccounts()`, which is true as soon as *any one* service is populated — so a pool that
-    // served Tidal accounts locked Deezer and Qobuz out for a full day, and "Check source" (which
-    // refreshes without `force`) could never discover them however many times it was tapped. When
-    // any service is still empty, retry on this much shorter interval instead.
-    //
-    // Five hours, not fifteen minutes. A pool that is legitimately missing a service (Apple Music
-    // accounts are contributor-submitted, so most deployments never have one) would otherwise poll
-    // forever, and every poll wakes the pool's database: the compute stays up for five minutes
-    // after the last query, which on Neon's Free plan is what decides whether a project fits its
-    // 100 CU-hour month or gets suspended in it. `force = true` still bypasses this, so the manual
-    // refresh and "Check source" answer immediately.
-    private const val MIN_PARTIAL_REFRESH_INTERVAL_MS = 5 * 60 * 60 * 1000L
 
     private val CACHE_TIDAL_KEY = stringPreferencesKey("poolTidalAccounts")
     private val CACHE_QOBUZ_KEY = stringPreferencesKey("poolQobuzAccounts")
     private val CACHE_DEEZER_KEY = stringPreferencesKey("poolDeezerAccounts")
     private val CACHE_APPLE_KEY = stringPreferencesKey("poolAppleMusicAccounts")
     private val CACHE_AMAZON_KEY = stringPreferencesKey("poolAmazonAccounts")
+    private val CACHE_LAST_REFRESH_KEY = longPreferencesKey("poolAccountsLastRefreshAtMillis")
 
     /** Last resolved read key, so fire-and-forget /api/report calls use the same identity. */
     @Volatile
@@ -292,19 +331,19 @@ object PoolAccountManager {
     ): List<T> = accounts.sortedWith(compareBy({ isCoolingDown(service, idOf(it)) }, { !premiumOf(it) }))
 
     fun tidalAccounts(): List<TidalPoolAccount> =
-        if (poolAccountsEnabled) ordered("tidal", tidalCache, { it.id }, { it.premium }) else emptyList()
+        if (isPoolEnabled()) ordered("tidal", tidalCache, { it.id }, { it.premium }) else emptyList()
 
     fun qobuzAccounts(): List<QobuzPoolAccount> =
-        if (poolAccountsEnabled) ordered("qobuz", qobuzCache, { it.id }, { it.premium }) else emptyList()
+        if (isPoolEnabled()) ordered("qobuz", qobuzCache, { it.id }, { it.premium }) else emptyList()
 
     fun deezerAccounts(): List<DeezerPoolAccount> =
-        if (poolAccountsEnabled) ordered("deezer", deezerCache, { it.id }, { it.premium }) else emptyList()
+        if (isPoolEnabled()) ordered("deezer", deezerCache, { it.id }, { it.premium }) else emptyList()
 
     fun appleMusicAccounts(): List<AppleMusicPoolAccount> =
-        if (poolAccountsEnabled) appleMusicCache.sortedByDescending { it.premium } else emptyList()
+        if (isPoolEnabled()) appleMusicCache.sortedByDescending { it.premium } else emptyList()
 
     fun amazonAccounts(): List<AmazonPoolAccount> =
-        if (poolAccountsEnabled) ordered("amazon-music", amazonCache, { it.id }, { it.premium }) else emptyList()
+        if (isPoolEnabled()) ordered("amazon-music", amazonCache, { it.id }, { it.premium }) else emptyList()
 
     /**
      * The pooled instances the Amazon provider can play through: entries that name a host and carry
@@ -313,7 +352,7 @@ object PoolAccountManager {
      * [AmazonInstances.merge], which owns that rule.
      */
     fun amazonInstances(): List<AmazonInstance> =
-        if (!poolAccountsEnabled) {
+        if (!isPoolEnabled()) {
             emptyList()
         } else {
             ordered("amazon-music", amazonCache, { it.id }, { it.premium })
@@ -351,7 +390,7 @@ object PoolAccountManager {
      * without the user having to hunt for the manual refresh button.
      */
     private fun refreshIntervalMs(): Long =
-        if (hasEveryService()) MIN_REFRESH_INTERVAL_MS else MIN_PARTIAL_REFRESH_INTERVAL_MS
+        PoolRefreshPolicy.intervalMs(hasEveryService())
 
     /**
      * Loads the persisted account cache into memory (cheap, no network). Safe to call repeatedly;
@@ -363,7 +402,15 @@ object PoolAccountManager {
         if (loadedFromDisk) return
         appContext = context.applicationContext
         withContext(Dispatchers.IO) {
+            if (!isPoolEnabled()) {
+                loadedFromDisk = true
+                return@withContext
+            }
             runCatching {
+                lastRefreshAtMillis = PoolRefreshPolicy.latestAttemptAtMs(
+                    lastRefreshAtMillis,
+                    context.dataStore.getAsync(CACHE_LAST_REFRESH_KEY) ?: 0L,
+                )
                 // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
                 // at-rest layer), so the parse-time decryptor is a pure pass-through.
                 val passthrough: (String) -> String? = { raw -> raw }
@@ -408,19 +455,24 @@ object PoolAccountManager {
             appContext = context.applicationContext
             if (!isEnabled) return@withContext false
             loadCached(context)
-            // Off means no fetch at all, so a user who opted out never wakes the pool. loadCached
-            // just re-read the switch, so this cannot race App's collector at startup.
-            if (!poolAccountsEnabled) return@withContext false
+            if (!isPoolEnabled()) return@withContext false
 
             val now = System.currentTimeMillis()
-            if (!force && hasAccounts() && now - lastRefreshAtMillis < refreshIntervalMs()) {
-                return@withContext true
+            if (!PoolRefreshPolicy.shouldRefresh(now, lastRefreshAtMillis, refreshIntervalMs(), force)) {
+                return@withContext hasAccounts()
             }
 
             refreshMutex.withLock {
+                if (!isPoolEnabled()) return@withLock false
                 // Re-check the throttle inside the lock in case another caller just refreshed.
-                if (!force && hasAccounts() && System.currentTimeMillis() - lastRefreshAtMillis < refreshIntervalMs()) {
-                    return@withLock true
+                if (!PoolRefreshPolicy.shouldRefresh(
+                        System.currentTimeMillis(),
+                        lastRefreshAtMillis,
+                        refreshIntervalMs(),
+                        force,
+                    )
+                ) {
+                    return@withLock hasAccounts()
                 }
                 val url = accountsUrl ?: legacySourcesUrl
                 if (url == null) {
@@ -431,6 +483,9 @@ object PoolAccountManager {
                     // The read key is baked in at build time; there is no on-device override.
                     val readKey = BuildConfig.SOURCE_PROVIDER_KEY
                     poolApiKey = readKey.ifBlank { null }
+                    val attemptAt = System.currentTimeMillis()
+                    lastRefreshAtMillis = attemptAt
+                    context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
 
                     var result = fetchAccounts(context, url, readKey)
                     // Pool deployment predates the split feed — retry the combined URL.
@@ -526,6 +581,7 @@ object PoolAccountManager {
                 val deezer = parseDeezer(accountsArray(root, "deezer"), decryptor)
                 val apple = parseAppleMusic(accountsArray(root, "apple-music"), decryptor)
                 val amazon = parseAmazon(accountsArray(root, "amazon-music"), decryptor)
+                if (!isPoolEnabled()) return@use FeedFetch(root, 200)
                 // Don't overwrite the in-memory cache with an empty list when the pool returns a
                 // 200 with a partial/empty response (rate-limit, transient server bug, captive-portal
                 // interception, malformed JSON): every provider would vanish from playback until a
@@ -542,7 +598,6 @@ object PoolAccountManager {
                     deezerCache = deezer
                     appleMusicCache = apple
                     amazonCache = amazon
-                    lastRefreshAtMillis = System.currentTimeMillis()
                     persist(context, tidal, qobuz, deezer, apple, amazon)
                 }
                 Timber.tag(TAG).i(
@@ -555,6 +610,8 @@ object PoolAccountManager {
                 )
                 FeedFetch(root, 200)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Timber.tag(TAG).w(e, "Pool account refresh failed")
             FeedFetch(null, 0)
@@ -625,7 +682,11 @@ object PoolAccountManager {
                         JSONObject()
                             .put("id", it.id)
                             .put("session", it.session)
-                            .put("premium", it.premium),
+                            .put("premium", it.premium)
+                            .put("baseUrl", it.baseUrl)
+                            .put("bypassToken", it.bypassToken)
+                            .put("turnstileJwt", it.turnstileJwt)
+                            .put("turnstileJwtExpiresAtMs", it.turnstileJwtExpiresAtMs),
                     )
                 }
             }.toString()
@@ -658,7 +719,7 @@ object PoolAccountManager {
         id: Long?,
         reportType: String,
     ) {
-        if (id == null) return
+        if (id == null || !isPoolEnabled()) return
         val base = poolBaseUrl ?: return
 
         // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
@@ -675,6 +736,7 @@ object PoolAccountManager {
         reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
 
         reportScope.launch {
+            if (!isPoolEnabled()) return@launch
             runCatching {
                 val body =
                     JSONObject()
@@ -757,12 +819,14 @@ object PoolAccountManager {
         deadId: Long,
         readKey: String,
     ) {
+        if (!isPoolEnabled()) return
         val ctx = appContext ?: return
         val replacementObj = root.optJSONObject("replacement") ?: return
         val decryptor = decryptorFor(replacementObj, readKey)
         val replacementArr = replacementObj.optJSONObject(service)?.optJSONArray("accounts") ?: JSONArray()
 
         refreshMutex.withLock {
+            if (!isPoolEnabled()) return@withLock
             when (service) {
                 "tidal" -> tidalCache = mergeList(tidalCache, deadId, TidalPoolAccount::id, replacementArr, ::parseTidal, decryptor) ?: return@withLock
                 "qobuz" -> qobuzCache = mergeList(qobuzCache, deadId, QobuzPoolAccount::id, replacementArr, ::parseQobuz, decryptor) ?: return@withLock
@@ -884,6 +948,9 @@ object PoolAccountManager {
             // tier a base URL. An entry with neither is not something playback can use.
             val baseUrl = obj.optString("baseUrl", "").trim().ifBlank { null }
             val session = field(obj, "session", decryptor)
+            val turnstileJwtExpiresAtMs =
+                obj.optLong("turnstileJwtExpiresAtMs", 0L).takeIf { it > 0L }
+                    ?: parseIsoMillis(obj.optString("turnstileJwtExpiresAt", ""))
             if (baseUrl == null && session == null) continue
             out +=
                 AmazonPoolAccount(
@@ -893,7 +960,7 @@ object PoolAccountManager {
                     baseUrl = baseUrl,
                     bypassToken = field(obj, "bypassToken", decryptor),
                     turnstileJwt = field(obj, "turnstileJwt", decryptor),
-                    turnstileJwtExpiresAtMs = parseIsoMillis(obj.optString("turnstileJwtExpiresAt", "")),
+                    turnstileJwtExpiresAtMs = turnstileJwtExpiresAtMs,
                 )
         }
         return out

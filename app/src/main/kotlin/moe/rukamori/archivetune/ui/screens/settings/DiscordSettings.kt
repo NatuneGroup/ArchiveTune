@@ -54,7 +54,9 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.discord.DiscordAuthCoordinator
+import moe.rukamori.archivetune.discord.DiscordOAuthHttpException
 import moe.rukamori.archivetune.discord.DiscordOAuthRepository
+import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.component.EditTextPreference
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -79,6 +81,8 @@ enum class ActivitySource { ARTIST, ALBUM, SONG, APP }
 
 private enum class DiscordAuthorizationUiMode { Idle, Waiting, Success, Failure }
 
+private enum class DiscordSavedAuthorizationStatus { Missing, Checking, Linked, Expired, Rejected, Unverified }
+
 private val DiscordImageOptions = listOf("thumbnail", "artist", "appicon", "custom")
 private val DiscordSmallImageOptions = listOf("thumbnail", "artist", "appicon", "custom", "dontshow")
 private val DiscordActivityStatusOptions = listOf("online", "dnd", "idle", "streaming")
@@ -100,10 +104,13 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     var discordUsername by rememberPreference(DiscordUsernameKey, "")
     var discordName by rememberPreference(DiscordNameKey, "")
     var discordAvatarUrl by rememberPreference(DiscordAvatarUrlKey, "")
-    var authorizedToken by rememberSaveable { mutableStateOf("") }
+    var authorizedToken by remember { mutableStateOf("") }
     var authorizedUsername by rememberSaveable { mutableStateOf("") }
     var authorizedName by rememberSaveable { mutableStateOf("") }
     var authorizedAvatarUrl by rememberSaveable { mutableStateOf("") }
+    var savedAuthorizationStatus by remember {
+        mutableStateOf(DiscordSavedAuthorizationStatus.Missing)
+    }
     var showLogoutConfirm by rememberSaveable { mutableStateOf(false) }
     var authorizationSession by remember {
         mutableStateOf(DiscordOAuthRepository.createAuthorizationSession())
@@ -129,9 +136,10 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         }
     }
 
-    LaunchedEffect(discordToken) {
-        val token = discordToken
+    LaunchedEffect(discordToken, discordTokenExpiresAt) {
+        val token = discordToken.trim()
         if (token.isBlank()) {
+            savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Missing
             authorizedToken = ""
             authorizedUsername = ""
             authorizedName = ""
@@ -143,17 +151,27 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
             authorizedToken = ""
         }
 
-        if (token.isNotBlank()) {
-            runCatching {
-                DiscordOAuthRepository.fetchAccount(token)
-            }.onSuccess {
+        if (discordTokenExpiresAt > 0L && System.currentTimeMillis() >= discordTokenExpiresAt) {
+            savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Expired
+            return@LaunchedEffect
+        }
+
+        savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Checking
+        runCatching { DiscordOAuthRepository.fetchAccount(token) }
+            .onSuccess {
+                savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Linked
                 discordUsername = it.username
                 discordName = it.displayName
                 discordAvatarUrl = it.avatarUrl.orEmpty()
-            }.onFailure {
-                Timber.tag("DiscordSettings").w(it, "Discord account lookup failed")
+            }.onFailure { error ->
+                savedAuthorizationStatus =
+                    if ((error as? DiscordOAuthHttpException)?.isAuthorizationRejected == true) {
+                        DiscordSavedAuthorizationStatus.Rejected
+                    } else {
+                        DiscordSavedAuthorizationStatus.Unverified
+                    }
+                Timber.tag("DiscordSettings").w(error, "Discord account lookup failed")
             }
-        }
     }
 
     val (discordRPC, onDiscordRPCChange) =
@@ -163,31 +181,50 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
         )
 
     LaunchedEffect(discordToken, discordRPC) {
-        if (discordRPC && discordToken.isNotBlank()) {
+        if (DiscordSocialPresenceClient.isAvailable && discordRPC && discordToken.isNotBlank()) {
             Timber.tag("DiscordSettings").d("Discord Rich Presence enabled, MusicService will handle start")
         } else {
-            Timber.tag("DiscordSettings").d("Discord Rich Presence disabled or not authorized, MusicService will handle stop")
+            Timber.tag("DiscordSettings").d("Discord Rich Presence unavailable or not authorized")
         }
     }
 
-    val activeDiscordToken = authorizedToken.ifBlank { discordToken }
-    val activeDiscordUsername = authorizedUsername.ifBlank { discordUsername }
-    val activeDiscordName = authorizedName.ifBlank { discordName }
-    val activeDiscordAvatarUrl = authorizedAvatarUrl.ifBlank { discordAvatarUrl }
-    val isLoggedIn = remember(activeDiscordToken) { activeDiscordToken.isNotBlank() }
     val isAccessTokenExpired =
-        remember(isLoggedIn, discordTokenExpiresAt, currentTimeMillis) {
-            isLoggedIn && discordTokenExpiresAt > 0L && currentTimeMillis >= discordTokenExpiresAt
+        remember(discordToken, discordTokenExpiresAt, currentTimeMillis) {
+            discordToken.isNotBlank() && discordTokenExpiresAt > 0L && currentTimeMillis >= discordTokenExpiresAt
         }
-    val accountDisplayName =
-        remember(isLoggedIn, activeDiscordName, activeDiscordUsername, context) {
-            when {
-                activeDiscordName.isNotBlank() -> activeDiscordName
-                activeDiscordUsername.isNotBlank() -> activeDiscordUsername
-                isLoggedIn -> context.getString(R.string.account)
-                else -> context.getString(R.string.not_logged_in)
-            }
-        }
+    val isLoggedIn =
+        !isAccessTokenExpired &&
+            (authorizedToken.isNotBlank() || savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Linked)
+    val activeDiscordUsername =
+        if (isLoggedIn) authorizedUsername.ifBlank { discordUsername } else ""
+    val activeDiscordName =
+        if (isLoggedIn) authorizedName.ifBlank { discordName } else ""
+    val activeDiscordAvatarUrl =
+        if (isLoggedIn) authorizedAvatarUrl.ifBlank { discordAvatarUrl } else ""
+    val accountDisplayName = when {
+        isLoggedIn && activeDiscordName.isNotBlank() -> activeDiscordName
+        isLoggedIn && activeDiscordUsername.isNotBlank() -> activeDiscordUsername
+        isLoggedIn -> context.getString(R.string.account)
+        isAccessTokenExpired || savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Expired ->
+            context.getString(R.string.discord_saved_auth_expired)
+        savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Checking ->
+            context.getString(R.string.discord_saved_auth_checking)
+        savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Rejected ->
+            context.getString(R.string.discord_saved_auth_rejected)
+        savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Unverified ->
+            context.getString(R.string.discord_saved_auth_unverified)
+        else -> context.getString(R.string.not_logged_in)
+    }
+    val savedAuthorizationMessage = when {
+        isAccessTokenExpired || savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Expired ->
+            stringResource(R.string.discord_saved_auth_expired_message)
+        savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Rejected ->
+            stringResource(R.string.discord_saved_auth_rejected_message)
+        savedAuthorizationStatus == DiscordSavedAuthorizationStatus.Unverified ->
+            stringResource(R.string.discord_saved_auth_unverified_message)
+        else -> null
+    }
+    val presenceSupported = DiscordSocialPresenceClient.isAvailable
 
     val launchAuthorization: () -> Unit = {
         val session = DiscordOAuthRepository.createAuthorizationSession()
@@ -231,6 +268,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                     authorizedUsername = account?.username.orEmpty()
                     authorizedName = account?.displayName.orEmpty()
                     authorizedAvatarUrl = account?.avatarUrl.orEmpty()
+                    savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Linked
                     discordUsername = authorizedUsername
                     discordName = authorizedName
                     discordAvatarUrl = authorizedAvatarUrl
@@ -485,6 +523,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                         authorizationUiMode = authorizationUiMode,
                         authorizationMessage = authorizationMessage,
                         isAccessTokenExpired = isAccessTokenExpired,
+                        presenceSupported = presenceSupported,
                         discordRpcEnabled = discordRPC,
                         onDiscordRpcEnabledChange = onDiscordRPCChange,
                         onReauthorize = launchAuthorization,
@@ -498,6 +537,31 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                         primaryActionEnabled = authorizationUiMode != DiscordAuthorizationUiMode.Waiting,
                     )
                 }
+                item(visible = savedAuthorizationMessage != null) {
+                    Text(
+                        text = savedAuthorizationMessage.orEmpty(),
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                    )
+                }
+                item {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = stringResource(R.string.discord_presence_unavailable_title),
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        Text(
+                            text = stringResource(R.string.discord_presence_unavailable_description),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                }
             }
 
             PreferenceGroup(
@@ -507,9 +571,16 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 item {
                     PreferenceEntry(
                         title = { Text(stringResource(R.string.refresh)) },
-                        description = stringResource(R.string.description_refresh),
+                        description =
+                            stringResource(
+                                if (presenceSupported) {
+                                    R.string.description_refresh
+                                } else {
+                                    R.string.discord_presence_unavailable_title
+                                },
+                            ),
                         icon = { Icon(painterResource(R.drawable.update), null) },
-                        isEnabled = discordRPC && isLoggedIn,
+                        isEnabled = presenceSupported && discordRPC && isLoggedIn,
                         trailingContent = {
                             if (isRefreshing) {
                                 CircularWavyProgressIndicator(
@@ -517,7 +588,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                                 )
                             } else {
                                 OutlinedButton(
-                                    enabled = discordRPC && isLoggedIn,
+                                    enabled = presenceSupported && discordRPC && isLoggedIn,
                                     onClick = {
                                         coroutineScope.launch {
                                             isRefreshing = true
@@ -743,6 +814,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                             authorizedUsername = ""
                             authorizedName = ""
                             authorizedAvatarUrl = ""
+                            savedAuthorizationStatus = DiscordSavedAuthorizationStatus.Missing
                             authorizationUiModeName = DiscordAuthorizationUiMode.Idle.name
                             authorizationMessage = null
                             authorizationSession = DiscordOAuthRepository.createAuthorizationSession()
@@ -775,6 +847,7 @@ private fun DiscordAccountGroupCard(
     authorizationUiMode: DiscordAuthorizationUiMode,
     authorizationMessage: String?,
     isAccessTokenExpired: Boolean,
+    presenceSupported: Boolean,
     discordRpcEnabled: Boolean,
     onDiscordRpcEnabledChange: (Boolean) -> Unit,
     onReauthorize: () -> Unit,
@@ -1033,7 +1106,7 @@ private fun DiscordAccountGroupCard(
                     Switch(
                         checked = discordRpcEnabled,
                         onCheckedChange = onDiscordRpcEnabledChange,
-                        enabled = isLoggedIn,
+                        enabled = (discordRpcEnabled && !presenceSupported) || (isLoggedIn && presenceSupported),
                     )
                 }
             }

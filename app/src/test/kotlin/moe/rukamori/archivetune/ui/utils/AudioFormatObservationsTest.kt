@@ -9,11 +9,13 @@ package moe.rukamori.archivetune.ui.utils
 
 import android.media.AudioFormat
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.exoplayer.audio.AudioSink
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.playback.AndroidAudioOutputFormat
 import moe.rukamori.archivetune.playback.ReportedAudioFormat
 import moe.rukamori.archivetune.playback.androidAudioOutputFormatForPlayback
+import moe.rukamori.archivetune.playback.localAudioObservationMediaId
 import moe.rukamori.archivetune.playback.reportedAudioFormatForPlayback
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -22,6 +24,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AudioFormatObservationsTest {
+    @Test
+    fun wrappedLocalSessionCanObserveTheMatchingLocalTrack() {
+        assertEquals("one", localAudioObservationMediaId("one", "one", DeviceInfo.PLAYBACK_TYPE_LOCAL))
+    }
+
+    @Test
+    fun remoteCastDoesNotExposeLocalAudioObservations() {
+        assertNull(localAudioObservationMediaId("one", "one", DeviceInfo.PLAYBACK_TYPE_REMOTE))
+    }
+
+    @Test
+    fun staleLocalTrackCannotBeObservedForAnotherSessionTrack() {
+        assertNull(localAudioObservationMediaId("two", "one", DeviceInfo.PLAYBACK_TYPE_LOCAL))
+    }
+
+    @Test
+    fun missingSessionOrLocalTracksRemainUnobserved() {
+        assertNull(localAudioObservationMediaId(null, "one", DeviceInfo.PLAYBACK_TYPE_LOCAL))
+        assertNull(localAudioObservationMediaId("one", null, DeviceInfo.PLAYBACK_TYPE_LOCAL))
+        assertNull(localAudioObservationMediaId(null, null, DeviceInfo.PLAYBACK_TYPE_LOCAL))
+    }
+
     @Test
     fun sourceMetadataCannotBeShownForAnotherTrack() {
         val format = ReportedAudioFormat("one", AudioSourceType.QOBUZ, 96_000, 24, null)

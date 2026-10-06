@@ -72,6 +72,11 @@ The bit-perfect output provider can change the PCM container after that request.
 Decoded PCM and Android-output rows therefore remain unavailable for the custom
 bypass rather than presenting its pre-conversion configuration as observed output.
 
+GMS sessions wrap the local ExoPlayer in Media3's Cast player even when not casting.
+Local observations follow the matching local track and active device route, not
+the session wrapper's runtime type. Switching to remote Cast clears local
+observations; a remote receiver's decoded PCM and output remain unobserved.
+
 ## Local verification and remaining checks
 
 The final 2026-10-04 serial Gradle run passed 400 unit tests and assembled both

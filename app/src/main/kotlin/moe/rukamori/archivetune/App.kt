@@ -57,6 +57,7 @@ import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
+import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
@@ -407,7 +408,7 @@ class App :
                     // When a community Source Pool URL is baked in, auto-discover its
                     // health-checked instances on startup so playback is seamless without any
                     // manual setup. With no provider configured this stays a cheap re-verify.
-                    val autoDiscover = BuildConfig.SOURCE_PROVIDER_URL.isNotBlank()
+                    val autoDiscover = PoolAccountManager.isEnabled && dataStore.get(UsePoolAccountsKey, true)
                     TidalInstanceHealthManager.refresh(this@App, includeDiscovery = autoDiscover, staggered = true)
                 }
             } catch (e: Exception) {
@@ -505,7 +506,19 @@ class App :
                 .map { it[UsePoolAccountsKey] ?: true }
                 .distinctUntilChanged()
                 .collect { enabled ->
-                    PoolAccountManager.setPoolAccountsEnabled(enabled)
+                    PoolAccountManager.applyPoolAccountsEnabled(this@App, enabled)
+                    if (PoolAccountManager.isPoolEnabled()) {
+                        PoolAccountManager.refresh(this@App, force = false)
+                    } else {
+                        AppleMusicAudioProvider.invalidatePoolAccountCache()
+                        QobuzAudioProvider.invalidatePoolAccountCache()
+                        DeezerAudioProvider.invalidatePoolAccountCache()
+                        moe.rukamori.archivetune.deezer.DeezerInstances.invalidatePoolInstancesCache()
+                        TidalAudioProvider.clearPoolDiscovery()
+                        if (!enabled && PoolAccountManager.isEnabled) {
+                            dataStore.edit { it.remove(TidalVerifiedInstancesKey) }
+                        }
+                    }
                 }
         }
 

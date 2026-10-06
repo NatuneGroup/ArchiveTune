@@ -11,6 +11,7 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.utils.PoolAccountManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -144,6 +145,9 @@ object TidalAudioProvider {
     @Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
 
+    @Volatile
+    private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
+
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
 
@@ -170,6 +174,14 @@ object TidalAudioProvider {
                 if (!seen.add(normalized)) return@mapNotNull null
                 TidalDownloadEndpoint(instanceLabel(normalized), normalized)
             }
+    }
+
+    fun clearPoolDiscovery() {
+        val discovered = poolDiscoveredInstanceUrls
+        if (discovered.isNotEmpty()) {
+            customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
+            poolDiscoveredInstanceUrls = emptySet()
+        }
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null if it is not valid. */
@@ -384,14 +396,27 @@ object TidalAudioProvider {
      * simply returns an empty list so the caller can keep the manual list. Runs blocking network
      * calls, so invoke it off the main thread.
      */
-    fun discoverInstances(): List<String> =
-        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-            discoverInstancesWithinAttempt()
+    fun discoverInstances(): List<String> {
+        if (!PoolAccountManager.isPoolEnabled()) {
+            clearPoolDiscovery()
+            return emptyList()
         }
+        val discovered =
+            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+                discoverInstancesWithinAttempt()
+            }
+        if (!PoolAccountManager.isPoolEnabled()) {
+            clearPoolDiscovery()
+            return emptyList()
+        }
+        if (discovered.isNotEmpty()) poolDiscoveredInstanceUrls = poolDiscoveredInstanceUrls + discovered
+        return discovered
+    }
 
     private fun discoverInstancesWithinAttempt(): List<String> {
         val discovered = LinkedHashSet<String>()
         for (source in INSTANCE_DISCOVERY_SOURCES) {
+            if (!PoolAccountManager.isPoolEnabled()) break
             runCatching {
                 val builder =
                     Request
@@ -404,6 +429,7 @@ object TidalAudioProvider {
                 }
                 val request = builder.get().build()
                 healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                    if (!PoolAccountManager.isPoolEnabled()) return@use
                     if (!response.isSuccessful) {
                         // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
                         // and an empty body, which otherwise looks identical to a healthy pool

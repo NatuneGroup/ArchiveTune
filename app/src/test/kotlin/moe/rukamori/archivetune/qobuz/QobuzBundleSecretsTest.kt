@@ -13,8 +13,8 @@ import org.junit.Test
 import java.util.Base64
 
 class QobuzBundleSecretsTest {
-    private val secret = "e79f8b9be485692b0e5f9dd895826368"
-    private val decoy = "0123456789abcdef0123456789abcdef"
+    private val secret = "a".repeat(32)
+    private val decoy = "b".repeat(32)
 
     @Test
     fun `a keyed secret is tried before an anonymous hex string`() {

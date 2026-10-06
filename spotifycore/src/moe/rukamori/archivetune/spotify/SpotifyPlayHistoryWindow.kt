@@ -137,7 +137,7 @@ fun needsFullHistoryRead(
  * [SPOTIFY_RATE_LIMIT_MAX_MS] for the one value that is not honoured.
  */
 fun rateLimitCooldownMillis(retryAfterSec: Long?): Long {
-    val fromHeader = retryAfterSec?.takeIf { it > 0 }?.let { it * 1000L }
+    val fromHeader = retryAfterSec?.takeIf { it > 0 }?.let { it.coerceAtMost(SPOTIFY_RATE_LIMIT_MAX_MS / 1_000L) * 1_000L }
     return when {
         fromHeader == null -> SPOTIFY_RATE_LIMIT_FALLBACK_MS
         fromHeader > SPOTIFY_RATE_LIMIT_MAX_MS -> SPOTIFY_RATE_LIMIT_MAX_MS
@@ -149,22 +149,15 @@ fun rateLimitCooldownMillis(retryAfterSec: Long?): Long {
  * How long the one retry of a rate-limited history read should wait, or null when it must not be
  * retried at all.
  *
- * Every REST 429 earns that retry, header or no header: [retryAfterSec] is the app-wide gate's own
- * remaining seconds rather than a raw `Retry-After` — [Spotify]'s REST core reports them on both the
- * gate-skip and the 429 path — so a headerless 429 arrives as the documented 30-second floor and is
- * waited out and retried once like any other. A read with nothing to show is better off waiting than
- * reporting "rate limited" while the plays are at most that far away, and waiting the gate out is
- * what lets the retry back in: it cannot be turned away by the window it just armed. See
- * [rateLimitCooldownMillis] for the floor and [SPOTIFY_HISTORY_RETRY_MAX_WAIT_MS] for the cap. Null
- * or non-positive [retryAfterSec] means no window was reported at all, which no REST path produces.
  * Rows already on screen are never waited for: they are the reader's answer, so holding the refresh
  * open gains nothing.
  */
 fun historyRetryWaitMillis(
     retryAfterSec: Long?,
     hasCachedRows: Boolean,
+    quotaExceeded: Boolean = false,
 ): Long? {
-    if (hasCachedRows) return null
+    if (hasCachedRows || quotaExceeded) return null
     if (retryAfterSec == null || retryAfterSec <= 0) return null
     return rateLimitCooldownMillis(retryAfterSec).takeIf { it <= SPOTIFY_HISTORY_RETRY_MAX_WAIT_MS }
 }

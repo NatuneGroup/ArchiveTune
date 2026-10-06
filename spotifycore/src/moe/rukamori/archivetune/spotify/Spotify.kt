@@ -24,7 +24,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -64,6 +63,8 @@ import moe.rukamori.archivetune.spotify.models.SpotifyUser
 object Spotify {
     @Volatile
     var accessToken: String? = null
+
+    private val graphQlCooldown = SpotifyRequestCooldown()
 
     private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
 
@@ -130,6 +131,7 @@ object Spotify {
         override val message: String,
         val retryAfterSec: Long = 0,
         cause: Throwable? = null,
+        val quotaExceeded: Boolean = false,
     ) : Exception(message, cause)
 
     @Volatile
@@ -201,7 +203,7 @@ object Spotify {
 
         for ((hashIdx, sha256Hash) in hashCandidates.withIndex()) {
             val body = buildGqlBody(operationName, sha256Hash, variables)
-            val result = executeGqlWithRetries(operationName, token, body)
+            val result = executeGqlRequest(operationName, token, body)
 
             if (result.isPersistedQueryNotFound) {
                 if (hashIdx < hashCandidates.lastIndex) {
@@ -240,69 +242,66 @@ object Spotify {
         val isPersistedQueryNotFound: Boolean,
     )
 
-    private suspend fun executeGqlWithRetries(
+    private suspend fun executeGqlRequest(
         operationName: String,
         token: String,
         body: JsonObject,
     ): GqlResult {
-        val maxRetries = 3
-        for (attempt in 0 until maxRetries) {
-            log(
-                "D",
-                "GQL POST $operationName" +
-                    if (attempt > 0) " [retry $attempt]" else "",
+        val blockedSeconds = graphQlCooldown.remainingSeconds()
+        if (blockedSeconds > 0L) {
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSeconds, quotaExceeded = graphQlCooldown.quotaExceeded)
+        }
+        log("D", "GQL POST $operationName")
+
+        val response =
+            gqlClient.post(GQL_URL) {
+                header("Authorization", "Bearer $token")
+                setBody(
+                    TextContent(
+                        body.toString(),
+                        ContentType.Application.Json.withParameter("charset", "UTF-8"),
+                    ),
+                )
+            }
+
+        log("D", "GQL POST $operationName -> ${response.status.value}")
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw SpotifyException(401, "Token expired or invalid")
+        }
+        if (response.status == HttpStatusCode.TooManyRequests) {
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val retryAfter = graphQlCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
+            log("W", "GQL $operationName -> 429, GraphQL calls are blocked for ${retryAfter}s")
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = retryAfter,
+                quotaExceeded = quotaExceeded,
             )
-
-            val response =
-                gqlClient.post(GQL_URL) {
-                    header("Authorization", "Bearer $token")
-                    setBody(
-                        TextContent(
-                            body.toString(),
-                            ContentType.Application.Json.withParameter("charset", "UTF-8"),
-                        ),
-                    )
-                }
-
-            log("D", "GQL POST $operationName -> ${response.status.value}")
-
-            if (response.status == HttpStatusCode.Unauthorized) {
-                throw SpotifyException(401, "Token expired or invalid")
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                val retryAfter = response.headers["Retry-After"]?.toLongOrNull() ?: (2L * (attempt + 1))
-                if (attempt < maxRetries - 1) {
-                    log("W", "GQL $operationName -> 429, waiting ${retryAfter}s (attempt ${attempt + 1}/$maxRetries)")
-                    delay(retryAfter * 1000)
-                    continue
-                }
-                throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter)
-            }
-            if (response.status == HttpStatusCode.PreconditionFailed) {
-                return GqlResult(json = null, isPersistedQueryNotFound = true)
-            }
-            if (response.status.value !in 200..299) {
-                val bodyText = response.bodyAsText()
-                log("E", "GQL $operationName FAILED: ${response.status.value} — ${bodyText.take(200)}")
-                throw SpotifyException(response.status.value, "GraphQL error ${response.status.value}: $bodyText")
-            }
-
-            val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
-
-            val errors = responseJson.arr("errors")
-            if (errors != null && errors.isNotEmpty()) {
-                val errorMsg = errors[0].jsonObject.str("message") ?: "Unknown GraphQL error"
-                if (errorMsg.contains("PersistedQueryNotFound", ignoreCase = true)) {
-                    return GqlResult(json = null, isPersistedQueryNotFound = true)
-                }
-                log("E", "GQL $operationName returned error: $errorMsg")
-                throw SpotifyException(400, "GraphQL: $errorMsg")
-            }
-
-            return GqlResult(json = responseJson, isPersistedQueryNotFound = false)
+        }
+        if (response.status == HttpStatusCode.PreconditionFailed) {
+            return GqlResult(json = null, isPersistedQueryNotFound = true)
+        }
+        if (response.status.value !in 200..299) {
+            val bodyText = response.bodyAsText()
+            log("E", "GQL $operationName FAILED: ${response.status.value} — ${bodyText.take(200)}")
+            throw SpotifyException(response.status.value, "GraphQL error ${response.status.value}: $bodyText")
         }
 
-        throw SpotifyException(429, "Rate limited after $maxRetries retries")
+        val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+
+        val errors = responseJson.arr("errors")
+        if (errors != null && errors.isNotEmpty()) {
+            val errorMsg = errors[0].jsonObject.str("message") ?: "Unknown GraphQL error"
+            if (errorMsg.contains("PersistedQueryNotFound", ignoreCase = true)) {
+                return GqlResult(json = null, isPersistedQueryNotFound = true)
+            }
+            log("E", "GQL $operationName returned error: $errorMsg")
+            throw SpotifyException(400, "GraphQL: $errorMsg")
+        }
+
+        return GqlResult(json = responseJson, isPersistedQueryNotFound = false)
     }
 
     // ── REST core (fallback for endpoints without GQL equivalent) ────────
@@ -325,12 +324,10 @@ object Spotify {
      * sent, and a 429 arms it for at least the documented window, so retrying inside the window
      * cannot succeed and is not attempted.
      */
-    @Volatile
-    private var restBlockedUntilMs = 0L
+    private val restCooldown = SpotifyRequestCooldown()
 
-    /** Seconds until [restBlockedUntilMs] clears, rounded up, or 0 when REST may be called. */
     private fun restCooldownSecondsRemaining(): Long =
-        (restBlockedUntilMs - System.currentTimeMillis() + 999).coerceAtLeast(0) / 1000
+        restCooldown.remainingSeconds()
 
     private suspend inline fun <reified T> authenticatedGet(
         endpoint: String,
@@ -344,7 +341,7 @@ object Spotify {
         val blockedSec = restCooldownSecondsRemaining()
         if (blockedSec > 0) {
             log("W", "REST $endpoint — skipping, app-wide REST cooldown has ${blockedSec}s left")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec)
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec, quotaExceeded = restCooldown.quotaExceeded)
         }
 
         log("D", "REST GET $endpoint")
@@ -359,11 +356,15 @@ object Spotify {
             throw SpotifyException(401, "Token expired or invalid")
         }
         if (response.status == HttpStatusCode.TooManyRequests) {
-            val cooldownMs = rateLimitCooldownMillis(response.headers["Retry-After"]?.toLongOrNull())
-            restBlockedUntilMs = maxOf(restBlockedUntilMs, System.currentTimeMillis() + cooldownMs)
-            val remainingSec = restCooldownSecondsRemaining()
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val remainingSec = restCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
             log("W", "REST $endpoint -> 429, every REST call is blocked for ${remainingSec}s")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = remainingSec)
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = remainingSec,
+                quotaExceeded = quotaExceeded,
+            )
         }
         if (response.status.value !in 200..299) {
             val bodyText = response.bodyAsText()
@@ -440,6 +441,8 @@ object Spotify {
             artists = artists,
             album = album,
             durationMs = parseGqlTrackDurationMs(trackData),
+            explicit = spotifyReportedExplicit(trackData),
+            externalIds = spotifyReportedExternalIds(trackData),
             uri = uri.ifEmpty { null },
         )
     }
@@ -470,27 +473,22 @@ object Spotify {
     // ── User Profile (GQL with REST fallback) ──────────────────────────
 
     suspend fun me(): Result<SpotifyUser> =
-        runCatching {
-            try {
-                val response =
-                    graphqlPost(
-                        operationName = "profileAttributes",
-                    )
-                val profile =
-                    response.obj("data")?.obj("me")?.obj("profile")
+        spotifyRequestResult {
+            spotifyGraphQlWithRestFallback(
+                graphQl = {
+                    val response = graphqlPost(operationName = "profileAttributes")
+                    val profile = response.obj("data")?.obj("me")?.obj("profile")
                         ?: throw SpotifyException(500, "Invalid profileAttributes response")
-
-                val uri = profile.str("uri") ?: ""
-                SpotifyUser(
-                    id = uri.substringAfterLast(":"),
-                    displayName = profile.str("name"),
-                    email = null,
-                    images = parseGqlImages(profile.obj("avatar")?.arr("sources")),
-                )
-            } catch (e: Exception) {
-                log("W", "GQL me() failed, falling back to REST: ${e.message}")
-                authenticatedGet<SpotifyUser>("me")
-            }
+                    val uri = profile.str("uri") ?: ""
+                    SpotifyUser(
+                        id = uri.substringAfterLast(":"),
+                        displayName = profile.str("name"),
+                        email = null,
+                        images = parseGqlImages(profile.obj("avatar")?.arr("sources")),
+                    )
+                },
+                rest = { authenticatedGet<SpotifyUser>("me") },
+            )
         }
 
     // ── Playlists (GQL: libraryV3) ──────────────────────────────────────
@@ -1315,24 +1313,17 @@ object Spotify {
         limit: Int = 20,
         offset: Int = 0,
     ): Result<SpotifySearchResult> =
-        runCatching {
-            try {
-                hydrateSearchTracks(searchGraphQl(query, types, limit, offset))
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Throwable) {
-                // The internal search endpoint is useful but its persisted hash and response shape
-                // can rotate independently of the public API. Keep catalog search usable when that
-                // happens; the same web-player token is accepted by Spotify's REST search endpoint.
-                log("W", "GQL search failed; falling back to REST search: ${error.message}")
-                searchRest(query, types, limit, offset)
-            }
+        spotifyRequestResult {
+            spotifyGraphQlWithRestFallback(
+                graphQl = { hydrateSearchTracks(searchGraphQl(query, types, limit, offset)) },
+                rest = { searchRest(query, types, limit, offset) },
+            )
         }
 
     private suspend fun hydrateSearchTracks(result: SpotifySearchResult): SpotifySearchResult {
         val tracks = result.tracks?.items.orEmpty()
         if (tracks.isEmpty()) return result
-        val ids = tracks.mapNotNull { it.id.takeIf(String::isNotBlank) }.distinct()
+        val ids = tracks.filter(SpotifyTrack::needsRestMetadata).mapNotNull { it.id.takeIf(String::isNotBlank) }.distinct()
         if (ids.isEmpty()) return result
 
         val hydrated =

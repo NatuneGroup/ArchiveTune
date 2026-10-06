@@ -308,7 +308,8 @@ fun ListenTogetherScreen(
                 connectionState = connectionState,
                 onConnect = { listenTogetherManager.connect() },
                 onDisconnect = { listenTogetherManager.disconnect() },
-                onReconnect = { listenTogetherManager.forceReconnect() }
+                onReconnect = { listenTogetherManager.forceReconnect() },
+                errorMessage = joinErrorMessage,
             )
         }
 
@@ -347,7 +348,6 @@ fun ListenTogetherScreen(
                         viewModel.isCreatingRoom.value = true
                         viewModel.isJoiningRoom.value = false
                         viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.connect()
                         listenTogetherManager.createRoom(finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
@@ -366,7 +366,6 @@ fun ListenTogetherScreen(
                         viewModel.isJoiningRoom.value = true
                         viewModel.isCreatingRoom.value = false
                         viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.connect()
                         listenTogetherManager.joinRoom(roomCodeInput, finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
@@ -580,7 +579,8 @@ private fun ConnectionStatusCard(
     connectionState: ConnectionState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    errorMessage: String?,
 ) {
     val iconTint = when (connectionState) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -630,7 +630,17 @@ private fun ConnectionStatusCard(
                         fontWeight = FontWeight.Bold,
                         color = iconTint
                     )
-                    
+                    if ((connectionState == ConnectionState.ERROR || connectionState == ConnectionState.DISCONNECTED) &&
+                        !errorMessage.isNullOrBlank()
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+
                     if (connectionState == ConnectionState.CONNECTING || 
                         connectionState == ConnectionState.RECONNECTING) {
                         Spacer(modifier = Modifier.height(12.dp))

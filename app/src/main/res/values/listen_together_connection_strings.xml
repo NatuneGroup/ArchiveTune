@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="listen_together_connection_timeout">The Listen Together server did not connect in time. Try again or choose another server in settings.</string>
+    <string name="listen_together_room_request_timeout">The room request timed out. Check the room code and host, then try again.</string>
+</resources>

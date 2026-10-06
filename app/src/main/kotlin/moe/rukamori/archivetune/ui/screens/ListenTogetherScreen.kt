@@ -342,10 +342,7 @@ fun ListenTogetherScreen(
                     if (finalUsername.isNotBlank()) {
                         savedUsername = finalUsername
                         Toast.makeText(context, R.string.creating_room, Toast.LENGTH_SHORT).show()
-                        viewModel.isCreatingRoom.value = true
-                        viewModel.isJoiningRoom.value = false
-                        viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.createRoom(finalUsername)
+                        viewModel.createRoom(finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
                     }
@@ -360,10 +357,7 @@ fun ListenTogetherScreen(
                             context.getString(R.string.joining_room, roomCodeInput),
                             Toast.LENGTH_SHORT
                         ).show()
-                        viewModel.isJoiningRoom.value = true
-                        viewModel.isCreatingRoom.value = false
-                        viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.joinRoom(roomCodeInput, finalUsername)
+                        viewModel.joinRoom(roomCodeInput, finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
                     }
@@ -633,7 +627,11 @@ private fun ConnectionStatusCard(
                         Text(
                             text = errorMessage,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            color = if (connectionState == ConnectionState.ERROR) {
+                                MaterialTheme.colorScheme.onErrorContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             modifier = Modifier.padding(top = 8.dp),
                         )
                     }

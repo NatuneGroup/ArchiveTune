@@ -69,10 +69,12 @@ class ListenTogetherViewModel @Inject constructor(
                     }
                     is ListenTogetherEvent.JoinApproved -> {
                         isJoiningRoom.value = false
+                        isCreatingRoom.value = false
                         joinErrorMessage.value = null
                     }
                     is ListenTogetherEvent.RoomCreated -> {
                         isCreatingRoom.value = false
+                        isJoiningRoom.value = false
                     }
                     is ListenTogetherEvent.Disconnected -> {
                         isJoiningRoom.value = false
@@ -101,10 +103,18 @@ class ListenTogetherViewModel @Inject constructor(
     }
 
     fun createRoom(username: String) {
+        if (isCreatingRoom.value || isJoiningRoom.value) return
+        isCreatingRoom.value = true
+        isJoiningRoom.value = false
+        joinErrorMessage.value = null
         manager.createRoom(username)
     }
 
     fun joinRoom(roomCode: String, username: String) {
+        if (isCreatingRoom.value || isJoiningRoom.value) return
+        isJoiningRoom.value = true
+        isCreatingRoom.value = false
+        joinErrorMessage.value = null
         manager.joinRoom(roomCode, username)
     }
 

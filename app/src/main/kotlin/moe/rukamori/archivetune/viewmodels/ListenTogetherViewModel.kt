@@ -16,6 +16,8 @@ import androidx.lifecycle.ViewModel
 import moe.rukamori.archivetune.listentogether.ListenTogetherManager
 import androidx.lifecycle.viewModelScope
 import moe.rukamori.archivetune.listentogether.ListenTogetherEvent
+import moe.rukamori.archivetune.listentogether.ConnectionState
+import moe.rukamori.archivetune.listentogether.listenTogetherRequestFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -49,6 +51,11 @@ class ListenTogetherViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             manager.events.collect { event ->
+                listenTogetherRequestFailure(event)?.let { message ->
+                    joinErrorMessage.value = message
+                    isJoiningRoom.value = false
+                    isCreatingRoom.value = false
+                }
                 when (event) {
                     is ListenTogetherEvent.JoinRejected -> {
                         val reason = event.reason
@@ -67,7 +74,19 @@ class ListenTogetherViewModel @Inject constructor(
                     is ListenTogetherEvent.RoomCreated -> {
                         isCreatingRoom.value = false
                     }
+                    is ListenTogetherEvent.Disconnected -> {
+                        isJoiningRoom.value = false
+                        isCreatingRoom.value = false
+                    }
                     else -> {}
+                }
+            }
+        }
+        viewModelScope.launch {
+            connectionState.collect { state ->
+                if (state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED) {
+                    isJoiningRoom.value = false
+                    isCreatingRoom.value = false
                 }
             }
         }

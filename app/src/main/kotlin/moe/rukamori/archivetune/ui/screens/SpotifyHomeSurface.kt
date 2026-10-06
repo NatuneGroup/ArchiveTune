@@ -16,15 +16,21 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.unit.dp
 import com.kyant.backdrop.backdrops.LayerBackdrop
+import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.effects.blur
+import com.kyant.backdrop.effects.lens
+import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.highlight.Highlight
 import dev.chrisbanes.haze.hazeSource
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.liquidGlass
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -59,11 +65,22 @@ internal fun SpotifyHomeLayout(
 @Composable
 internal fun Modifier.spotifyHomeSurface(shape: Shape): Modifier {
     val backdrop = LocalSpotifyHomeBackdrop.current
-    return clip(shape).then(
-        if (backdrop != null) {
-            Modifier.liquidGlass(backdrop = backdrop, shape = shape, interactive = false)
-        } else {
-            Modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh, shape)
-        },
-    )
+    val clipped = clip(shape)
+    if (backdrop == null) return clipped.background(MaterialTheme.colorScheme.surfaceContainerHigh)
+    val tint = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)
+    val glass = remember(backdrop, shape, tint) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop,
+            shape = { shape },
+            highlight = { Highlight(width = 0.5.dp, alpha = 0.3f) },
+            shadow = null,
+            effects = {
+                vibrancy()
+                blur(4.dp.toPx())
+                lens(2.dp.toPx(), 2.dp.toPx())
+            },
+            onDrawSurface = { drawRect(tint) },
+        )
+    }
+    return clipped.then(glass)
 }

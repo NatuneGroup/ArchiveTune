@@ -1,38 +1,30 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Signing in to QQ Music with the account's own QR code, the way the official web client does it.
- *
  * The user scans the code with the QQ app they already have. What follows is Tencent's own login
  * chain: the QR is issued by `ptlogin2`, the scan is confirmed against the same endpoint, and the
  * resulting `p_skey` is exchanged for a QQ Music ticket through the account server. Nothing is
  * scraped and no credential is invented — the ticket this produces is the one Tencent issued for
  * this account, and it is used only for that account's own playback.
- *
  * The chain is four hops and each one is needed:
- *
- *   1. `ptqrshow` returns the image plus a `qrsig` cookie, which *is* the login session id. It is
- *      never sent back as a parameter, only hashed into the poll token.
- *   2. `ptqrlogin` is polled while the user scans. Its reply is the `ptuiCB(...)` script below,
- *      whose first argument is the state and whose third carries a signed `uin`/`ptsigx` pair.
- *   3. `check_sig` exchanges that pair for the `p_skey` cookie. This hop cannot be skipped: the
- *      `p_skey` is both the CSRF basis for the next call and the account proof it needs.
- *   4. `oauth2.0/authorize` turns the `p_skey` into a one-shot authorisation code, which
- *      `QQConnectLogin.LoginServer` trades for the ticket the playback calls use.
- *
+ * 1. `ptqrshow` returns the image plus a `qrsig` cookie, which *is* the login session id. It is
+ * never sent back as a parameter, only hashed into the poll token.
+ * 2. `ptqrlogin` is polled while the user scans. Its reply is the `ptuiCB(...)` script below,
+ * whose first argument is the state and whose third carries a signed `uin`/`ptsigx` pair.
+ * 3. `check_sig` exchanges that pair for the `p_skey` cookie. This hop cannot be skipped: the
+ * `p_skey` is both the CSRF basis for the next call and the account proof it needs.
+ * 4. `oauth2.0/authorize` turns the `p_skey` into a one-shot authorisation code, which
+ * `QQConnectLogin.LoginServer` trades for the ticket the playback calls use.
  * Every hop fails closed: a null at any point means "ask for a new code", never a half-signed-in
  * state.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

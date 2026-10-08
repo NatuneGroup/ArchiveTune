@@ -1,27 +1,21 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The Home tab's QQ Music page, as data: the account's charts, each a section of playable songs.
- *
  * The page belongs to the signed-in account, so its sections are fetched once per account rather
  * than on every visit — leaving the Home tab and coming back does not re-fetch, and using the page
  * while signed in as somebody else does not show the previous account's charts. Only a refresh asks
  * QQ again.
- *
  * Every way this page can fail is a state rather than a throw: a feed that comes back useless is
  * the empty state, a feed that could not be fetched is an error carrying the reason it could not be
  * shown, and neither is something the screen has to guard against.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

@@ -1,37 +1,30 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Shared chrome for the provider sign-in WebViews (YouTube, Tidal, Qobuz, Deezer).
- *
  * This is a deliberate 1:1 match of SpotifyLoginSheet in BackupAndRestore.kt: a full-height
  * ModalBottomSheet with 28dp top corners over colorScheme.surface, a bold titleLarge heading,
  * an onSurfaceVariant bodyMedium subtitle, and the WebView clipped into shapes.large — same
  * 20dp horizontal / 20dp bottom padding and same 12dp vertical spacing. Every sign-in surface
  * in the app now looks identical to the Spotify one.
- *
  * These four flows are navigation routes rather than a boolean-gated sheet, so dismissing
  * (swipe-down, scrim tap, or system back) maps to navigateUp() instead of clearing a flag.
  * Like Spotify's sheet there is no back arrow — the sheet itself is the affordance.
- *
  * It also removes three copy-pasted bugs those four screens shared:
- *  - the TopAppBar was a *sibling* of a fillMaxSize() AndroidView, so it painted on top of the page
- *    instead of above it, covering the first ~64dp of every login form;
- *  - the captured WebView lived in a plain `var`, which resets to null on recomposition (the
- *    AndroidView factory only runs once) and never triggers one, leaving BackHandler permanently
- *    disabled. DeezerLoginScreen documented this bug rather than fixing it;
- *  - BackHandler keyed `enabled` off canGoBack(), which flips during in-page navigation without
- *    recomposing, so the flag went stale either way.
+ * - the TopAppBar was a *sibling* of a fillMaxSize() AndroidView, so it painted on top of the page
+ * instead of above it, covering the first ~64dp of every login form;
+ * - the captured WebView lived in a plain `var`, which resets to null on recomposition (the
+ * AndroidView factory only runs once) and never triggers one, leaving BackHandler permanently
+ * disabled. DeezerLoginScreen documented this bug rather than fixing it;
+ * - BackHandler keyed `enabled` off canGoBack(), which flips during in-page navigation without
+ * recomposing, so the flag went stale either way.
  */
+
+
 
 package moe.rukamori.archivetune.ui.component
 

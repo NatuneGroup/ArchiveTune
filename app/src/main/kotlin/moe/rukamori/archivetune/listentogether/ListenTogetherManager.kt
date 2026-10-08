@@ -1,29 +1,24 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Listen Together player bridge — ported from vivi-music (beta branch),
  * vivi-music's listentogether.ListenTogetherManager (GPL-3.0).
- *
  * Adaptations for ArchiveTune (all marked with PORT-NOTE below):
- *  - PlayerConnection exposes `player: Player` (the service's active player)
- *    instead of vivi's `player: ExoPlayer`; every member used here exists on
- *    the media3 Player interface, so no casts were needed.
- *  - vivi's PlayerConnection carried Listen-Together hooks
- *    (shouldBlockPlaybackChanges / allowInternalSync / onSkipPrevious /
- *    onSkipNext / onRestartSong / setMuted/isMuted). ArchiveTune's
- *    PlayerConnection has none of them yet, so the manager does not touch
- *    them; guest playback gating is left to the integration phase.
+ * - PlayerConnection exposes `player: Player` (the service's active player)
+ * instead of vivi's `player: ExoPlayer`; every member used here exists on
+ * the media3 Player interface, so no casts were needed.
+ * - vivi's PlayerConnection carried Listen-Together hooks
+ * (shouldBlockPlaybackChanges / allowInternalSync / onSkipPrevious /
+ * onSkipNext / onRestartSong / setMuted/isMuted). ArchiveTune's
+ * PlayerConnection has none of them yet, so the manager does not touch
+ * them; guest playback gating is left to the integration phase.
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 

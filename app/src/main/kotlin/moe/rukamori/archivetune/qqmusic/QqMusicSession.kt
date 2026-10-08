@@ -1,29 +1,23 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The signed-in QQ Music account: the two values every client call needs, plus the nickname the
  * settings screen shows.
- *
  * QQ Music's own clients authenticate against `musicu.fcg` with a `musickey` ticket minted for the
  * account at login. The web client carries the same ticket in a cookie, where it is called
  * `qm_keyst` (older captures: `qqmusic_key`); the ticket is generated *from* the account's
  * credentials, which is why it is stored rather than derived. `g_tk` — the CSRF parameter several
  * of the RPC modules expect — is derived from the ticket on every request, so a rotated ticket
  * cannot leave a stale `g_tk` behind.
- *
  * Nothing here is a credential the app invents: [uin] and [musicKey] are exactly what Tencent
  * issued for this account, and only the account's own entitlements are ever requested through them.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

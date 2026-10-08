@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * QQ Music settings, reached from the Integration screen alongside the other sources.
- *
  * The account card is not decoration: this source plays from the user's own QQ Music account and
  * nothing else, so a screen that did not say whether one is connected would leave every silent
  * fall-through unexplained. The card therefore carries the whole sign-in — the QR code, what the
  * scan is doing, and the way back out — and the source's own boundary is stated once, plainly,
  * rather than in a mandatory notice.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens.settings
 

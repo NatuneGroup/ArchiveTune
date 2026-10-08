@@ -1,19 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Pins what the QQ Music Home page reads out of QQ's replies, and what it makes of the replies it
  * cannot read.
- *
  * The page has no way to check its assumptions against the service from here, so the two things
  * that must not be wrong are: that a reply in the shape the service documents becomes the sections
  * the page draws, and that every other reply — refused, truncated, renamed, or a channel's own
@@ -21,10 +14,11 @@
  * The distinction the page's states hang on is pinned too: a reply with no chart listing in it is a
  * fetch that failed and is worth a retry, while a listing with nothing readable in it is an empty
  * page.
- *
  * The payloads are the documented shapes written out: `group -> toplist -> song` for the listing,
  * `songInfoList` for one chart's own songs.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -15,6 +9,8 @@
  * Telegram sign-in screen can pre-fill the "+NN" prefix like the official apps do. No permission is
  * required to read the SIM/network country ISO. Falls back to an empty prefix when unknown.
  */
+
+
 
 package moe.rukamori.archivetune.telegram
 

@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -14,6 +8,8 @@
  * Listen Together protocol model — ported from vivi-music (beta branch),
  * vivi-music's listentogether.Protocol (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 

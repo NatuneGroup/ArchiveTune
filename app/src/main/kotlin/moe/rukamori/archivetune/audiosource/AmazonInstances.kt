@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The Amazon instances to try, and the authorization material each one needs.
- *
  * Two independent things feed this list: the base URLs the user typed into
  * [moe.rukamori.archivetune.constants.AmazonInstancesKey], and the ones the ArchivePool serves for
  * `amazon-music` (an instance host plus, when its operator published them, that host's own
  * credentials). The user's own entries always come first — a host they configured deliberately
  * should not be queued behind a pooled one — and a pooled host never receives the user's material.
  */
+
+
 
 package moe.rukamori.archivetune.audiosource
 

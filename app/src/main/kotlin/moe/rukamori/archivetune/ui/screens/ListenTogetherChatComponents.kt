@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -15,6 +9,8 @@
  * bubbles with swipe-to-reply, reactions, the Instagram-style anchored action
  * popup (morph animation + liquid glass) and the full emoji picker.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens
 

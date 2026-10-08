@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -17,6 +11,8 @@
  * back to the Telegram thumbnail only when nothing is found. Results (including misses) are cached
  * in-memory to avoid repeat lookups.
  */
+
+
 
 package moe.rukamori.archivetune.telegram
 

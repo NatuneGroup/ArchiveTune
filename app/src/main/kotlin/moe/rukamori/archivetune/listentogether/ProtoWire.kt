@@ -1,18 +1,11 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Minimal protobuf wire writer/reader for the Listen Together protocol.
- *
  * The generated protobuf classes this protocol used to rely on are gone: protobuf-gradle-plugin
  * cannot apply to this project's AGP 9 (it casts the app extension to the removed BaseExtension),
  * and a pre-generated copy collided with the protobuf-java runtime another dependency already ships
@@ -20,11 +13,12 @@
  * string/int64/bool/float/bytes, nested messages and repeated messages/strings, no oneof, no maps,
  * no enums — so encoding it here keeps app/src/main/proto/listentogether.proto as the single source
  * of truth with no runtime dependency at all.
- *
  * proto3 rules implemented: default-valued scalars are not written (0, false, ""), message fields
  * are length-delimited and their presence is tracked on read, repeated fields repeat their tag, and
  * unknown fields are skipped by wire type so a newer server cannot break an older client.
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 

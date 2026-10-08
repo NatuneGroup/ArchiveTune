@@ -1,28 +1,22 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Surface colours for screens that can render over the Liquid Glass backdrop.
- *
  * Adapted from YumaPlayer's GlassScaffold (MuwMx/YumaPlayer, GPL-3.0, a fork of this app), with
  * the one change that matters here: that version is transparent unconditionally, so every screen
  * is glass and there is no Material 3 look left. These helpers are transparent ONLY while the
  * Liquid Glass preference is on and return the ordinary Material 3 surface otherwise — Material 3
  * stays the default and glass is the opt-in, which is the inverse of the fork's choice.
- *
  * Deliberately colour helpers rather than a Scaffold wrapper: every settings screen already builds
  * its own Scaffold with its own insets, top bar and scroll behaviour, so a wrapper would force each
  * one to be restructured to adopt glass. Two one-line substitutions per screen do the same job.
  */
+
+
 
 package moe.rukamori.archivetune.ui.component
 

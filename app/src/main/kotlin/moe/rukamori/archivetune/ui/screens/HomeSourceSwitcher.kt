@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -16,6 +10,8 @@
  * whose prerequisite disappears (a Spotify session going away) is filtered out of the resolved set
  * rather than erased from the setting, so signing back in restores the user's choice.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens
 

@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Pins QQ's request sign.
- *
  * A signing mistake here does not look like a mistake: the request goes out, the server answers 200
  * with an empty result, and the source quietly falls through to the next one with nothing to show
  * for it. Everything else in the QQ path fails loudly by comparison, so the hash — the same one used
  * for the QR poll token and for the `g_tk` the RPC modules carry — is the piece that has to be
  * pinned against fixed inputs.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

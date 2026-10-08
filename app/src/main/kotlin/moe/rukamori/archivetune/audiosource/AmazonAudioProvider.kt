@@ -1,34 +1,28 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Amazon Music source via a user-configured instance. This mirrors the monochrome.tf web player
  * exactly: a metadata lookup against an instance's Amazon track endpoint returns a `stream_url`
  * (a CENC-encrypted fragmented MP4) plus a raw content key. The stream is downloaded and decrypted
  * on-device by [AmazonCencDecryptor] (the web player offloads decryption to the browser's
  * ClearKey/EME stack, which this app lacks).
- *
  * Two protocol generations are supported because hosts in this ecosystem vary:
- *   - gen-2   `GET {base}/api/v2/track/?...&intent=stream&quality=...` (`unified` shape)
- *   - gen-1.5 `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`
+ * - gen-2   `GET {base}/api/v2/track/?...&intent=stream&quality=...` (`unified` shape)
+ * - gen-1.5 `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`
  * The gen-2 route is tried first; a 404 means the route is absent on that host, so we fall back to
  * the gen-1.5 route.
- *
  * IMPORTANT — instances are commonly gated behind Cloudflare Turnstile. Requests require either a
  * configured `bypass_token` (set by the instance operator) or a Turnstile JWT obtained interactively
  * via [moe.rukamori.archivetune.ui.screens.settings.AmazonTurnstileActivity]. Without one, the
  * instance rejects the request (HTTP 401/428) and the caller falls through to the next source.
- *
  * No default instance ships: the list starts empty and the user adds their own, exactly like Tidal.
  */
+
+
 
 package moe.rukamori.archivetune.audiosource
 

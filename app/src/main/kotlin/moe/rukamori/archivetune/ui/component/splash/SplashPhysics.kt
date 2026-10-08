@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -14,6 +8,8 @@
  * Opening animation per-particle integrator — ported from YumaPlayer (github.com/MuwMx/YumaPlayer),
  * ui/component/splash/SplashPhysics.kt (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.ui.component.splash
 

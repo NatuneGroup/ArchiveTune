@@ -1,18 +1,11 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Playing a track from the signed-in user's own QQ Music account.
- *
  * The shape is the same as every other source here: the playback layer hands over the metadata it
  * knows, this turns it into a playable stream, and the shared
  * [moe.rukamori.archivetune.audiosource.TitleMatch] gate decides whether what came back really is
@@ -20,16 +13,16 @@
  * track, so the work is: find the catalogue entry, learn its resource id, ask for that resource at
  * the quality the user chose, and — only when the service answers with a protected container rather
  * than a plain file — decrypt it on device.
- *
  * The account is the one the user signed in with. Nothing here reaches for another account's
  * entitlements, borrows a credential, or asks for a tier the account does not have: an unentitled
  * tier comes back empty from the service and this returns null so the resolver carries on down the
  * chain, which is how every other source behaves.
- *
  * Failure is always null. A missing session, an empty catalogue result, a rejected metadata match,
  * an unentitled quality, a container whose key cannot be recovered — all of them mean "not this
  * source, try the next", never a partial stream.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

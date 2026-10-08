@@ -1,34 +1,27 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The QQ Music RPC surface this source needs: catalogue search, track detail, the Home page's
  * charts, and the call that mints a playable URL for the signed-in account.
- *
  * Every call is a single POST to `https://u.y.qq.com/cgi-bin/musicu.fcg` carrying a
  * `{comm, req_N: {module, method, param}}` envelope. `comm` identifies the caller; the module name
  * identifies the operation. This is the protocol QQ Music's own clients speak, not a published
  * API: Tencent's OpenAPI is enterprise-only, so a personal account is reached the same way the
  * official desktop and web clients reach it, with the account's own credentials.
- *
  * The url-minter is a `filename`-based call: the client does not name a track, it names the
  * *resource* — `<prefix><media_mid><extension>` — and gets back a relative path plus a CDN list.
  * The prefix selects the quality tier, so the tier the user picks in settings is what gets asked
  * for, and a tier the account is not entitled to comes back empty rather than being worked around.
- *
  * No request signature is needed here. The `sign=` parameter belongs to the separate `musics.fcg`
  * endpoint, whose signer is a JavaScript virtual machine; `musicu.fcg` authenticates with the
  * account ticket alone. What it does need is `g_tk`, which is derived from that ticket below.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

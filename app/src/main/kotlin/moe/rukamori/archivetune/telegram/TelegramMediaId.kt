@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -15,9 +9,10 @@
  * (stable across TDLib database rebuilds) plus the TDLib file id + remote unique id of the audio
  * payload (a fast path that is only valid for the current TDLib database — TelegramDataSource
  * falls back to re-resolving the message when the file id has gone stale).
- *
  * Kept free of Android imports so it can be covered by plain JVM unit tests.
  */
+
+
 
 package moe.rukamori.archivetune.telegram
 

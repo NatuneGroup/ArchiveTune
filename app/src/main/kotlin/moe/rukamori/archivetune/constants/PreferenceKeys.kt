@@ -1204,13 +1204,6 @@ enum class PlayerDesignStyle(
      * only it understands.
      */
     SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
-
-    /**
-     * The Looper player (4nx3b/ArchiveTune, GPL-3.0) — large-type editorial layout with the Jost
-     * family, a wavy circular progress ring and a drag-scrubbable transport. Carries its own
-     * backdrop treatment, so it declares BLUR rather than borrowing a shared one.
-     */
-    LOOPER(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
     ;
 
     /** What to actually render: the reader's pick where it is offered, the style's own otherwise. */

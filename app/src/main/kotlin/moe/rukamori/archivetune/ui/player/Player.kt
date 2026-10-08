@@ -226,7 +226,6 @@ import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.bitchord.BitChordPlayerContent
-import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
 import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicPlayerContent
 import moe.rukamori.archivetune.ui.player.spatialflow.SpatialFlowPlayerContent
 import moe.rukamori.archivetune.ui.player.tiktok.TikTokPlayerContent
@@ -2074,38 +2073,6 @@ fun BottomSheetPlayer(
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
-                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
-                    // Looper: editorial large-type layout, Jost family, wavy progress ring and a
-                    // drag-scrubbable transport. Fills its box, so it is not orientation-branched.
-                    enrichedMetadata?.let { metadata ->
-                        LooperPlayerContent(
-                            mediaMetadata = metadata,
-                            isPlaying = isPlaying,
-                            isLoading = isLoading,
-                            canSkipPrevious = canSkipPrevious,
-                            canSkipNext = canSkipNext,
-                            sliderPosition = sliderPosition,
-                            position = position,
-                            duration = duration,
-                            playerConnection = playerConnection,
-                            navController = navController,
-                            state = state,
-                            menuState = menuState,
-                            bottomSheetPageState = bottomSheetPageState,
-                            currentFormat = currentFormat,
-                            canvasPrimaryUrl = artworkCanvas?.animated,
-                            canvasFallbackUrl = artworkCanvas?.videoUrl,
-                            onSeek = onSliderValueChange,
-                            onSeekFinished = onSliderValueChangeFinished,
-                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
-                            onQueueClick = openQueue,
-                            lyricsVisible = isInlineLyricsOpen,
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
-                        )
-                    }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
                     // SimpMusic's default now-playing screen: a diagonal wash pulled from the
                     // artwork palette, the sleeve on a pager backed by the real queue, then the
@@ -2641,38 +2608,6 @@ fun BottomSheetPlayer(
                                     .windowInsetsPadding(
                                         WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
-                        )
-                    }
-                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
-                    // Looper: editorial large-type layout, Jost family, wavy progress ring and a
-                    // drag-scrubbable transport. Fills its box, so it is not orientation-branched.
-                    enrichedMetadata?.let { metadata ->
-                        LooperPlayerContent(
-                            mediaMetadata = metadata,
-                            isPlaying = isPlaying,
-                            isLoading = isLoading,
-                            canSkipPrevious = canSkipPrevious,
-                            canSkipNext = canSkipNext,
-                            sliderPosition = sliderPosition,
-                            position = position,
-                            duration = duration,
-                            playerConnection = playerConnection,
-                            navController = navController,
-                            state = state,
-                            menuState = menuState,
-                            bottomSheetPageState = bottomSheetPageState,
-                            currentFormat = currentFormat,
-                            canvasPrimaryUrl = artworkCanvas?.animated,
-                            canvasFallbackUrl = artworkCanvas?.videoUrl,
-                            onSeek = onSliderValueChange,
-                            onSeekFinished = onSliderValueChangeFinished,
-                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
-                            onQueueClick = openQueue,
-                            lyricsVisible = isInlineLyricsOpen,
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {

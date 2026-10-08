@@ -24,6 +24,7 @@ object SpotifyMapper {
     private val FEAT_PATTERN = Regex("\\(feat\\..*?\\)")
     private val FT_PATTERN = Regex("\\(ft\\..*?\\)")
     private val BRACKET_PATTERN = Regex("\\[.*?]")
+    private val REMASTER_PATTERN = Regex("\\(.*?remaster.*?\\)", RegexOption.IGNORE_CASE)
     private val REMIX_PATTERN = Regex("\\(.*?remix.*?\\)", RegexOption.IGNORE_CASE)
     // Keeps letters and digits of every script. An `[a-z0-9]` class deleted Tamil, Hindi,
     // Cyrillic and CJK titles outright, which emptied the normalized title, zeroed both

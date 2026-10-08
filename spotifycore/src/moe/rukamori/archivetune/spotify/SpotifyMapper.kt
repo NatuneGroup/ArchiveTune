@@ -12,6 +12,7 @@ import moe.rukamori.archivetune.spotify.models.SpotifyArtist
 import moe.rukamori.archivetune.spotify.models.SpotifyImage
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
+import java.text.Normalizer
 
 /**
  * Utility object for creating search queries from Spotify track data.
@@ -23,9 +24,16 @@ object SpotifyMapper {
     private val FEAT_PATTERN = Regex("\\(feat\\..*?\\)")
     private val FT_PATTERN = Regex("\\(ft\\..*?\\)")
     private val BRACKET_PATTERN = Regex("\\[.*?]")
-    private val REMASTER_PATTERN = Regex("\\(.*?remaster.*?\\)", RegexOption.IGNORE_CASE)
     private val REMIX_PATTERN = Regex("\\(.*?remix.*?\\)", RegexOption.IGNORE_CASE)
-    private val NON_ALNUM_PATTERN = Regex("[^a-z0-9\\s]")
+    // Keeps letters and digits of every script. An `[a-z0-9]` class deleted Tamil, Hindi,
+    // Cyrillic and CJK titles outright, which emptied the normalized title, zeroed both
+    // bigram scores and pinned every non-Latin track under the match floor — so those
+    // tracks could never be mapped to a playable source.
+    private val NON_ALNUM_PATTERN = Regex("[^\\p{L}\\p{N}\\s]")
+
+    // Decomposed accents would otherwise compare unequal to their precomposed spelling
+    // ("café" vs "cafe"); NFD plus a combining-mark strip folds them together.
+    private val COMBINING_MARKS_PATTERN = Regex("\\p{M}+")
     private val MULTI_SPACE_PATTERN = Regex("\\s+")
 
     private const val NORM_CACHE_MAX_SIZE = 256
@@ -230,13 +238,17 @@ object SpotifyMapper {
     }
 
     private fun normalizeTitle(title: String): String =
-        title
-            .lowercase()
-            .replace(FEAT_PATTERN, "")
-            .replace(FT_PATTERN, "")
-            .replace(BRACKET_PATTERN, "")
-            .replace(REMASTER_PATTERN, "")
-            .replace(REMIX_PATTERN, "")
+        Normalizer
+            .normalize(
+                title
+                    .lowercase()
+                    .replace(FEAT_PATTERN, "")
+                    .replace(FT_PATTERN, "")
+                    .replace(BRACKET_PATTERN, "")
+                    .replace(REMASTER_PATTERN, "")
+                    .replace(REMIX_PATTERN, ""),
+                Normalizer.Form.NFD,
+            ).replace(COMBINING_MARKS_PATTERN, "")
             .replace(NON_ALNUM_PATTERN, "")
             .replace(MULTI_SPACE_PATTERN, " ")
             .trim()

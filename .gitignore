@@ -130,3 +130,6 @@ core.*
 
 # graphify knowledge-graph state (regenerable, ~60MB)
 .graphify/
+
+# Agent plan artifacts (local only)
+docs/superpowers/

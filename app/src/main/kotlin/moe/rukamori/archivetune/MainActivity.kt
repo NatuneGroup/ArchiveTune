@@ -3350,7 +3350,11 @@ class MainActivity : ComponentActivity() {
 
                         BottomSheetMenu(
                             state = LocalMenuState.current,
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            // Above the maximized player sheet, or the menu opens underneath it.
+                            modifier =
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .zIndex(100f),
                         )
 
                         BottomSheetPage(

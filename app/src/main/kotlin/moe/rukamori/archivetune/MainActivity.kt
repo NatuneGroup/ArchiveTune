@@ -1581,15 +1581,22 @@ class MainActivity : ComponentActivity() {
                     val navVisibleHeight = NavigationBarHeight * navBarHeightMultiplier
                     val navBarHorizontalPadding = navigationBarStyle.pillHorizontalInset
 
-                    // Frosted backdrop (nav bar + mini player + tablet rail): allocated whenever
-                    // any frosted surface can run (RenderEffect available). The bottom toolbar and
-                    // the tablet-mode NavigationRail both consume it via LocalNavigationBarBackdrop.
+                    // Frosted backdrop (nav bar + mini player + tablet rail). Recording the whole
+                    // NavHost into this layer costs a full extra screen render per frame, so it is
+                    // allocated only when a frosted surface actually samples it. Left always live,
+                    // every launch — including the opening animation — paid that pass for a
+                    // frosted bar most users never turn on. Mirrors 4nx3b's anyFrostedConsumerActive.
                     val miniPlayerBgStyle by rememberEnumPreference(
                         MiniPlayerBackgroundStyleKey,
                         defaultValue = MiniPlayerBackgroundStyle.THEME,
                     )
+                    val anyFrostedConsumerActive =
+                        navigationBarFrostedBlur ||
+                            navigationBarTintFrostedBlur ||
+                            navigationBarBitchordEnabled ||
+                            miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED
                     val navBarFrostedBackdrop =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && anyFrostedConsumerActive) {
                             val frostedLayer = rememberGraphicsLayer()
                             remember(frostedLayer) { NavigationBarBackdrop(frostedLayer) }
                         } else {

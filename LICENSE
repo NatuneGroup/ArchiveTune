@@ -683,7 +683,20 @@ ArchiveTune is a fork of Rukamori's ArchiveTune
 have diverged from the upstream tree carry the fork's copyright header; the
 original work remains credited to Rukamori here and in the git history.
 
-Portions of the Spotify integration derive from YumaPlayer by MuwMx.
-Portions of the appearance work (navigation, tint, bottom search) adapt
-designs from 4nx3b/ArchiveTune <https://github.com/4nx3b/ArchiveTune>.
-The Editorial player adaptations derive from adam-adrian/ArchiveTune.
+This app carries GPL-3.0 work from several upstream projects. In full:
+
+- Rukamori's ArchiveTune <https://github.com/rukamori/ArchiveTune> — the base
+  application, its InnerTube core, icon pack and media obfuscator.
+- YumaPlayer by MuwMx <https://github.com/MuwMx/YumaPlayer> — the opening
+  animation, the Spotify integration and the glass surfaces.
+- 4nx3b's ArchiveTune <https://github.com/4nx3b/ArchiveTune> and its lyrics
+  submodule — appearance and navigation work, the BitChord navigation bar,
+  player styles and playlist UI.
+- BitChord by kushagrasinghx <https://github.com/kushagrasinghx/BitChord> —
+  the floating bottom bar reproduced by our navigation bar.
+- adam-adrian's ArchiveTune <https://github.com/adam-adrian/ArchiveTune> —
+  the Editorial (V10) player adaptations.
+- The NewPipe/InnerTube extractor lineage behind the core submodule.
+
+Per-file attribution lives in each source file's header. The full list,
+including the projects studied for reference, is in docs/CREDITS.md.

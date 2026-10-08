@@ -278,40 +278,11 @@ fun SpotifyHomeScreen(
                             )
                         }
 
-                        val quickPicks = pickQuickPicksSection(state.sections)
-                        if (quickPicks != null) {
-                            item(key = "spotify_quick_picks_header", contentType = "section_header") {
-                                HomeSectionHeader(
-                                    title = stringResource(R.string.quick_picks),
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
-                            item(key = "spotify_quick_picks", contentType = "quick_picks") {
-                                val quickPicksTitle = resolveSpotifySectionTitle(quickPicks)
-                                val onQuickPickClick: (SpotifyTrack) -> Unit = { track ->
-                                    if (mediaMetadata?.spotifyTrackId == track.id) {
-                                        viewModel.cancelSelection()
-                                        playerConnection.player.togglePlayPause()
-                                    } else {
-                                        viewModel.onAction(
-                                            SpotifyHomeAction.TrackClick(track, quickPicks.tracks, quickPicksTitle),
-                                        )
-                                    }
-                                }
-                                // Spotify's own shelf; shown for every Spotify home.
-                                SpotifyQuickPicksCarousel(
-                                    tracks = quickPicks.tracks,
-                                    activeTrackId = mediaMetadata?.spotifyTrackId,
-                                    isPlaying = isPlaying,
-                                    resolvingItemKey = resolvingItemKey,
-                                    onTrackClick = onQuickPickClick,
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
-                        }
-
-                        // The promoted shelf is skipped here so it is not drawn twice.
-                        state.sections.filterNot { it === quickPicks }.forEachIndexed { index, section ->
+                        // Sections render in the order Spotify's feed returns them. An earlier pass
+                        // hoisted the first track shelf to the top under a "Quick Picks" header with
+                        // a hero carousel; YumaPlayer has neither, and the extra header plus the
+                        // reorder were the most visible reason this screen did not match it.
+                        state.sections.forEachIndexed { index, section ->
                             item(
                                 key = "spotify_section_title_${section.title}_$index",
                                 contentType = "section_header"

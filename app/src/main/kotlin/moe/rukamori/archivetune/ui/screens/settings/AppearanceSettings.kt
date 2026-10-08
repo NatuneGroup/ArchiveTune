@@ -1628,6 +1628,13 @@ fun AppearanceSectionSettings(
 }
 
 @Composable
+private fun homeSourcesLabel(sources: List<HomeSource>): String {
+    // map is inline, so the stringResource calls stay in composable scope; joinToString is not.
+    val labels = sources.map { stringResource(it.labelResId()) }
+    return labels.joinToString(", ")
+}
+
+@Composable
 private fun SliderStyleOptionCard(
     sliderStyle: SliderStyle,
     selected: Boolean,

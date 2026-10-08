@@ -342,7 +342,6 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         checked = navigationBarBitchord,
                         onCheckedChange = onBitchordChange,
                     )
-                    )
                 }
 
                 item {

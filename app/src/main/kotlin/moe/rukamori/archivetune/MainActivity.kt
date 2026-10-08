@@ -1008,6 +1008,34 @@ class MainActivity : ComponentActivity() {
                 LiquidGlassNavBarEnabledKey,
                 defaultValue = false,
             )
+            // Forced high refresh rate applies at the activity level so it holds on
+            // every screen, not just while Appearance settings is composed.
+            val forceHighRefreshRate by rememberPreference(
+                moe.rukamori.archivetune.constants.ForceHighRefreshRateKey,
+                defaultValue = false,
+            )
+            val activityView = androidx.compose.ui.platform.LocalView.current
+            val supportedHighestFps =
+                remember(activityView) {
+                    val display = activityView.display
+                    display?.supportedModes?.maxOfOrNull { it.refreshRate }
+                        ?: display?.refreshRate
+                        ?: 60f
+                }
+            DisposableEffect(activityView, forceHighRefreshRate, supportedHighestFps) {
+                val requested =
+                    if (forceHighRefreshRate && supportedHighestFps > 60.5f) supportedHighestFps else 0f
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    activityView.setRequestedFrameRate(requested)
+                } else {
+                    val attributes = window.attributes
+                    if (attributes.preferredRefreshRate != requested) {
+                        attributes.preferredRefreshRate = requested
+                        window.attributes = attributes
+                    }
+                }
+                onDispose { }
+            }
 
             val customThemeSeedPalette =
                 remember(customThemeColorValue) {

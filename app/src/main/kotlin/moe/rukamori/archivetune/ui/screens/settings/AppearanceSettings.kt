@@ -10,13 +10,9 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
-import android.view.View
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -51,7 +47,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -63,7 +58,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -93,7 +87,6 @@ import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.constants.FontPreferenceKey
-import moe.rukamori.archivetune.constants.ForceHighRefreshRateKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.GridItemSize
 import moe.rukamori.archivetune.constants.GridItemsSizeKey
@@ -352,11 +345,6 @@ fun AppearanceSectionSettings(
             SplashOverlayEnabledKey,
             defaultValue = true,
         )
-    val (forceHighRefreshRate, onForceHighRefreshRateChange) =
-        rememberPreference(
-            ForceHighRefreshRateKey,
-            defaultValue = false,
-        )
     val (hideStatusBar, onHideStatusBarChange) =
         rememberPreference(
             HideStatusBarKey,
@@ -564,14 +552,6 @@ fun AppearanceSectionSettings(
             },
         )
     }
-    val supportedHighestFps = rememberSupportedHighestFps()
-    val isHighRefreshRateSupported = supportedHighestFps > HIGH_REFRESH_RATE_THRESHOLD_FPS
-
-    ApplyRefreshRate(
-        isEnabled = forceHighRefreshRate && isHighRefreshRateSupported,
-        targetFps = supportedHighestFps,
-    )
-
     var showSliderOptionDialog by rememberSaveable {
         mutableStateOf(false)
     }
@@ -1646,84 +1626,6 @@ fun AppearanceSectionSettings(
         }
     }
 }
-
-@Composable
-fun ApplyRefreshRate(
-    isEnabled: Boolean,
-    targetFps: Float,
-) {
-    val context = LocalContext.current
-    val view = LocalView.current
-    val activity = remember(context) { context.findActivity() }
-    val requestedFps = if (isEnabled) targetFps else DEFAULT_REFRESH_RATE_REQUEST
-
-    DisposableEffect(view, activity, requestedFps) {
-        applyRefreshRate(
-            view = view,
-            activity = activity,
-            requestedFps = requestedFps,
-        )
-
-        onDispose {
-            applyRefreshRate(
-                view = view,
-                activity = activity,
-                requestedFps = DEFAULT_REFRESH_RATE_REQUEST,
-            )
-        }
-    }
-}
-
-@Composable
-private fun homeSourcesLabel(sources: List<HomeSource>): String {
-    // map is inline, so the stringResource calls stay in composable scope; joinToString is not.
-    val labels = sources.map { stringResource(it.labelResId()) }
-    return labels.joinToString(", ")
-}
-
-@Composable
-private fun rememberSupportedHighestFps(): Float {
-    val view = LocalView.current
-
-    return remember(view) {
-        val display = view.display
-        display
-            ?.supportedModes
-            ?.maxOfOrNull { mode -> mode.refreshRate }
-            ?: display?.refreshRate
-            ?: DEFAULT_STANDARD_REFRESH_RATE_FPS
-    }
-}
-
-private fun applyRefreshRate(
-    view: View,
-    activity: Activity?,
-    requestedFps: Float,
-) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
-        view.setRequestedFrameRate(requestedFps)
-        return
-    }
-
-    activity?.window?.let { window ->
-        val attributes = window.attributes
-        if (attributes.preferredRefreshRate != requestedFps) {
-            attributes.preferredRefreshRate = requestedFps
-            window.attributes = attributes
-        }
-    }
-}
-
-private tailrec fun Context.findActivity(): Activity? =
-    when (this) {
-        is Activity -> this
-        is ContextWrapper -> baseContext.findActivity()
-        else -> null
-    }
-
-private const val HIGH_REFRESH_RATE_THRESHOLD_FPS = 60.5f
-private const val DEFAULT_STANDARD_REFRESH_RATE_FPS = 60f
-private const val DEFAULT_REFRESH_RATE_REQUEST = 0f
 
 @Composable
 private fun SliderStyleOptionCard(

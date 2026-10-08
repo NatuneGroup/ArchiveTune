@@ -2097,9 +2097,9 @@ fun BottomSheetPlayer(
                             canvasFallbackUrl = artworkCanvas?.videoUrl,
                             onSeek = onSliderValueChange,
                             onSeekFinished = onSliderValueChangeFinished,
-                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onLyricsClick = { isLyricsScreenVisible = true },
                             onQueueClick = openQueue,
-                            lyricsVisible = isInlineLyricsOpen,
+                            lyricsVisible = false,
                             modifier =
                                 Modifier
                                     .fillMaxSize()
@@ -2666,9 +2666,9 @@ fun BottomSheetPlayer(
                             canvasFallbackUrl = artworkCanvas?.videoUrl,
                             onSeek = onSliderValueChange,
                             onSeekFinished = onSliderValueChangeFinished,
-                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onLyricsClick = { isLyricsScreenVisible = true },
                             onQueueClick = openQueue,
-                            lyricsVisible = isInlineLyricsOpen,
+                            lyricsVisible = false,
                             modifier =
                                 Modifier
                                     .fillMaxSize()

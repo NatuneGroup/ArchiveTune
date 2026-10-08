@@ -593,7 +593,7 @@ fun Queue(
                     )
                 }
 
-                PlayerDesignStyle.V9, PlayerDesignStyle.V10 -> {
+                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER -> {
                     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
                     QueueCollapsedContentV9(
                         showCodecOnPlayer = showCodecOnPlayer,

@@ -996,6 +996,10 @@ class MainActivity : ComponentActivity() {
                 NavigationBarTintFrostedBlurKey,
                 defaultValue = false,
             )
+            val navigationBarBitchordEnabled by rememberPreference(
+                moe.rukamori.archivetune.constants.NavigationBarBitchordKey,
+                defaultValue = false,
+            )
             val liquidGlassEnabled by rememberPreference(
                 LiquidGlassEnabledKey,
                 defaultValue = false,
@@ -3027,6 +3031,7 @@ class MainActivity : ComponentActivity() {
                                                 bottomNavigationBarHeightState,
                                                 navVisibleHeight,
                                                 isFloatingNavBar,
+                                                navigationBarBitchordEnabled,
                                                 navigationBarStyle,
                                             ) {
                                                 {
@@ -3055,10 +3060,12 @@ class MainActivity : ComponentActivity() {
                                                     // does the Apple Music bar: it keeps its own rounded corners on
                                                     // all four sides, so pinching the mini player's bottom corners
                                                     // toward a junction left them square against nothing (#169).
+                                                    // The BitChord pill is floating too, so it never docks either.
                                                     if (
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
+                                                        navigationBarBitchordEnabled ||
                                                         navigationBarStyle == NavigationBarStyle.APPLE_MUSIC
                                                     ) {
                                                         0f
@@ -3121,36 +3128,74 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                     },
                                         ) {
-                                            FloatingNavigationToolbar(
-                                                items = navigationItems,
-                                                pureBlack = pureBlack,
-                                                miniPlayerProximityProvider = navigationProximityProvider,
-                                                style = navigationBarStyle,
-                                                frostedBlur = navigationBarFrostedBlur,
-                                                tintFrostedBlur = navigationBarTintFrostedBlur,
-                                                frostedBackdrop = navBarFrostedBackdrop,
-                                                liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled,
-                                                liquidGlassBackdrop = liquidGlassBackdrop,
-                                                modifier =
-                                                    Modifier
-                                                        .align(Alignment.BottomCenter)
-                                                        .padding(
-                                                            start = navBarHorizontalPadding,
-                                                            end = navBarHorizontalPadding,
-                                                            bottom = bottomInset + floatingBarsBottomPadding,
-                                                        ).height(navVisibleHeight),
-                                                isSelected = { screen ->
-                                                    navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
-                                                        true
-                                                },
-                                                onItemClick = { screen, isSelected ->
-                                                    handlePrimaryNavigationClick(screen, isSelected)
-                                                },
-                                                onSearchItemDoubleClick = {
-                                                    searchSource = SearchSource.ONLINE
-                                                    openSearch()
-                                                },
-                                            )
+                                            // The BitChord pill replaces the stock toolbar when its
+                                            // switch is on. Apple Music keeps its coordinated bar.
+                                            if (navigationBarBitchordEnabled && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC) {
+                                                moe.rukamori.archivetune.ui.component.BitChordNavBar(
+                                                    barHeight = navVisibleHeight,
+                                                    selectedRoute =
+                                                        navBackStackEntry?.destination?.route,
+                                                    onRouteSelected = { route ->
+                                                        navigationItems
+                                                            .firstOrNull { it.route == route }
+                                                            ?.let { screen ->
+                                                                handlePrimaryNavigationClick(
+                                                                    screen,
+                                                                    navBackStackEntry?.destination?.hierarchy
+                                                                        ?.any { it.route == screen.route } == true,
+                                                                )
+                                                            }
+                                                    },
+                                                    itemCount = navigationItems.size,
+                                                    itemRoute = { navigationItems[it].route },
+                                                    itemLabel = { androidx.compose.ui.res.stringResource(navigationItems[it].titleId) },
+                                                    itemIcon = { index ->
+                                                        when (navigationItems[index].route) {
+                                                            "home" -> moe.rukamori.archivetune.ui.component.BitChordHomeIcon
+                                                            "search" -> moe.rukamori.archivetune.ui.component.BitChordSearchIcon
+                                                            else -> moe.rukamori.archivetune.ui.component.BitChordLibraryIcon
+                                                        }
+                                                    },
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ),
+                                                    frostedBackdrop = navBarFrostedBackdrop,
+                                                )
+                                            } else {
+                                                FloatingNavigationToolbar(
+                                                    items = navigationItems,
+                                                    pureBlack = pureBlack,
+                                                    miniPlayerProximityProvider = navigationProximityProvider,
+                                                    style = navigationBarStyle,
+                                                    frostedBlur = navigationBarFrostedBlur,
+                                                    tintFrostedBlur = navigationBarTintFrostedBlur,
+                                                    frostedBackdrop = navBarFrostedBackdrop,
+                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled,
+                                                    liquidGlassBackdrop = liquidGlassBackdrop,
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                start = navBarHorizontalPadding,
+                                                                end = navBarHorizontalPadding,
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ).height(navVisibleHeight),
+                                                    isSelected = { screen ->
+                                                        navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                            true
+                                                    },
+                                                    onItemClick = { screen, isSelected ->
+                                                        handlePrimaryNavigationClick(screen, isSelected)
+                                                    },
+                                                    onSearchItemDoubleClick = {
+                                                        searchSource = SearchSource.ONLINE
+                                                        openSearch()
+                                                    },
+                                                )
+                                            }
                                         }
                                     }
                                 },

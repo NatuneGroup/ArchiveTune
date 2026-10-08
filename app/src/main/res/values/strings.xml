@@ -589,6 +589,8 @@
     <string name="navigation_bar_style_apple_music">Apple Music</string>
     <string name="navigation_bar_frosted_blur">Frosted navigation bar</string>
     <string name="navigation_bar_frosted_blur_desc">Apply a frosted blur behind the navigation bar</string>
+    <string name="navigation_bar_bitchord">BitChord navigation bar</string>
+    <string name="navigation_bar_bitchord_desc">Frosted pill bar with a travelling selection pill and drag-to-switch; turns the other navigation bar treatments off</string>
     <string name="navigation_bar_frosted_blur_unsupported">Frosted navigation bar is not supported on Android versions below 12</string>
     <string name="hide_navigation_bar_labels">Hide labels in navigation bar</string>
     <string name="hide_navigation_bar_labels_desc">Show only icons in the bottom navigation bar</string>

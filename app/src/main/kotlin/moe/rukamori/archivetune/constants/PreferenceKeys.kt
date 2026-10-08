@@ -1307,6 +1307,9 @@ val NavigationBarFrostedBlurKey = booleanPreferencesKey("navigationBarFrostedBlu
 // bar surface is tinted with the accent (primary) color instead of the neutral surface container.
 // Mutually exclusive with [NavigationBarFrostedBlurKey] — turning one on turns the other off.
 val NavigationBarTintFrostedBlurKey = booleanPreferencesKey("navigationBarTintFrostedBlur")
+// Opt-in BitChord pill bar (icons, stretch-squash selection pill, drag-to-switch).
+// Mutually exclusive with the frosted, tinted and liquid-glass nav treatments.
+val NavigationBarBitchordKey = booleanPreferencesKey("navigationBarBitchord")
 val HideNavigationBarLabelsKey = booleanPreferencesKey("hideNavigationBarLabels")
 val NavigationBarHideOnScrollKey = booleanPreferencesKey("navigationBarHideOnScroll")
 

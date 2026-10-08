@@ -66,6 +66,7 @@ import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
+import moe.rukamori.archivetune.constants.NavigationBarBitchordKey
 import moe.rukamori.archivetune.constants.NetworkMeteredKey
 import moe.rukamori.archivetune.constants.PauseListenHistoryKey
 import moe.rukamori.archivetune.constants.PauseOnDeviceMuteKey
@@ -196,6 +197,7 @@ fun buildSettingsGroups(
                 SettingsChild("Force high refresh rate", "force_high_refresh_rate", listOf("refresh rate", "high refresh", "120hz", "90hz", "smooth")) { SearchResultSwitch(ForceHighRefreshRateKey, false) },
                 SettingsChild("Navigation bar style", "navigation_bar_style", listOf("navigation bar", "nav bar", "bottom bar")),
                 SettingsChild("Frosted navigation bar", "frosted_nav_bar", listOf("frosted nav", "frosted navigation", "frosted blur")) { SearchResultSwitch(NavigationBarFrostedBlurKey, false) },
+                SettingsChild("BitChord navigation bar", "navigation_bar_bitchord", listOf("bitchord", "bottom bar", "pill bar", "navigation bar")) { SearchResultSwitch(NavigationBarBitchordKey, false) },
                 SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass", "glass nav", "glass navigation", "liquid nav")) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false) },
                 SettingsChild("Liquid Glass effects", "liquid_glass_effects", listOf("liquid glass", "glass effects", "liquid glass effects", "header glass", "mini player glass")) { SearchResultSwitch(LiquidGlassEnabledKey, false) },
                 SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },
@@ -291,6 +293,7 @@ fun buildSettingsGroups(
                 SettingsChild("Bottom pills layout", "compact_bottom_pills", listOf("compact pills", "compact navigation", "compact bottom bar", "bottom pills layout")),
                 SettingsChild("Frosted navigation bar", "navigation_bar_frosted_blur", listOf("frosted nav", "frosted navigation", "frosted blur")) { SearchResultSwitch(NavigationBarFrostedBlurKey, false) },
                 SettingsChild("Tint frosted navigation bar", "navigation_bar_tint_frosted_blur", listOf("tint frosted", "tint nav bar", "frosted tint", "coloured nav bar")),
+                SettingsChild("BitChord navigation bar", "navigation_bar_bitchord", listOf("bitchord", "bottom bar", "pill bar", "navigation bar")) { SearchResultSwitch(NavigationBarBitchordKey, false) },
                 SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass nav", "glass navigation", "liquid nav")) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false) },
                 SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },
                 SettingsChild("Hide navigation bar while scrolling", "navigation_bar_hide_on_scroll", listOf("hide navigation bar", "hide nav bar", "scroll to hide", "auto hide bar")) { SearchResultSwitch(NavigationBarHideOnScrollKey, false) },

@@ -369,7 +369,20 @@ private const val MIN_FADE_BEATS = 4
 private const val MAX_FADE_BEATS = 16
 
 // A ceiling on the whole overlap regardless of how long the incoming intro is.
-private const val MAX_OVERLAP_SECONDS = 16.0
+// 12s, matching 4nx3b's MAX_OVERLAP_MS: past roughly a dozen seconds the blend
+// stops hearing as a transition and starts hearing as two songs at once, while
+// every extra second of overlap keeps both audio paths live and doubles the
+// window in which a stall or a focus loss lands on both at once.
+private const val MAX_OVERLAP_SECONDS = 12.0
+
+/**
+ * Widest tempo mismatch the incoming track is time-stretched to bridge. 4%, which is 4nx3b's
+ * MAX_RATE_ALIGNMENT: WSOLA beyond roughly five percent stops being inaudible retiming and starts
+ * being audible smearing, and this app stretches the *incoming* deck while it is already playing,
+ * so artifacts land inside the blend. Outside the band the two tempos are left alone and the
+ * transition falls back to a plain fade rather than a beat-matched one.
+ */
+private val TIME_STRETCH_RANGE = 0.96..1.04
 
 /**
  * Moving both decks by the same musical amount preserves the beat grid and
@@ -848,11 +861,12 @@ private fun adaptiveOverlap(analysis: TrackAnalysis, nextAnalysis: TrackAnalysis
     return Overlap(
         overlap = clamp(transitionBeats * beatSeconds, minimumOverlap, AUTO_TRANSITION_MAX_SECONDS),
         transitionBeats = transitionBeats,
-        incomingPlaybackRate = if (ratio in 0.9..1.1) {
-            (clamp(1 / ratio, 0.9, 1.1) * 10000).roundToInt() / 10000.0
-        } else {
-            1.0
-        },
+        incomingPlaybackRate =
+            if (ratio in TIME_STRETCH_RANGE) {
+                (clamp(1 / ratio, 0.96, 1.04) * 10000).roundToInt() / 10000.0
+            } else {
+                1.0
+            },
     )
 }
 

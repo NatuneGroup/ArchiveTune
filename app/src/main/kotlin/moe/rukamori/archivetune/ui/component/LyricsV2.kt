@@ -128,6 +128,7 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
+import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
@@ -238,6 +239,7 @@ fun LyricsV2(
     val (glowFactorPreference) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
     val (fillTransitionWidth) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (lrcBounceEnabledPreference) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
+    val (adaptiveScrollSpring) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     // The V2 renderer never honored the reduce-animations setting: on low-RAM devices (where it
     // defaults on) the per-word glow shadows, bounce springs and line blur are the difference
     // between smooth and stuttering karaoke, so gate them all here.
@@ -602,10 +604,20 @@ fun LyricsV2(
                 0,
             )
         }
-        listState.animateScrollToItem(
-            index = currentLineIndex,
-            scrollOffset = -targetOffset,
-        )
+        if (adaptiveScrollSpring) {
+            listState.intervalAdaptiveScrollTo(
+                index = currentLineIndex,
+                scrollOffset = -targetOffset,
+                intervalMs = lineIntervalMs(entriesWithWords, currentLineIndex),
+                isSeeking = false,
+                isInterludeActive = entriesWithWords.getOrNull(currentLineIndex)?.isInstrumental == true,
+            )
+        } else {
+            listState.animateScrollToItem(
+                index = currentLineIndex,
+                scrollOffset = -targetOffset,
+            )
+        }
     }
 
     BackHandler(enabled = isSelectionModeActive) {

@@ -34,7 +34,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
-import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
+import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -51,7 +51,7 @@ fun LyricsAnimationSettings(
     val (bounceFactor, onBounceFactorChange) = rememberPreference(LyricsV2BounceFactorKey, defaultValue = 1f)
     val (glowFactor, onGlowFactorChange) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
     val (fillTransitionWidth, onFillTransitionWidthChange) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
-    val (lrcBounceEnabled, onLrcBounceEnabledChange) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
+    val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -106,6 +106,20 @@ fun LyricsAnimationSettings(
                             Switch(
                                 checked = lrcBounceEnabled,
                                 onCheckedChange = onLrcBounceEnabledChange,
+                            )
+                        },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Adaptive Scroll Spring") },
+                        description = "Match scroll speed to the gap between lines (fast lyrics snap, slow lyrics glide)",
+                        icon = { Icon(painterResource(R.drawable.animation), null) },
+                        trailingContent = {
+                            Switch(
+                                checked = adaptiveScrollSpring,
+                                onCheckedChange = onAdaptiveScrollSpringChange,
                             )
                         },
                     )

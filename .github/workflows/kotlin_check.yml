@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "feat/bitchord-navbar"
+      - "canary"
   workflow_dispatch:
 
 jobs:

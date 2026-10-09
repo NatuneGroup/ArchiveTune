@@ -132,6 +132,7 @@ import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
+import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
 import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
@@ -481,6 +482,9 @@ fun AppleMusicPlayerContent(
                 ),
             label = "am-lyrics-backdrop-progress",
         )
+    // Optional backdrop wander: while lyrics are open the blurred backdrop zooms and drifts.
+    // Off keeps the COVER look (static blur at [AmCoverBlurScale]) in every state.
+    val (backdropWanderEnabled) = rememberPreference(AppleMusicBackdropWanderKey, defaultValue = true)
 
     // Hoist the thumbnail corner radius preference so it can be used both for the COVER state's
     // artwork clip AND for the sharedBounds overlay clip during morph transitions. Read locally
@@ -719,13 +723,17 @@ fun AppleMusicPlayerContent(
             // lyrics-page behaviour): the colour mass traverses the whole display instead of
             // orbiting near the centre.
             val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
-            val blurWander = rememberBlurWanderDrift(active = lyricsBackdropActive, maxDriftDp = wanderMaxDrift)
+            val blurWander =
+                rememberBlurWanderDrift(
+                    active = lyricsBackdropActive && backdropWanderEnabled,
+                    maxDriftDp = wanderMaxDrift,
+                )
             val driftGraphicsLayer: GraphicsLayerScope.() -> Unit = {
                 // Deferred state reads: draw phase only. See the comment on
                 // lyricsBackdropProgress for why this is a continuous ramp
                 // rather than the `if (lyricsOpen && lyricsContentReady)` step
-                // it replaced.
-                val progress = lyricsBackdropProgress.value
+                // it replaced. Off keeps the COVER look: no zoom, no drift.
+                val progress = if (backdropWanderEnabled) lyricsBackdropProgress.value else 0f
                 // Scale [AmLyricsBlurDriftScale] (lyrics fully open) together with the
                 // [backdropFootprint] the node is sized to leaves the rotated layer covering every
                 // screen corner plus the ±120dp drift — see blurBackdropFootprint for the budget.

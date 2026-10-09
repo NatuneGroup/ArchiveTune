@@ -358,6 +358,14 @@
     <string name="spotify_liked_songs">Liked Songs</string>
     <string name="apple_music_animated_artwork">Animated artwork</string>
     <string name="apple_music_animated_artwork_desc">Play a song’s Canvas loop or music video in place of the cover.</string>
+    <string name="apple_music_backdrop_wander">Wandering backdrop</string>
+    <string name="apple_music_backdrop_wander_desc">Let the blurred artwork drift and zoom while lyrics are open.</string>
+    <string name="apple_music_pause_scale">Pause shrink</string>
+    <string name="apple_music_pause_scale_desc">Shrink the cover slightly while playback is paused.</string>
+    <string name="apple_music_title_marquee">Scrolling titles</string>
+    <string name="apple_music_title_marquee_desc">Scroll overlong song titles and artists as a marquee.</string>
+    <string name="apple_music_seek_grow">Seek bar swell</string>
+    <string name="apple_music_seek_grow_desc">Let the seek bar and sliders swell while dragged.</string>
     <string name="player_design_bitchord">BitChord</string>
     <string name="player_design_tiktok">TikTok</string>
     <string name="player_design_simpmusic">SimpMusic</string>

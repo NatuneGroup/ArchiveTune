@@ -73,6 +73,10 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
+import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
+import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
+import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
+import moe.rukamori.archivetune.constants.AppleMusicTitleMarqueeKey
 import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.AlbumCanvasEnabledKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
@@ -274,6 +278,26 @@ fun AppearanceSectionSettings(
     val (appleMusicAnimatedArtwork, onAppleMusicAnimatedArtworkChange) =
         rememberPreference(
             AppleMusicAnimatedArtworkKey,
+            defaultValue = true,
+        )
+    val (appleMusicBackdropWander, onAppleMusicBackdropWanderChange) =
+        rememberPreference(
+            AppleMusicBackdropWanderKey,
+            defaultValue = true,
+        )
+    val (appleMusicPauseScale, onAppleMusicPauseScaleChange) =
+        rememberPreference(
+            AppleMusicPauseScaleKey,
+            defaultValue = true,
+        )
+    val (appleMusicTitleMarquee, onAppleMusicTitleMarqueeChange) =
+        rememberPreference(
+            AppleMusicTitleMarqueeKey,
+            defaultValue = true,
+        )
+    val (appleMusicSeekGrow, onAppleMusicSeekGrowChange) =
+        rememberPreference(
+            AppleMusicSeekGrowKey,
             defaultValue = true,
         )
     val (tikTokMainLyrics, onTikTokMainLyricsChange) =
@@ -1132,10 +1156,9 @@ fun AppearanceSectionSettings(
                     }
                 }
 
-                // Only for the Apple Music style: it is the one style that plays a Canvas loop or
-                // a music video in the cover's place, so the switch would control nothing anywhere
-                // else. Hidden rather than disabled — a permanently greyed row is a worse
-                // explanation than no row.
+                // Only for the Apple Music style: these switches gate effects that only exist in
+                // that style's player. Hidden rather than disabled — a permanently greyed row is
+                // a worse explanation than no row.
                 if (playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC) {
                     item {
                         SwitchPreference(
@@ -1145,6 +1168,46 @@ fun AppearanceSectionSettings(
                             icon = { Icon(painterResource(R.drawable.animation), null) },
                             checked = appleMusicAnimatedArtwork,
                             onCheckedChange = onAppleMusicAnimatedArtworkChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("apple_music_backdrop_wander"),
+                            title = { Text(stringResource(R.string.apple_music_backdrop_wander)) },
+                            description = stringResource(R.string.apple_music_backdrop_wander_desc),
+                            icon = { Icon(painterResource(R.drawable.blur_on), null) },
+                            checked = appleMusicBackdropWander,
+                            onCheckedChange = onAppleMusicBackdropWanderChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("apple_music_pause_scale"),
+                            title = { Text(stringResource(R.string.apple_music_pause_scale)) },
+                            description = stringResource(R.string.apple_music_pause_scale_desc),
+                            icon = { Icon(painterResource(R.drawable.motion_photos_on), null) },
+                            checked = appleMusicPauseScale,
+                            onCheckedChange = onAppleMusicPauseScaleChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("apple_music_title_marquee"),
+                            title = { Text(stringResource(R.string.apple_music_title_marquee)) },
+                            description = stringResource(R.string.apple_music_title_marquee_desc),
+                            icon = { Icon(painterResource(R.drawable.text_fields), null) },
+                            checked = appleMusicTitleMarquee,
+                            onCheckedChange = onAppleMusicTitleMarqueeChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("apple_music_seek_grow"),
+                            title = { Text(stringResource(R.string.apple_music_seek_grow)) },
+                            description = stringResource(R.string.apple_music_seek_grow_desc),
+                            icon = { Icon(painterResource(R.drawable.sliders), null) },
+                            checked = appleMusicSeekGrow,
+                            onCheckedChange = onAppleMusicSeekGrowChange,
                         )
                     }
                 }

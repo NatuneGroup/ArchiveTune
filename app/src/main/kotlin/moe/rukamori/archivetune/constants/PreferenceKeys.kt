@@ -61,6 +61,30 @@ val LibraryStyleKey = stringPreferencesKey("libraryStyle")
  * has always behaved, and the setting exists to be able to turn it off, not to change the default.
  */
 val AppleMusicAnimatedArtworkKey = booleanPreferencesKey("appleMusicAnimatedArtwork")
+/**
+ * Whether the Apple Music player style drifts and zooms its blurred artwork backdrop while lyrics
+ * are open. Default true: that is how the style has always behaved, and the setting exists to be
+ * able to turn it off, not to change the default.
+ */
+val AppleMusicBackdropWanderKey = booleanPreferencesKey("appleMusicBackdropWander")
+/**
+ * Whether the Apple Music player style shrinks the still cover slightly while paused. Default
+ * true: that is how the style has always behaved, and the setting exists to be able to turn it
+ * off, not to change the default.
+ */
+val AppleMusicPauseScaleKey = booleanPreferencesKey("appleMusicPauseScale")
+/**
+ * Whether the Apple Music player style scrolls overlong titles/artists as a marquee. Default
+ * true: that is how the style has always behaved, and the setting exists to be able to turn it
+ * off, not to change the default.
+ */
+val AppleMusicTitleMarqueeKey = booleanPreferencesKey("appleMusicTitleMarquee")
+/**
+ * Whether the Apple Music player style's seek bar and sliders swell while dragged. Default true:
+ * that is how the style has always behaved, and the setting exists to be able to turn it off,
+ * not to change the default.
+ */
+val AppleMusicSeekGrowKey = booleanPreferencesKey("appleMusicSeekGrow")
 
 val ShowPlayerVolumeBarKey = booleanPreferencesKey("showPlayerVolumeBar")
 val HidePlayerThumbnailKey = booleanPreferencesKey("hidePlayerThumbnail")

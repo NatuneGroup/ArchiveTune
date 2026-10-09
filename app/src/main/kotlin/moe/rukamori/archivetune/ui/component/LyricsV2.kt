@@ -130,6 +130,7 @@ import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
 import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
+import moe.rukamori.archivetune.constants.LyricsV2InterludeDotsKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
@@ -243,6 +244,7 @@ fun LyricsV2(
     val (lrcBounceEnabledPreference) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
     val (softWordReveal) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
     val (emphasizeLastWordPreference) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
+    val (interludeDotsPreference) = rememberPreference(LyricsV2InterludeDotsKey, defaultValue = true)
     val (adaptiveScrollSpring) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     // The V2 renderer never honored the reduce-animations setting: on low-RAM devices (where it
     // defaults on) the per-word glow shadows, bounce springs and line blur are the difference
@@ -250,6 +252,7 @@ fun LyricsV2(
     val v2AnimationsDisabled = LocalAnimationsDisabled.current
     val bounceFactor = if (v2AnimationsDisabled) 0f else bounceFactorPreference
     val glowFactor = if (v2AnimationsDisabled) 0f else glowFactorPreference
+    val interludeDotsEnabled = interludeDotsPreference && !v2AnimationsDisabled
     val emphasizeLastWord = emphasizeLastWordPreference && !v2AnimationsDisabled
     val lrcBounceEnabled = lrcBounceEnabledPreference && !v2AnimationsDisabled
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
@@ -753,6 +756,7 @@ fun LyricsV2(
                         inactiveAlpha = inactiveAlpha,
                         playbackPositionProvider = { playbackPositionMs },
                         onSeek = { time -> player.seekTo(time) },
+                        interludeDots = interludeDotsEnabled,
                     )
                     return@itemsIndexed
                 }
@@ -2153,6 +2157,7 @@ private fun InstrumentalBreakRow(
     inactiveAlpha: Float,
     playbackPositionProvider: () -> Long,
     onSeek: (Long) -> Unit,
+    interludeDots: Boolean = true,
 ) {
     val startTimeMs = item.time
     val endTimeMs = item.time + item.durationMs
@@ -2245,6 +2250,23 @@ private fun InstrumentalBreakRow(
                     },
                 ),
     ) {
+        if (interludeDots && isActive) {
+            // Breathing dots beside the note while the break plays (see
+            // LyricsInterludeDots.kt). OFF renders today's note-only row.
+            androidx.compose.foundation.layout.Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                InstrumentalBreakItem(
+                    durationMs = item.durationMs,
+                    currentPositionMs = playbackPositionMs,
+                    startTimeMs = startTimeMs,
+                    textColor = textColor,
+                    inactiveAlpha = inactiveAlpha,
+                )
+                InterludeDots(textColor = textColor)
+            }
+        } else {
         InstrumentalBreakItem(
             durationMs = item.durationMs,
             currentPositionMs = playbackPositionMs,
@@ -2252,6 +2274,7 @@ private fun InstrumentalBreakRow(
             textColor = textColor,
             inactiveAlpha = inactiveAlpha,
         )
+        }
     }
 }
 

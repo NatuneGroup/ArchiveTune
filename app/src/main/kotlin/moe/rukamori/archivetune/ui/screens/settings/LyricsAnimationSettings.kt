@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
+import moe.rukamori.archivetune.constants.LyricsV2InterludeDotsKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -55,6 +56,7 @@ fun LyricsAnimationSettings(
     val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     val (softWordReveal, onSoftWordRevealChange) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
     val (emphasizeLastWord, onEmphasizeLastWordChange) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
+    val (interludeDots, onInterludeDotsChange) = rememberPreference(LyricsV2InterludeDotsKey, defaultValue = true)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -151,6 +153,20 @@ fun LyricsAnimationSettings(
                             Switch(
                                 checked = emphasizeLastWord,
                                 onCheckedChange = onEmphasizeLastWordChange,
+                            )
+                        },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Interlude Dots") },
+                        description = "Show breathing dots beside the note during instrumental breaks",
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        trailingContent = {
+                            Switch(
+                                checked = interludeDots,
+                                onCheckedChange = onInterludeDotsChange,
                             )
                         },
                     )

@@ -134,6 +134,7 @@ import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
 import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
 import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
+import moe.rukamori.archivetune.constants.AppleMusicTitleMarqueeKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
@@ -2134,6 +2135,7 @@ private fun AppleMusicBottomButton(
  * Single-line marquee text with an edge fade that only appears once the laid-out text is wider
  * than the space it's given, plus a tap target. Shared by the full title/artist row and the mini
  * header's compact one — both used the same measure-and-fade shape before this was pulled out.
+ * Gated on the scrolling-titles preference: off renders static ellipsis text instead.
  */
 @Composable
 private fun AppleMusicMarqueeLine(
@@ -2143,11 +2145,12 @@ private fun AppleMusicMarqueeLine(
     onClick: () -> Unit,
     fontWeight: FontWeight? = null,
 ) {
+    val (titleMarqueeEnabled) = rememberPreference(AppleMusicTitleMarqueeKey, defaultValue = true)
     val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
     val viewport = remember { mutableStateOf(0) }
     val hasOverflow = viewport.value > 0 && (layout.value?.size?.width ?: 0) > viewport.value
     Box(
-        modifier = (if (hasOverflow) Modifier.fillMaxWidth().viewportEdgeFade() else Modifier.fillMaxWidth())
+        modifier = (if (hasOverflow && titleMarqueeEnabled) Modifier.fillMaxWidth().viewportEdgeFade() else Modifier.fillMaxWidth())
             .clipToBounds()
             .onSizeChanged { viewport.value = it.width }
             .clickable(
@@ -2164,7 +2167,7 @@ private fun AppleMusicMarqueeLine(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { layout.value = it },
-            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+            modifier = if (titleMarqueeEnabled) Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE) else Modifier.fillMaxWidth(),
         )
     }
 }

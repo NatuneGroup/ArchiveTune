@@ -464,6 +464,13 @@ android {
             excludes += "META-INF/LICENSE.md"
             // Installed on demand from Lyrics settings; saves roughly 13 MiB per APK.
             excludes += "com/atilika/kuromoji/ipadic/*.bin"
+            // BouncyCastle PQ legacy parameters and localized error strings ship inside bcpkix/bcprov
+            // jars but are only reachable through the desktop PQ APIs the app never calls; upstream
+            // excludes them. Dropped by mistake during the packaging-block rewrite — ~1.17 MiB.
+            excludes += "org/bouncycastle/pqc/legacy/picnic/**"
+            excludes += "org/bouncycastle/x509/CertPathReviewerMessages*.properties"
+            excludes += "org/mozilla/javascript/resources/**"
+            excludes += "org/commonmark/internal/util/**"
             // Additional safe META-INF / metadata excludes — none of these are read at runtime by
             // the app or any of its libraries (verified by checking for ServiceLoader / reflection
             // usage on each). They are pure build-time / IDE metadata and just bloat every APK.

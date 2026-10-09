@@ -10,7 +10,6 @@
 
 package moe.rukamori.archivetune.ui.screens
 
-import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -93,22 +92,17 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AlbumCanvasEnabledKey
 import moe.rukamori.archivetune.constants.AppBarHeight
 import moe.rukamori.archivetune.constants.HideExplicitKey
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.playback.queues.LocalAlbumRadio
 import moe.rukamori.archivetune.ui.component.IconButton
-import moe.rukamori.archivetune.ui.component.LiquidGlassActionPill
-import moe.rukamori.archivetune.ui.component.LiquidGlassIconButton
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MediaDetailAction
 import moe.rukamori.archivetune.ui.component.MediaDetailHero
 import moe.rukamori.archivetune.ui.component.NavigationTitle
 import moe.rukamori.archivetune.ui.component.SongListItem
 import moe.rukamori.archivetune.ui.component.YouTubeGridItem
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.component.shimmer.ButtonPlaceholder
 import moe.rukamori.archivetune.ui.component.shimmer.ListItemPlaceHolder
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
@@ -156,27 +150,14 @@ fun AlbumScreen(
     // Appearance → "Enable canvas in albums page". Independent of the player's canvas
     // toggle; see AlbumCanvasEnabledKey for why.
     val albumCanvasEnabled by rememberPreference(key = AlbumCanvasEnabledKey, defaultValue = true)
-    // Liquid Glass master toggle. When off, the Liquid Glass header pills are not
-    // shown and the standard TopAppBar is used instead. The kyant RuntimeShader
-    // stack requires Android 12+, so we also gate on SDK_INT.
-    val liquidGlassEnabled by rememberPreference(
-        key = LiquidGlassEnabledKey,
-        defaultValue = false,
-    )
-    val liquidGlassHeaderActive =
-        liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    // Suspend LiquidGlass + CanvasArtworkPlayer while the full-screen lyrics
-    // overlay is open on top. The overlay is opaque, so this screen's pixels
-    // are never visible — but without this gate the kyant layerBackdrop keeps
-    // recording the LazyColumn into a GraphicsLayer every frame, the LiquidGlass
-    // header pills keep sampling it via RuntimeShader, AND the CanvasArtworkPlayer's
-    // Modifier.blur(72.dp) RenderEffect keeps re-applying on every frame. That
-    // triple per-frame GPU cost starves the 60 Hz karaoke lyrics sweep running
-    // on top, causing the 'enhanced word-synced lyrics lag when launched from
-    // an album page' bug. HomeScreen has none of these, which is why the same
-    // lyrics path doesn't lag from home.
+    // Shared glass header: the master toggle, the Android 12+ RuntimeShader gate,
+    // and the full-screen-lyrics suspension all live in rememberGlassScreenHeader().
+    // The TopAppBar below stays gated on header.liquidGlassActive so rendering with
+    // glass OFF is unchanged. lyricsFullScreen is also read here for the canvas
+    // hero, which suspends its blur RenderEffect while the opaque lyrics overlay
+    // is open on top.
+    val header = rememberGlassScreenHeader()
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
-    val layerBackdropActive = liquidGlassHeaderActive && !lyricsFullScreen
 
     // Stable top inset: does not collapse to 0 when the status bar is transiently hidden,
     // so the album hero's top padding stays anchored below the TopAppBar.
@@ -263,13 +244,9 @@ fun AlbumScreen(
         }
     }
 
-    // Liquid Glass backdrop: created unconditionally (cheap — just a GraphicsLayer
-    // handle). The actual content recording only happens when
-    // `Modifier.layerBackdrop(artworkBackdrop)` is applied to the LazyColumn below,
-    // which is gated on `liquidGlassHeaderActive`. The Liquid Glass header pills
-    // sample this backdrop to render the frosted-glass effect over the scrolling
-    // content (artwork when at the top, songs list when scrolled).
-    val artworkBackdrop = rememberBackdrop(Color.Black)
+    // Liquid Glass backdrop comes from the shared header kit: rememberBackdrop is
+    // called once inside rememberGlassScreenHeader(); header.backdrop is non-null
+    // only while glass is live, so glassHeaderSource() is a safe unconditional tag.
 
     Box(
         modifier =
@@ -278,12 +255,7 @@ fun AlbumScreen(
                 .background(surfaceColor),
     ) {
         LazyColumn(
-            modifier =
-                if (layerBackdropActive) {
-                    Modifier.layerBackdrop(artworkBackdrop)
-                } else {
-                    Modifier
-                },
+            modifier = Modifier.glassHeaderSource(header),
             state = lazyListState,
             contentPadding =
                 PaddingValues(
@@ -342,9 +314,8 @@ fun AlbumScreen(
                         ).joinToString(MediaDetailMetadataSeparator)
                     val isBookmarked = albumWithSongs.album.bookmarkedAt != null
 
-                    // SimpMusic-style liquid glass backdrop source: the LazyColumn itself carries
-                    // the layerBackdrop modifier (see the LazyColumn definition below), so the
-                    // entire scrolling content is recorded into the backdrop.
+                    // The LazyColumn carries the shared header source tag (see the LazyColumn
+                    // definition above), so the entire scrolling content feeds the backdrop.
                     MediaDetailHero(
                         title = albumWithSongs.album.title,
                         thumbnailUrl = albumWithSongs.album.thumbnailUrl,
@@ -460,7 +431,7 @@ fun AlbumScreen(
                                 }
                             }
                         },
-                        useBlurredPlayButton = liquidGlassHeaderActive,
+                        useBlurredPlayButton = header.liquidGlassActive,
                     )
                 }
 
@@ -717,29 +688,16 @@ fun AlbumScreen(
             }
         }
 
-        // Persistent Liquid Glass header buttons. These are siblings of the LazyColumn (children of
-        // the outer Box), positioned at top-start and top-end.
+        // Shared glass header overlay: renders the haze fade plus the back pill
+        // (title = album name) and the trailing action pill, both as the shared
+        // LiquidGlassActionPill. No-op except the haze while glass is off.
         val currentAlbumWithSongs = albumWithSongs
-        if (layerBackdropActive && !selection && currentAlbumWithSongs != null &&
-            currentAlbumWithSongs.songs.isNotEmpty()
-        ) {
-            LiquidGlassIconButton(
-                backdrop = artworkBackdrop,
-                painter = painterResource(R.drawable.arrow_back),
-                contentDescription = null,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 12.dp, top = systemBarsTopPadding + 12.dp)
-                        .size(48.dp),
-                onClick = { navController.navigateUp() },
-            )
-            LiquidGlassActionPill(
-                backdrop = artworkBackdrop,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(end = 12.dp, top = systemBarsTopPadding + 12.dp),
+        if (!selection && currentAlbumWithSongs != null && currentAlbumWithSongs.songs.isNotEmpty()) {
+            GlassScreenHeaderOverlay(
+                header = header,
+                title = currentAlbumWithSongs.album.title,
+                onBack = { navController.navigateUp() },
+                onBackLongClick = { navController.backToMain() },
             ) {
                 // Bookmark toggle (heart)
                 Box(
@@ -794,10 +752,10 @@ fun AlbumScreen(
         }
 
         // Top App Bar: shown when Liquid Glass is disabled OR in selection mode.
-        // When Liquid Glass is active and not in selection mode, the persistent
-        // Liquid Glass buttons above handle navigation and actions, so the
-        // TopAppBar is hidden entirely (no overlay, no click interception).
-        if (!liquidGlassHeaderActive || selection) {
+        // When Liquid Glass is active and not in selection mode, the shared
+        // overlay above handles navigation and actions, so the TopAppBar is
+        // hidden entirely (no overlay, no click interception).
+        if (!header.liquidGlassActive || selection) {
         // Top App Bar
         val topAppBarColors =
             if (transparentAppBar) {
@@ -845,7 +803,7 @@ fun AlbumScreen(
                 //  - Liquid Glass is OFF (the persistent LiquidGlass back button
                 //    isn't there, so the TopAppBar must provide back navigation
                 //    even when the hero is visible)
-                if (selection || showTopBarTitle || !liquidGlassHeaderActive) {
+                if (selection || showTopBarTitle || !header.liquidGlassActive) {
                     IconButton(
                         onClick = {
                             if (selection) {
@@ -918,7 +876,7 @@ fun AlbumScreen(
                     //  - Liquid Glass is OFF (the persistent LiquidGlass more
                     //    button isn't there, so the TopAppBar must provide it
                     //    even when the hero is visible)
-                    if (showTopBarTitle || !liquidGlassHeaderActive) {
+                    if (showTopBarTitle || !header.liquidGlassActive) {
                         albumWithSongs?.let { currentAlbum ->
                             IconButton(
                                 onClick = {
@@ -946,7 +904,7 @@ fun AlbumScreen(
                 }
             },
         )
-        } // end if (!liquidGlassHeaderActive || selection)
+        } // end if (!header.liquidGlassActive || selection)
     }
 }
 

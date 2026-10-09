@@ -8,8 +8,7 @@
 
 
 
-package moe.rukamori.archivetune.ui.screens
-
+import android.os.Build
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseOutCubic
@@ -73,7 +72,7 @@ import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
+import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
 import moe.rukamori.archivetune.db.entities.LocalItem
@@ -1015,5 +1014,38 @@ fun HomeAtmosphereBackground(modifier: Modifier = Modifier) {
                         drawRect(topWash)
                     }
                 },
+    )
+}
+
+// ============================================================================
+// Shared glass screen-header haze (used by GlassScreenHeader.kt). Delegates to
+// HomeTopFadeBlur: ultraThin material keyed to the page colour, progressive
+// fade plus readability scrim. Early-returns unless liquid glass is on and
+// the RuntimeShader stack exists (Android 12+), so with glass OFF nothing is
+// composed and rendering is unchanged.
+// ============================================================================
+
+/** Header bar height the haze fades below (status-bar inset sits above it). */
+val ScreenHeaderHazeBarZone = 64.dp
+
+@Composable
+fun rememberScreenHeaderHaze(): HazeState = remember { HazeState() }
+
+@Composable
+fun ScreenHeaderHaze(
+    hazeState: HazeState,
+    systemBarsTopPadding: Dp,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    if (!enabled) return
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    if (!liquidGlassEnabled) return
+    HomeTopFadeBlur(
+        hazeState = hazeState,
+        pageColor = MaterialTheme.colorScheme.surface,
+        barHeight = systemBarsTopPadding + ScreenHeaderHazeBarZone,
+        modifier = modifier,
     )
 }

@@ -98,7 +98,6 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.PlaylistEditLockKey
 import moe.rukamori.archivetune.constants.PlaylistSongSortType
 import moe.rukamori.archivetune.constants.SwipeToSongKey
@@ -118,13 +117,9 @@ import moe.rukamori.archivetune.ui.component.EditPlaylistDialog
 import moe.rukamori.archivetune.ui.component.EmptyPlaceholder
 import moe.rukamori.archivetune.ui.component.ExpressivePullToRefreshBox
 import moe.rukamori.archivetune.ui.component.IconButton
-import moe.rukamori.archivetune.ui.component.LiquidGlassActionPill
-import moe.rukamori.archivetune.ui.component.LiquidGlassIconButton
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MediaDetailAction
 import moe.rukamori.archivetune.ui.component.MediaDetailHero
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.component.MediaDetailIconAction
 import moe.rukamori.archivetune.ui.component.SongListItem
 import moe.rukamori.archivetune.ui.component.SortHeader
@@ -132,6 +127,9 @@ import moe.rukamori.archivetune.ui.menu.PlaylistMenu
 import moe.rukamori.archivetune.ui.menu.SelectionSongMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
 import moe.rukamori.archivetune.ui.menu.removeSongFromRemotePlaylist
+import moe.rukamori.archivetune.ui.screens.GlassScreenHeaderOverlay
+import moe.rukamori.archivetune.ui.screens.glassHeaderSource
+import moe.rukamori.archivetune.ui.screens.rememberGlassScreenHeader
 import moe.rukamori.archivetune.ui.screens.playlist.PlaylistSuggestionsSection
 import moe.rukamori.archivetune.ui.screens.TELEGRAM_BOTS_ROUTE
 import moe.rukamori.archivetune.ui.utils.HeaderDownloadItem
@@ -147,7 +145,6 @@ import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LocalPlaylistViewModel
 import moe.rukamori.archivetune.viewmodels.PlaylistCoverEvent
 import moe.rukamori.archivetune.viewmodels.PlaylistCoverState
-import moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import java.time.LocalDateTime
@@ -188,24 +185,11 @@ fun LocalPlaylistScreen(
     val onSortDescendingChange: (Boolean) -> Unit = { viewModel.updateSortPreference(sortType, it) }
     var locked by rememberPreference(PlaylistEditLockKey, defaultValue = true)
     val swipeToSongEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
-    // Liquid Glass master toggle. When off, the Liquid Glass header pills are
-    // not shown and the standard TopAppBar is used instead. The kyant
-    // RuntimeShader stack requires Android 12+.
-    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
-    val liquidGlassHeaderActive =
-        liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    // Suspend the LiquidGlass header + layerBackdrop while the full-screen
-    // lyrics overlay is open on top of this screen. The overlay is opaque,
-    // so this screen's pixels are never visible — but without this gate the
-    // kyant layerBackdrop keeps recording the entire LazyColumn into a
-    // GraphicsLayer every frame, and the LiquidGlass header pills keep
-    // sampling that backdrop through a RuntimeShader (vibrancy + blur +
-    // lens). That per-frame GPU work starves the 60 Hz karaoke lyrics
-    // sweep running on top, causing the "enhanced word-synced lyrics lag
-    // when launched from a playlist page" bug. HomeScreen doesn't have
-    // LiquidGlass, which is why the same lyrics path doesn't lag from home.
-    val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
-    val layerBackdropActive = liquidGlassHeaderActive && !lyricsFullScreen
+    // Shared glass header: the master toggle, the Android 12+ RuntimeShader gate,
+    // and the full-screen-lyrics suspension all live in rememberGlassScreenHeader().
+    // The TopAppBar below stays gated on header.liquidGlassActive so rendering with
+    // glass OFF is unchanged.
+    val header = rememberGlassScreenHeader()
     var showAssignTagsDialog by remember { mutableStateOf(false) }
 
     if (showAssignTagsDialog && playlist != null) {
@@ -573,11 +557,9 @@ fun LocalPlaylistScreen(
         }
     }
 
-    // Liquid Glass backdrop: created unconditionally (cheap — just a GraphicsLayer
-    // handle). The actual content recording only happens when
-    // `Modifier.layerBackdrop(artworkBackdrop)` is applied to the LazyColumn below,
-    // which is gated on `liquidGlassHeaderActive`.
-    val artworkBackdrop = rememberBackdrop(Color.Black)
+    // Liquid Glass backdrop comes from the shared header kit: rememberBackdrop is
+    // called once inside rememberGlassScreenHeader(); header.backdrop is non-null
+    // only while glass is live, so glassHeaderSource() is a safe unconditional tag.
 
     ExpressivePullToRefreshBox(
         isRefreshing = isRefreshing,
@@ -592,13 +574,7 @@ fun LocalPlaylistScreen(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .then(
-                        if (layerBackdropActive) {
-                            Modifier.layerBackdrop(artworkBackdrop)
-                        } else {
-                            Modifier
-                        },
-                    ),
+                    .glassHeaderSource(header),
             contentPadding =
                 PaddingValues(
                     // When searching, the header item collapses to zero height and the
@@ -646,10 +622,8 @@ fun LocalPlaylistScreen(
                                 ).joinToString(MediaDetailMetadataSeparator)
                             val isBookmarked = playlist.playlist.bookmarkedAt != null
 
-                            // SimpMusic-style liquid glass backdrop source: the LazyColumn itself
-                            // carries the layerBackdrop modifier (see the LazyColumn definition
-                            // above), so the entire scrolling content is recorded into the
-                            // backdrop.
+                            // The LazyColumn carries the shared header source tag (see the LazyColumn
+                            // definition above), so the entire scrolling content feeds the backdrop.
                             MediaDetailHero(
                                 title = playlist.playlist.name,
                                 thumbnailUrl =
@@ -762,7 +736,7 @@ fun LocalPlaylistScreen(
                                 // icon was clicked — the state change triggered a
                                 // LazyColumn layout pass, and animateItem()
                                 // animated the resulting placement delta.
-                                useBlurredPlayButton = liquidGlassHeaderActive,
+                                useBlurredPlayButton = header.liquidGlassActive,
                             )
                         }
                     }
@@ -1068,27 +1042,16 @@ fun LocalPlaylistScreen(
             headerItems = headerItems,
         )
 
-        // Persistent Liquid Glass header buttons. Siblings of the LazyColumn (children of the
-        // ExpressivePullToRefreshBox), positioned at top-start and top-end.
+        // Shared glass header overlay: renders the haze fade plus the back pill
+        // (title = playlist name) and the trailing search+more pill, both as the
+        // shared LiquidGlassActionPill. No-op except the haze while glass is off.
         val currentPlaylist = playlist
-        if (layerBackdropActive && !selection && !isSearching && currentPlaylist != null) {
-            LiquidGlassIconButton(
-                backdrop = artworkBackdrop,
-                painter = painterResource(R.drawable.arrow_back),
-                contentDescription = null,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 12.dp, top = systemBarsTopPadding + 12.dp)
-                        .size(48.dp),
-                onClick = { navController.navigateUp() },
-            )
-            LiquidGlassActionPill(
-                backdrop = artworkBackdrop,
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(end = 12.dp, top = systemBarsTopPadding + 12.dp),
+        if (!selection && !isSearching && currentPlaylist != null) {
+            GlassScreenHeaderOverlay(
+                header = header,
+                title = currentPlaylist.playlist.name,
+                onBack = { navController.navigateUp() },
+                onBackLongClick = { navController.backToMain() },
             ) {
                 // Search
                 Box(
@@ -1158,7 +1121,7 @@ fun LocalPlaylistScreen(
         // OR when searching. When Liquid Glass is active and not in selection mode
         // and not searching, the persistent Liquid Glass buttons above handle
         // navigation and actions, so the TopAppBar is hidden entirely.
-        if (!liquidGlassHeaderActive || selection || isSearching) {
+        if (!header.liquidGlassActive || selection || isSearching) {
         // Top App Bar
         val topAppBarColors =
             if (transparentAppBar) {
@@ -1226,7 +1189,7 @@ fun LocalPlaylistScreen(
                 //  - Liquid Glass is OFF (the persistent LiquidGlass back button
                 //    isn't there, so the TopAppBar must provide back navigation
                 //    even when the hero is visible)
-                if (isSearching || selection || showTopBarTitle || !liquidGlassHeaderActive) {
+                if (isSearching || selection || showTopBarTitle || !header.liquidGlassActive) {
                     IconButton(
                         onClick = {
                             if (isSearching) {
@@ -1305,7 +1268,7 @@ fun LocalPlaylistScreen(
                     //  - Liquid Glass is OFF (the persistent LiquidGlass pill
                     //    isn't there, so the TopAppBar must provide search+more
                     //    even when the hero is visible)
-                    if (showTopBarTitle || !liquidGlassHeaderActive) {
+                    if (showTopBarTitle || !header.liquidGlassActive) {
                         IconButton(
                             onClick = { isSearching = true },
                             onLongClick = {},
@@ -1365,7 +1328,7 @@ fun LocalPlaylistScreen(
                 }
             },
         )
-        } // end if (!liquidGlassHeaderActive || selection || isSearching)
+        } // end if (!header.liquidGlassActive || selection || isSearching)
 
         SnackbarHost(
             hostState = snackbarHostState,

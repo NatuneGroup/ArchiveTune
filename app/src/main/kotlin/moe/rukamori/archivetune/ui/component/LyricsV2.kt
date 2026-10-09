@@ -128,6 +128,7 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
+import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
@@ -239,6 +240,7 @@ fun LyricsV2(
     val (glowFactorPreference) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
     val (fillTransitionWidth) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (lrcBounceEnabledPreference) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
+    val (softWordReveal) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
     val (adaptiveScrollSpring) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     // The V2 renderer never honored the reduce-animations setting: on low-RAM devices (where it
     // defaults on) the per-word glow shadows, bounce springs and line blur are the difference
@@ -1024,6 +1026,7 @@ fun LyricsV2(
                                     textAlign = textAlign,
                                     lyricsFontFamily = lyricsFontFamily,
                                     isRtl = lineIsRtl,
+                                    softReveal = softWordReveal,
                                 )
                             } else {
                                 LyricsLineV2(
@@ -1042,6 +1045,7 @@ fun LyricsV2(
                                     bounceFactor = bounceFactor,
                                     glowFactor = glowFactor,
                                     fillTransitionWidth = fillTransitionWidth,
+                                    softReveal = softWordReveal,
                                 )
                             }
                         } else if (isSynced) {
@@ -1333,6 +1337,7 @@ private fun LyricsLineV2(
     bounceFactor: Float,
     glowFactor: Float,
     fillTransitionWidth: Float,
+    softReveal: Boolean = true,
 ) {
     val arrangement =
         when (textAlign) {
@@ -1394,6 +1399,7 @@ private fun LyricsLineV2(
                     bounceFactor = bounceFactor,
                     glowFactor = glowFactor,
                     fillTransitionWidth = fillTransitionWidth,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1437,6 +1443,7 @@ private fun LyricsLineV2(
                     bounceFactor = bounceFactor,
                     glowFactor = glowFactor,
                     fillTransitionWidth = fillTransitionWidth,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1459,6 +1466,7 @@ private fun AnimatedWordV2(
     bounceFactor: Float,
     glowFactor: Float,
     fillTransitionWidth: Float,
+    softReveal: Boolean = true,
 ) {
     val wordStartMs = (word.startTime * 1000).toLong()
     val wordEndMs = (word.endTime * 1000).toLong()
@@ -1621,27 +1629,41 @@ private fun AnimatedWordV2(
                     ),
                 modifier =
                     if (isWordActive && !isWordComplete) {
+                        // Soft reveal ON: upstream-style sliding fade window (see
+                        // LyricsWordReveal.kt). OFF: today's exact hard-edge mask.
+                        val sweepProgress = progress
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                val edgeWidth = fillTransitionWidth.dp.toPx()
-                                val center =
-                                    if (isRtl) {
-                                        size.width - ((size.width + edgeWidth * 2) * progress - edgeWidth)
-                                    } else {
-                                        (size.width + edgeWidth * 2) * progress - edgeWidth
+                            .then(
+                                if (softReveal) {
+                                    Modifier.slidingSoftReveal(
+                                        progressProvider = { sweepProgress },
+                                        edgeWidth = fillTransitionWidth.dp,
+                                        isRtl = isRtl,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    Modifier.drawWithContent {
+                                        drawContent()
+                                        val edgeWidth = fillTransitionWidth.dp.toPx()
+                                        val center =
+                                            if (isRtl) {
+                                                size.width - ((size.width + edgeWidth * 2) * sweepProgress - edgeWidth)
+                                            } else {
+                                                (size.width + edgeWidth * 2) * sweepProgress - edgeWidth
+                                            }
+                                        drawRect(
+                                            brush =
+                                                androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                                    colors = sweepColors,
+                                                    startX = center - edgeWidth,
+                                                    endX = center + edgeWidth,
+                                                ),
+                                            blendMode = BlendMode.DstIn,
+                                        )
                                     }
-                                drawRect(
-                                    brush =
-                                        androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                            colors = sweepColors,
-                                            startX = center - edgeWidth,
-                                            endX = center + edgeWidth,
-                                        ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            }.padding(glowPadding)
+                                },
+                            ).padding(glowPadding)
                     } else {
                         Modifier.padding(glowPadding)
                     },
@@ -1664,9 +1686,9 @@ private fun LyricsLineSpotify(
     inactiveAlpha: Float,
     baseFontSize: Float,
     isLineAllBackground: Boolean,
-    textAlign: TextAlign,
     lyricsFontFamily: FontFamily?,
     isRtl: Boolean,
+    softReveal: Boolean = true,
 ) {
     val arrangement =
         when (textAlign) {
@@ -1722,9 +1744,9 @@ private fun LyricsLineSpotify(
                     textColor = textColor,
                     inactiveAlpha = inactiveAlpha,
                     fontSize = if (isLineAllBackground) baseFontSize * 0.82f else baseFontSize,
-                    isBackground = isLineAllBackground,
                     lyricsFontFamily = lyricsFontFamily,
                     isRtl = isRtl,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1765,6 +1787,7 @@ private fun LyricsLineSpotify(
                     isBackground = true,
                     lyricsFontFamily = lyricsFontFamily,
                     isRtl = isRtl,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1783,6 +1806,7 @@ internal fun SpotifyWord(
     isBackground: Boolean,
     lyricsFontFamily: FontFamily?,
     isRtl: Boolean,
+    softReveal: Boolean = true,
 ) {
     val wordStartMs = (word.startTime * 1000).toLong()
     val wordEndMs = (word.endTime * 1000).toLong()
@@ -1879,41 +1903,54 @@ internal fun SpotifyWord(
                 color = textColor.copy(alpha = if (isBackground) 0.75f else 1f),
                 modifier =
                     if (isWordActive && !isWordComplete) {
+                        // Same upstream sliding fade idea as AnimatedWordV2 (see
+                        // LyricsWordReveal.kt): keep the pill edge position, but
+                        // soften the alpha step into a 4dp fade band. The pill
+                        // fill itself stays hard-edged, matching upstream where
+                        // the pill sweeps solid and only the text mask feathers.
+                        val spotifyProgress = progress
+                        val spotifyReveal = softReveal
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                // Align the text clip edge with the pill fill edge:
-                                // pill spans [textWidth + 2*pillPaddingHorizontal].
-                                val padHpx = pillPaddingHorizontal.toPx()
-                                val pillWidth = size.width + padHpx * 2f
-                                val fillPx = pillWidth * progress
-                                val pillLeft = if (isRtl) pillWidth - fillPx else 0f
-                                val rawLeft = pillLeft - padHpx
-                                val solidFraction = (rawLeft / size.width).coerceIn(0f, 1f)
-                                drawContent()
-                                // Hard-edge alpha mask at the sweep position (same edge as the pill),
-                                // via DstIn like AnimatedWordV2 — drawContent() cannot be called
-                                // inside a nested clipRect receiver, so mask instead of clip.
-                                drawRect(
-                                    brush =
-                                        if (isRtl) {
-                                            Brush.horizontalGradient(
-                                                0f to Color.Transparent,
-                                                solidFraction.coerceAtMost(1f) to Color.Transparent,
-                                                solidFraction.coerceAtLeast(0f) to Color.Black,
-                                                1f to Color.Black,
-                                            )
-                                        } else {
-                                            Brush.horizontalGradient(
-                                                0f to Color.Black,
-                                                solidFraction.coerceIn(0f, 1f) to Color.Black,
-                                                solidFraction.coerceAtLeast(0f) to Color.Transparent,
-                                                1f to Color.Transparent,
-                                            )
-                                        },
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            }
+                            .then(
+                                if (spotifyReveal) {
+                                    Modifier.slidingSoftReveal(
+                                        progressProvider = { spotifyProgress },
+                                        edgeWidth = 4.dp,
+                                        isRtl = isRtl,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    Modifier.drawWithContent {
+                                        val padHpx = pillPaddingHorizontal.toPx()
+                                        val pillWidth = size.width + padHpx * 2f
+                                        val fillPx = pillWidth * spotifyProgress
+                                        val pillLeft = if (isRtl) pillWidth - fillPx else 0f
+                                        val rawLeft = pillLeft - padHpx
+                                        val solidFraction = (rawLeft / size.width).coerceIn(0f, 1f)
+                                        drawContent()
+                                        drawRect(
+                                            brush =
+                                                if (isRtl) {
+                                                    Brush.horizontalGradient(
+                                                        0f to Color.Transparent,
+                                                        solidFraction.coerceAtMost(1f) to Color.Transparent,
+                                                        solidFraction.coerceAtLeast(0f) to Color.Black,
+                                                        1f to Color.Black,
+                                                    )
+                                                } else {
+                                                    Brush.horizontalGradient(
+                                                        0f to Color.Black,
+                                                        solidFraction.coerceIn(0f, 1f) to Color.Black,
+                                                        solidFraction.coerceAtLeast(0f) to Color.Transparent,
+                                                        1f to Color.Transparent,
+                                                    )
+                                                },
+                                            blendMode = BlendMode.DstIn,
+                                        )
+                                    }
+                                },
+                            )
                     } else {
                         Modifier
                     },

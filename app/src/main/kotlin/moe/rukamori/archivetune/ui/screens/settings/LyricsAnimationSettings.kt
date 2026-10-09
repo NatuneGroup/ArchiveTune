@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
+import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -52,6 +53,7 @@ fun LyricsAnimationSettings(
     val (glowFactor, onGlowFactorChange) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
     val (fillTransitionWidth, onFillTransitionWidthChange) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
+    val (softWordReveal, onSoftWordRevealChange) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -120,6 +122,20 @@ fun LyricsAnimationSettings(
                             Switch(
                                 checked = adaptiveScrollSpring,
                                 onCheckedChange = onAdaptiveScrollSpringChange,
+                            )
+                        },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Soft Word Reveal") },
+                        description = "Feather the sung-word edge with a sliding gradient instead of a hard clip",
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        trailingContent = {
+                            Switch(
+                                checked = softWordReveal,
+                                onCheckedChange = onSoftWordRevealChange,
                             )
                         },
                     )

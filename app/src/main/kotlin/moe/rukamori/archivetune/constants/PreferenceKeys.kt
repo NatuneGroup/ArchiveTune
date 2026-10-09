@@ -1426,7 +1426,7 @@ val LyricsV2BounceFactorKey = floatPreferencesKey("lyricsV2BounceFactor")
 val LyricsV2GlowFactorKey = floatPreferencesKey("lyricsV2GlowFactor")
 val LyricsV2FillTransitionWidthKey = floatPreferencesKey("lyricsV2FillTransitionWidth")
 val LyricsV2LrcBounceEnabledKey = booleanPreferencesKey("lyricsV2LrcBounceEnabled")
-val LyricsV2AdaptiveScrollSpringKey = booleanPreferencesKey("lyricsV2AdaptiveScrollSpring")
+val LyricsV2SoftWordRevealKey = booleanPreferencesKey("lyricsV2SoftWordReveal")
 
 // Queue lyrics pre-load settings
 val PreloadQueueLyricsEnabledKey = booleanPreferencesKey("preload_queue_lyrics_enabled")

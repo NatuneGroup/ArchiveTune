@@ -429,9 +429,10 @@ class DownloadUtil
         init {
             downloadScope.launch {
                 val result = mutableMapOf<String, Download>()
-                val cursor = downloadManager.downloadIndex.getDownloads()
-                while (cursor.moveToNext()) {
-                    result[cursor.download.request.id] = cursor.download
+                downloadManager.downloadIndex.getDownloads().use { cursor ->
+                    while (cursor.moveToNext()) {
+                        result[cursor.download.request.id] = cursor.download
+                    }
                 }
                 downloads.value = result
             }

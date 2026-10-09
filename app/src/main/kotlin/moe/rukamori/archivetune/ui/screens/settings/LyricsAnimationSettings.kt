@@ -35,7 +35,7 @@ import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
-import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
+import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -54,6 +54,7 @@ fun LyricsAnimationSettings(
     val (fillTransitionWidth, onFillTransitionWidthChange) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (adaptiveScrollSpring, onAdaptiveScrollSpringChange) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     val (softWordReveal, onSoftWordRevealChange) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
+    val (emphasizeLastWord, onEmphasizeLastWordChange) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
 
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -136,6 +137,20 @@ fun LyricsAnimationSettings(
                             Switch(
                                 checked = softWordReveal,
                                 onCheckedChange = onSoftWordRevealChange,
+                            )
+                        },
+                    )
+                }
+
+                item {
+                    PreferenceEntry(
+                        title = { Text("Last-Word Emphasize") },
+                        description = "Replay the final word of each line with a per-character glow and float (off by default)",
+                        icon = { Icon(painterResource(R.drawable.animation), null) },
+                        trailingContent = {
+                            Switch(
+                                checked = emphasizeLastWord,
+                                onCheckedChange = onEmphasizeLastWordChange,
                             )
                         },
                     )

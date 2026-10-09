@@ -128,6 +128,7 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
+import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
 import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
@@ -241,6 +242,7 @@ fun LyricsV2(
     val (fillTransitionWidth) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (lrcBounceEnabledPreference) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
     val (softWordReveal) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
+    val (emphasizeLastWordPreference) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
     val (adaptiveScrollSpring) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     // The V2 renderer never honored the reduce-animations setting: on low-RAM devices (where it
     // defaults on) the per-word glow shadows, bounce springs and line blur are the difference
@@ -248,6 +250,7 @@ fun LyricsV2(
     val v2AnimationsDisabled = LocalAnimationsDisabled.current
     val bounceFactor = if (v2AnimationsDisabled) 0f else bounceFactorPreference
     val glowFactor = if (v2AnimationsDisabled) 0f else glowFactorPreference
+    val emphasizeLastWord = emphasizeLastWordPreference && !v2AnimationsDisabled
     val lrcBounceEnabled = lrcBounceEnabledPreference && !v2AnimationsDisabled
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
@@ -1046,6 +1049,7 @@ fun LyricsV2(
                                     glowFactor = glowFactor,
                                     fillTransitionWidth = fillTransitionWidth,
                                     softReveal = softWordReveal,
+                                    emphasizeEnabled = emphasizeLastWord,
                                 )
                             }
                         } else if (isSynced) {
@@ -1338,6 +1342,7 @@ private fun LyricsLineV2(
     glowFactor: Float,
     fillTransitionWidth: Float,
     softReveal: Boolean = true,
+    emphasizeEnabled: Boolean = false,
 ) {
     val arrangement =
         when (textAlign) {
@@ -1400,6 +1405,7 @@ private fun LyricsLineV2(
                     glowFactor = glowFactor,
                     fillTransitionWidth = fillTransitionWidth,
                     softReveal = softReveal,
+                    emphasizeLastWord = emphasizeEnabled && isActive && wordIndex == mainWords.lastIndex && mainWords.size > 1,
                 )
             }
         }
@@ -1467,6 +1473,7 @@ private fun AnimatedWordV2(
     glowFactor: Float,
     fillTransitionWidth: Float,
     softReveal: Boolean = true,
+    emphasizeLastWord: Boolean = false,
 ) {
     val wordStartMs = (word.startTime * 1000).toLong()
     val wordEndMs = (word.endTime * 1000).toLong()
@@ -1620,6 +1627,41 @@ private fun AnimatedWordV2(
                 } else {
                     baseTextStyle
                 }
+            if (emphasizeLastWord && (isWordActive || isWordComplete) && !isLinePast) {
+                // Per-character emphasize overlay (see LyricsEmphasize.kt): same
+                // dim base + lit overlay structure and the same sliding reveal
+                // mask, but the sung overlay is split char-by-char with a
+                // staggered glow+float bump. OFF (default) renders today's
+                // single whole-word overlay below, untouched.
+                EmphasizedWordOverlay(
+                    word = word,
+                    baseTextStyle = baseTextStyle,
+                    textColor = textColor,
+                    litAlpha = if (isBackground) 0.75f else 1f,
+                    fontSizeSp = actualFontSize,
+                    isBackground = isBackground,
+                    isWordActive = isWordActive,
+                    isWordComplete = isWordComplete,
+                    bounceFactor = bounceFactor,
+                    glowFactor = glowFactor,
+                    modifier =
+                        Modifier
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .then(
+                                if (softReveal && isWordActive && !isWordComplete) {
+                                    val sweepProgress = progress
+                                    Modifier.slidingSoftReveal(
+                                        progressProvider = { sweepProgress },
+                                        edgeWidth = fillTransitionWidth.dp,
+                                        isRtl = isRtl,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ).padding(glowPadding),
+                )
+            } else {
             Text(
                 text = word.text,
                 style = overlayTextStyle,
@@ -1668,6 +1710,7 @@ private fun AnimatedWordV2(
                         Modifier.padding(glowPadding)
                     },
             )
+            }
         }
     }
 }

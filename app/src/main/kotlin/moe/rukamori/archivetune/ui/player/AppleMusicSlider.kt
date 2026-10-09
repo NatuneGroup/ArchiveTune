@@ -48,6 +48,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
+import moe.rukamori.archivetune.utils.rememberPreference
 
 private val AppleMusicSliderTouchHeight = 26.dp
 private val AppleMusicSliderIdleTrackHeight = 6.dp
@@ -76,6 +78,9 @@ internal fun AppleMusicFlatSlider(
 ) {
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(fraction) }
+    // Optional seek swell: the track fattens and the fill brightens while held. Off keeps the
+    // idle height and alpha — a straight, unanimated bar under the finger.
+    val (seekGrowEnabled) = rememberPreference(AppleMusicSeekGrowKey, defaultValue = true)
 
     // The gesture blocks below are keyed on `enabled` alone, so anything they capture would
     // otherwise be frozen at the composition that installed them. The seek bar's callback closes
@@ -93,12 +98,12 @@ internal fun AppleMusicFlatSlider(
         label = "appleMusicSliderFraction",
     )
     val trackHeight by animateDpAsState(
-        targetValue = if (dragging) pressedTrackHeight else idleTrackHeight,
+        targetValue = if (dragging && seekGrowEnabled) pressedTrackHeight else idleTrackHeight,
         animationSpec = spring(dampingRatio = Spring.DampingRatioLowBouncy, stiffness = Spring.StiffnessMedium),
         label = "appleMusicSliderTrackHeight",
     )
     val fillAlpha by animateFloatAsState(
-        targetValue = if (dragging) 1f else 0.85f,
+        targetValue = if (dragging && seekGrowEnabled) 1f else 0.85f,
         label = "appleMusicSliderFillAlpha",
     )
 

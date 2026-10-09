@@ -134,6 +134,7 @@ import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
 import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
 import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
+import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
 import moe.rukamori.archivetune.constants.AppleMusicTitleMarqueeKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
@@ -2310,6 +2311,9 @@ private fun AppleMusicSeekBar(
     onScrubFinished: () -> Unit,
 ) {
     val enabled = duration > 0L
+    // Optional seek swell: the bar fattens and brightens while dragged. Off keeps the idle
+    // size and alpha throughout the drag.
+    val (seekGrowEnabled) = rememberPreference(AppleMusicSeekGrowKey, defaultValue = true)
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
     val playedFraction =
@@ -2348,7 +2352,8 @@ private fun AppleMusicSeekBar(
                         },
                     )
                 }.drawWithContent {
-                    val trackHeight = if (dragging) 10.dp.toPx() else 7.dp.toPx()
+                    val swelling = dragging && seekGrowEnabled
+                    val trackHeight = if (swelling) 10.dp.toPx() else 7.dp.toPx()
                     val top = (size.height - trackHeight) / 2f
                     val radius = CornerRadius(trackHeight / 2f)
                     drawRoundRect(
@@ -2358,7 +2363,7 @@ private fun AppleMusicSeekBar(
                         cornerRadius = radius,
                     )
                     drawRoundRect(
-                        color = Color.White.copy(alpha = if (dragging) 1f else 0.85f),
+                        color = Color.White.copy(alpha = if (swelling) 1f else 0.85f),
                         topLeft = Offset(0f, top),
                         size = Size(size.width * shownFraction, trackHeight),
                         cornerRadius = radius,

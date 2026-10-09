@@ -17,9 +17,10 @@ package moe.rukamori.archivetune.ui.component
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.animateScrollBy
+import androidx.compose.foundation.gestures.animateScrollBy
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import kotlin.math.pow
+import kotlin.math.sqrt
 
 // Upstream slow mode (seek / interlude / boundary lines). Upstream expresses
 // damping absolutely; Compose takes a damping *ratio*, so the ratio is derived

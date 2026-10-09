@@ -1735,6 +1735,7 @@ private fun LyricsLineSpotify(
     isLineAllBackground: Boolean,
     lyricsFontFamily: FontFamily?,
     isRtl: Boolean,
+    textAlign: TextAlign = TextAlign.Start,
     softReveal: Boolean = true,
 ) {
     val arrangement =

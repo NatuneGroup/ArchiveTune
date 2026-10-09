@@ -1,0 +1,80 @@
+name: Kotlin Check
+
+on:
+  push:
+    branches:
+      - "feat/bitchord-navbar"
+  workflow_dispatch:
+
+jobs:
+  kotlinc:
+    # Free GitHub-hosted runner: 16 GB RAM, x86_64. Enough for a full Kotlin
+    # compile plus the Kotlin language server, which the paid blacksmith runner
+    # is not needed for.
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: "temurin"
+
+      - name: Set Up Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          cache-read-only: false
+          cache-cleanup: on-success
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Generate debug.keystore if not exists
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkey -v \
+              -keystore ~/.android/debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Compile Kotlin (mobile universal debug)
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew --console=plain --stacktrace \
+            :app:compileGmsMobileUniversalDebugKotlin 2>&1 | tee /tmp/kotlinc.log
+        env:
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
+          LASTFM_SECRET: ${{ secrets.LASTFM_SECRET }}
+          SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+
+      - name: Extract Kotlin errors
+        if: always()
+        run: |
+          echo "### Kotlin compiler diagnostics"
+          echo '```'
+          grep -E "^e: " /tmp/kotlinc.log | sed 's|file:///home/runner/work/[^/]*/[^/]*/||' | sort -u | head -200 || echo "(no ^e: lines)"
+          echo '```'
+          echo
+          echo "### Verdict"
+          grep -E "BUILD (SUCCESSFUL|FAILED)" /tmp/kotlinc.log || echo "(no verdict line)"
+
+      - name: Upload compile log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kotlinc-log
+          path: /tmp/kotlinc.log

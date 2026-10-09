@@ -103,6 +103,9 @@ class ListenTogetherManager @Inject constructor(
     private var playerConnection: PlayerConnection? = null
     private var playerFollowJob: Job? = null
     private var eventCollectorJob: Job? = null
+    private var typingExpiryJob: Job? = null
+    private var idleDisconnectCollectorJob: Job? = null
+    private var roleCollectorJob: Job? = null
     private var queueObserverJob: Job? = null
     private var volumeObserverJob: Job? = null
     private var playerListenerRegistered = false
@@ -418,7 +421,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Expire stale typing indicators.
-        scope.launch {
+        typingExpiryJob?.cancel()
+        typingExpiryJob = scope.launch {
             while (true) {
                 delay(1000)
                 val now = System.currentTimeMillis()
@@ -430,7 +434,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Idle Disconnect Timer (15 minutes) - saves resources if user connects but never joins
-        scope.launch {
+        idleDisconnectCollectorJob?.cancel()
+        idleDisconnectCollectorJob = scope.launch {
             combine(connectionState, client.roomState) { cState, rState ->
                 cState to rState
             }.collect { (cState, rState) ->
@@ -446,7 +451,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Role change listener
-        scope.launch {
+        roleCollectorJob?.cancel()
+        roleCollectorJob = scope.launch {
             role.collect { newRole ->
                 try {
                     val previousRole = lastRole

@@ -6,10 +6,14 @@
  *
  * Technique adapted from amll-dev/applemusic-like-lyrics (AGPL-3.0-only),
  * technique-source: packages/core/src/lyric-player/base/spring.ts
- * (`getPosYSpringPolicy`). IDEA PORT ONLY — no upstream code is copied here;
- * the mapping below is our own Kotlin/Compose implementation of the idea:
- * choose the lyric-scroll spring from the CURRENT line interval instead of
- * using one fixed spring everywhere.
+ * (`getPosYSpringPolicy`).
+ *
+ * PROVENANCE: this is a PORT OF THE PARAMETERS, not an idea-only port. The
+ * interval clamp window, the stiffness range, the 5th-root bias and the
+ * damping multiplier below are taken from upstream's policy; only the Compose
+ * translation (damping ratio derived from unit mass) is ours. Upstream is
+ * AGPL-3.0-only — see docs/CREDITS.md for the attribution and the open
+ * license question the owner must decide.
  */
 
 package moe.rukamori.archivetune.ui.component

@@ -22,6 +22,7 @@ adapted, or studies. Everything below is GPL-3.0 unless stated otherwise.
 | [BitChord](https://github.com/kushagrasinghx/BitChord) | kushagrasinghx | The original floating bottom bar whose glyph set, glass edge, stretch-squash selection pill and drag gesture the navigation bar reproduces. |
 | [adam-adrian/ArchiveTune](https://github.com/adam-adrian/ArchiveTune) | adam-adrian | The Editorial (V10) player adaptations. |
 | [4nx3b/lyrics](https://github.com/4nx3b/lyrics) | 4nx3b | The `lyrics` submodule: enhanced/word-synced LRC parsing and the lyrics providers. |
+| [amll-dev/applemusic-like-lyrics](https://github.com/amll-dev/applemusic-like-lyrics) | amll-dev | **Parameter ports, not code ports** — `ui/component/LyricsScrollSpring.kt` (interval-adaptive scroll spring policy) and `ui/component/LyricsEmphasize.kt` (per-character last-word emphasize) reproduce upstream's tuning constants and mapping. Upstream is **AGPL-3.0-only**; this fork is GPL-3.0. Both files state the provenance in their headers. **The owner must decide** whether to keep these (relicensing the derived files AGPL-3.0 and documenting it), replace the constants with independently-derived ones, or drop the two techniques — an AGPL-derived work cannot be distributed as GPL-3.0-only. No AGPL source was copied. |
 
 ## Projects we studied for reference
 

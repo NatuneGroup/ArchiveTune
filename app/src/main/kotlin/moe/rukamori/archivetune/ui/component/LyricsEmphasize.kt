@@ -9,14 +9,14 @@
  * (`createEmphasizeAnimation` — per-character staggered glow + float, with a
  * stronger longer variant for the LAST word of a line, built from 32 WAAPI
  * keyframes driven by a bump easing that peaks mid-animation).
- * IDEA PORT ONLY — no upstream code is copied here; the mapping below is our
- * own Kotlin/Compose implementation of the idea:
- *  - the 32 discrete keyframes become ONE continuous Animatable per character
- *    (0 -> 1, linear), and the bump easing becomes `sin(pi * x)` evaluated in
- *    the draw phase — same rise-peak-settle shape, zero keyframe objects;
- *  - the staggered per-character delays become tween delays scaled by
- *    character position (`du / 2.5 / charCount * index`);
- *  - the last-word boost (stronger glow, longer run) is kept as a multiplier.
+ *
+ * PROVENANCE: this is a PORT OF THE PARAMETERS, not an idea-only port. The
+ * 1000 ms floor, the piecewise /2000 and /3000 cubic-vs-sqrt growth, the 0.6
+ * and 0.5 base weights, the 1.6/1.5/1.2 last-word boosts, the 1.2/0.8 caps and
+ * the /2.5 stagger below are all taken from upstream's `calculateEmphasizeParams`.
+ * Only the Compose translation (one continuous Animatable replacing 32 WAAPI
+ * keyframes) is ours. Upstream is AGPL-3.0-only — see docs/CREDITS.md for the
+ * attribution and the open license question the owner must decide.
  *
  * 60fps design: the overlay is per-character Texts with a FIXED remembered
  * glow style (built once per word). Every per-frame value (bump alpha, scale,

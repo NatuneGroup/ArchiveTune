@@ -19,9 +19,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.aicontentfilter.FilterAiContentUseCase
 import moe.rukamori.archivetune.aicontentfilter.LoadAiContentFilterPolicyUseCase
@@ -73,6 +76,8 @@ import moe.rukamori.archivetune.utils.parseSpeedDialPins
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.utils.toPlaybackAuthState
 import timber.log.Timber
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 sealed interface AccountChannelsState {
@@ -103,6 +108,30 @@ data class AccountChannelUiModel(
     val dataSyncId: String,
     val isSelected: Boolean,
 )
+
+/**
+ * Generation gate for remote home responses. Each reload/chip interaction takes the
+ * next generation; a response only publishes via [commit] when its generation is
+ * still current, so a late chip/loadMore response can never overwrite a newer reload.
+ */
+internal class HomeRequestGate {
+    private val lock = Any()
+    private var generation = 0L
+
+    fun current(): Long = synchronized(lock) { generation }
+
+    fun next(): Long = synchronized(lock) { ++generation }
+
+    fun commit(
+        request: Long,
+        publish: () -> Unit,
+    ): Boolean =
+        synchronized(lock) {
+            if (request != generation) return@synchronized false
+            publish()
+            true
+        }
+}
 
 private data class HomeLocalContent(
     val quickPicks: List<Song>,
@@ -224,6 +253,11 @@ class HomeViewModel
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
         private val filterAiContent: FilterAiContentUseCase,
     ) : ViewModel() {
+        private companion object {
+            private const val HOME_LOAD_TIMEOUT_MS = 90_000L
+            private const val REFRESH_STUCK_WATCHDOG_MS = 120_000L
+        }
+
         private val isRefreshing = MutableStateFlow(false)
         private val isLoading = MutableStateFlow(false)
         private val isInitialLoadComplete = MutableStateFlow(false)
@@ -384,6 +418,9 @@ class HomeViewModel
 
         private var wasLoggedIn = false
         private var chipLoadJob: Job? = null
+        private var loadMoreJob: Job? = null
+        private val remoteRequests = HomeRequestGate()
+        private val refreshStartedAtMs = AtomicLong(0L)
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
             chips?.filterNot {
@@ -564,11 +601,31 @@ class HomeViewModel
                     }
         }
 
-        private suspend fun load() {
+        private suspend fun load(generation: Long = remoteRequests.current()) {
             if (isLoading.value) return
             isLoading.value = true
             loadError.value = null
 
+            try {
+                val loaded =
+                    withTimeoutOrNull(HOME_LOAD_TIMEOUT_MS) {
+                        loadInternal(generation)
+                    }
+                if (loaded == null) {
+                    reportException(TimeoutException("home load timed out after ${HOME_LOAD_TIMEOUT_MS / 1000}s"))
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                reportException(e)
+                loadError.value = R.string.error_unknown
+            } finally {
+                isInitialLoadComplete.value = true
+                isLoading.value = false
+            }
+        }
+
+        private suspend fun loadInternal(generation: Long) {
             try {
                 val aiContentFilterPolicy = loadAiContentFilterPolicy()
                 supervisorScope {
@@ -677,11 +734,19 @@ class HomeViewModel
                                                 .filter { it.items.isNotEmpty() },
                                     )
                                 val (pageWithoutQuickPicks, quickPicksSection) = filteredPage.extractQuickPicks()
-                                remoteQuickPicks.value = quickPicksSection
-                                homePage.value = pageWithoutQuickPicks
+                                currentCoroutineContext().ensureActive()
+                                if (!remoteRequests.commit(generation) {
+                                        remoteQuickPicks.value = quickPicksSection
+                                        homePage.value = pageWithoutQuickPicks
+                                    }
+                                ) {
+                                    Timber.w("Dropping stale home response for generation $generation")
+                                }
                             }.onFailure {
+                                currentCoroutineContext().ensureActive()
+                                if (it is CancellationException) throw it
                                 reportException(it)
-                                loadError.value = R.string.error_unknown
+                                remoteRequests.commit(generation) { loadError.value = R.string.error_unknown }
                             }
                     }
                 }
@@ -901,13 +966,14 @@ class HomeViewModel
         }
 
         private fun loadMoreYouTubeItems(continuation: String?) {
-            if (continuation == null || isLoadingMore.value) return
+            if (continuation == null || !isLoadingMore.compareAndSet(false, true)) return
+            val generation = remoteRequests.current()
             val hideExplicit = context.dataStore.get(HideExplicitKey, false)
             val hideVideo = context.dataStore.get(HideVideoKey, false)
 
-            viewModelScope.launch(Dispatchers.IO) {
-                isLoadingMore.value = true
-                try {
+            loadMoreJob =
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
                     val blockedArtistIds = database.getBlockedArtistIds().toSet()
                     val blockedSongIds = database.getBlockedSongIds().toSet()
                     val aiContentFilterPolicy = loadAiContentFilterPolicy()
@@ -934,8 +1000,20 @@ class HomeViewModel
                                     .filter { it.items.isNotEmpty() },
                         )
                     val (pageWithoutQuickPicks, quickPicksSection) = mergedPage.extractQuickPicks()
-                    quickPicksSection?.let { remoteQuickPicks.value = it }
-                    homePage.value = pageWithoutQuickPicks
+                    currentCoroutineContext().ensureActive()
+                    if (!remoteRequests.commit(generation) {
+                            if (homePage.value?.continuation == continuation) {
+                                quickPicksSection?.let { remoteQuickPicks.value = it }
+                                homePage.value = pageWithoutQuickPicks
+                            }
+                        }
+                    ) {
+                        Timber.w("Dropping stale loadMore response for generation $generation")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    reportException(e)
                 } finally {
                     isLoadingMore.value = false
                 }
@@ -943,6 +1021,8 @@ class HomeViewModel
         }
 
         private fun toggleChip(chip: HomePage.Chip?) {
+            val generation = remoteRequests.next()
+            loadMoreJob?.cancel()
             chipLoadJob?.cancel()
             if (chip == null || chip == selectedChip.value && previousHomePage.value != null) {
                 homePage.value = previousHomePage.value
@@ -987,9 +1067,15 @@ class HomeViewModel
                                     .filter { it.items.isNotEmpty() },
                         )
                     val (pageWithoutQuickPicks, quickPicksSection) = filteredPage.extractQuickPicks()
-                    remoteQuickPicks.value = quickPicksSection
-                    homePage.value = pageWithoutQuickPicks
-                    selectedChip.value = chip
+                    currentCoroutineContext().ensureActive()
+                    if (!remoteRequests.commit(generation) {
+                            remoteQuickPicks.value = quickPicksSection
+                            homePage.value = pageWithoutQuickPicks
+                            selectedChip.value = chip
+                        }
+                    ) {
+                        Timber.w("Dropping stale chip response for generation $generation")
+                    }
                 }
         }
 
@@ -1002,12 +1088,23 @@ class HomeViewModel
         }
 
         private fun refresh() {
-            if (isRefreshing.value) return
+            if (!isRefreshing.compareAndSet(false, true)) {
+                val startedAt = refreshStartedAtMs.get()
+                val stuck = startedAt != 0L && System.currentTimeMillis() - startedAt > REFRESH_STUCK_WATCHDOG_MS
+                if (!stuck) return
+                isRefreshing.value = false
+                if (!isRefreshing.compareAndSet(false, true)) return
+            }
+            refreshStartedAtMs.set(System.currentTimeMillis())
+            val generation = remoteRequests.next()
+            // A reload supersedes any in-flight chip/loadMore response: cancel them so
+            // their late commits cannot interleave with the fresh page below.
+            loadMoreJob?.cancel()
+            chipLoadJob?.cancel()
             viewModelScope.launch(Dispatchers.IO) {
-                isRefreshing.value = true
                 try {
                     supervisorScope {
-                        launch { load() }
+                        launch { load(generation) }
                         launch { refreshQuickPicks() }
                         // Re-shuffle hero picks on every manual pull-to-refresh so the
                         // "Jump back in" hero at the top of the home page surfaces fresh
@@ -1034,6 +1131,7 @@ class HomeViewModel
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {
+                    refreshStartedAtMs.set(0L)
                     isRefreshing.value = false
                 }
             }

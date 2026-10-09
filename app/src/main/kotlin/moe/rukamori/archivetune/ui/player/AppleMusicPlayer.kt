@@ -1531,16 +1531,16 @@ private fun AppleMusicSharpArtwork(
                                 .coerceAtMost(artworkHeightLimit)
                                 .coerceAtLeast(artworkMinSize)
                         }
-                // Pause-scale animation (non-canvas songs only). When the
-                // music is paused, the artwork shrinks slightly (~8%) to
-                // mirror Apple Music's behavior. When playback resumes, it
-                // restores to full size. This only applies to the
-                // immersiveExtendedCard branch (static artwork — no Spotify
-                // Canvas, no music video). Canvas songs continue playing
-                // their loop regardless of audio play state, so shrinking
-                // them would look wrong.
+                // Pause-scale animation (non-canvas songs only), gated on the pause-shrink
+                // preference. When the music is paused, the artwork shrinks slightly (~8%) to
+                // mirror Apple Music's behavior. When playback resumes, it restores to full
+                // size. This only applies to the immersiveExtendedCard branch (static
+                // artwork — no Spotify Canvas, no music video). Canvas songs continue
+                // playing their loop regardless of audio play state, so shrinking them
+                // would look wrong.
+                val (pauseScaleEnabled) = rememberPreference(AppleMusicPauseScaleKey, defaultValue = true)
                 val artworkPauseScale by animateFloatAsState(
-                    targetValue = if (isPlaying) 1f else 0.92f,
+                    targetValue = if (isPlaying || !pauseScaleEnabled) 1f else 0.92f,
                     animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
                     label = "artworkPauseScale",
                 )

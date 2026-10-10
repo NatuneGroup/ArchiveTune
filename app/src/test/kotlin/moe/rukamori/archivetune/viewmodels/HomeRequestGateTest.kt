@@ -60,7 +60,6 @@ class HomeRequestGateTest {
         val activeStarted = CompletableDeferred<Unit>()
         val finishActive = CompletableDeferred<Unit>()
         val activeRequest = gate.current()
-        val staleRequest = gate.next()
         var staleLoadStarted = false
 
         val activeLoad =
@@ -71,6 +70,7 @@ class HomeRequestGateTest {
                 }
             }
         activeStarted.await()
+        val staleRequest = gate.next()
 
         val staleLoad =
             async {

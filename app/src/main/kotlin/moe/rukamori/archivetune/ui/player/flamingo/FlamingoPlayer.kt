@@ -114,7 +114,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -171,7 +170,6 @@ import java.time.LocalDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -800,20 +798,12 @@ fun FlamingoPlayerContent(
 
         val glassLayerActive = showAnchoredLyricsMenu || translationPopupOpen || artistPickerOpen
 
-        // Live-glass ticker: while a popup glass layer is visible, ask the
-        // recorder to re-record once per frame. Compose only re-records a
-        // backdrop when something invalidates the source layer's draw — video
-        // frames land inside the TextureView without invalidating Compose, and
-        // content animating inside nested graphics layers never reaches the
-        // recorder — so without this the popup blur is a frozen snapshot taken
-        // when the layer attached (the "not real-time" bug).
-        LaunchedEffect(glassLayerActive) {
-            if (!glassLayerActive) return@LaunchedEffect
-            while (isActive) {
-                withFrameNanos { }
-                popupBackdrop?.requestRecord()
-            }
-        }
+        // Upstream drives this popup's glass with a per-frame record request: a kyant Backdrop only
+        // re-records when something invalidates the source layer's draw, and video frames land
+        // inside the TextureView without invalidating Compose, so without the ticker the popup blur
+        // stays a frozen snapshot taken when the layer attached. This fork's backdrop has no
+        // requestRecord and nothing else in the app drives one, so the ticker is dropped: Flamingo's
+        // popup glass samples the same way every other glass surface here does.
 
         Box(
             modifier =
@@ -1781,7 +1771,6 @@ fun FlamingoPlayerContent(
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showAnchoredLyricsMenu = false },
                 backdrop = popupBackdrop,
-                showTranslationActions = false,
             )
         }
 

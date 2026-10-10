@@ -194,6 +194,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
+import android.graphics.Bitmap
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassTuning
@@ -915,7 +916,7 @@ fun FlamingoPlayerContent(
                                     canvasPrimaryUrl = canvasPrimaryUrl,
                                     canvasFallbackUrl = canvasFallbackUrl,
                                     isPlaying = isPlayingStatusLambda.value && canvasSurfacesPlaying,
-                                    onPlaybackAvailabilityChange = { canvasRendering = it },
+                                    onFrameCaptured = { frame -> canvasRendering = frame != null },
                                     stageHeight = sharpStageHeight,
                                     fadeStrength = { (1f - canvasFlightAnim.value * 2.5f).coerceIn(0f, 1f) },
                                     staticArtworkUrl = artworkUrl,
@@ -1078,8 +1079,6 @@ fun FlamingoPlayerContent(
                                                 LyricsEnhanced(
                                                     sliderPositionProvider = lyricsPosProvider,
                                                     lyricsSyncOffset = lyricsSyncOffset,
-                                                    translationVisibleOverride = showTranslationLines,
-                                                    phoneticVisibleOverride = if (showRomanization) null else false,
                                                     textColorOverride = Color.White,
                                                     modifier = Modifier
                                                         .fillMaxSize()
@@ -1143,7 +1142,6 @@ fun FlamingoPlayerContent(
                                             .then(landscapeSwipeModifier),
                                 ) {
                                     InlineVideoPlayer(
-                                        controlsOnTap = true,
                                         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
                                         modifier = Modifier.fillMaxSize(),
                                     )
@@ -1233,8 +1231,6 @@ fun FlamingoPlayerContent(
                                                 LyricsEnhanced(
                                                     sliderPositionProvider = lyricsPosProvider,
                                                     lyricsSyncOffset = lyricsSyncOffset,
-                                                    translationVisibleOverride = showTranslationLines,
-                                                    phoneticVisibleOverride = if (showRomanization) null else false,
                                                     textColorOverride = Color.White,
                                                     modifier = Modifier.fillMaxSize(),
                                                 )
@@ -2400,7 +2396,6 @@ private fun ColumnScope.FlamingoAlbum(
                 shadowOverlay = true,
             )
             InlineVideoPlayer(
-                controlsOnTap = true,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
@@ -2464,7 +2459,7 @@ private fun FlamingoCanvasStage(
     canvasPrimaryUrl: String?,
     canvasFallbackUrl: String?,
     isPlaying: Boolean,
-    onPlaybackAvailabilityChange: (Boolean) -> Unit,
+    onFrameCaptured: (Bitmap?) -> Unit,
     stageHeight: Dp?,
     staticArtworkUrl: String?,
     fadeStrength: () -> Float = { 1f },
@@ -2520,12 +2515,11 @@ private fun FlamingoCanvasStage(
             visible = surfacesVisible,
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
             // Upstream fades the static artwork out from onFirstFrameRendered; this fork's canvas
-            // player does not report that, so availability drives the same crossfade — the proxy the
-            // Looper port already uses, and one that cannot strand the fade on a frame that never
-            // arrives.
-            onPlaybackAvailabilityChange = { available ->
-                onPlaybackAvailabilityChange(available)
-                canvasFrameReady = available
+            // player reports a captured frame instead, which is the same moment and cannot strand
+            // the fade on a frame that never arrives.
+            onFrameCaptured = { frame ->
+                canvasFrameReady = frame != null
+                onFrameCaptured(frame)
             },
             modifier = Modifier.matchParentSize(),
         )
@@ -2582,7 +2576,7 @@ private fun FlamingoLandscapeStage(
                     fallbackUrl = canvasFallbackUrl,
                     isPlaying = isPlaying,
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-                    onPlaybackAvailabilityChange = { canvasRendering = it },
+                    onFrameCaptured = { frame -> canvasRendering = frame != null },
                     modifier = Modifier.matchParentSize(),
                 )
 

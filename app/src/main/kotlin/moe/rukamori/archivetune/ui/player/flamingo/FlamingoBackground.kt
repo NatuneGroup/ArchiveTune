@@ -188,12 +188,11 @@ private fun FlamingoMovingBlurImage(
             .clipToBounds(),
     ) {
         val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
+        // The fork's shared drift helper takes its speed and leg timing from its own defaults; only
+        // the radius is ours to set. Flamingo's upstream constants have no equivalent knob here.
         val blurWander = rememberBlurWanderDrift(
             active = isPlaying(),
             maxDriftDp = wanderMaxDrift,
-            speedDpPerSecond = FlamingoMovingBlurSpeedDpPerSecond,
-            minLegDurationMs = FlamingoMovingBlurMinLegMs,
-            maxLegDurationMs = FlamingoMovingBlurMaxLegMs,
         )
 
         val driftFootprint =

@@ -1048,4 +1048,14 @@
     <string name="queue_add_after_manual">Keep added songs in order</string>
     <string name="search_bar_position_bottom_desc">A floating pill that follows the navigation bar style: corner radius, insets and surface</string>
     <string name="queue_add_after_manual_desc">Play next lines up behind your earlier Play next songs and Add to queue goes after all your added songs, both ahead of radio and autoplay songs</string>
+    <string name="hide_translation">Hide Translation</string>
+    <string name="show_translation">Show Translation</string>
+    <string name="hide_romanization">Hide Romanization</string>
+    <string name="show_romanization">Show Romanization</string>
+    <string name="flamingo_queue_header_title">Playlists</string>
+    <string name="flamingo_queue_header_count">%d Songs</string>
+    <string name="flamingo_queue_empty_title">Unable to Display Playlist</string>
+    <string name="flamingo_queue_empty_desc">No items to play.</string>
+    <string name="flamingo_queue_up_next">Continue Playing</string>
+    <string name="flamingo_queue_added_toast">Added to queue</string>
 </resources>

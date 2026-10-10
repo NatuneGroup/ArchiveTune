@@ -26,6 +26,15 @@ object SpotifyMapper {
     private val BRACKET_PATTERN = Regex("\\[.*?]")
     private val REMASTER_PATTERN = Regex("\\(.*?remaster.*?\\)", RegexOption.IGNORE_CASE)
     private val REMIX_PATTERN = Regex("\\(.*?remix.*?\\)", RegexOption.IGNORE_CASE)
+
+    // Soundtrack credits Spotify appends to Indian film songs: `Song (From "Movie")` or
+    // `Song - From "Movie"`. YouTube Music titles almost never carry them, so leaving them in the
+    // query made the search return nothing and the track unplayable.
+    private val FROM_SOUNDTRACK_PATTERN =
+        Regex("""\s*[(\[]\s*from\s+[^)\]]+[)\]]""", RegexOption.IGNORE_CASE)
+    private val DASH_SUFFIX_PATTERN =
+        Regex("""\s+-\s+(from\s+["“”'].*|.*\bremaster(ed)?\b.*|mono|stereo)$""", RegexOption.IGNORE_CASE)
+    private val FEAT_ANY_PATTERN = Regex("""\s*[(\[]\s*(feat|ft|with)\.?\s.*?[)\]]""", RegexOption.IGNORE_CASE)
     // Keeps letters and digits of every script. An `[a-z0-9]` class deleted Tamil, Hindi,
     // Cyrillic and CJK titles outright, which emptied the normalized title, zeroed both
     // bigram scores and pinned every non-Latin track under the match floor — so those
@@ -89,9 +98,19 @@ object SpotifyMapper {
                 .firstOrNull()
                 ?.name
                 .orEmpty()
-        val title = track.name
+        val title = searchTitle(track.name)
         return if (artist.isEmpty()) title else "$artist $title"
     }
+
+    /** [title] without soundtrack credits, featured-artist and remaster suffixes. */
+    fun searchTitle(title: String): String =
+        title
+            .replace(FROM_SOUNDTRACK_PATTERN, "")
+            .replace(FEAT_ANY_PATTERN, "")
+            .replace(DASH_SUFFIX_PATTERN, "")
+            .replace(MULTI_SPACE_PATTERN, " ")
+            .trim()
+            .ifEmpty { title.trim() }
 
     /** The best artwork URL Spotify offers for a playlist. */
     fun getPlaylistThumbnail(playlist: SpotifyPlaylist): String? = largestImageUrl(playlist.images)
@@ -243,6 +262,8 @@ object SpotifyMapper {
             .normalize(
                 title
                     .lowercase()
+                    .replace(FROM_SOUNDTRACK_PATTERN, "")
+                    .replace(DASH_SUFFIX_PATTERN, "")
                     .replace(FEAT_PATTERN, "")
                     .replace(FT_PATTERN, "")
                     .replace(BRACKET_PATTERN, "")

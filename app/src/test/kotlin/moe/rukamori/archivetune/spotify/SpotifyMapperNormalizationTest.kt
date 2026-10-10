@@ -7,6 +7,7 @@
 
 package moe.rukamori.archivetune.spotify
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -145,5 +146,29 @@ class SpotifyMapperNormalizationTest {
             "Romanized candidate scored $score, at or above the $matchFloor mapping floor",
             score < matchFloor,
         )
+    }
+
+    @Test
+    fun soundtrackCreditIsDroppedFromTheSearchQuery() {
+        assertEquals("Solai Malai Oram", SpotifyMapper.searchTitle("Solai Malai Oram (From \"Villupaattukaran\")"))
+        assertEquals("Hukum", SpotifyMapper.searchTitle("Hukum - From \"Jailer\""))
+        assertEquals("Muthamizhe Muthamizhea", SpotifyMapper.searchTitle("Muthamizhe Muthamizhea (From Raman Abdullah)"))
+        assertEquals("Yesterday", SpotifyMapper.searchTitle("Yesterday - Remastered 2009"))
+        assertEquals("Acoustic Version", SpotifyMapper.searchTitle("Acoustic Version"))
+    }
+
+    @Test
+    fun soundtrackCreditDoesNotLowerTheMatchScore() {
+        val score =
+            score(
+                spotifyTitle = "Solai Malai Oram (From \"Villupaattukaran\")",
+                spotifyArtist = "S. P. Balasubrahmanyam",
+                spotifyDurationMs = 270_000,
+                candidateTitle = "Solai Malai Oram",
+                candidateArtist = "S. P. Balasubrahmanyam",
+                candidateDurationSec = 270,
+            )
+
+        assertTrue("Soundtrack-credited title scored $score", score >= matchFloor)
     }
 }

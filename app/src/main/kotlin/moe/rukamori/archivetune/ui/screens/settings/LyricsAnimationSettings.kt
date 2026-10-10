@@ -37,6 +37,8 @@ import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
 import moe.rukamori.archivetune.constants.LyricsV2InterludeDotsKey
+import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
+import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup

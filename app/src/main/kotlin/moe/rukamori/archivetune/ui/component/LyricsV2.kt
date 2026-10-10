@@ -1792,6 +1792,7 @@ private fun LyricsLineSpotify(
                     textColor = textColor,
                     inactiveAlpha = inactiveAlpha,
                     fontSize = if (isLineAllBackground) baseFontSize * 0.82f else baseFontSize,
+                    isBackground = isLineAllBackground,
                     lyricsFontFamily = lyricsFontFamily,
                     isRtl = isRtl,
                     softReveal = softReveal,

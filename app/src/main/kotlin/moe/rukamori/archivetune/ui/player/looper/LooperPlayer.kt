@@ -262,7 +262,6 @@ fun LooperPlayerContent(
                             onPreferredHeightChange = LocalVideoOnPreferredHeightChange.current,
                             availableHeights = LocalVideoAvailableHeights.current,
                             selectedHeight = LocalVideoSelectedHeight.current,
-                            controlsOnTap = true,
                             modifier =
                                 Modifier
                                     .size(artSize)

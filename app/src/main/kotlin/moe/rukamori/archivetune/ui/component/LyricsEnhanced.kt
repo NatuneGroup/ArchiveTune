@@ -2165,3 +2165,18 @@ private fun List<KaraokeSyllable>.joinSyllableContents(): String {
     }
     return builder.toString()
 }
+
+internal fun extractTtmlWriters(lyrics: String?): String {
+    if (lyrics.isNullOrBlank()) return ""
+    val writerTagPattern =
+        Regex(
+            pattern = "<(songwriter|composer|lyricist|writer|ar)(?:\\s[^>]*)?>([^<]+)</\\1>",
+            options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
+    val writers = LinkedHashSet<String>()
+    writerTagPattern.findAll(lyrics).forEach { match ->
+        val name = match.groupValues.getOrNull(2)?.trim()
+        if (!name.isNullOrBlank()) writers.add(name)
+    }
+    return writers.joinToString(", ").trim()
+}

@@ -1165,6 +1165,13 @@ val HomeSourceKey = stringPreferencesKey("homeSource")
  */
 val ActiveHomeSourcesKey = stringPreferencesKey("activeHomeSources")
 
+/**
+ * Whether the home's quick picks follow the active catalogue (Spotify/QQ) instead of YouTube.
+ * Off by default, which is what 4nx3b's home does: its shelves come from YouTube until the reader
+ * turns this on.
+ */
+val HomeCatalogueSwitchKey = booleanPreferencesKey("homeCatalogueSwitch")
+
 val SpotifyHistorySyncEnabledKey = booleanPreferencesKey("spotifyHistorySyncEnabled")
 
 /**

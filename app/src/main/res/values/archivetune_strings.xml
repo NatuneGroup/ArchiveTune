@@ -370,6 +370,7 @@
     <string name="player_design_tiktok">TikTok</string>
     <string name="player_design_simpmusic">SimpMusic</string>
     <string name="player_design_spatialflow">SpatialFlow</string>
+    <string name="player_design_looper">Looper</string>
     <string name="rich_synced">Rich Synced</string>
     <string name="line_synced">Line Synced</string>
     <string name="unsynced">Unsynced</string>

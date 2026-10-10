@@ -737,6 +737,7 @@ fun PlayerTopActions(
         PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.BITCHORD, PlayerDesignStyle.TIKTOK,
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
+        PlayerDesignStyle.LOOPER,
         -> {
             Unit
         }
@@ -1758,6 +1759,7 @@ fun PlayerPlaybackControls(
         PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.BITCHORD, PlayerDesignStyle.TIKTOK,
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
+        PlayerDesignStyle.LOOPER,
         -> {
             Unit
         }

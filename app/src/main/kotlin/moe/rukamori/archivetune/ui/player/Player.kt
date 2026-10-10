@@ -246,6 +246,7 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
 
 private const val SeekbarSettleToleranceMs = 1_500L
 private const val V7BackdropMinArtworkSizePx = 1_024
@@ -343,6 +344,25 @@ internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController 
 
     return controller
 }
+
+/**
+ * The numbered styles that take the player-wide double-tap-to-seek handler.
+ *
+ * Every other style owns its own gesture surface — V5 the little player's scrub overlay, V7 the
+ * immersive screen, V10 and Apple Music their artwork, BitChord / SimpMusic / SpatialFlow / Looper
+ * their artwork, TikTok its song page — so a second handler on the shared root would seek twice for
+ * a single double-tap. V5 is excluded for that reason as much as for its own overlay gestures.
+ */
+private val NumberedSeekDoubleTapStyles =
+    setOf(
+        PlayerDesignStyle.V1,
+        PlayerDesignStyle.V2,
+        PlayerDesignStyle.V3,
+        PlayerDesignStyle.V4,
+        PlayerDesignStyle.V6,
+        PlayerDesignStyle.V8,
+        PlayerDesignStyle.V9,
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -1101,12 +1121,12 @@ fun BottomSheetPlayer(
     // GPU work during ANY lyrics morph — but only isLyricsScreenVisible triggers the standalone
     // MikoLyricsTransition overlay. Without the inline state propagating, back-stack
     // LiquidGlass/Canvas GPU work competes with the sharedBounds morph and stutters.
-    var isAppleMusicInlineLyricsOpen by rememberSaveable { mutableStateOf(false) }
+    var isInlineLyricsOpen by rememberSaveable { mutableStateOf(false) }
 
     // Report full-screen lyrics visibility upward so the status bar can be hidden for every player
     // style while the lyrics overlay is showing, not only for the Immersive style.
     val lyricsFullScreenActive =
-        (isLyricsScreenVisible || isAppleMusicInlineLyricsOpen) && state.isExpandedOrExpanding
+        (isLyricsScreenVisible || isInlineLyricsOpen) && state.isExpandedOrExpanding
     LaunchedEffect(lyricsFullScreenActive) {
         onLyricsVisibilityChange(lyricsFullScreenActive)
     }
@@ -1610,7 +1630,13 @@ fun BottomSheetPlayer(
         Box(
             modifier =
                 Modifier
-                    .fillMaxSize(),
+                    .fillMaxSize()
+                    .playerSeekDoubleTap(
+                        enabled =
+                            state.isExpandedOrExpanding &&
+                                !aodModeEnabled &&
+                                playerDesignStyle in NumberedSeekDoubleTapStyles,
+                    ),
         ) {
         if (!state.isCollapsed &&
             !aodModeEnabled &&
@@ -2073,6 +2099,41 @@ fun BottomSheetPlayer(
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
+                    // Looper (4nx3b/ArchiveTune dev): typography-forward layout, its own slider and
+                    // seek-step gesture, sleeve artwork that drags to change track. Sized to whatever
+                    // box it is given, so both orientation mirrors render it identically.
+                    enrichedMetadata?.let { metadata ->
+                        LooperPlayerContent(
+                            mediaMetadata = metadata,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            position = position,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentFormat = currentFormat,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            onSeek = onSliderValueChange,
+                            onSeekFinished = onSliderValueChangeFinished,
+                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onQueueClick = openQueue,
+                            lyricsVisible = isInlineLyricsOpen,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(
+                                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
+                                    ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
                     // SimpMusic's default now-playing screen: a diagonal wash pulled from the
                     // artwork palette, the sleeve on a pager backed by the real queue, then the
@@ -2131,7 +2192,7 @@ fun BottomSheetPlayer(
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
                             onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
-                            onLyricsVisibilityChange = { isAppleMusicInlineLyricsOpen = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             landscape = true,
                             modifier =
                                 Modifier
@@ -2610,6 +2671,39 @@ fun BottomSheetPlayer(
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
+                    // Mirror of the landscape branch above; Looper sizes itself to its box.
+                    enrichedMetadata?.let { metadata ->
+                        LooperPlayerContent(
+                            mediaMetadata = metadata,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            position = position,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentFormat = currentFormat,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            onSeek = onSliderValueChange,
+                            onSeekFinished = onSliderValueChangeFinished,
+                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onQueueClick = openQueue,
+                            lyricsVisible = isInlineLyricsOpen,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(
+                                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
+                                    ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
                     // SimpMusic's default now-playing screen: a diagonal wash pulled from the
                     // artwork palette, the sleeve on a pager backed by the real queue, then the
@@ -2668,7 +2762,7 @@ fun BottomSheetPlayer(
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
                             onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
-                            onLyricsVisibilityChange = { isAppleMusicInlineLyricsOpen = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             // Full-bleed: the artwork runs under the status bar by design, so no
                             // top inset here (mirrors the reference layout).
                             modifier =

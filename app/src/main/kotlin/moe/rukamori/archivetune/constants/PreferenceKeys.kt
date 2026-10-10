@@ -1228,6 +1228,13 @@ enum class PlayerDesignStyle(
      * only it understands.
      */
     SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+
+    /**
+     * The Looper player (4nx3b/ArchiveTune dev) — typography-forward layout, its own slider and
+     * seek-step gesture, sleeve artwork that drags to change track. It paints no backdrop of its
+     * own, so unlike the other self-contained styles it leaves the background choice to the reader.
+     */
+    LOOPER,
     ;
 
     /** What to actually render: the reader's pick where it is offered, the style's own otherwise. */

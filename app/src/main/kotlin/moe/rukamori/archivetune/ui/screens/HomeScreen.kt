@@ -1,6 +1,7 @@
 /*
  * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
+ * Portions © 4nx3b — github.com/4nx3b (home screen exact port)
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  * Portions © vossgraves — github.com/vossgraves
@@ -12,6 +13,11 @@ import androidx.activity.compose.BackHandler
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -38,8 +44,9 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import moe.rukamori.archivetune.playback.queues.Queue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -60,6 +67,7 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.DisableBlurKey
+import moe.rukamori.archivetune.constants.HomeCatalogueSwitchKey
 import moe.rukamori.archivetune.constants.QuickPicks
 import moe.rukamori.archivetune.home.HomeAction
 import moe.rukamori.archivetune.home.HomeScreenState
@@ -70,11 +78,33 @@ import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.HomeViewModel
+import moe.rukamori.archivetune.db.entities.Album
+import moe.rukamori.archivetune.db.entities.Artist
+import moe.rukamori.archivetune.db.entities.LocalItem
+import moe.rukamori.archivetune.db.entities.Playlist
+import moe.rukamori.archivetune.db.entities.Song
+import moe.rukamori.archivetune.extensions.toMediaItem
+import moe.rukamori.archivetune.extensions.togglePlayPause
+import moe.rukamori.archivetune.innertube.models.AlbumItem
+import moe.rukamori.archivetune.innertube.models.ArtistItem
+import moe.rukamori.archivetune.innertube.models.PlaylistItem
+import moe.rukamori.archivetune.innertube.models.SongItem
+import moe.rukamori.archivetune.innertube.models.WatchEndpoint
+import moe.rukamori.archivetune.innertube.models.YTItem
+import moe.rukamori.archivetune.models.toMediaMetadata
+import moe.rukamori.archivetune.playback.queues.ListQueue
+import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.ui.menu.AlbumMenu
+import moe.rukamori.archivetune.ui.menu.ArtistMenu
+import moe.rukamori.archivetune.ui.menu.PlaylistMenu
+import moe.rukamori.archivetune.ui.menu.SongMenu
+import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import dev.chrisbanes.haze.hazeSource
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 
 private val HomeFeedMaxWidth = 1_200.dp
 
-/** Gap between the end of one shelf and the header of the next (BitChord: 26dp). */
 private val HomeSectionSpacing = 26.dp
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -85,13 +115,24 @@ fun HomeScreen(
     listState: LazyListState? = null,
     viewModel: HomeViewModel = hiltViewModel(),
 ) {
-    val playerConnection = LocalPlayerConnection.current ?: return
+    val playerConnection = LocalPlayerConnection.current
     val menuState = LocalMenuState.current
     val haptic = LocalHapticFeedback.current
 
     val screenState by viewModel.screenState.collectAsStateWithLifecycle()
-    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val isPlaying = playerConnection?.isPlaying?.collectAsStateWithLifecycle()?.value ?: false
+    val mediaMetadata = playerConnection?.mediaMetadata?.collectAsStateWithLifecycle()?.value
+    var pendingQueue by remember { mutableStateOf<Queue?>(null) }
+    val onPlayQueue: (Queue) -> Unit = { queue ->
+        if (playerConnection == null) pendingQueue = queue else playerConnection.playQueue(queue)
+    }
+    LaunchedEffect(playerConnection, pendingQueue) {
+        val connection = playerConnection ?: return@LaunchedEffect
+        val queue = pendingQueue ?: return@LaunchedEffect
+        pendingQueue = null
+        connection.playQueue(queue)
+    }
+    androidx.activity.compose.ReportDrawnWhen { screenState !is HomeScreenState.Loading }
 
     val lazyListState = listState ?: rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -138,16 +179,7 @@ fun HomeScreen(
         }
     }
 
-    // Attach the shell's floating-header connection inside this screen (Step 2b) so
-    // Home's scroll/fling writes Home's own header state and can't leak into another
-    // route's header. Bubbling reaches this ancestor Box before any shell connection.
-    //
-    // The same Box is the haze source for the BitChord-style progressive top-fade
-    // blur the shell renders over the Home route (see LocalHomeHazeState): it covers
-    // the full window area including the strip under the pinned top bar, which is
-    // exactly what the blur samples.
     val homeHazeState = LocalHomeHazeState.current
-    // A user who asked for no glass gets no tinted page.
     val (disableBlur) = rememberPreference(DisableBlurKey, false)
     Box(
         modifier =
@@ -162,14 +194,15 @@ fun HomeScreen(
                     },
                 ),
     ) {
+        // The home screen keeps its ORIGINAL full-intensity atmosphere wash
+        // (light mode) while blur effects are on — the light-mode look was
+        // never meant to change. In dark mode this draws nothing and the
+        // root layer's subtle gradient shows through instead.
         if (!disableBlur) {
             HomeAtmosphereBackground()
         }
         when (val state = screenState) {
             HomeScreenState.Loading -> {
-                // The first page of shelves is stood in for by shimmer skeletons laid out to the real
-                // metrics, rather than a centered spinner that throws the layout away and snaps
-                // everything down when the data lands.
                 HomeSkeletonFeed()
             }
 
@@ -198,6 +231,7 @@ fun HomeScreen(
                     isPlaying = isPlaying,
                     navController = navController,
                     playerConnection = playerConnection,
+                    onPlayQueue = onPlayQueue,
                     menuState = menuState,
                     haptic = haptic,
                     scope = scope,
@@ -271,7 +305,8 @@ private fun HomeContent(
     mediaMetadata: MediaMetadata?,
     isPlaying: Boolean,
     navController: NavController,
-    playerConnection: PlayerConnection,
+    playerConnection: PlayerConnection?,
+    onPlayQueue: (Queue) -> Unit,
     menuState: MenuState,
     haptic: HapticFeedback,
     scope: CoroutineScope,
@@ -283,6 +318,7 @@ private fun HomeContent(
         uiState
             .takeIf { it.quickPicksMode == QuickPicks.QUICK_PICKS }
             ?.remoteQuickPicks
+    val context = androidx.compose.ui.platform.LocalContext.current
     Box(modifier = modifier.fillMaxSize()) {
         val pullState = rememberPullToRefreshState()
         PullToRefreshBox(
@@ -293,20 +329,24 @@ private fun HomeContent(
             modifier = Modifier.fillMaxSize(),
         ) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-
-                // Partition remote sections into Live-performance and other.
-                // Hoisted outside the LazyColumn content lambda (which is NOT a
-                // @Composable scope) so `remember` is valid here. Without this,
-                // the partition would allocate fresh lists on every recomposition
-                // of HomeContent even when the sections hadn't changed — a
-                // measurable contributor to home-screen jank.
                 val allRemoteSections = uiState.homePage?.sections.orEmpty()
                 val (livePerformanceSections, otherRemoteSections) =
                     remember(allRemoteSections) {
-                        allRemoteSections.partition { section ->
-                            section.title.contains("Live performance", ignoreCase = true)
-                        }
+                        val live =
+                            allRemoteSections
+                                .filter { section ->
+                                    section.title.contains("Live performance", ignoreCase = true)
+                                }.filter { it.items.isNotEmpty() }
+                        val other =
+                            allRemoteSections
+                                .filter { section ->
+                                    !section.title.contains("Live performance", ignoreCase = true)
+                                }.filter { it.items.isNotEmpty() }
+                        live to other
                     }
+
+                val (homeCatalogueSwitchEnabled, _) =
+                    rememberPreference(HomeCatalogueSwitchKey, defaultValue = false)
 
                 LazyColumn(
                     state = lazyListState,
@@ -317,334 +357,228 @@ private fun HomeContent(
                             .fillMaxWidth()
                             .align(Alignment.TopCenter),
                 ) {
-                    // ── Big in-list page title (BitChord displayLarge) ──────────
-                    // The greeting owns the page title at rest; once the list
-                    // scrolls, the shell's top-bar title fades in over the blur
-                    // (BitChord's Apple Music behaviour — the two never fight
-                    // because the bar's title only exists while scrolled).
                     item(
                         key = "home_greeting_title",
                         contentType = "greeting_title",
                     ) {
-                        HomeGreetingHeader(
+                        HomeWelcomeHeader(
                             accountName = uiState.accountName,
                             modifier = Modifier.animateItem(),
                         )
                     }
 
-                    // Home feed layout policy: * "Jump back in" hero is ALWAYS rendered (when there
-                    // are hero picks) regardless of Minimal Mode, so the top of the home screen
-                    // always has the big artwork card.
-
+                    val availableWidth = maxWidth
                     val minimalMode = uiState.minimalHomeMode
 
-                    // "Jump back in" hero — large card + 2 stacked side cards.
-                    // Uses `heroPicks` (3 random songs from listening-preference
-                    // based quickPicks) instead of the last-played 3, so the hero
-                    // rotates fresh picks each visit. Mirrors the Apple Music /
-                    // Muzo home hero. Skipped entirely if the user has no
-                    // listening history yet (e.g. fresh install). PERSISTENT —
-                    // renders in both full and minimal modes.
+                    if (uiState.recentlyPlayed.size > 1) {
+                        item(
+                            key = "home_recently_played",
+                            contentType = "recently_played",
+                        ) {
+                            val recentSongs =
+                                remember(uiState.recentlyPlayed) {
+                                    uiState.recentlyPlayed.distinctBy { it.id }
+                                }
+                            Column(Modifier.animateItem()) {
+                                BitChordRecentsShelf(
+                                    songs = recentSongs,
+                                    mediaMetadata = mediaMetadata,
+                                    isPlaying = isPlaying,
+                                    availableWidth = availableWidth,
+                                    onPlaySong = { song, index ->
+                                        onPlayQueue(
+                                            moe.rukamori.archivetune.playback.queues.ListQueue(
+                                                title = context.getString(R.string.home_recently_played),
+                                                items = recentSongs.map { it.toMediaItem() },
+                                                startIndex = index,
+                                            ),
+                                        )
+                                    },
+                                    onSongLongClick = { song ->
+                                        menuState.show {
+                                            moe.rukamori.archivetune.ui.menu.SongMenu(
+                                                originalSong = song,
+                                                navController = navController,
+                                                onDismiss = menuState::dismiss,
+                                            )
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+
                     if (uiState.heroPicks.isNotEmpty()) {
                         item(
                             key = "home_jump_back_in",
                             contentType = "jump_back_in",
                         ) {
-                            JumpBackInHeroSection(
-                                recentlyPlayed = uiState.heroPicks,
-                                mediaMetadata = mediaMetadata,
-                                isPlaying = isPlaying,
-                                navController = navController,
-                                playerConnection = playerConnection,
-                                menuState = menuState,
-                                haptic = haptic,
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                    }
-
-                    if (!minimalMode && uiState.showCategoryChips) {
-                        item(
-                            key = "home_category_chips",
-                            contentType = "category_chips",
-                        ) {
-                            HomeCategoryChips(
-                                chips = uiState.homePage?.chips.orEmpty(),
-                                selectedChip = uiState.selectedChip,
-                                onChipSelected = { onAction(HomeAction.SelectChip(it)) },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                    }
-
-                    if (!minimalMode) {
-                        if (remoteQuickPicks?.items?.isNotEmpty() == true) {
-                            sectionSpacer("remote_quick_picks")
-                            item(
-                                key = "home_remote_quick_picks_header",
-                                contentType = "section_header",
-                            ) {
-                                HomeSectionHeader(
-                                    title = remoteQuickPicks.title,
-                                    leadingIcon = {
-                                        HomeSectionLeadingIcon(iconRes = R.drawable.discover_tune)
-                                    },
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
-                            item(
-                                key = "home_remote_quick_picks",
-                                contentType = "media_shelf",
-                            ) {
-                                HomePageSectionContent(
-                                    section = remoteQuickPicks,
-                                    mediaMetadata = mediaMetadata,
-                                    isPlaying = isPlaying,
-                                    navController = navController,
-                                    playerConnection = playerConnection,
-                                    menuState = menuState,
-                                    haptic = haptic,
-                                    scope = scope,
-                                    modifier = Modifier.animateItem(),
-                                )
+                            val heroSongs =
+                                remember(uiState.heroPicks) {
+                                    uiState.heroPicks.distinctBy { it.id }
+                                }
+                            Column(Modifier.animateItem()) {
+                                BitChordSectionHeader(title = stringResource(R.string.home_jump_back_in_badge))
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = BitChordPageGutter),
+                                    horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
+                                ) {
+                                    items(heroSongs, key = { "hero_${it.id}" }) { song ->
+                                        BitChordHeroCard(
+                                            artworkUrl = song.thumbnailUrl,
+                                            title = song.song.title,
+                                            subtitle = song.artists.joinToString { it.name },
+                                            isCurrent = mediaMetadata?.id == song.id,
+                                            isPlaying = isPlaying,
+                                            modifier = Modifier.width(bitChordHeroCardWidth(availableWidth)),
+                                            onClick = {
+                                                onPlayQueue(
+                                                    moe.rukamori.archivetune.playback.queues.ListQueue(
+                                                        title = context.getString(R.string.home_jump_back_in_badge),
+                                                        items = heroSongs.map { it.toMediaItem() },
+                                                        startIndex = heroSongs.indexOf(song),
+                                                    ),
+                                                )
+                                            },
+                                            onLongClick = {
+                                                menuState.show {
+                                                    moe.rukamori.archivetune.ui.menu.SongMenu(
+                                                        originalSong = song,
+                                                        navController = navController,
+                                                        onDismiss = menuState::dismiss,
+                                                    )
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(BitChordShelfBottomSpacing))
                             }
                         }
-                        // Note: upstream's local "Quick Picks" shelf
-                        // (`QuickPicksSection`, driven by `uiState.quickPicks`) is deliberately
-                        // absent here; the "Jump back in" hero is built from the same
-                        // listening-preference-based picks, and the remote YouTube Music "Quick
-                        // picks" shelf above covers the rest. Restoring the upstream composable
-                        // would mean porting back its carousel dependencies as well.
                     }
 
-                    // "Recently Played" — horizontal square-card row with a
-                    // clock-icon header. Renders in both full and minimal modes.
-                    if (uiState.recentlyPlayed.size > 1) {
-                        sectionSpacer("recently_played")
+                    if (remoteQuickPicks?.items?.isNotEmpty() == true) {
                         item(
-                            key = "home_recently_played_header",
-                            contentType = "section_header",
+                            key = "home_remote_quick_picks",
+                            contentType = "media_shelf",
                         ) {
-                            HomeSectionHeader(
-                                title = stringResource(R.string.home_recently_played),
-                                leadingIcon = {
-                                    HomeSectionLeadingIcon(iconRes = R.drawable.history)
-                                },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                        item(
-                            key = "home_recently_played",
-                            contentType = "recently_played",
-                        ) {
-                            RecentlyPlayedSection(
-                                recentlyPlayed = uiState.recentlyPlayed,
+                            BitChordYtItemShelf(
+                                title = remoteQuickPicks.title,
+                                items = remoteQuickPicks.items,
                                 mediaMetadata = mediaMetadata,
                                 isPlaying = isPlaying,
                                 navController = navController,
                                 playerConnection = playerConnection,
                                 menuState = menuState,
-                                haptic = haptic,
                                 modifier = Modifier.animateItem(),
                             )
                         }
                     }
 
-                    // In FULL mode, Speed Dial sits above Keep Listening (matches
-                    // upstream rukamori/ArchiveTune order). In MINIMAL mode, it is
-                    // relocated to sit directly below Keep Listening — the user
-                    // explicitly requested Speed Dial stay visible in minimal mode,
-                    // placed right under Keep Listening so they keep one-tap access
-                    // to their pinned items without re-enabling the full feed.
-                    if (!minimalMode && uiState.speedDialItems.isNotEmpty()) {
-                        sectionSpacer("speed_dial")
-                        item(
-                            key = "home_speed_dial_header",
-                            contentType = "section_header",
-                        ) {
-                            HomeSectionHeader(
-                                title = stringResource(R.string.speed_dial),
-                                leadingIcon = {
-                                    HomeSectionLeadingIcon(iconRes = R.drawable.bolt)
-                                },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                        item(
-                            key = "home_speed_dial",
-                            contentType = "speed_dial",
-                        ) {
-                            SpeedDialSection(
-                                speedDialItems = uiState.speedDialItems,
-                                mediaMetadata = mediaMetadata,
-                                isPlaying = isPlaying,
-                                navController = navController,
-                                playerConnection = playerConnection,
-                                menuState = menuState,
-                                haptic = haptic,
-                                scope = scope,
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                    }
-
-                    // Keep Listening — renders in both full and minimal modes.
                     if (uiState.keepListening.isNotEmpty()) {
-                        sectionSpacer("keep_listening")
-                        item(
-                            key = "home_keep_listening_header",
-                            contentType = "section_header",
-                        ) {
-                            HomeSectionHeader(
-                                title = stringResource(R.string.keep_listening),
-                                leadingIcon = {
-                                    HomeSectionLeadingIcon(iconRes = R.drawable.listening)
-                                },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
                         item(
                             key = "home_keep_listening",
                             contentType = "media_shelf",
                         ) {
-                            KeepListeningSection(
-                                keepListening = uiState.keepListening,
+                            BitChordLocalItemShelf(
+                                title = stringResource(R.string.keep_listening),
+                                items = uiState.keepListening,
                                 mediaMetadata = mediaMetadata,
                                 isPlaying = isPlaying,
                                 navController = navController,
                                 playerConnection = playerConnection,
                                 menuState = menuState,
-                                haptic = haptic,
                                 scope = scope,
                                 modifier = Modifier.animateItem(),
                             )
                         }
                     }
 
-                    // MINIMAL-mode-only Speed Dial placement: directly below
-                    // Keep Listening. Uses distinct item keys (`_minimal`
-                    // suffix) so LazyColumn doesn't try to reuse the full-mode
-                    // Speed Dial items when the toggle flips.
-                    if (minimalMode && uiState.speedDialItems.isNotEmpty()) {
-                        sectionSpacer("speed_dial_minimal")
+                    if (uiState.speedDialItems.isNotEmpty()) {
                         item(
-                            key = "home_speed_dial_header_minimal",
-                            contentType = "section_header",
-                        ) {
-                            HomeSectionHeader(
-                                title = stringResource(R.string.speed_dial),
-                                leadingIcon = {
-                                    HomeSectionLeadingIcon(iconRes = R.drawable.bolt)
-                                },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
-                        item(
-                            key = "home_speed_dial_minimal",
+                            key = "home_speed_dial",
                             contentType = "speed_dial",
                         ) {
-                            SpeedDialSection(
-                                speedDialItems = uiState.speedDialItems,
+                            BitChordLocalItemShelf(
+                                title = stringResource(R.string.speed_dial),
+                                items = uiState.speedDialItems,
                                 mediaMetadata = mediaMetadata,
                                 isPlaying = isPlaying,
                                 navController = navController,
                                 playerConnection = playerConnection,
                                 menuState = menuState,
-                                haptic = haptic,
                                 scope = scope,
                                 modifier = Modifier.animateItem(),
                             )
                         }
                     }
 
-                    // Live Performances — extracted from the remote homePage
-                    // sections and rendered as a dedicated block IMMEDIATELY
-                    // after Speed Dial in BOTH modes. This guarantees Live
-                    // Performances always stays below Speed Dial whether
-                    // Minimal Mode is on or off (user-requested invariant).
                     livePerformanceSections.forEachIndexed { index, section ->
                         val sectionKey = "${section.endpoint?.browseId ?: section.title}_$index"
-                        sectionSpacer("live_performances_$sectionKey")
-                        item(
-                            key = "home_live_performances_header_$sectionKey",
-                            contentType = "section_header",
-                        ) {
-                            HomePageSectionTitle(
-                                section = section,
-                                navController = navController,
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
                         item(
                             key = "home_live_performances_$sectionKey",
                             contentType = "media_shelf",
                         ) {
-                            HomePageSectionContent(
-                                section = section,
+                            BitChordYtItemShelf(
+                                title = section.title,
+                                items = section.items,
                                 mediaMetadata = mediaMetadata,
                                 isPlaying = isPlaying,
                                 navController = navController,
                                 playerConnection = playerConnection,
                                 menuState = menuState,
-                                haptic = haptic,
-                                scope = scope,
                                 modifier = Modifier.animateItem(),
                             )
                         }
                     }
 
                     if (!minimalMode && uiState.accountPlaylists.isNotEmpty()) {
-                        sectionSpacer("account_playlists")
                         item(
                             key = "home_account_playlists",
                             contentType = "media_shelf",
                         ) {
-                            Column(modifier = Modifier.animateItem()) {
-                                AccountPlaylistsTitle(
-                                    accountName = uiState.accountName,
-                                    accountImageUrl = uiState.accountImageUrl,
-                                    onClick = { navController.navigate("account") },
+                            Column(Modifier.animateItem()) {
+                                BitChordSectionHeader(
+                                    title = stringResource(R.string.your_youtube_playlists),
+                                    subtitle = uiState.accountName.takeIf { it.isNotBlank() },
                                 )
-                                AccountPlaylistsSection(
-                                    accountPlaylists = uiState.accountPlaylists,
-                                    mediaMetadata = mediaMetadata,
-                                    isPlaying = isPlaying,
-                                    navController = navController,
-                                    playerConnection = playerConnection,
-                                    menuState = menuState,
-                                    haptic = haptic,
-                                    scope = scope,
-                                )
+                                LazyRow(
+                                    contentPadding = PaddingValues(horizontal = BitChordPageGutter),
+                                    horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
+                                ) {
+                                    items(
+                                        uiState.accountPlaylists,
+                                        key = { "account_playlist_${it.id}" },
+                                    ) { playlist ->
+                                        BitChordShelfCard(
+                                            artworkUrl = playlist.thumbnail,
+                                            title = playlist.title,
+                                            subtitle = playlist.songCountText ?: "",
+                                            isCurrent = false,
+                                            isPlaying = false,
+                                            onClick = { navController.navigate("online_playlist/${playlist.id}") },
+                                            onLongClick = {},
+                                        )
+                                    }
+                                }
+                                Spacer(Modifier.height(BitChordShelfBottomSpacing))
                             }
                         }
                     }
 
                     if (!minimalMode && uiState.forgottenFavorites.isNotEmpty()) {
-                        sectionSpacer("forgotten_favorites")
-                        item(
-                            key = "home_forgotten_favorites_header",
-                            contentType = "section_header",
-                        ) {
-                            HomeSectionHeader(
-                                title = stringResource(R.string.forgotten_favorites),
-                                leadingIcon = {
-                                    HomeSectionLeadingIcon(iconRes = R.drawable.cached)
-                                },
-                                modifier = Modifier.animateItem(),
-                            )
-                        }
                         item(
                             key = "home_forgotten_favorites",
                             contentType = "song_shelf",
                         ) {
-                            ForgottenFavoritesSection(
-                                forgottenFavorites = uiState.forgottenFavorites,
+                            BitChordSongShelf(
+                                title = stringResource(R.string.forgotten_favorites),
+                                songs = uiState.forgottenFavorites,
                                 mediaMetadata = mediaMetadata,
                                 isPlaying = isPlaying,
                                 navController = navController,
-                                playerConnection = playerConnection,
                                 menuState = menuState,
-                                haptic = haptic,
+                                onPlayQueue = onPlayQueue,
                                 modifier = Modifier.animateItem(),
                             )
                         }
@@ -652,81 +586,45 @@ private fun HomeContent(
 
                     if (!minimalMode) {
                         uiState.similarRecommendations.forEach { recommendation ->
-                            sectionSpacer("similar_${recommendation.title.id}")
-                            item(
-                                key = "home_similar_header_${recommendation.title.id}",
-                                contentType = "section_header",
-                            ) {
-                                SimilarRecommendationsTitle(
-                                    recommendation = recommendation,
-                                    navController = navController,
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
                             item(
                                 key = "home_similar_${recommendation.title.id}",
                                 contentType = "media_shelf",
                             ) {
-                                SimilarRecommendationsSection(
-                                    recommendation = recommendation,
+                                BitChordYtItemShelf(
+                                    title = recommendation.title.title,
+                                    items = recommendation.items,
                                     mediaMetadata = mediaMetadata,
                                     isPlaying = isPlaying,
                                     navController = navController,
                                     playerConnection = playerConnection,
                                     menuState = menuState,
-                                    haptic = haptic,
-                                    scope = scope,
                                     modifier = Modifier.animateItem(),
                                 )
                             }
                         }
                     }
 
-                    // Other Remote homePage sections (non-Live-performance).
-                    //
-                    //  * Minimal mode: HIDDEN — Live performances are already
-                    //    rendered above (right after Speed Dial). All other
-                    //    remote shelves are filtered out in minimal mode.
-                    //
-                    //  * Full mode: render ALL non-Live remote shelves (e.g.
-                    //    "Fresh finds", "Old favourites", and any other
-                    //    algorithmic shelves YouTube Music returns) — matches
-                    //    upstream rukamori/ArchiveTune.
                     if (!minimalMode) {
                         otherRemoteSections.forEachIndexed { index, section ->
                             val sectionKey = "${section.endpoint?.browseId ?: section.title}_$index"
-                            sectionSpacer("remote_$sectionKey")
-                            item(
-                                key = "home_remote_header_$sectionKey",
-                                contentType = "section_header",
-                            ) {
-                                HomePageSectionTitle(
-                                    section = section,
-                                    navController = navController,
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
                             item(
                                 key = "home_remote_$sectionKey",
                                 contentType = "media_shelf",
                             ) {
-                                HomePageSectionContent(
-                                    section = section,
+                                BitChordYtItemShelf(
+                                    title = section.title,
+                                    items = section.items,
                                     mediaMetadata = mediaMetadata,
                                     isPlaying = isPlaying,
                                     navController = navController,
                                     playerConnection = playerConnection,
                                     menuState = menuState,
-                                    haptic = haptic,
-                                    scope = scope,
                                     modifier = Modifier.animateItem(),
                                 )
                             }
                         }
                     }
 
-                    // Another page of shelves is stood in for by a single shelf-shaped skeleton at the
-                    // tail rather than a spinner block.
                     if (uiState.isLoadingMore) {
                         homeFeedMoreSkeleton()
                     }
@@ -734,9 +632,6 @@ private fun HomeContent(
         }
         }
 
-        // The loader line at the bottom edge of the pinned top bar (BitChord
-        // RefreshLine). The home content's top inset is exactly the bar's height,
-        // so offsetting the line by that lands it on the bar's bottom edge.
         HomePullRefreshLine(
             refreshing = uiState.isRefreshing,
             distanceFraction = { pullState.distanceFraction },
@@ -757,15 +652,13 @@ private fun androidx.compose.foundation.lazy.LazyListScope.sectionSpacer(key: St
     }
 }
 
-/**
- * The home feed while the first page is still loading: the greeting is stood in for by a
- * title-shaped block and the shelves by skeleton cards laid out to the real metrics, so nothing
- * jumps when the data lands.
- */
 @Composable
-private fun HomeSkeletonFeed(modifier: Modifier = Modifier) {
+internal fun HomeSkeletonFeed(
+    modifier: Modifier = Modifier,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
+) {
     LazyColumn(
-        contentPadding = LocalPlayerAwareWindowInsets.current.asPaddingValues(),
+        contentPadding = contentPadding,
         modifier =
             modifier
                 .widthIn(max = HomeFeedMaxWidth)
@@ -775,7 +668,7 @@ private fun HomeSkeletonFeed(modifier: Modifier = Modifier) {
             HomeShimmerBox(
                 modifier =
                     Modifier
-                        .padding(horizontal = HomeFeedGutter)
+                        .padding(horizontal = BitChordPageGutter)
                         .padding(vertical = 14.dp)
                         .fillMaxWidth(0.55f)
                         .height(34.dp),
@@ -783,5 +676,238 @@ private fun HomeSkeletonFeed(modifier: Modifier = Modifier) {
             )
         }
         homeFeedSkeleton()
+    }
+}
+
+@Composable
+private fun BitChordSongShelf(
+    title: String,
+    songs: List<Song>,
+    mediaMetadata: MediaMetadata?,
+    isPlaying: Boolean,
+    navController: NavController,
+    menuState: MenuState,
+    onPlayQueue: (moe.rukamori.archivetune.playback.queues.Queue) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val distinct = remember(songs) { songs.distinctBy { it.id } }
+    Column(modifier) {
+        BitChordSectionHeader(title = title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = BitChordPageGutter),
+            horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
+        ) {
+            items(distinct, key = { "song_${it.id}" }) { song ->
+                BitChordShelfCard(
+                    artworkUrl = song.thumbnailUrl,
+                    title = song.song.title,
+                    subtitle = song.artists.joinToString { it.name },
+                    isCurrent = mediaMetadata?.id == song.id,
+                    isPlaying = isPlaying,
+                    onClick = {
+                        onPlayQueue(
+                            ListQueue(
+                                title = title,
+                                items = distinct.map { it.toMediaItem() },
+                                startIndex = distinct.indexOf(song),
+                            ),
+                        )
+                    },
+                    onLongClick = {
+                        menuState.show {
+                            SongMenu(
+                                originalSong = song,
+                                navController = navController,
+                                onDismiss = menuState::dismiss,
+                            )
+                        }
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(BitChordShelfBottomSpacing))
+    }
+}
+
+@Composable
+private fun BitChordLocalItemShelf(
+    title: String,
+    items: List<LocalItem>,
+    mediaMetadata: MediaMetadata?,
+    isPlaying: Boolean,
+    navController: NavController,
+    playerConnection: PlayerConnection?,
+    menuState: MenuState,
+    scope: kotlinx.coroutines.CoroutineScope,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        BitChordSectionHeader(title = title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = BitChordPageGutter),
+            horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
+        ) {
+            items(items, key = { "local_${it.id}" }) { localItem ->
+                val isActive = mediaMetadata?.id == localItem.id
+                BitChordShelfCard(
+                    artworkUrl = localItem.thumbnailUrl,
+                    title = localItem.title,
+                    subtitle =
+                        when (localItem) {
+                            is Song -> localItem.artists.joinToString { it.name }
+                            is Album -> localItem.artists.joinToString { it.name }
+                            is Playlist -> androidx.compose.ui.res.pluralStringResource(
+                                R.plurals.n_song,
+                                localItem.songCount,
+                                localItem.songCount,
+                            )
+                            is Artist -> ""
+                            else -> ""
+                        },
+                    isCurrent = isActive,
+                    isPlaying = isPlaying,
+                    onClick = {
+                        when (localItem) {
+                            is Song -> {
+                                if (isActive) {
+                                    playerConnection?.player?.togglePlayPause()
+                                } else {
+                                    playerConnection?.playQueue(
+                                        ListQueue(
+                                            title = title,
+                                            items = items.filterIsInstance<Song>().map { it.toMediaItem() },
+                                        ),
+                                    )
+                                }
+                            }
+
+                            is Album -> navController.navigate("album/${localItem.id}")
+
+                            is Artist -> navController.navigate("artist/${localItem.id}")
+
+                            is Playlist -> navController.navigate("local_playlist/${localItem.id}")
+
+                            else -> {}
+                        }
+                    },
+                    onLongClick = {
+                        menuState.show {
+                            when (localItem) {
+                                is Song ->
+                                    SongMenu(
+                                        originalSong = localItem,
+                                        navController = navController,
+                                        onDismiss = menuState::dismiss,
+                                    )
+
+                                is Album ->
+                                    AlbumMenu(
+                                        originalAlbum = localItem,
+                                        navController = navController,
+                                        onDismiss = menuState::dismiss,
+                                    )
+
+                                is Artist ->
+                                    ArtistMenu(
+                                        originalArtist = localItem,
+                                        coroutineScope = scope,
+                                        onDismiss = menuState::dismiss,
+                                    )
+
+                                is Playlist ->
+                                    PlaylistMenu(
+                                        playlist = localItem,
+                                        coroutineScope = scope,
+                                        onDismiss = menuState::dismiss,
+                                    )
+
+                                else -> {}
+                            }
+                        }
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(BitChordShelfBottomSpacing))
+    }
+}
+
+@Composable
+private fun BitChordYtItemShelf(
+    title: String,
+    items: List<YTItem>,
+    mediaMetadata: MediaMetadata?,
+    isPlaying: Boolean,
+    navController: NavController,
+    playerConnection: PlayerConnection?,
+    menuState: MenuState,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier) {
+        BitChordSectionHeader(title = title)
+        LazyRow(
+            contentPadding = PaddingValues(horizontal = BitChordPageGutter),
+            horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
+        ) {
+            items(items, key = { "yt_${it.id}" }) { item ->
+                BitChordShelfCard(
+                    artworkUrl = item.thumbnail,
+                    title = item.title,
+                    subtitle =
+                        when (item) {
+                            is SongItem -> item.artists?.joinToString { it.name } ?: ""
+                            is AlbumItem -> item.artists?.joinToString { it.name } ?: ""
+                            is ArtistItem -> ""
+                            is PlaylistItem -> item.songCountText ?: ""
+                            else -> ""
+                        },
+                    isCurrent =
+                        when (item) {
+                            is SongItem -> mediaMetadata?.id == item.id
+                            is AlbumItem -> mediaMetadata?.album?.id == item.id
+                            else -> false
+                        },
+                    isPlaying = isPlaying,
+                    onClick = {
+                        when (item) {
+                            is SongItem -> {
+                                if (item.id == mediaMetadata?.id) {
+                                    playerConnection?.player?.togglePlayPause()
+                                } else {
+                                    playerConnection?.playQueue(
+                                        YouTubeQueue(
+                                            item.endpoint ?: WatchEndpoint(videoId = item.id),
+                                            item.toMediaMetadata(),
+                                        ),
+                                    )
+                                }
+                            }
+
+                            is AlbumItem -> navController.navigate("album/${item.id}")
+
+                            is ArtistItem -> navController.navigate("artist/${item.id}")
+
+                            is PlaylistItem -> navController.navigate("online_playlist/${item.id}")
+
+                            else -> {}
+                        }
+                    },
+                    onLongClick = {
+                        val songItem = item as? SongItem
+                        if (songItem != null) {
+                            menuState.show {
+                                YouTubeSongMenu(
+                                    song = songItem,
+                                    navController = navController,
+                                    onDismiss = menuState::dismiss,
+                                )
+                            }
+                        }
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(BitChordShelfBottomSpacing))
     }
 }

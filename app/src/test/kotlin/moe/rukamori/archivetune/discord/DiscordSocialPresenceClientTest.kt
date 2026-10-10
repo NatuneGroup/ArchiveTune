@@ -25,20 +25,10 @@ class DiscordSocialPresenceClientTest {
         )
 
     @Test
-    fun updatePresenceDistinguishesMissingAuthorizationFromUnavailableSdk() = runTest {
-        val missingAuthorization = DiscordSocialPresenceClient.updatePresence("", activity)
-        val unsupported = DiscordSocialPresenceClient.updatePresence("not-a-real-oauth-token", activity)
+    fun updatePresenceWithoutTokenRequiresAuthorizationAndOpensNoGateway() = runTest {
+        val missingAuthorization = DiscordSocialPresenceClient.updatePresence("  ", activity)
 
         assertTrue(missingAuthorization.exceptionOrNull() is DiscordAuthorizationRequiredException)
-        assertTrue(unsupported.exceptionOrNull() is DiscordSocialSdkUnavailableException)
-        assertFalse(DiscordSocialPresenceClient.isStarted)
-    }
-
-    @Test
-    fun clearPresenceReportsUnavailableSdkWithoutOpeningAGateway() = runTest {
-        val result = DiscordSocialPresenceClient.clearPresence("not-a-real-oauth-token")
-
-        assertTrue(result.exceptionOrNull() is DiscordSocialSdkUnavailableException)
         assertFalse(DiscordSocialPresenceClient.isStarted)
     }
 

@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import moe.rukamori.archivetune.R
 
 val SimpMusicPoppins: FontFamily = FontFamily(Font(R.font.simpmusic_poppins))

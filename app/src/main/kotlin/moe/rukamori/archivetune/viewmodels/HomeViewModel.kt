@@ -17,16 +17,14 @@ import com.google.common.collect.ImmutableList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.aicontentfilter.FilterAiContentUseCase
@@ -113,17 +111,32 @@ data class AccountChannelUiModel(
 )
 
 /**
- * Generation gate for remote home responses. Each reload/chip interaction takes the
- * next generation; a response only publishes via [commit] when its generation is
- * still current, so a late chip/loadMore response can never overwrite a newer reload.
+ * Serializes remote home loads and gates their responses by generation. Each reload or chip
+ * interaction claims the next generation; a reload queued behind an active load waits rather
+ * than being dropped, stale queued work is skipped, and a late chip/loadMore response is
+ * discarded because its commit no longer matches the current generation.
  */
 internal class HomeRequestGate {
     private val lock = Any()
+    private val loadMutex = Mutex()
     private var generation = 0L
 
     fun current(): Long = synchronized(lock) { generation }
-
     fun next(): Long = synchronized(lock) { ++generation }
+
+    suspend fun runCurrentLoad(
+        request: Long,
+        load: suspend () -> Unit,
+    ): Boolean {
+        loadMutex.lock()
+        try {
+            if (request != current()) return false
+            load()
+            return true
+        } finally {
+            loadMutex.unlock()
+        }
+    }
 
     fun commit(
         request: Long,
@@ -423,16 +436,6 @@ class HomeViewModel
         private var chipLoadJob: Job? = null
         private var loadMoreJob: Job? = null
         private val remoteRequests = HomeRequestGate()
-
-        // Loads queue behind one another instead of being dropped while one is in flight: a
-        // pull-to-refresh during the initial load used to return early, and the initial response
-        // was then discarded as stale, leaving the feed empty. A refresh now cancels the in-flight
-        // load (its response would be stale anyway) and runs its own.
-        private val loadMutex = Mutex()
-
-        @Volatile private var activeLoadJob: Job? = null
-
-        @Volatile private var refreshJob: Job? = null
         private val refreshStartedAtMs = AtomicLong(0L)
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
@@ -614,23 +617,16 @@ class HomeViewModel
                     }
         }
 
-        private suspend fun load(
-            generation: Long = remoteRequests.current(),
-            supersede: Boolean = false,
-        ) {
-            if (supersede) activeLoadJob?.cancel()
-            loadMutex.withLock {
-                if (generation != remoteRequests.current()) return@withLock
-                activeLoadJob = currentCoroutineContext()[Job]
-                try {
-                    loadOnce(generation)
-                } finally {
-                    activeLoadJob = null
-                }
+        // Default claims a fresh generation per implicit call (side-effecting on purpose): the
+        // claimed generation is what lets runCurrentLoad skip this load if a newer request
+        // supersedes it while it waits on the mutex.
+        private suspend fun load(generation: Long = remoteRequests.next()) {
+            if (!remoteRequests.runCurrentLoad(generation) { performLoad(generation) }) {
+                Timber.d("Skipping superseded home load for generation $generation")
             }
         }
 
-        private suspend fun loadOnce(generation: Long) {
+        private suspend fun performLoad(generation: Long) {
             isLoading.value = true
             loadError.value = null
 
@@ -1120,7 +1116,6 @@ class HomeViewModel
                 val startedAt = refreshStartedAtMs.get()
                 val stuck = startedAt != 0L && System.currentTimeMillis() - startedAt > REFRESH_STUCK_WATCHDOG_MS
                 if (!stuck) return
-                refreshJob?.cancel()
                 isRefreshing.value = false
                 if (!isRefreshing.compareAndSet(false, true)) return
             }
@@ -1130,10 +1125,10 @@ class HomeViewModel
             // their late commits cannot interleave with the fresh page below.
             loadMoreJob?.cancel()
             chipLoadJob?.cancel()
-            val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
+            viewModelScope.launch(Dispatchers.IO) {
                 try {
                     supervisorScope {
-                        launch { load(generation, supersede = true) }
+                        launch { load(generation) }
                         launch { refreshQuickPicks() }
                         // Re-shuffle hero picks on every manual pull-to-refresh so the
                         // "Jump back in" hero at the top of the home page surfaces fresh
@@ -1160,15 +1155,10 @@ class HomeViewModel
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {
-                    // A watchdog-replaced refresh must not clear the flag its successor now owns.
-                    if (refreshJob === currentCoroutineContext()[Job]) {
-                        refreshStartedAtMs.set(0L)
-                        isRefreshing.value = false
-                    }
+                    refreshStartedAtMs.set(0L)
+                    isRefreshing.value = false
                 }
             }
-            refreshJob = job
-            job.start()
         }
 
         fun switchToAccount(

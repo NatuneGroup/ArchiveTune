@@ -3165,6 +3165,11 @@ class MainActivity : ComponentActivity() {
                                         ) {
                                             // The BitChord pill replaces the stock toolbar when its
                                             // switch is on. Apple Music keeps its coordinated bar.
+                                            // Same gate FloatingNavigationToolbar uses below: the
+                                            // app-wide Liquid Glass switch alone must not change the
+                                            // BitChord bar, only the Liquid Glass bar setting.
+                                            val navBarLiquidGlassBackdrop =
+                                                if (liquidGlassEnabled && liquidGlassNavBarEnabled) liquidGlassBackdrop else null
                                             if (navigationBarBitchordEnabled && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC) {
                                                 moe.rukamori.archivetune.ui.component.BitChordNavBar(
                                                     barHeight = navVisibleHeight,
@@ -3197,7 +3202,8 @@ class MainActivity : ComponentActivity() {
                                                             .padding(
                                                                 bottom = bottomInset + floatingBarsBottomPadding,
                                                             ),
-                                                    frostedBackdrop = navBarFrostedBackdrop,
+                                                    frostedBackdrop = if (navBarLiquidGlassBackdrop != null) null else navBarFrostedBackdrop,
+                                                    liquidGlassBackdrop = navBarLiquidGlassBackdrop,
                                                 )
                                             } else {
                                                 FloatingNavigationToolbar(

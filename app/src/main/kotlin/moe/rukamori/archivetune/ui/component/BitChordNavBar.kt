@@ -11,8 +11,10 @@
  * and a horizontal drag-to-switch gesture. Adapted from BitChord's
  * FloatingBottomBar (https://github.com/kushagrasinghx/BitChord, GPL-3.0)
  * via 4nx3b/ArchiveTune's re-implementation, over this fork's Screens +
- * frosted backdrop infrastructure. This fork has no throttled layer
- * backdrop, so only the frosted path is ported.
+ * frosted backdrop infrastructure, plus the fork's own liquid-glass path
+ * (`Modifier.liquidGlass` sampling a kyant `LayerBackdrop`) — the same
+ * backdrop `FloatingNavigationToolbar` already takes, in place of upstream's
+ * throttled layer backdrop.
  */
 
 package moe.rukamori.archivetune.ui.component
@@ -103,6 +105,7 @@ fun BitChordNavBar(
     frostedBackdrop: NavigationBarBackdrop? = null,
     frostedBlurRadiusPx: Float = 60f,
     frostedOverlayAlpha: Float = 0.30f,
+    liquidGlassBackdrop: PlatformBackdrop? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     val density = LocalDensity.current
@@ -165,10 +168,27 @@ fun BitChordNavBar(
                 .height(barHeight)
                 .padding(horizontal = BitChordBarGutter)
                 .padding(bottom = 2.dp)
+                    .then(
+                        if (liquidGlassBackdrop != null) {
+                            Modifier.liquidGlass(
+                                backdrop = liquidGlassBackdrop,
+                                shape = pillShape,
+                                interactive = false,
+                                baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
                 .clip(pillShape)
                 .borderGuard(),
         shape = pillShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f),
+        color =
+            if (liquidGlassBackdrop != null) {
+                Color.Transparent
+            } else {
+                MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.55f)
+            },
         contentColor = MaterialTheme.colorScheme.onSurface,
         tonalElevation = 0.dp,
         shadowElevation = 0.dp,

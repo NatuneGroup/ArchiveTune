@@ -7208,13 +7208,33 @@ class MusicService :
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
 
             scope.launch(Dispatchers.IO) {
-                // Always purge the streaming/player cache.
-                runCatching { playerCache.removeResource(currentMediaId) }
-                // Keep a complete offline download in place; deleting a user's saved download
-                // to recover from a read error is surprising. Only purge partial entries.
-                if (!isFullyDownloadedMedia) {
-                    runCatching { downloadCache.removeResource(currentMediaId) }
-                } else {
+                // Every key a download can use, not just the bare id: the bytes that broke the
+                // extractor are normally the source-prefixed ones ("qobuz:<id>", "tidal:<id>"),
+                // and purging only the bare key left them in place. The next prepare re-selected the
+                // same corrupt span, the track spent its whole retry budget and auto-skipped — which
+                // is what read as "songs keep skipping near the end".
+                val purgeKeys = DownloadSourceConfig.cacheKeysFor(currentMediaId)
+                purgeKeys.forEach { key -> runCatching { playerCache.removeResource(key) } }
+                // Keep a complete offline download in place; deleting a user's saved download to
+                // recover from a read error is surprising. Completeness is checked per key, because
+                // the complete download is often the source-prefixed one rather than the bare id.
+                var keptCompleteDownload = false
+                purgeKeys.forEach { key ->
+                    val complete =
+                        runCatching {
+                            val length =
+                                downloadCache
+                                    .getContentMetadata(key)
+                                    .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                            length > 0L && downloadCache.isCached(key, 0L, length)
+                        }.getOrDefault(false)
+                    if (complete) {
+                        keptCompleteDownload = true
+                    } else {
+                        runCatching { downloadCache.removeResource(key) }
+                    }
+                }
+                if (keptCompleteDownload) {
                     Timber.tag("MusicService").w(
                         "Keeping offline download for %s; corruption may require manual re-download",
                         currentMediaId,
@@ -9877,87 +9897,32 @@ class MusicService :
         requestedLength: Long,
         includePlayerCache: Boolean = true,
     ): Long {
-        val targetEnd = position.saturatingAdd(requestedLength)
-        var cursor = position
         val playerCacheSpans =
-            if (includePlayerCache) {
-                runCatching { playerCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-            } else {
-                emptyList()
-            }
-        val spans =
-            (
-                runCatching { downloadCache.getCachedSpans(key).toList() }.getOrNull().orEmpty() +
-                    playerCacheSpans
-            ).asSequence()
-                .filter { span -> span.position.saturatingAdd(span.length) > position }
-                .sortedBy { span -> span.position }
-                .toList()
-
-        for (span in spans) {
-            if (span.position > cursor) break
-            val spanEnd = span.position.saturatingAdd(span.length)
-            if (spanEnd > cursor) {
-                cursor = minOf(spanEnd, targetEnd)
-                if (cursor >= targetEnd) break
-            }
-        }
-
-        return (cursor - position).coerceAtLeast(0L)
+            if (includePlayerCache) cachedSpansOf(playerCache, key) else emptyList()
+        return continuousCachedLength(
+            spans = cachedSpansOf(downloadCache, key) + playerCacheSpans,
+            position = position,
+            requestedLength = requestedLength,
+        )
     }
 
-    private fun getContinuousCachedLength(
-        mediaId: String,
-        position: Long,
-        requestedLength: Long,
-        includePlayerCache: Boolean = true,
-    ): Long {
-        val targetEnd = position.saturatingAdd(requestedLength)
-        var cursor = position
-        // Include every source-prefixed cache key a download can use so
-        // that a song downloaded from a lossless source plays back as the
-        // lossless bytes — not as a re-fetched YouTube Music stream. Without
-        // this, playing a downloaded FLAC song would bypass the cached FLAC
-        // bytes (keyed as "qobuz:abc") and fall through to the YouTube
-        // resolver, which serves a different (lossy MP3/AAC) stream —
-        // causing the "Code 3003 UnrecognizedInputFormatException" when the
-        // Media3 extractors received an MP3 stream under a FLAC cache key.
-        val candidateKeys = DownloadSourceConfig.cacheKeysFor(mediaId)
-        val playerCacheSpans =
-            if (includePlayerCache) {
-                candidateKeys.flatMap { key ->
-                    runCatching { playerCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-                }
-            } else {
-                emptyList()
+    /**
+     * [Cache.getCachedSpans] as coverage windows. Holes ride along with `isCached = false` so
+     * [continuousCachedLength] can drop them: a range the index knows is missing must never be
+     * offered to ExoPlayer as cached bytes.
+     */
+    private fun cachedSpansOf(cache: Cache, key: String): List<CachedSpan> =
+        runCatching { cache.getCachedSpans(key).toList() }
+            .getOrNull()
+            .orEmpty()
+            .map { span ->
+                CachedSpan(
+                    position = span.position,
+                    length = span.length,
+                    isCached = span.isCached,
+                )
             }
-        val spans =
-            (
-                candidateKeys.flatMap { key ->
-                    runCatching { downloadCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-                } + playerCacheSpans
-            ).asSequence()
-                .filter { span -> span.position.saturatingAdd(span.length) > position }
-                .sortedBy { span -> span.position }
-                .toList()
 
-        for (span in spans) {
-            if (span.position > cursor) break
-            val spanEnd = span.position.saturatingAdd(span.length)
-            if (spanEnd > cursor) {
-                cursor = minOf(spanEnd, targetEnd)
-                if (cursor >= targetEnd) break
-            }
-        }
-
-        return (cursor - position).coerceAtLeast(0L)
-    }
-
-    private fun Long.saturatingAdd(value: Long): Long {
-        if (value <= 0L) return this
-        val result = this + value
-        return if (result < this) Long.MAX_VALUE else result
-    }
 
     private fun Uri.shouldBypassYouTubeResolver(): Boolean {
         val normalizedScheme = scheme?.lowercase(Locale.US)

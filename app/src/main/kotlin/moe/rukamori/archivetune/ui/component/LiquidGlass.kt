@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton as Material3IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -46,6 +47,32 @@ import com.kyant.backdrop.effects.vibrancy
 
 /** Alias so call sites can refer to a stable type name regardless of the backdrop impl. */
 typealias PlatformBackdrop = LayerBackdrop
+
+/**
+ * The liquid-glass knobs a frosted container reads.
+ *
+ * This fork has no user-facing Liquid Glass tuning surface — [liquidGlass] hard-codes its blur and
+ * lens — so this carries only what the Flamingo player's frosted container actually reads. STOCK
+ * reproduces exactly what the modifier does today: no backdrop vibrancy (saturation 1.0) and the
+ * modifier's own blur factor. Keeping the numbers behind one object means the ported player reads
+ * the same defaults as everything else instead of inventing a second, diverging set, and leaves a
+ * single place to grow a real tuning surface later.
+ */
+@Stable
+data class LiquidGlassTuning(
+    val blurFactor: Float = 1f,
+    val backdropVibrancy: Boolean = false,
+) {
+    /** Colour controls saturation for the sampled backdrop; vibrancy pushes it past 1. */
+    val saturation: Float = if (backdropVibrancy) 1.7f else 1.0f
+
+    companion object {
+        val STOCK = LiquidGlassTuning()
+    }
+}
+
+/** Defaults to [LiquidGlassTuning.STOCK], so a host that provides no tuning still renders. */
+val LocalLiquidGlassTuning = compositionLocalOf { LiquidGlassTuning.STOCK }
 
 /**
  * Records the content of the composable it is called on into a [LayerBackdrop]

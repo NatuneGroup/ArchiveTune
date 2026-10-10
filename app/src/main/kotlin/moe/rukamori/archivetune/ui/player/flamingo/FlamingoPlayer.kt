@@ -211,7 +211,6 @@ import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
-import moe.rukamori.archivetune.ui.player.CanvasLoopSync
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.positionInRoot
@@ -412,7 +411,6 @@ fun FlamingoPlayerContent(
     onLyricsVisibilityChange: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
     landscape: Boolean = false,
-    orientationRefreshEpoch: Int = 0,
 ) {
     Surface(
         modifier = modifier.fillMaxSize().playerSeekDoubleTap(),
@@ -448,7 +446,6 @@ fun FlamingoPlayerContent(
         val canvasVisualActive = canvasActive && !videoShowing && !isPreS
 
         var canvasRendering by remember { mutableStateOf(false) }
-        val canvasLoopSync = remember { CanvasLoopSync() }
 
         val canvasBackdropReveal by animateFloatAsState(
             targetValue = if (canvasVisualActive && canvasRendering) 1f else 0f,
@@ -889,7 +886,6 @@ fun FlamingoPlayerContent(
                                             visible = canvasSurfacesVisible,
                                             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
                                             maxVideoEdgePx = FlamingoCanvasBackdropMaxVideoEdgePx,
-                                            loopSyncFollower = canvasLoopSync,
                                             modifier =
                                                 Modifier
                                                     .fillMaxWidth(1f / FlamingoCanvasBackdropUpscale)
@@ -919,9 +915,7 @@ fun FlamingoPlayerContent(
                                     canvasPrimaryUrl = canvasPrimaryUrl,
                                     canvasFallbackUrl = canvasFallbackUrl,
                                     isPlaying = isPlayingStatusLambda.value && canvasSurfacesPlaying,
-                                    loopSyncLeader = canvasLoopSync,
                                     onPlaybackAvailabilityChange = { canvasRendering = it },
-                                    refreshEpoch = orientationRefreshEpoch,
                                     stageHeight = sharpStageHeight,
                                     fadeStrength = { (1f - canvasFlightAnim.value * 2.5f).coerceIn(0f, 1f) },
                                     staticArtworkUrl = artworkUrl,
@@ -2470,9 +2464,7 @@ private fun FlamingoCanvasStage(
     canvasPrimaryUrl: String?,
     canvasFallbackUrl: String?,
     isPlaying: Boolean,
-    loopSyncLeader: CanvasLoopSync,
     onPlaybackAvailabilityChange: (Boolean) -> Unit,
-    refreshEpoch: Int,
     stageHeight: Dp?,
     staticArtworkUrl: String?,
     fadeStrength: () -> Float = { 1f },
@@ -2527,10 +2519,14 @@ private fun FlamingoCanvasStage(
             isPlaying = isPlaying,
             visible = surfacesVisible,
             resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-            loopSyncLeader = loopSyncLeader,
-            onPlaybackAvailabilityChange = onPlaybackAvailabilityChange,
-            onFirstFrameRendered = { canvasFrameReady = true },
-            refreshEpoch = refreshEpoch,
+            // Upstream fades the static artwork out from onFirstFrameRendered; this fork's canvas
+            // player does not report that, so availability drives the same crossfade — the proxy the
+            // Looper port already uses, and one that cannot strand the fade on a frame that never
+            // arrives.
+            onPlaybackAvailabilityChange = { available ->
+                onPlaybackAvailabilityChange(available)
+                canvasFrameReady = available
+            },
             modifier = Modifier.matchParentSize(),
         )
     }

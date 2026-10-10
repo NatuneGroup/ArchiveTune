@@ -1219,6 +1219,7 @@ fun BottomSheetPlayer(
         LocalVideoOnPreferredHeightChange provides { videoPreferredHeight = it },
         LocalVideoAvailableHeights provides videoAvailableHeights,
         LocalVideoSelectedHeight provides videoSelectedHeight,
+        LocalVideoPlaybackFailed provides videoPlaybackFailed,
     ) {
     Box(modifier = Modifier.fillMaxSize()) {
     BottomSheet(

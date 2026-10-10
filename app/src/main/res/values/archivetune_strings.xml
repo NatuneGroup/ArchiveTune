@@ -1058,4 +1058,5 @@
     <string name="flamingo_queue_empty_desc">No items to play.</string>
     <string name="flamingo_queue_up_next">Continue Playing</string>
     <string name="flamingo_queue_added_toast">Added to queue</string>
+    <string name="flamingo_quality_lossless">Lossless</string>
 </resources>

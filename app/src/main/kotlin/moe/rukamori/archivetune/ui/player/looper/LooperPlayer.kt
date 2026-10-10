@@ -592,7 +592,9 @@ private fun LooperArtwork(
                 isPlaying = canvasPlaying,
                 visible = canvasVisible,
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-                onPlaybackAvailabilityChange = { canvasShowing = it },
+                // This fork's canvas player reports a captured frame, not playback availability;
+                // a frame is the moment the static artwork below is actually replaced.
+                onFrameCaptured = { frame -> canvasShowing = frame != null },
                 modifier =
                     Modifier
                         .fillMaxSize()

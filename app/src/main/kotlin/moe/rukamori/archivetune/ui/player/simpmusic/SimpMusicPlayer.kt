@@ -336,7 +336,7 @@ fun SimpMusicPlayerContent(
                 0.dp
             } else {
                 val twoLineHeight = with(density) {
-                    MaterialTheme.typography.labelMedium.lineHeight.toDp() * InlineLyricLinesPerPage
+                    MaterialTheme.typography.labelMedium.resolvedLineHeight().toDp() * InlineLyricLinesPerPage
                 }
                 maxOf(LyricBandHeight, twoLineHeight)
             }

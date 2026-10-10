@@ -122,4 +122,69 @@ class CachedReadWindowTest {
         assertEquals(window, window.coveringRecordedLength(recordedContentLength = 1_000_000L, explicitRequest = false))
         assertEquals(window, window.coveringRecordedLength(recordedContentLength = 30_000_000L, explicitRequest = true))
     }
+
+    @Test
+    fun aHoleBeforeTheRequestedRangeIsNotCoverage() {
+        val spans =
+            listOf(
+                CachedSpan(position = 0L, length = 1_000L, isCached = false),
+                CachedSpan(position = 1_000L, length = 2_400_158L, isCached = true),
+            )
+
+        assertEquals(621_374L, continuousCachedLength(spans, position = 1_778_785L, requestedLength = 621_374L))
+    }
+
+    @Test
+    fun aHoleInsideTheRequestedRangeStopsCoverageAtTheGap() {
+        val spans =
+            listOf(
+                CachedSpan(position = 0L, length = 1_000_000L, isCached = true),
+                CachedSpan(position = 1_000_000L, length = 1_400_159L, isCached = false),
+            )
+
+        assertEquals(500_000L, continuousCachedLength(spans, position = 500_000L, requestedLength = 1_900_000L))
+    }
+
+    @Test
+    fun aSeekWhoseBytesAreOnlyAHoleIsNotCached() {
+        val spans =
+            listOf(
+                CachedSpan(position = 0L, length = 1_000_000L, isCached = true),
+                CachedSpan(position = 1_000_000L, length = 1_400_159L, isCached = false),
+            )
+
+        assertEquals(0L, continuousCachedLength(spans, position = 1_778_785L, requestedLength = 621_374L))
+    }
+
+    @Test
+    fun aFullyCachedFileStillServesASeekIntoItsTail() {
+        val spans = listOf(CachedSpan(position = 0L, length = 2_400_159L, isCached = true))
+
+        assertEquals(621_374L, continuousCachedLength(spans, position = 1_778_785L, requestedLength = 621_374L))
+    }
+
+    @Test
+    fun adjacentCachedSpansJoinIntoOneRun() {
+        val spans =
+            listOf(
+                CachedSpan(position = 1_000L, length = 1_000L, isCached = true),
+                CachedSpan(position = 0L, length = 1_000L, isCached = true),
+            )
+
+        assertEquals(2_000L, continuousCachedLength(spans, position = 0L, requestedLength = 4_000L))
+    }
+
+    @Test
+    fun anOpenEndedSpanIsNotACoveredRange() {
+        val spans = listOf(CachedSpan(position = 0L, length = -1L, isCached = true))
+
+        assertEquals(0L, continuousCachedLength(spans, position = 0L, requestedLength = 4_000L))
+    }
+
+    @Test
+    fun aRequestOfNothingIsNeverCovered() {
+        val spans = listOf(CachedSpan(position = 0L, length = 2_400_159L, isCached = true))
+
+        assertEquals(0L, continuousCachedLength(spans, position = 0L, requestedLength = 0L))
+    }
 }

@@ -19,6 +19,7 @@
 package moe.rukamori.archivetune.ui.player.tiktok
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Column
@@ -48,6 +49,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.C
 import moe.rukamori.archivetune.utils.makeTimeString
+import moe.rukamori.archivetune.LocalPlayerConnection
+import moe.rukamori.archivetune.ui.player.SeekSkipStepMs
+import moe.rukamori.archivetune.ui.player.rememberSeekSkip
 
 /** Height of the progress row (time labels + bar). */
 internal val TIKTOK_PROGRESS_ROW_HEIGHT = 44.dp
@@ -90,6 +94,13 @@ internal fun TikTokProgressRow(
     modifier: Modifier = Modifier,
 ) {
     val seekEnabled = durationMs > 0L && durationMs != C.TIME_UNSET
+    // TikTok's song page is a vertical feed that already spends its double-tap on like, so the
+    // ±5s step the other styles reach by double-tapping the left or right half gets an explicit
+    // control here instead. Same SeekSkip the shared handler drives, so the step size, the
+    // progressive multiplier and the Discord artwork sync all match.
+    val playerConnection = LocalPlayerConnection.current
+    val seekSkip = if (playerConnection != null) rememberSeekSkip(playerConnection) else null
+    val stepSeconds = SeekSkipStepMs / 1000L
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -105,7 +116,12 @@ internal fun TikTokProgressRow(
             fontSize = 12.sp,
             maxLines = 1,
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(8.dp))
+        TikTokSeekStepButton(
+            label = "−$stepSeconds",
+            enabled = seekEnabled && seekSkip != null,
+            onClick = { seekSkip?.skip(forward = false) },
+        )
         TikTokProgressSlider(
             positionMs = positionMs,
             durationMs = durationMs,
@@ -113,6 +129,12 @@ internal fun TikTokProgressRow(
             onSeek = onSeek,
             onSeekFinished = onSeekFinished,
             modifier = Modifier.weight(1f),
+        )
+        Spacer(Modifier.width(8.dp))
+        TikTokSeekStepButton(
+            label = "+$stepSeconds",
+            enabled = seekEnabled && seekSkip != null,
+            onClick = { seekSkip?.skip(forward = true) },
         )
         Spacer(Modifier.width(10.dp))
         Text(
@@ -122,6 +144,28 @@ internal fun TikTokProgressRow(
             maxLines = 1,
         )
     }
+}
+
+/**
+ * A compact ±step control beside the scrubber, drawn as text to match the row's time labels — the
+ * feed has no icon set of its own and a 44dp row has no room for two 24dp glyphs.
+ */
+@Composable
+private fun TikTokSeekStepButton(
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = label,
+        color = if (enabled) Color.White else TIKTOK_INACTIVE_GRAY.copy(alpha = 0.5f),
+        fontSize = 13.sp,
+        maxLines = 1,
+        modifier =
+            Modifier
+                .clickable(enabled = enabled, onClick = onClick)
+                .padding(horizontal = 6.dp, vertical = 4.dp),
+    )
 }
 
 /**

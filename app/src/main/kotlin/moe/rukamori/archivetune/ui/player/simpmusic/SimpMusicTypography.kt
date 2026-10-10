@@ -33,6 +33,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.takeOrElse
 import moe.rukamori.archivetune.R
 
 val SimpMusicPoppins: FontFamily = FontFamily(Font(R.font.simpmusic_poppins))
@@ -107,3 +108,16 @@ val SimpMusicTypography: Typography =
                 fontFamily = SimpMusicPoppins,
             ),
     )
+
+/**
+ * The line height to measure against, for a style that may not declare one.
+ *
+ * [TextStyle.lineHeight] is [androidx.compose.ui.unit.TextUnit.Unspecified] unless the style sets
+ * it, and every style in [SimpMusicTypography] sets only a font size, weight and family. An
+ * unspecified unit cannot be converted: Compose's `Density.toPx(TextUnit)` checks that the unit is
+ * Sp and throws `IllegalStateException: Only Sp can convert to Px` from the frame that reads it,
+ * which is how the player crashed on any track with synced lyrics. Falling back to the style's own
+ * font size keeps the measured band derived from something real.
+ */
+internal fun TextStyle.resolvedLineHeight(): androidx.compose.ui.unit.TextUnit =
+    lineHeight.takeOrElse { fontSize }

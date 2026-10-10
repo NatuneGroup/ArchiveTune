@@ -168,6 +168,14 @@ val LocalVideoAvailableHeights = compositionLocalOf<List<Int>> { emptyList() }
 val LocalVideoSelectedHeight = compositionLocalOf<Int?> { null }
 
 /**
+ * Whether video playback for the current media item has already failed.
+ *
+ * Player styles that render their own video stage (Looper, Flamingo) read this to stop retrying the
+ * video path and fall back to artwork; the shared video branch in Player.kt uses the same flag.
+ */
+val LocalVideoPlaybackFailed = compositionLocalOf { false }
+
+/**
  * CompositionLocal that tracks whether the host Activity is currently in Picture-in-Picture mode.
  * When true, the player UI hides non-essential controls (overlays, gesture handlers, etc.) so the
  * PiP window shows only the video surface — matching the standard Android PiP experience.

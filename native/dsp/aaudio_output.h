@@ -80,6 +80,8 @@ public:
     bool isOpen() const;
 
 private:
+    void closeLocked();
+
     mutable std::mutex mutex_;
     AAudioStream* stream_ = nullptr;
     bool exclusiveGranted_ = false;

@@ -53,6 +53,11 @@ Java_tf_monochrome_android_audio_dsp_MixBusProcessor_nativeProcess(
     jint numFrames) {
     auto* engine = getEngine(enginePtr);
     if (!engine || numFrames <= 0) return;
+    if (!inputL || !inputR || !outputL || !outputR) return;
+    if (env->GetArrayLength(inputL) < numFrames || env->GetArrayLength(inputR) < numFrames ||
+        env->GetArrayLength(outputL) < numFrames || env->GetArrayLength(outputR) < numFrames) {
+        return;
+    }
 
     float* inL = env->GetFloatArrayElements(inputL, nullptr);
     float* inR = env->GetFloatArrayElements(inputR, nullptr);

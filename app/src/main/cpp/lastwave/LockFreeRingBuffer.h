@@ -50,18 +50,25 @@ public:
 
     std::size_t read(T* destination, std::size_t count) noexcept {
         if (destination == nullptr || count == 0) return 0;
-        const auto read = readIndex_.load(std::memory_order_relaxed);
+        auto read = readIndex_.load(std::memory_order_acquire);
         const auto write = writeIndex_.load(std::memory_order_acquire);
         const auto readable = std::min(count, static_cast<std::size_t>(write - read));
+        if (readable == 0) return 0;
         copyFromRing(destination, readable, static_cast<std::size_t>(read % capacity_));
-        readIndex_.store(read + readable, std::memory_order_release);
+        // clear() may have moved the read index while the copy was in flight;
+        // the samples copied are then stale, so they are not handed out.
+        if (!readIndex_.compare_exchange_strong(
+                read, read + readable, std::memory_order_acq_rel)) {
+            return 0;
+        }
         return readable;
     }
 
-    // Drops all buffered samples. The producer must be quiesced and the
-    // consumer parked on another buffer before calling this. Advancing the
-    // read index (instead of zeroing both) keeps any already-in-flight read
-    // copying from untouched memory.
+    // Drops all buffered samples. Safe against a concurrent read(): it only
+    // advances the read index (never rewinds, never zeroes), and read()
+    // publishes its own advance with a compare-exchange, so a read that
+    // straddles a clear() returns nothing instead of leaving read > write.
+    // The producer must be quiesced.
     void clear() noexcept {
         const auto write = writeIndex_.load(std::memory_order_acquire);
         readIndex_.store(write, std::memory_order_release);

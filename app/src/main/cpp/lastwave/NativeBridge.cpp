@@ -285,6 +285,7 @@ Java_com_lastwave_app_playback_NativeAudioEngine_nativeProcessMediaPcm(
         input + inputOffset,
         frames,
         format,
+        channelCount,
         reinterpret_cast<float*>(output + outputOffset),
         outputFrameCapacity,
         outputFrames)) {
@@ -323,6 +324,7 @@ Java_com_lastwave_app_playback_NativeAudioEngine_nativeFlushMediaProcessor(
         (static_cast<std::size_t>(outputCapacity) - offset) / bytesPerFrame;
     std::size_t outputFrames = 0;
     if (!engine->flushMediaProcessor(
+            channelCount,
             reinterpret_cast<float*>(output + offset),
             frameCapacity,
             outputFrames)) {

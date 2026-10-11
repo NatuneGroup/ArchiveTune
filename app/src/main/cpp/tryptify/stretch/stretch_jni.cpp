@@ -150,9 +150,14 @@ JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_stretch_StretchNative_nativeSetSemitones(
         JNIEnv *, jclass, jlong handle, jfloat semitones) {
     if (auto *e = asEngine(handle)) {
+        // The ratio is a double that process() reads on every frame; a plain
+        // write from the UI thread can tear on 32-bit ARM. Spinning is fine
+        // here, the audio thread holds the flag for one block at most.
+        while (e->busy.test_and_set(std::memory_order_acquire)) {}
         e->semitones = semitones;
         e->stretch.setTransposeSemitones(semitones);
         e->wsola.setSemitones(semitones);
+        e->busy.clear(std::memory_order_release);
     }
 }
 
@@ -259,6 +264,11 @@ Java_tf_monochrome_android_audio_stretch_StretchNative_nativeProcess(
     auto *in = static_cast<const float *>(env->GetDirectBufferAddress(inBuf));
     auto *out = static_cast<float *>(env->GetDirectBufferAddress(outBuf));
     if (in == nullptr || out == nullptr) return 0;
+    const jlong needed = static_cast<jlong>(frames) * e->channels * static_cast<jlong>(sizeof(float));
+    if (env->GetDirectBufferCapacity(inBuf) < needed ||
+        env->GetDirectBufferCapacity(outBuf) < needed) {
+        return 0;
+    }
 
     // Tried, never waited on. A reconfigure is in flight, so this block goes
     // through unpitched rather than the audio thread blocking on it.

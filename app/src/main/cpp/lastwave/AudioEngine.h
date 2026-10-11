@@ -71,10 +71,12 @@ public:
         const void* pcm,
         std::size_t frameCount,
         PcmFormat format,
+        std::int32_t channelCount,
         float* output,
         std::size_t outputCapacityFrames,
         std::size_t& outputFrameCount);
     [[nodiscard]] bool flushMediaProcessor(
+        std::int32_t channelCount,
         float* output,
         std::size_t outputCapacityFrames,
         std::size_t& outputFrameCount);
@@ -147,6 +149,7 @@ private:
     std::atomic<bool> restartAllowed_{false};
     std::atomic<bool> playbackEnabled_{false};
     std::atomic<bool> inputAlreadyProcessed_{false};
+    std::atomic<bool> flushPending_{false};
     std::atomic<float> targetOutputVolume_{1.0F};
     std::atomic<std::uint64_t> renderedFrames_{0};
     std::atomic<std::uint64_t> underrunCount_{0};

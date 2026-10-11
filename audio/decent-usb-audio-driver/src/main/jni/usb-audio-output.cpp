@@ -20,6 +20,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <poll.h>
 #include <unistd.h>
 #include <time.h>
 #include <sys/ioctl.h>
@@ -299,9 +300,17 @@ static int submitRingUrb(UsbAudioContext *ctx, const int *pktSizes, int numPacke
 static int reapOldestUrb(UsbAudioContext *ctx, int timeoutMs) {
     struct usbdevfs_urb *c = nullptr;
 
-    // Poll with 125µs interval matching USB high-speed microframe timing.
-    int iterations = timeoutMs * 8;  // 8 iterations per ms (125µs each)
-    for (int i = 0; i < iterations; i++) {
+    // Callers block here whenever the ring is full, which is most of the time
+    // during steady playback. usbfs raises POLLOUT when a completed URB is
+    // queued, so wait on that instead of spinning at 8 kHz; the wait is capped
+    // at 2 ms so a missed wakeup degrades to coarse polling.
+    auto nowUs = []() -> int64_t {
+        struct timespec ts;
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        return static_cast<int64_t>(ts.tv_sec) * 1000000LL + ts.tv_nsec / 1000;
+    };
+    const int64_t deadlineUs = nowUs() + static_cast<int64_t>(timeoutMs) * 1000LL;
+    for (;;) {
         int ret = ioctl(ctx->fd, USBDEVFS_REAPURBNDELAY, &c);
         if (ret == 0 && c != nullptr) {
             // Check if this is a feedback URB (not an audio URB)
@@ -319,9 +328,17 @@ static int reapOldestUrb(UsbAudioContext *ctx, int timeoutMs) {
             LOGE("reapOldestUrb: error errno=%d (%s)", errno, strerror(errno));
             return -1;
         }
-        usleep(125);  // 125µs = 1 USB microframe
+        const int64_t remainingUs = deadlineUs - nowUs();
+        if (remainingUs <= 0) return -2;  // timeout
+        struct pollfd pfd = {};
+        pfd.fd = ctx->fd;
+        pfd.events = POLLOUT;
+        const int waitMs = remainingUs >= 2000 ? 2 : 1;
+        if (poll(&pfd, 1, waitMs) > 0 && (pfd.revents & (POLLERR | POLLHUP | POLLNVAL))) {
+            LOGE("reapOldestUrb: device gone (revents=0x%x)", pfd.revents);
+            return -1;
+        }
     }
-    return -2;  // timeout
 }
 
 /**
@@ -569,6 +586,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWrite(
 
     jint totalSamples = env->GetArrayLength(pcm);
     if (totalSamples <= 0) return;
+    if (ctx->channelCount <= 0) return;
     int totalFrames = totalSamples / ctx->channelCount;
     int totalBytes = totalSamples * ctx->bytesPerSample;
 
@@ -576,7 +594,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWrite(
     if (!ctx->transferBuffer || ctx->transferBufferCapacity < totalBytes) {
         free(ctx->transferBuffer);
         ctx->transferBuffer = (uint8_t *)malloc(totalBytes);
-        ctx->transferBufferCapacity = totalBytes;
+        ctx->transferBufferCapacity = ctx->transferBuffer ? totalBytes : 0;
+        if (!ctx->transferBuffer) return;
     }
 
     struct timespec writeStart, writeEnd;
@@ -944,6 +963,7 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
     if (inputBytes <= 0) return;
 
     int inputBps = inputBitDepth / 8;
+    if (inputBps <= 0 || ctx->channelCount <= 0) return;
     int totalSamples = inputBytes / inputBps;
     int totalFrames = totalSamples / ctx->channelCount;
     int outputBytes = totalSamples * ctx->bytesPerSample;
@@ -952,7 +972,8 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
     if (!ctx->transferBuffer || ctx->transferBufferCapacity < outputBytes) {
         free(ctx->transferBuffer);
         ctx->transferBuffer = (uint8_t *)malloc(outputBytes);
-        ctx->transferBufferCapacity = outputBytes;
+        ctx->transferBufferCapacity = ctx->transferBuffer ? outputBytes : 0;
+        if (!ctx->transferBuffer) return;
     }
 
     jbyte *rawData = env->GetByteArrayElements(pcm, nullptr);
@@ -975,11 +996,11 @@ Java_com_decent_usbaudio_UsbAudioStream_nativeUsbAudioWriteRaw(
         if (hasLowByteData && isRightAligned24) {
             shiftInt32From24((uint8_t *)rawData, ctx->transferBuffer, totalSamples);
         } else {
-            memcpy(ctx->transferBuffer, rawData, inputBytes);
+            memcpy(ctx->transferBuffer, rawData, outputBytes);
         }
     } else if (inputBitDepth == ctx->bitDepth) {
         // Same bit depth (16->16 or 24->24): zero-copy
-        memcpy(ctx->transferBuffer, rawData, inputBytes);
+        memcpy(ctx->transferBuffer, rawData, outputBytes);
     } else if (inputBitDepth == 16 && ctx->bitDepth == 24) {
         padInt16ToInt24((uint8_t *)rawData, ctx->transferBuffer, totalSamples);
     } else if (inputBitDepth == 16 && ctx->bitDepth == 32) {

@@ -25,7 +25,7 @@ int32_t AaudioExclusiveStream::open(int32_t sampleRate,
                                      int32_t bufferCapacityFrames) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (open_) {
-        close();
+        closeLocked();
     }
 
     AAudioStreamBuilder* builder = nullptr;
@@ -79,7 +79,7 @@ int32_t AaudioExclusiveStream::open(int32_t sampleRate,
         // The caller asked for exclusive and the HAL demoted us to shared:
         // report failure so the caller falls back to the standard sink
         // instead of silently running through the mixer anyway.
-        close();
+        closeLocked();
         return AAUDIO_ERROR_INVALID_STATE;
     }
     return AAUDIO_OK;
@@ -142,6 +142,10 @@ int32_t AaudioExclusiveStream::requestStop() {
 
 void AaudioExclusiveStream::close() {
     std::lock_guard<std::mutex> lock(mutex_);
+    closeLocked();
+}
+
+void AaudioExclusiveStream::closeLocked() {
     if (stream_ != nullptr) {
         AAudioStream_close(stream_);
         stream_ = nullptr;

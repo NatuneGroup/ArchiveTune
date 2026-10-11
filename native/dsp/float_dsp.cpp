@@ -136,11 +136,11 @@ void FloatDsp::toShort(const float* in, int16_t* out, size_t samples) {
         rngState_ ^= rngState_ << 13;
         rngState_ ^= rngState_ >> 17;
         rngState_ ^= rngState_ << 5;
-        const float r1 = (static_cast<float>(rngState_ >> 8) / 8388608.0f) - 1.0f;  // [0,1) - 0.5
+        const float r1 = (static_cast<float>(rngState_ >> 8) / 16777216.0f) - 0.5f;
         rngState_ ^= rngState_ << 13;
         rngState_ ^= rngState_ >> 17;
         rngState_ ^= rngState_ << 5;
-        const float r2 = (static_cast<float>(rngState_ >> 8) / 8388608.0f) - 1.0f;
+        const float r2 = (static_cast<float>(rngState_ >> 8) / 16777216.0f) - 0.5f;
         // Scale to int16 range, add one LSB of TPDF noise, round to nearest.
         const float scaled = clamp1(in[i]) * 32767.0f;
         const float dithered = scaled + (r1 - r2);

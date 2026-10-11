@@ -16,8 +16,10 @@
 
 #include <jni.h>
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
+#include <vector>
 
 #include "dsp/float_dsp.h"
 #include "dsp/aaudio_output.h"
@@ -31,11 +33,6 @@ using archivetune::dsp::FloatDsp;
 using archivetune::dsp::AaudioExclusiveStream;
 
 namespace {
-
-// Every JNI body routes through this guard so a std::bad_alloc (or anything
-// else that unwinds) never crosses the JNI frame — an exception escaping a
-// native frame is a hard abort with no Java-side log (the same convention as
-// the analyzer bridges).
 
 inline FloatDsp* dspOf(jlong handle) {
     return reinterpret_cast<FloatDsp*>(static_cast<intptr_t>(handle));
@@ -56,6 +53,28 @@ int16_t* directShorts(JNIEnv* env, jobject buffer, jint samples) {
     if (ptr == nullptr) return nullptr;
     if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(samples) * 2) return nullptr;
     return ptr;
+}
+
+// The input window [offsetBytes, offsetBytes + bytes) of a direct buffer, or
+// null if it does not fit.
+const uint8_t* directWindow(JNIEnv* env, jobject buffer, jint offsetBytes, jlong bytes) {
+    auto* base = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
+    if (base == nullptr || offsetBytes < 0) return nullptr;
+    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(offsetBytes) + bytes) return nullptr;
+    return base + offsetBytes;
+}
+
+// Bounds frames * channels well inside jint.
+bool validShape(jint frames, jint channels) {
+    return frames > 0 && frames <= (1 << 24) && channels > 0 && channels <= 32;
+}
+
+// Reused across calls so the audio thread allocates only when a block is
+// larger than any seen before.
+std::vector<float>& scratchFor(size_t samples) {
+    thread_local std::vector<float> scratch;
+    if (scratch.size() < samples) scratch.resize(samples);
+    return scratch;
 }
 
 }  // namespace
@@ -106,11 +125,12 @@ extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToFloat)(
     jint frames, jint channels) {
     try {
         FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
         const jint samples = frames * channels;
-        auto* inBase = static_cast<uint8_t*>(env->GetDirectBufferAddress(in));
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
         auto* outPtr = directFloats(env, out, samples);
-        if (dsp == nullptr || inBase == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const int16_t*>(inBase + inOffsetBytes);
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
         for (jint i = 0; i < samples; ++i) {
             outPtr[i] = static_cast<float>(inPtr[i]) / 32768.0f;
         }
@@ -125,12 +145,13 @@ extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessFloatToFloat)(
     jint frames, jint channels) {
     try {
         FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
         const jint samples = frames * channels;
-        auto* inBase = static_cast<uint8_t*>(env->GetDirectBufferAddress(in));
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 4);
         auto* outPtr = directFloats(env, out, samples);
-        if (dsp == nullptr || inBase == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const float*>(inBase + inOffsetBytes);
-        std::memcpy(outPtr, inPtr, static_cast<size_t>(samples) * sizeof(float));
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const float*>(inBytes);
+        std::memmove(outPtr, inPtr, static_cast<size_t>(samples) * sizeof(float));
         dsp->process(outPtr, frames, channels);
     } catch (...) {
     }
@@ -143,18 +164,19 @@ extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToShort)(
     jint frames, jint channels) {
     try {
         FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
         const jint samples = frames * channels;
-        auto* inBase = static_cast<uint8_t*>(env->GetDirectBufferAddress(in));
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
         auto* outPtr = directShorts(env, out, samples);
-        if (dsp == nullptr || inBase == nullptr || outPtr == nullptr) return;
-        const auto* inPtr = reinterpret_cast<const int16_t*>(inBase + inOffsetBytes);
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
         // Convert up, process in 32-bit float, dither back down.
-        std::vector<float> scratch(static_cast<size_t>(samples));
+        float* scratch = scratchFor(static_cast<size_t>(samples)).data();
         for (jint i = 0; i < samples; ++i) {
-            scratch[static_cast<size_t>(i)] = static_cast<float>(inPtr[i]) / 32768.0f;
+            scratch[i] = static_cast<float>(inPtr[i]) / 32768.0f;
         }
-        dsp->process(scratch.data(), frames, channels);
-        dsp->toShort(scratch.data(), outPtr, static_cast<size_t>(samples));
+        dsp->process(scratch, frames, channels);
+        dsp->toShort(scratch, outPtr, static_cast<size_t>(samples));
     } catch (...) {
     }
 }
@@ -234,10 +256,11 @@ extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeWrite)(
     try {
         AaudioExclusiveStream* stream = streamOf(handle);
         if (stream == nullptr) return -899 /* AAUDIO_ERROR_INVALID_STATE */;
+        if (!validShape(frames, channels)) return -898 /* AAUDIO_ERROR_ILLEGAL_ARGUMENT */;
         const jint samples = frames * channels;
         auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
         const jlong capacity = env->GetDirectBufferCapacity(buffer);
-        if (base == nullptr ||
+        if (base == nullptr || offsetBytes < 0 ||
             capacity < static_cast<jlong>(offsetBytes) +
                            static_cast<jlong>(samples) * (isFloat != JNI_FALSE ? 4 : 2)) {
             return -898 /* AAUDIO_ERROR_ILLEGAL_ARGUMENT */;
@@ -251,21 +274,20 @@ extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeWrite)(
                 static_cast<size_t>(frames), channels, timeoutMs));
         }
         // Convert (and scale) into scratch first.
-        std::vector<float> scratch(static_cast<size_t>(samples));
+        float* scratch = scratchFor(static_cast<size_t>(samples)).data();
         if (isFloat != JNI_FALSE) {
             auto* inPtr = reinterpret_cast<const float*>(data);
             for (jint i = 0; i < samples; ++i) {
-                scratch[static_cast<size_t>(i)] = inPtr[i] * volume;
+                scratch[i] = inPtr[i] * volume;
             }
         } else {
             auto* inPtr = reinterpret_cast<const int16_t*>(data);
             for (jint i = 0; i < samples; ++i) {
-                scratch[static_cast<size_t>(i)] =
-                    (static_cast<float>(inPtr[i]) / 32768.0f) * volume;
+                scratch[i] = (static_cast<float>(inPtr[i]) / 32768.0f) * volume;
             }
         }
         return static_cast<jint>(stream->write(
-            scratch.data(), static_cast<size_t>(frames), channels, timeoutMs));
+            scratch, static_cast<size_t>(frames), channels, timeoutMs));
     } catch (...) {
         return -900 /* AAUDIO_ERROR_INTERNAL */;
     }

@@ -248,8 +248,10 @@ static inline void writeWaveSilence(Bus& bus, int numFrames) {
 
 void DspEngine::process(float* left, float* right, int numFrames) {
     if (numFrames <= 0) return;
-    // Lock for reading plugin chains (brief lock — plugins don't allocate during process)
-    std::lock_guard<std::mutex> lock(chainMutex_);
+    // The audio thread never waits on a control thread: if a setter or a
+    // reconfigure holds the chain, this block passes through untouched.
+    std::unique_lock<std::mutex> lock(chainMutex_, std::try_to_lock);
+    if (!lock.owns_lock()) return;
     // Every scratch buffer holds maxBlockSize_ frames; a longer block runs in
     // pieces instead of writing past them.
     for (int done = 0; done < numFrames; done += maxBlockSize_) {

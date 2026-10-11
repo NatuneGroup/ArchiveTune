@@ -7,6 +7,7 @@
 #include <libusb.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 
 #define TAG "LibusbUacDriver"
@@ -988,16 +989,12 @@ bool LibusbUacDriver::start(int sampleRateHz, int bitsPerSample, int channels) {
 }
 
 void LibusbUacDriver::flushRing() {
-    // Lockless reset of the SPSC ring. Producer + consumer both
-    // observe head==tail meaning empty on the very next access.
-    // Ordering: store tail first, then head — between the two
-    // moments, drainRing sees fewer bytes than actually present
-    // (worst case: it pads with silence, which is what we want
-    // anyway). Other order (head, then tail) could briefly let
-    // drainRing think there are huge ring contents that are
-    // actually stale.
-    ringTail_.store(0, std::memory_order_release);
-    ringHead_.store(0, std::memory_order_release);
+    // Discard by moving the consumer cursor up to the producer cursor. Both
+    // cursors stay monotonic: rewinding them to 0 from this thread races
+    // with drainRing's tail store and can leave tail > head, which reads as
+    // a ~2^64-byte backlog. drainRing's CAS on the tail detects this move.
+    ringTail_.store(ringHead_.load(std::memory_order_acquire),
+                    std::memory_order_release);
     // Position counters reset too — flushRing is called between
     // tracks (Media3 flush()), and stale frame counts would let
     // getCurrentPositionUs report frames from the previous track.
@@ -1204,19 +1201,48 @@ void LibusbUacDriver::stopIsoPump() {
         if (fxfr) libusb_cancel_transfer(fxfr);
     }
     // Drain the event loop until every transfer has reported completion
-    // (cancellation counts). Bounded wait — if libusb wedges we'd
-    // rather log and move on than hang the audio thread.
-    for (int spin = 0; spin < 200; ++spin) {
-        if (inflight_.load(std::memory_order_acquire) == 0) break;
+    // (cancellation counts). Cancel is repeated each pass: a completion
+    // callback that passed its stopRequested_ check just before the flag
+    // was set resubmits its transfer after the first cancel found it idle.
+    constexpr auto kDrainTimeout = std::chrono::seconds(2);
+    const auto deadline = std::chrono::steady_clock::now() + kDrainTimeout;
+    while (inflight_.load(std::memory_order_acquire) != 0 &&
+           std::chrono::steady_clock::now() < deadline) {
+        for (libusb_transfer* xfr : transfers_) {
+            if (xfr) libusb_cancel_transfer(xfr);
+        }
+        for (libusb_transfer* fxfr : feedbackTransfers_) {
+            if (fxfr) libusb_cancel_transfer(fxfr);
+        }
         timeval tv{0, 5000};
         libusb_handle_events_timeout(ctx_, &tv);
     }
     if (eventThread_.joinable()) eventThread_.join();
-    for (libusb_transfer* xfr : transfers_) {
-        if (xfr) libusb_free_transfer(xfr);
-    }
-    for (libusb_transfer* fxfr : feedbackTransfers_) {
-        if (fxfr) libusb_free_transfer(fxfr);
+
+    if (inflight_.load(std::memory_order_acquire) != 0) {
+        // The kernel still owns these URBs and their buffers; freeing either
+        // would let the host write into freed memory. Leak them, and detach
+        // them from this object so a late completion (libusb_close reaps
+        // every flying transfer) hits the null-user_data guard in the
+        // trampolines instead of a dead driver.
+        LOGE("iso pump drain timed out with %d transfers in flight; "
+             "leaking transfers and buffers",
+             inflight_.load(std::memory_order_relaxed));
+        for (libusb_transfer* xfr : transfers_) {
+            if (xfr) xfr->user_data = nullptr;
+        }
+        for (libusb_transfer* fxfr : feedbackTransfers_) {
+            if (fxfr) fxfr->user_data = nullptr;
+        }
+        new std::vector<std::vector<uint8_t>>(std::move(transferBuffers_));
+        new std::vector<std::vector<uint8_t>>(std::move(feedbackBuffers_));
+    } else {
+        for (libusb_transfer* xfr : transfers_) {
+            if (xfr) libusb_free_transfer(xfr);
+        }
+        for (libusb_transfer* fxfr : feedbackTransfers_) {
+            if (fxfr) libusb_free_transfer(fxfr);
+        }
     }
     transfers_.clear();
     transferBuffers_.clear();
@@ -1226,10 +1252,12 @@ void LibusbUacDriver::stopIsoPump() {
 }
 
 void LibusbUacDriver::onIsoTrampoline(libusb_transfer* xfr) {
+    if (!xfr->user_data) return;
     static_cast<LibusbUacDriver*>(xfr->user_data)->onIso(xfr);
 }
 
 void LibusbUacDriver::onFeedbackTrampoline(libusb_transfer* xfr) {
+    if (!xfr->user_data) return;
     static_cast<LibusbUacDriver*>(xfr->user_data)->onFeedback(xfr);
 }
 
@@ -1356,7 +1384,7 @@ void LibusbUacDriver::onIso(libusb_transfer* xfr) {
 
 int LibusbUacDriver::drainRing(uint8_t* dst, int bytes) {
     uint64_t head = ringHead_.load(std::memory_order_acquire);
-    uint64_t tail = ringTail_.load(std::memory_order_relaxed);
+    uint64_t tail = ringTail_.load(std::memory_order_acquire);
     uint64_t available = head - tail;
     int n = static_cast<int>(std::min<uint64_t>(available, static_cast<uint64_t>(bytes)));
     if (n > 0) {
@@ -1366,7 +1394,13 @@ int LibusbUacDriver::drainRing(uint8_t* dst, int bytes) {
         if (first < static_cast<size_t>(n)) {
             std::memcpy(dst + first, ring_.data(), n - first);
         }
-        ringTail_.store(tail + n, std::memory_order_release);
+        // flushRing() advances the tail from the producer thread. If it won
+        // the race the bytes just copied are stale (and the producer may
+        // already be overwriting them), so ship silence instead.
+        if (!ringTail_.compare_exchange_strong(
+                tail, tail + n, std::memory_order_acq_rel)) {
+            n = 0;
+        }
     }
     if (n < bytes) {
         // Underrun — pad with silence so the iso packet still ships.

@@ -283,8 +283,24 @@ private:
         }
 
         std::unique_lock<std::mutex> chainLocks[MAX_LANES];
-        for (int k = 0; k < count; k++) {
-            chainLocks[k] = std::unique_lock<std::mutex>(lanes_[k]->chainMutex());
+        bool allLocked = true;
+        for (int k = 0; k < count && allLocked; k++) {
+            chainLocks[k] = std::unique_lock<std::mutex>(lanes_[k]->chainMutex(), std::try_to_lock);
+            allLocked = chainLocks[k].owns_lock();
+        }
+        if (!allLocked) {
+            // A lane's chain is being edited: run the lanes unlinked, each
+            // taking its own try-lock, rather than make the audio thread wait.
+            // laneMutex_ is still held, which keeps lanes_ and the scratch stable.
+            for (int k = 0; k < count; k++) {
+                if (chainLocks[k].owns_lock()) chainLocks[k].unlock();
+            }
+            for (int k = 0; k < count; k++) {
+                if (!active[k]) continue;
+                lanes_[k]->process(laneL[k], laneR[k], n);
+                foldMono(k, ch, offset, n);
+            }
+            return;
         }
 
         for (int k = 0; k < count; k++) {

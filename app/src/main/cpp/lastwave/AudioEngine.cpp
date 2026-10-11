@@ -96,7 +96,7 @@ bool AudioEngine::startLocked(std::int32_t preferredOutputSampleRate) {
 
     const auto framesPerBurst = std::max(openedStream->getFramesPerBurst(), 1);
     // A medium device buffer (~60 ms when capacity allows) absorbs OEM CPU
-    // governor spikes â€” the primary source of One UI crackle. The ring
+    // governor spikes, the primary source of One UI crackle. The ring
     // buffer in front of the device already provides gapless continuity, so
     // this costs no perceptible latency for a streaming music player.
     const auto targetDeviceBufferFrames = std::min(
@@ -190,25 +190,15 @@ void AudioEngine::flushOutput() noexcept {
     std::lock_guard<std::mutex> controlLock(controlMutex_);
     auto* ring = activeRingBuffer_.load(std::memory_order_acquire);
     if (ring == nullptr || stream_ == nullptr) return;
-    // Park the consumer on silence first so the callback stops touching the
-    // ring while its contents are dropped. The stream itself stays open:
-    // reopening AAudio per track/seek is what produced pops on OEM stacks.
-    activeRingBuffer_.store(nullptr, std::memory_order_release);
+    // The stream stays open: reopening AAudio per track/seek is what produced
+    // pops on OEM stacks. The fade/prebuffer state belongs to the callback, so
+    // it is reset there (flushPending_) rather than written from this thread.
     {
         std::lock_guard<std::mutex> producerLock(producerMutex_);
         ring->clear();
         resamplerFlushing_ = false;
     }
-    underrunActive_ = false;
-    recoveryFading_ = false;
-    underrunFadePosition_ = fadeInCurve_.size();
-    recoveryFadePosition_ = 0;
-    prebuffering_ = true;
-    prebufferWaitCallbacks_ = kPrebufferMaxCallbacks;
-    lastOutput_.fill(0.0F);
-    underrunAnchor_.fill(0.0F);
-    cleanFrames_ = 0;
-    activeRingBuffer_.store(ring, std::memory_order_release);
+    flushPending_.store(true, std::memory_order_release);
 }
 
 std::size_t AudioEngine::writePcm(
@@ -441,6 +431,7 @@ bool AudioEngine::processMediaPcm(
     const void* pcm,
     std::size_t frameCount,
     PcmFormat format,
+    std::int32_t channelCount,
     float* output,
     std::size_t outputCapacityFrames,
     std::size_t& outputFrameCount) {
@@ -454,6 +445,9 @@ bool AudioEngine::processMediaPcm(
         mediaChannelCount_ <= 0 || mediaScratch_.empty()) {
         return false;
     }
+    // The caller sized both buffers from its own channel count; a mismatch
+    // with the configured one would read or write past them.
+    if (channelCount != mediaChannelCount_) return false;
     const std::size_t channels = static_cast<std::size_t>(mediaChannelCount_);
     const std::size_t bytesPerFrame = PcmConverter::bytesPerSample(format) * channels;
     if (bytesPerFrame == 0) return false;
@@ -519,6 +513,7 @@ bool AudioEngine::processMediaPcm(
 }
 
 bool AudioEngine::flushMediaProcessor(
+    std::int32_t channelCount,
     float* output,
     std::size_t outputCapacityFrames,
     std::size_t& outputFrameCount) {
@@ -526,6 +521,7 @@ bool AudioEngine::flushMediaProcessor(
     if (output == nullptr || outputCapacityFrames == 0) return false;
     std::lock_guard<std::mutex> processorLock(mediaProcessorMutex_);
     if (mediaResampler_ == nullptr) return true;
+    if (channelCount != mediaChannelCount_) return false;
     const std::size_t channels = static_cast<std::size_t>(mediaChannelCount_);
     while (outputFrameCount < outputCapacityFrames) {
         std::size_t outputDone = 0;
@@ -611,9 +607,21 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
         return oboe::DataCallbackResult::Continue;
     }
 
+    if (flushPending_.exchange(false, std::memory_order_acq_rel)) {
+        underrunActive_ = false;
+        recoveryFading_ = false;
+        underrunFadePosition_ = fadeInCurve_.size();
+        recoveryFadePosition_ = 0;
+        prebuffering_ = true;
+        prebufferWaitCallbacks_ = kPrebufferMaxCallbacks;
+        lastOutput_.fill(0.0F);
+        underrunAnchor_.fill(0.0F);
+        cleanFrames_ = 0;
+    }
+
     const bool playingNow = playbackEnabled_.load(std::memory_order_acquire);
     // While paused, keep draining any queued tail under the 5 ms output
-    // volume ramp instead of hard-cutting to silence â€” a mid-sample gate is
+    // volume ramp instead of hard-cutting to silence: a mid-sample gate is
     // audible as a click on every device class.
     const bool drainingPauseTail =
         !playingNow && currentOutputVolume_ > 0.0F &&
@@ -668,7 +676,7 @@ oboe::DataCallbackResult AudioEngine::onAudioReady(
             }
             const std::size_t offset = frame * kOutputChannels;
             // Pausing fades toward zero through the same ramp; resuming fades
-            // back up â€” both click-free.
+            // back up, both click-free.
             const float volumeTarget = playingNow
                 ? targetOutputVolume_.load(std::memory_order_relaxed)
                 : 0.0F;

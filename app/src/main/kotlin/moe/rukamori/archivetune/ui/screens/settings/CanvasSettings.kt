@@ -73,6 +73,9 @@ import moe.rukamori.archivetune.viewmodels.CanvasSettingsAction
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsDialog
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsState
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsUiModel
+import moe.rukamori.archivetune.ui.component.SwitchPreference
+import moe.rukamori.archivetune.ui.component.PreferenceGroup
+import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.viewmodels.CanvasSettingsViewModel
 
 @Composable
@@ -139,7 +142,6 @@ private fun CanvasSettingsBody(
     val onRefresh = remember(onAction) { { onAction(CanvasSettingsAction.RefreshHealth) } }
     val onCacheLimit = remember(onAction) { { onAction(CanvasSettingsAction.ShowCacheLimit) } }
     val onClear = remember(onAction) { { onAction(CanvasSettingsAction.ShowClearCache) } }
-    val sources = remember { CanvasSource.entries.toList() }
     Column(
         modifier = modifier
             .verticalScroll(rememberScrollState())
@@ -147,45 +149,40 @@ private fun CanvasSettingsBody(
             .padding(top = SettingsDimensions.SectionSpacing, bottom = SettingsDimensions.ScreenBottomPadding),
         verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionSpacing) },
     ) {
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.primaryContainer,
-        ) {
-            CanvasSwitchRow(
-                title = stringResource(R.string.canvas_enable),
-                description = stringResource(R.string.archivetune_canvas_desc),
-                checked = model.configuration.enabled,
-                enabled = !model.busy,
-                onCheckedChange = onEnabled,
-            )
-        }
-        CanvasSection(title = stringResource(R.string.canvas_source)) {
-            Column(remember { Modifier.selectableGroup() }) {
-                sources.forEach { source ->
-                    val onSelect = remember(source, onAction) { { onAction(CanvasSettingsAction.SelectSource(source)) } }
-                    CanvasChoiceRow(
-                        title = stringResource(source.labelResource()),
-                        description = when (source) {
-                            CanvasSource.ALL -> stringResource(R.string.canvas_source_all_desc)
-                            CanvasSource.SPOTIFY -> stringResource(R.string.canvas_spotify_desc)
-                            else -> null
-                        },
-                        selected = model.configuration.source == source,
-                        enabled = !model.busy,
-                        onClick = onSelect,
-                    )
-                }
+        PreferenceGroup {
+            item {
+                SwitchPreference(
+                    title = { Text(stringResource(R.string.canvas_enable)) },
+                    description = stringResource(R.string.archivetune_canvas_desc),
+                    checked = model.configuration.enabled,
+                    onCheckedChange = onEnabled,
+                    isEnabled = !model.busy,
+                )
+            }
+            item {
+                SwitchPreference(
+                    title = { Text(stringResource(R.string.canvas_wifi_only)) },
+                    description = stringResource(R.string.canvas_wifi_only_desc),
+                    checked = model.configuration.wifiOnly,
+                    onCheckedChange = onWifiOnly,
+                    isEnabled = !model.busy,
+                )
             }
         }
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
-            CanvasSwitchRow(
-                title = stringResource(R.string.canvas_wifi_only),
-                description = stringResource(R.string.canvas_wifi_only_desc),
-                checked = model.configuration.wifiOnly,
-                enabled = !model.busy,
-                onCheckedChange = onWifiOnly,
-            )
+
+        PreferenceGroup(title = stringResource(R.string.canvas_source)) {
+            item {
+                EnumListPreference(
+                    title = { Text(stringResource(R.string.canvas_source)) },
+                    icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                    selectedValue = model.configuration.source,
+                    onValueSelected = { onAction(CanvasSettingsAction.SelectSource(it)) },
+                    valueText = { stringResource(it.labelResource()) },
+                    isEnabled = !model.busy,
+                )
+            }
         }
+
         CanvasHealthSection(model = model, onRefresh = onRefresh)
         CanvasCacheSection(model = model, onCacheLimit = onCacheLimit, onClear = onClear)
 
@@ -193,23 +190,7 @@ private fun CanvasSettingsBody(
     CanvasSettingsDialogs(model, onAction)
 }
 
-@Composable
-private fun CanvasSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionHeaderBottomPadding) }) {
-        Text(
-            title,
-            modifier = remember { Modifier.padding(horizontal = SettingsDimensions.RowHorizontalPadding) },
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
-            Column(modifier = remember { Modifier.fillMaxWidth() }, content = content)
-        }
-    }
-}
 
-@Composable
-private fun CanvasSwitchRow(
     title: String,
     description: String,
     checked: Boolean,

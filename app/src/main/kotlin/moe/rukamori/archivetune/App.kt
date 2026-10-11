@@ -16,6 +16,9 @@ import android.content.Intent
 import android.os.Build
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -28,6 +31,7 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -76,6 +80,7 @@ import moe.rukamori.archivetune.utils.clearPlaybackAuthSession
 import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
+import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.utils.toPlaybackAuthState
@@ -124,6 +129,34 @@ class App :
     @Volatile private var appleMusicMediaUserTokenCache: String = ""
 
     private val didRunImageCacheTrim = AtomicBoolean(false)
+
+    private val spotifyHistorySyncing = AtomicBoolean(false)
+
+    /**
+     * Pulls Spotify's play history into the app's stored list each time the app comes to the
+     * foreground, when the user turned the sync on. The History screen only reads what this and its
+     * own visits have stored, so without it a play made in the Spotify app is missed until the screen
+     * is opened. One read per foreground at most: the repository serves a fresh cache for five
+     * minutes and holds off for a rate limit, and nothing here retries in the background.
+     */
+    private fun syncSpotifyHistory() {
+        if (!spotifyHistorySyncing.compareAndSet(false, true)) return
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                if (!dataStore.getAsync(SpotifyHistorySyncEnabledKey, false)) return@launch
+                if (dataStore.getAsync(SpotifySpDcKey, "").isBlank()) return@launch
+                // Let the screen the user opened the app for load first.
+                delay(5_000)
+                spotifyLibraryRepository.recentlyPlayed()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                reportException(error)
+            } finally {
+                spotifyHistorySyncing.set(false)
+            }
+        }
+    }
 
     private fun currentProcessName(): String? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -279,6 +312,12 @@ class App :
         SpotifyCanvasProvider.extraResolverEndpointsProvider = {
             CanvasResolverEndpoints.parse(dataStore.get(CanvasResolverEndpointsKey, ""))
         }
+
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_START) syncSpotifyHistory()
+            },
+        )
 
         // Pre-warm the Apple Music web player JWT on startup so the first
         // lyrics lookup and canvas resolution don't pay the extra ~300ms scrape

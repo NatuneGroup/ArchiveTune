@@ -22,6 +22,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.http.encodeURLPathPart
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
@@ -67,6 +68,7 @@ object Spotify {
     private val graphQlCooldown = SpotifyRequestCooldown()
 
     private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
+    private const val SPCLIENT_URL = "https://spclient.wg.spotify.com"
 
     private fun randomUserAgent(): String {
         val osOptions =
@@ -1250,21 +1252,44 @@ object Spotify {
             }
         }
 
-    // ── Recently played (REST — no GQL equivalent) ──────────────────────
+    // ── Recently played (web player's play contexts, REST as the fallback) ──
 
     /**
-     * The user's play history, most recent first. Spotify caps this at the last
-     * [SPOTIFY_HISTORY_WINDOW] plays and pages it by timestamp cursor rather than offset, so there is
-     * no `offset` here and no way to reach further back — the endpoint simply does not offer it.
+     * The user's play history, most recent first, at most [SPOTIFY_HISTORY_WINDOW] rows.
      *
-     * [afterMillis] is that cursor: a Unix millisecond timestamp, exclusive. Passing the newest play
-     * the caller already holds asks for the plays since it, which is what keeps a refresh from
-     * re-reading the whole window. `after` and `before` are mutually exclusive server-side, which is
-     * why only one of them is ever sent.
+     * Read first from the web player's own history ([recentlyPlayedFromContexts]) — one row per
+     * context the account played, ending on the track it last played there — because the per-play
+     * REST endpoint (`me/player/recently-played`) answers the web player's token with a 429 that is
+     * the client's shared quota, not anything this app did. REST remains as the fallback for the day
+     * the web player's endpoint moves; its `after` cursor is why [afterMillis] exists: a Unix
+     * millisecond timestamp, exclusive, so a refresh asks only for the plays since the newest one the
+     * caller holds. Neither source can reach further back than this window.
      */
     suspend fun recentlyPlayed(
         limit: Int = SPOTIFY_HISTORY_WINDOW,
         afterMillis: Long? = null,
+    ): Result<SpotifyPaging<SpotifyPlayHistory>> =
+        runCatching {
+            try {
+                recentlyPlayedFromContexts(limit = limit, afterMillis = afterMillis)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: SpotifyException) {
+                // 401 must reach the caller's token refresh, and a 429 is Spotify naming a wait: REST
+                // sits behind a stricter limit of its own, so asking it next only deepens the block.
+                if (error.statusCode == 401 || error.statusCode == 429) throw error
+                log("W", "history via play contexts failed (${error.statusCode}), trying REST")
+                restRecentlyPlayed(limit = limit, afterMillis = afterMillis).getOrElse { restError ->
+                    if (restError is CancellationException) throw restError
+                    error.addSuppressed(restError)
+                    throw error
+                }
+            }
+        }
+
+    private suspend fun restRecentlyPlayed(
+        limit: Int,
+        afterMillis: Long?,
     ): Result<SpotifyPaging<SpotifyPlayHistory>> =
         runCatching {
             authenticatedGet("me/player/recently-played") {
@@ -1272,6 +1297,105 @@ object Spotify {
                 afterMillis?.let { parameter("after", it) }
             }
         }
+
+    /** The signed-in account's id, which the play-context endpoint wants in its path. */
+    @Volatile
+    private var historyUserId: String? = null
+
+    /** Its own gate: this host is not `api.spotify.com`, so a REST 429 says nothing about it. */
+    private val historyCooldown = SpotifyRequestCooldown()
+
+    /**
+     * Forgets what belongs to the signed-in account. Called when the account changes, so the next
+     * history read asks for the new account's id rather than the old one's.
+     */
+    fun forgetAccount() {
+        historyUserId = null
+    }
+
+    /**
+     * The web player's own history: `spclient.wg.spotify.com/recently-played/v3/user/{id}` names the
+     * contexts the account last played from and the track each ended on, and
+     * `fetchEntitiesForRecentlyPlayed` turns those track URIs into titles, artists and artwork.
+     *
+     * Two requests however many plays there are, and neither touches the shared REST quota. Only
+     * plays newer than [afterMillis] are hydrated, so a delta refresh costs one small lookup.
+     */
+    private suspend fun recentlyPlayedFromContexts(
+        limit: Int,
+        afterMillis: Long?,
+    ): SpotifyPaging<SpotifyPlayHistory> {
+        val token =
+            accessToken ?: throw SpotifyException(401, "Not authenticated").also {
+                log("E", "history — no token")
+            }
+        val blockedSec = historyCooldown.remainingSeconds()
+        if (blockedSec > 0) {
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec, quotaExceeded = historyCooldown.quotaExceeded)
+        }
+        val userId = historyUserId ?: me().getOrThrow().id.also { historyUserId = it }
+        if (userId.isBlank()) throw SpotifyException(500, "Spotify profile carried no user id")
+
+        val response =
+            gqlClient.get("$SPCLIENT_URL/recently-played/v3/user/${userId.encodeURLPathPart()}/recently-played") {
+                header("Authorization", "Bearer $token")
+                parameter("format", "json")
+                parameter("offset", 0)
+                parameter("limit", limit.coerceIn(1, SPOTIFY_HISTORY_WINDOW))
+                parameter("filter", "default,collection-new-episodes")
+            }
+        log("D", "history GET play contexts -> ${response.status.value}")
+        when {
+            response.status == HttpStatusCode.Unauthorized -> throw SpotifyException(401, "Token expired or invalid")
+            response.status == HttpStatusCode.TooManyRequests -> {
+                val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+                val retryAfter = historyCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
+                throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter, quotaExceeded = quotaExceeded)
+            }
+            response.status.value !in 200..299 ->
+                throw SpotifyException(response.status.value, "Spotify history error ${response.status.value}")
+        }
+
+        val plays =
+            parseRecentPlayContexts(response.bodyAsText())
+                .filter { afterMillis == null || it.playedAtMillis > afterMillis }
+        if (plays.isEmpty()) return SpotifyPaging(limit = limit)
+
+        val tracks = fetchRecentlyPlayedTracks(plays.map { it.trackUri }.distinct())
+        val items = plays.toPlayHistory(tracks)
+        return SpotifyPaging(items = items, total = items.size, limit = limit)
+    }
+
+    private suspend fun fetchRecentlyPlayedTracks(uris: List<String>): Map<String, SpotifyTrack> {
+        val resolved = HashMap<String, SpotifyTrack>(uris.size)
+        for (batch in uris.chunked(SPOTIFY_HISTORY_WINDOW)) {
+            val response =
+                graphqlPost(
+                    operationName = "fetchEntitiesForRecentlyPlayed",
+                    variables = buildJsonObject { putJsonArray("uris") { batch.forEach { add(it) } } },
+                )
+            resolved += parseRecentlyPlayedLookup(response)
+        }
+        return resolved
+    }
+
+    /**
+     * Tracks in a `fetchEntitiesForRecentlyPlayed` response, by URI. Entries that are not tracks, or
+     * that Spotify answers with `NotFound`, are skipped.
+     */
+    fun parseRecentlyPlayedLookup(response: JsonObject): Map<String, SpotifyTrack> {
+        val lookup = response.obj("data")?.arr("lookup") ?: return emptyMap()
+        val tracks = HashMap<String, SpotifyTrack>(lookup.size)
+        for (element in lookup) {
+            val wrapper = (element as? JsonObject) ?: continue
+            if (wrapper.str("__typename") != "TrackResponseWrapper") continue
+            val data = wrapper.obj("data") ?: continue
+            if (data.str("__typename") == "NotFound") continue
+            val uri = data.str("uri") ?: wrapper.str("_uri") ?: continue
+            tracks[uri] = parseGqlTrack(data, uriOverride = uri)
+        }
+        return tracks
+    }
 
     // ── Top Artists (REST fallback — no GQL equivalent) ─────────────────
 

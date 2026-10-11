@@ -21,6 +21,17 @@ import moe.rukamori.archivetune.spotify.models.SpotifyPlayHistory
 const val SPOTIFY_HISTORY_WINDOW = 50
 
 /**
+ * Most plays the app keeps between reads.
+ *
+ * One read returns at most [SPOTIFY_HISTORY_WINDOW] rows and Spotify offers nothing further back, so
+ * the list only grows because every sync merges into what the last one stored. The web player's
+ * history reports one row per context, so a long gap between syncs loses the plays in between —
+ * keeping the rows already seen is what makes frequent syncs worth it. Bounded because the whole
+ * list is written to one DataStore preference on every refresh.
+ */
+const val SPOTIFY_HISTORY_ARCHIVE_LIMIT = 200
+
+/**
  * How long a 429 keeps us off the history endpoint when Spotify sends no usable `Retry-After`.
  *
  * Spotify documents its Web API limit as a rolling 30-second window, so a shorter wait cannot clear

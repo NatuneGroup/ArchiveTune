@@ -44,6 +44,7 @@ object SpotifyHashProvider {
                 "addToLibrary" to "7c5a69420e2bfae3da5cc4e14cbc8bb3f6090f80afc00ffc179177f19be3f33d",
                 "removeFromLibrary" to "7c5a69420e2bfae3da5cc4e14cbc8bb3f6090f80afc00ffc179177f19be3f33d",
                 "home" to "23e37f2e58d82d567f27080101d36609009d8c3676457b1086cb0acc55b72a5d",
+                "fetchEntitiesForRecentlyPlayed" to "cf5d2e94ffd82788470788ae1f6090cc3e9e774fb8fd383580634c6e6f50f7be",
             )
         defaults.forEach { (op, hash) ->
             hashes[op] = GqlHashEntry(hash = hash, source = HashSource.HARDCODED)

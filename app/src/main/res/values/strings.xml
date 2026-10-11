@@ -1704,7 +1704,7 @@
     <string name="library_source_ytm">YTM</string>
     <string name="spotify_dj_unsupported">Spotify\u2019s DJ is built by Spotify as you listen \u2014 the running order and the spoken bits between tracks only exist inside their app. Opening it there.</string>
     <string name="spotify_history">Spotify</string>
-    <string name="history_spotify_summary">The last 50 tracks played on your Spotify account. Spotify does not offer any further back.</string>
+    <string name="history_spotify_summary">For each playlist, album or artist you played on Spotify, the track you ended on. Spotify shares no full play log, so ArchiveTune keeps what it has seen and the list grows as it syncs.</string>
     <string name="history_spotify_rate_limited">Spotify is briefly rate-limiting history requests. Give it a minute, then retry.</string>
     <string name="lyrics_mode_simpmusic">SimpMusic</string>
     <string name="apple_music_experience">Apple Music Experience</string>

@@ -468,6 +468,7 @@ class SpotifyLibraryRepository
                         mergePlayHistory(
                             newer = fetched,
                             cached = cached?.items.orEmpty(),
+                            limit = SPOTIFY_HISTORY_ARCHIVE_LIMIT,
                         )
                     val fetchedAtMs = System.currentTimeMillis()
                     recentlyPlayedCache = CachedRecentlyPlayed(items = merged, fetchedAtMs = fetchedAtMs)
@@ -551,6 +552,7 @@ class SpotifyLibraryRepository
          * delay the new account's first read for no reason.
          */
         private suspend fun clearRecentlyPlayed() {
+            Spotify.forgetAccount()
             recentlyPlayedCache = null
             recentlyPlayedBlockedUntilMs = 0L
             recentlyPlayedFullReadAtMs = 0L

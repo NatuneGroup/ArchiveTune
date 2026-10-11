@@ -21,6 +21,28 @@ using trypt::dsp::CompressorProcessor;
 namespace {
 template <typename T>
 inline T* asPtr(jlong h) { return reinterpret_cast<T*>(static_cast<uintptr_t>(h)); }
+
+// Resolves a direct ByteBuffer holding n planar float channels of `frames`
+// samples each. Fails if the buffer is not direct or is too small.
+float* planarBase(JNIEnv* env, jobject buf, jint frames, int n) {
+    if (!buf || frames <= 0) return nullptr;
+    auto* base = static_cast<float*>(env->GetDirectBufferAddress(buf));
+    if (!base) return nullptr;
+    const jlong capacity = env->GetDirectBufferCapacity(buf);
+    const int64_t need = static_cast<int64_t>(n) * frames * static_cast<int64_t>(sizeof(float));
+    if (capacity < 0 || need > capacity) return nullptr;
+    return base;
+}
+
+// Both arrays must be non-null and hold at least `frames` samples.
+bool arraysCoverFrames(JNIEnv* env, jfloatArray l, jfloatArray r, jint frames) {
+    if (!l || !r || frames <= 0) return false;
+    return env->GetArrayLength(l) >= frames && env->GetArrayLength(r) >= frames;
+}
+
+bool validPrepare(jdouble sr, jint ch) {
+    return sr > 0.0 && ch >= 1 && ch <= trypt::dsp::kMaxChannels;
+}
 } // anon
 
 // ---- Inflator -------------------------------------------------------------
@@ -38,7 +60,9 @@ Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeDestroy(JNIEnv*
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativePrepare(
         JNIEnv*, jclass, jlong h, jdouble sr, jint ch) {
-    asPtr<InflatorProcessor>(h)->prepare(sr, ch);
+    auto* p = asPtr<InflatorProcessor>(h);
+    if (!p || !validPrepare(sr, ch)) return;
+    p->prepare(sr, ch);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -47,6 +71,7 @@ Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeSetParams(
         jfloat inputDb, jfloat outputDb, jfloat effect, jfloat curve,
         jboolean clipZeroDb, jboolean bandSplit, jboolean bypass) {
     auto* p = asPtr<InflatorProcessor>(h);
+    if (!p) return;
     p->params.inputDb   .store(inputDb);
     p->params.outputDb  .store(outputDb);
     p->params.effect    .store(effect);
@@ -64,6 +89,7 @@ extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeSetOversampling(
         JNIEnv*, jclass, jlong h, jint factor) {
     auto* p = asPtr<InflatorProcessor>(h);
+    if (!p) return;
     p->params.oversampling.store(factor);
 }
 
@@ -72,6 +98,7 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeReadMeters(
         JNIEnv*, jclass, jlong h) {
     auto* p = asPtr<InflatorProcessor>(h);
+    if (!p) return 0;
     float l = p->params.peakL.load(std::memory_order_relaxed);
     float r = p->params.peakR.load(std::memory_order_relaxed);
     uint32_t li, ri;
@@ -83,24 +110,25 @@ Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeReadMeters(
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeProcess(
         JNIEnv* env, jclass, jlong h, jobject buf, jint frames, jint channels) {
-    auto* base = static_cast<float*>(env->GetDirectBufferAddress(buf));
-    if (!base) return;
+    auto* p = asPtr<InflatorProcessor>(h);
+    if (!p) return;
     // Planar [ch0..., ch1..., ...], [frames] each; up to kMaxChannels.
     // A mono buffer is read as both channels of a stereo pair, as before.
     const int n = std::clamp(static_cast<int>(channels), 1, trypt::dsp::kMaxChannels);
+    float* base = planarBase(env, buf, frames, n);
+    if (!base) return;
     float* planes[trypt::dsp::kMaxChannels];
     for (int c = 0; c < n; ++c) planes[c] = base + static_cast<size_t>(c) * frames;
     if (n == 1) planes[1] = base;
-    asPtr<InflatorProcessor>(h)->process(planes, frames);
+    p->process(planes, frames);
 }
 
 // FloatArray-based entry to match MixBusProcessor's deinterleaved call site.
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_InflatorNative_nativeProcessArrays(
         JNIEnv* env, jclass, jlong h, jfloatArray l, jfloatArray r, jint frames) {
-    if (frames <= 0) return;
     auto* p = asPtr<InflatorProcessor>(h);
-    if (!p) return;
+    if (!p || !arraysCoverFrames(env, l, r, frames)) return;
     float* lp = env->GetFloatArrayElements(l, nullptr);
     float* rp = env->GetFloatArrayElements(r, nullptr);
     if (!lp || !rp) {
@@ -129,7 +157,9 @@ Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeDestroy(JNIEn
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativePrepare(
         JNIEnv*, jclass, jlong h, jdouble sr, jint ch) {
-    asPtr<CompressorProcessor>(h)->prepare(sr, ch);
+    auto* p = asPtr<CompressorProcessor>(h);
+    if (!p || !validPrepare(sr, ch)) return;
+    p->prepare(sr, ch);
 }
 
 extern "C" JNIEXPORT void JNICALL
@@ -138,6 +168,7 @@ Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeSetParams(
         jfloat thresholdDb, jfloat ratio, jfloat attackMs, jfloat releaseMs,
         jfloat kneeDb, jfloat makeupDb, jboolean bypass) {
     auto* p = asPtr<CompressorProcessor>(h);
+    if (!p) return;
     p->params.thresholdDb.store(thresholdDb);
     p->params.ratio      .store(ratio);
     p->params.attackMs   .store(attackMs);
@@ -151,19 +182,24 @@ Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeSetParams(
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeSetOversampling(
         JNIEnv*, jclass, jlong h, jint factor) {
-    asPtr<CompressorProcessor>(h)->params.oversampling.store(factor);
+    auto* p = asPtr<CompressorProcessor>(h);
+    if (!p) return;
+    p->params.oversampling.store(factor);
 }
 
 extern "C" JNIEXPORT jfloat JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeGainReductionDb(
         JNIEnv*, jclass, jlong h) {
-    return asPtr<CompressorProcessor>(h)->params.gainReductionDb.load(std::memory_order_relaxed);
+    auto* p = asPtr<CompressorProcessor>(h);
+    if (!p) return 0.0f;
+    return p->params.gainReductionDb.load(std::memory_order_relaxed);
 }
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeReadMeters(
         JNIEnv*, jclass, jlong h) {
     auto* p = asPtr<CompressorProcessor>(h);
+    if (!p) return 0;
     float l = p->params.peakL.load(std::memory_order_relaxed);
     float r = p->params.peakR.load(std::memory_order_relaxed);
     uint32_t li, ri;
@@ -175,23 +211,24 @@ Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeReadMeters(
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeProcess(
         JNIEnv* env, jclass, jlong h, jobject buf, jint frames, jint channels) {
-    auto* base = static_cast<float*>(env->GetDirectBufferAddress(buf));
-    if (!base) return;
+    auto* p = asPtr<CompressorProcessor>(h);
+    if (!p) return;
     // Planar [ch0..., ch1..., ...], [frames] each; up to kMaxChannels.
     // A mono buffer is read as both channels of a stereo pair, as before.
     const int n = std::clamp(static_cast<int>(channels), 1, trypt::dsp::kMaxChannels);
+    float* base = planarBase(env, buf, frames, n);
+    if (!base) return;
     float* planes[trypt::dsp::kMaxChannels];
     for (int c = 0; c < n; ++c) planes[c] = base + static_cast<size_t>(c) * frames;
     if (n == 1) planes[1] = base;
-    asPtr<CompressorProcessor>(h)->process(planes, frames);
+    p->process(planes, frames);
 }
 
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_oxford_CompressorNative_nativeProcessArrays(
         JNIEnv* env, jclass, jlong h, jfloatArray l, jfloatArray r, jint frames) {
-    if (frames <= 0) return;
     auto* p = asPtr<CompressorProcessor>(h);
-    if (!p) return;
+    if (!p || !arraysCoverFrames(env, l, r, frames)) return;
     float* lp = env->GetFloatArrayElements(l, nullptr);
     float* rp = env->GetFloatArrayElements(r, nullptr);
     if (!lp || !rp) {

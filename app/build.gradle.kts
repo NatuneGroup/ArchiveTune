@@ -287,6 +287,13 @@ android {
         buildConfigField("boolean", "IS_CANARY", "$isCanaryBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
+        // The LastWave engine links Google Oboe (prefab), which requires the
+        // shared C++ STL. All native targets then build against c++_shared.
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     flavorDimensions += listOf("distribution", "device", "abi")
@@ -584,6 +591,8 @@ dependencies {
 
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
+    // LastWave audio engine output backend (Oboe/AAudio, prefab)
+    implementation("com.google.oboe:oboe:1.10.0")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
     implementation("androidx.media3:media3-ui:${libs.versions.media3.get()}")

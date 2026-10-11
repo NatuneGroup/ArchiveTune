@@ -19,6 +19,10 @@ class VariRateAudioProcessor @Inject constructor() : AudioProcessor {
     private var pendingFormat = AudioFormat.NOT_SET
     private var inputFormat = AudioFormat.NOT_SET
     private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+
+    // getOutput() hands the buffer out and resets outputBuffer, so the allocation is kept here to
+    // be reused by the next queueInput instead of being reallocated every call.
+    private var outputScratch: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
 
     private class Table(val ratio: Double, val kernel: SincKernel)
@@ -164,6 +168,7 @@ class VariRateAudioProcessor @Inject constructor() : AudioProcessor {
         histR = FloatArray(0)
         workL = FloatArray(0)
         workR = FloatArray(0)
+        outputScratch = AudioProcessor.EMPTY_BUFFER
     }
 
     private fun filter(work: FloatArray, i: Int, frac: Double, kernel: SincKernel): Float {
@@ -197,11 +202,12 @@ class VariRateAudioProcessor @Inject constructor() : AudioProcessor {
     }
 
     private fun ensureOutput(bytes: Int) {
-        if (outputBuffer.capacity() < bytes) {
-            outputBuffer = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
+        if (outputScratch.capacity() < bytes) {
+            outputScratch = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.clear()
+            outputScratch.clear()
         }
+        outputBuffer = outputScratch
     }
 
     private fun readInterleaved(

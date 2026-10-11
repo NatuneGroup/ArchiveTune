@@ -4905,11 +4905,25 @@ class MusicService :
     }
 
     private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
-        val query = listOf(metadata.title, metadata.artists.firstOrNull()?.name).filterNotNull().joinToString(" ")
+        val artistName = metadata.artists.firstOrNull()?.name
+        val query = listOfNotNull(metadata.title, artistName).joinToString(" ")
+        // The catalog call is a blocking OkHttp request on a non-interruptible IO block, so the
+        // caller's timeout can only fire if it waits on a separate Deferred.
+        val search = ioScope.async { AppleMusicCatalog.searchTrackSuggestions(query, limit = 5) }
+        val results =
+            try {
+                search.await()
+            } catch (e: CancellationException) {
+                search.cancel()
+                throw e
+            }
         val match =
-            AppleMusicCatalog.searchTrackSuggestions(query, limit = 5)
+            results
                 .filterIsInstance<AppleMusicSearchItem.Track>()
-                .firstOrNull { it.title.equals(metadata.title, ignoreCase = true) }
+                .firstOrNull { track ->
+                    track.title.equals(metadata.title, ignoreCase = true) &&
+                        (artistName == null || track.artist.contains(artistName, ignoreCase = true))
+                }
                 ?: return metadata
         return metadata.copy(thumbnailUrl = match.artworkUrl ?: metadata.thumbnailUrl)
     }
@@ -5389,6 +5403,45 @@ class MusicService :
         if (clearPersistentState) {
             clearPersistedQueueFiles()
         }
+    }
+
+    /**
+     * Bounds the per-media-id resolution caches during a long session. Entries outside a window
+     * around the current item are only an optimisation (the next resolve repopulates them), so
+     * dropping them costs a re-resolve at worst. Source-prefixed keys ("qobuz:<id>") are matched by
+     * their media id suffix.
+     */
+    private fun trimResolutionCaches() {
+        if (
+            playbackUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            directStreamCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            contentLengthCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            remotePlaybackTrackingUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            audioNormalizationFactorCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            resolvedSourcesByMediaId.size <= RESOLUTION_CACHE_TRIM_THRESHOLD
+        ) {
+            return
+        }
+        val count = player.mediaItemCount
+        if (count == 0) return
+        val index = player.currentMediaItemIndex
+        val keep = HashSet<String>()
+        val from = (index - RESOLUTION_CACHE_KEEP_BEHIND).coerceAtLeast(0)
+        val to = (index + RESOLUTION_CACHE_KEEP_AHEAD).coerceAtMost(count - 1)
+        for (i in from..to) {
+            keep.add(player.getMediaItemAt(i).mediaId)
+        }
+        // Shuffle makes the next item independent of the timeline index.
+        for (neighbour in intArrayOf(player.nextMediaItemIndex, player.previousMediaItemIndex)) {
+            if (neighbour in 0 until count) keep.add(player.getMediaItemAt(neighbour).mediaId)
+        }
+        val isKept: (String) -> Boolean = { key -> keep.any { id -> key == id || key.endsWith(":$id") } }
+        playbackUrlCache.keys.retainAll(isKept)
+        directStreamCache.keys.retainAll(isKept)
+        contentLengthCache.keys.retainAll(isKept)
+        remotePlaybackTrackingUrlCache.keys.retainAll(isKept)
+        audioNormalizationFactorCache.keys.retainAll(isKept)
+        resolvedSourcesByMediaId.keys.retainAll(isKept)
     }
 
     fun playNext(items: List<MediaItem>) = insertUserQueued(items, UserQueuedKind.PLAY_NEXT)
@@ -6385,6 +6438,7 @@ class MusicService :
             player.volume,
         )
         mediaItem?.metadata?.let { queuedMetadataByMediaId[mediaItem.mediaId] = it }
+        trimResolutionCaches()
 
         // New item: reset the initial-buffer-stall watchdog for the next track.
         initialBufferRecoveryJob?.cancel()
@@ -6411,10 +6465,11 @@ class MusicService :
 
         beginHistorySession(mediaItem?.mediaId, forceNew = true)
 
-        val currentIndex = player.currentMediaItemIndex
-        val queue = player.mediaItems.map { it.metadata }
-        if (queue.any { it != null }) {
-            lyricsPreloadManager?.onSongChanged(currentIndex, queue)
+        lyricsPreloadManager?.let { preloadManager ->
+            val queue = player.mediaItems.map { it.metadata }
+            if (queue.any { it != null }) {
+                preloadManager.onSongChanged(player.currentMediaItemIndex, queue)
+            }
         }
 
         val timelineEmpty = player.currentTimeline.isEmpty || player.mediaItemCount == 0 || player.currentMediaItem == null
@@ -10828,6 +10883,8 @@ class MusicService :
 
     private fun clearPersistedQueueFiles() {
         persistentSaveGeneration.incrementAndGet()
+        lastPersistedQueue = null
+        lastPersistedPlayerState = null
         synchronized(persistentStateLock) {
             listOf(
                 PERSISTENT_QUEUE_FILE,
@@ -10955,6 +11012,9 @@ class MusicService :
     @Volatile
     private var lastPersistedPlayerState: PersistPlayerState? = null
 
+    @Volatile
+    private var lastPersistedQueue: PersistQueue? = null
+
     /**
      * Writes just the resume position and transport flags, skipping the queue snapshot.
      *
@@ -11037,9 +11097,18 @@ class MusicService :
 
         withContext(Dispatchers.IO) {
             if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
+            // Transition, play/pause and state-change callbacks fire in bursts for one user action,
+            // each snapshotting the same queue; only the first needs to hit the disk.
+            if (snapshot.first != lastPersistedQueue) {
+                writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
+                lastPersistedQueue = snapshot.first
+            }
             if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, snapshot.second)
+            val previousState = lastPersistedPlayerState
+            if (previousState == null || previousState.copy(timestamp = 0L) != snapshot.second.copy(timestamp = 0L)) {
+                writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, snapshot.second)
+                lastPersistedPlayerState = snapshot.second
+            }
         }
     }
 
@@ -11337,6 +11406,9 @@ class MusicService :
         val RETRYABLE_STREAM_RESPONSE_CODES = setOf(403, 404, 410, 416)
         private const val INITIAL_BUFFER_STALL_DELAY_MS = 15_000L
         private const val INITIAL_BUFFER_STALL_POSITION_MS = 5_000L
+        private const val RESOLUTION_CACHE_TRIM_THRESHOLD = 64
+        private const val RESOLUTION_CACHE_KEEP_BEHIND = 8
+        private const val RESOLUTION_CACHE_KEEP_AHEAD = 16
         const val PERSISTENT_QUEUE_FILE = "persistent_queue.data"
         const val PERSISTENT_AUTOMIX_FILE = "persistent_automix.data"
         const val PERSISTENT_PLAYER_STATE_FILE = "persistent_player_state.data"

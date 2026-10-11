@@ -22,7 +22,10 @@ class StretchAudioProcessor @Inject constructor() : AudioProcessor {
     private var buffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
 
-    private var handle = 0L
+    // setSemitones/setEngine/latencyFrames arrive on the UI thread while the playback thread can
+    // destroy the engine; the lock keeps a native call from running on a freed handle.
+    @Volatile private var handle = 0L
+    private val handleLock = Any()
     private var maxBlock = 0
 
     private var nativeIn: ByteBuffer = AudioProcessor.EMPTY_BUFFER
@@ -39,8 +42,10 @@ class StretchAudioProcessor @Inject constructor() : AudioProcessor {
         val clamped = value.coerceIn(MIN_SEMITONES, MAX_SEMITONES)
         if (clamped == semitones) return
         semitones = clamped
-        val h = handle
-        if (h != 0L) StretchNative.nativeSetSemitones(h, clamped)
+        synchronized(handleLock) {
+            val h = handle
+            if (h != 0L) StretchNative.nativeSetSemitones(h, clamped)
+        }
     }
 
     fun getSemitones(): Float = semitones
@@ -52,18 +57,21 @@ class StretchAudioProcessor @Inject constructor() : AudioProcessor {
         if (engine == this.engine && quality == this.quality) return
         this.engine = engine
         this.quality = quality
-        val h = handle
-        if (h != 0L) StretchNative.nativeSetEngine(h, engine.nativeId, quality.nativeId)
+        synchronized(handleLock) {
+            val h = handle
+            if (h != 0L) StretchNative.nativeSetEngine(h, engine.nativeId, quality.nativeId)
+        }
     }
 
     fun getEngine(): PitchEngine = engine
 
     fun getQuality(): PitchQuality = quality
 
-    fun latencyFrames(): Int {
-        val h = handle
-        return if (h != 0L && engaged) StretchNative.nativeLatencyFrames(h) else 0
-    }
+    fun latencyFrames(): Int =
+        synchronized(handleLock) {
+            val h = handle
+            if (h != 0L && engaged) StretchNative.nativeLatencyFrames(h) else 0
+        }
 
     override fun configure(inputAudioFormat: AudioFormat): AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
@@ -211,9 +219,12 @@ class StretchAudioProcessor @Inject constructor() : AudioProcessor {
     }
 
     private fun releaseEngine() {
-        if (handle != 0L) {
-            StretchNative.nativeDestroy(handle)
-            handle = 0L
+        synchronized(handleLock) {
+            val h = handle
+            if (h != 0L) {
+                handle = 0L
+                StretchNative.nativeDestroy(h)
+            }
         }
         nativeIn = AudioProcessor.EMPTY_BUFFER
         nativeOut = AudioProcessor.EMPTY_BUFFER

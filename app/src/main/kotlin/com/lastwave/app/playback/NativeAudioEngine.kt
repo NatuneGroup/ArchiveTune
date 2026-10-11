@@ -64,7 +64,8 @@ class NativeAudioEngine @Inject constructor(
                     .collect { setClarityAtmosBypass(it) }
             }
             applicationScope.launch(Dispatchers.Default) {
-                equalizerPreferences.settings.collect { settings ->
+                // The shared DataStore re-emits on every unrelated preference write.
+                equalizerPreferences.settings.distinctUntilChanged().collect { settings ->
                     setEqualizer(settings.enabled, settings.gainsDb.toFloatArray())
                 }
             }

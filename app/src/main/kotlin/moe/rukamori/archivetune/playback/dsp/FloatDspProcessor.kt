@@ -40,7 +40,8 @@ class FloatDspProcessor : BaseAudioProcessor() {
         if (!FloatDsp.available) return AudioProcessor.AudioFormat.NOT_SET
         val encoding = inputAudioFormat.encoding
         if (engaged && (encoding == C.ENCODING_PCM_16BIT || encoding == C.ENCODING_PCM_FLOAT)) {
-            activeOutputFloat = outputFloat
+            // Float input has no 16-bit pass-through path in queueInput, so it must stay float.
+            activeOutputFloat = outputFloat || encoding == C.ENCODING_PCM_FLOAT
             dropHandleIfFormatChanged(inputAudioFormat)
             return AudioProcessor.AudioFormat(
                 inputAudioFormat.sampleRate,

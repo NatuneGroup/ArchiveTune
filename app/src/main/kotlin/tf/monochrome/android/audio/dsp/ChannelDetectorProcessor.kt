@@ -46,6 +46,10 @@ class ChannelDetectorProcessor @Inject constructor() : AudioProcessor {
     private var pendingFormat = AudioFormat.NOT_SET
     private var inputFormat = AudioFormat.NOT_SET
     private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+
+    // getOutput() hands the buffer out and resets outputBuffer, so the allocation is kept here to
+    // be reused by the next queueInput instead of being reallocated every call.
+    private var outputScratch: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
 
     @Volatile private var peaks = FloatArray(0)
@@ -168,11 +172,12 @@ class ChannelDetectorProcessor @Inject constructor() : AudioProcessor {
             }
         }
 
-        if (outputBuffer.capacity() < byteCount) {
-            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
+        if (outputScratch.capacity() < byteCount) {
+            outputScratch = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.clear()
+            outputScratch.clear()
         }
+        outputBuffer = outputScratch
         val savedLimit = inputBuffer.limit()
         inputBuffer.limit(startPos + byteCount)
         outputBuffer.put(inputBuffer)
@@ -211,6 +216,7 @@ class ChannelDetectorProcessor @Inject constructor() : AudioProcessor {
         pendingFormat = AudioFormat.NOT_SET
         inputFormat = AudioFormat.NOT_SET
         peaks = FloatArray(0)
+        outputScratch = AudioProcessor.EMPTY_BUFFER
         _state.value = null
     }
 

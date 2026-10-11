@@ -56,6 +56,10 @@ class SpectrumAnalyzerTap @Inject constructor(
     private var pendingFormat = AudioFormat.NOT_SET
     private var inputFormat = AudioFormat.NOT_SET
     private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+
+    // getOutput() hands the buffer out and resets outputBuffer, so the allocation is kept here to
+    // be reused by the next queueInput instead of being reallocated every call.
+    private var outputScratch: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
     private var sampleRate = 48000
 
@@ -264,7 +268,7 @@ class SpectrumAnalyzerTap @Inject constructor(
                     }
                 } else {
                     for (i in 0 until numFrames) {
-                        val off = startPos + i * 8
+                        val off = startPos + i * frameSize
                         val l = inputBuffer.getFloat(off)
                         val r = inputBuffer.getFloat(off + 4)
                         ringLocal[w] = (l + r) * 0.5f
@@ -281,7 +285,7 @@ class SpectrumAnalyzerTap @Inject constructor(
                     }
                 } else {
                     for (i in 0 until numFrames) {
-                        val off = startPos + i * 4
+                        val off = startPos + i * frameSize
                         val l = inputBuffer.getShort(off).toFloat() / 32768f
                         val r = inputBuffer.getShort(off + 2).toFloat() / 32768f
                         ringLocal[w] = (l + r) * 0.5f
@@ -293,11 +297,12 @@ class SpectrumAnalyzerTap @Inject constructor(
             ringWrite = w
         }
 
-        if (outputBuffer.capacity() < byteCount) {
-            outputBuffer = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
+        if (outputScratch.capacity() < byteCount) {
+            outputScratch = ByteBuffer.allocateDirect(byteCount).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.clear()
+            outputScratch.clear()
         }
+        outputBuffer = outputScratch
         val savedLimit = inputBuffer.limit()
         inputBuffer.limit(startPos + byteCount)
         outputBuffer.put(inputBuffer)
@@ -335,6 +340,7 @@ class SpectrumAnalyzerTap @Inject constructor(
         flush()
         pendingFormat = AudioFormat.NOT_SET
         inputFormat = AudioFormat.NOT_SET
+        outputScratch = AudioProcessor.EMPTY_BUFFER
     }
 
     private fun buildHannWindow(n: Int): FloatArray {

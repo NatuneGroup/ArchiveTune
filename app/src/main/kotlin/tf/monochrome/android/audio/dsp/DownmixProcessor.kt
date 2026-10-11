@@ -17,6 +17,10 @@ class DownmixProcessor @Inject constructor() : AudioProcessor {
     private var pendingFormat = AudioFormat.NOT_SET
     private var inputFormat = AudioFormat.NOT_SET
     private var outputBuffer: ByteBuffer = AudioProcessor.EMPTY_BUFFER
+
+    // getOutput() hands the buffer out and resets outputBuffer, so the allocation is kept here to
+    // be reused by the next queueInput instead of being reallocated every call.
+    private var outputScratch: ByteBuffer = AudioProcessor.EMPTY_BUFFER
     private var inputEnded = false
 
     private var coefL = FloatArray(0)
@@ -112,11 +116,12 @@ class DownmixProcessor @Inject constructor() : AudioProcessor {
 
         val outFrameSize = bytesPerSample * 2
         val outBytes = numFrames * outFrameSize
-        if (outputBuffer.capacity() < outBytes) {
-            outputBuffer = ByteBuffer.allocateDirect(outBytes).order(ByteOrder.nativeOrder())
+        if (outputScratch.capacity() < outBytes) {
+            outputScratch = ByteBuffer.allocateDirect(outBytes).order(ByteOrder.nativeOrder())
         } else {
-            outputBuffer.clear()
+            outputScratch.clear()
         }
+        outputBuffer = outputScratch
 
         val cL = coefL
         val cR = coefR
@@ -190,6 +195,7 @@ class DownmixProcessor @Inject constructor() : AudioProcessor {
         flush()
         pendingFormat = AudioFormat.NOT_SET
         inputFormat = AudioFormat.NOT_SET
+        outputScratch = AudioProcessor.EMPTY_BUFFER
         coefL = FloatArray(0)
         coefR = FloatArray(0)
         lfeActive = false

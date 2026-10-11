@@ -361,7 +361,7 @@ fun LyricsEnhanced(
     // so the karaoke subtree tears down and re-animates from the beginning. Without this,
     // mediaId + lyrics text are unchanged on restart, so lyricsSessionKey stays the same and
     // all per-session Animatable instances retain their settled values — no intro animation replays.
-    val playbackState by playerConnection.playbackState.collectAsState()
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
     var restartTick by remember { mutableIntStateOf(0) }
     var lastPlaybackState by remember { mutableStateOf(Player.STATE_READY) }
     LaunchedEffect(mediaMetadata?.id, playbackState) {

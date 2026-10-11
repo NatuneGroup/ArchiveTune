@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.ui.player
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -253,8 +254,8 @@ fun V10PlayerContent(
         }
     }
 
-    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
-    val repeatMode by playerConnection.repeatMode.collectAsState()
+    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
+    val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
     val currentSong by playerConnection.currentSong.collectAsState(initial = null)
     val liked = currentSong?.song?.liked == true
     val onToggleLike = playerConnection::toggleLike

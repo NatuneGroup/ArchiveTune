@@ -135,7 +135,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -749,11 +752,14 @@ private fun SimpMusicLyricLine(
     val audioAdvancing by playerConnection.isAudioAdvancing.collectAsStateWithLifecycle()
 
     var positionMs by remember(lines) { mutableLongStateOf(0L) }
-    LaunchedEffect(lines, active) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lines, active, lifecycleOwner) {
         if (lines.isEmpty() || !active) return@LaunchedEffect
-        while (true) {
-            positionMs = playerConnection.player.currentPosition
-            delay(200L)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                positionMs = playerConnection.player.currentPosition
+                delay(200L)
+            }
         }
     }
 

@@ -96,7 +96,7 @@ fun LooperPlayerContent(
     canSkipPrevious: Boolean,
     canSkipNext: Boolean,
     sliderPosition: Long?,
-    position: Long,
+    positionProvider: () -> Long,
     duration: Long,
     playerConnection: PlayerConnection,
     navController: NavController,
@@ -285,7 +285,7 @@ fun LooperPlayerContent(
                                 playerConnection.seekToPrevious()
                             },
                             onSeekRelative = { deltaMs ->
-                                onSeek((position + deltaMs).coerceAtLeast(0L))
+                                onSeek((positionProvider() + deltaMs).coerceAtLeast(0L))
                                 onSeekFinished()
                             },
                             modifier = Modifier.size(artSize),
@@ -358,7 +358,7 @@ fun LooperPlayerContent(
                 Spacer(Modifier.height(32.dp))
 
                 LooperExpressiveSlider(
-                    position = position,
+                    positionProvider = positionProvider,
                     duration = duration,
                     isPlaying = isPlaying,
                     scrubPosition = sliderPosition,
@@ -608,13 +608,17 @@ private fun LooperArtwork(
             label = "looperStaticArtworkAlpha",
         )
         if (staticArtworkAlpha > 0f) {
-            AsyncImage(
-                model =
+            val artworkContext = LocalContext.current
+            val artworkRequest =
+                remember(artworkContext, mediaMetadata.thumbnailUrl) {
                     ImageRequest
-                        .Builder(LocalContext.current)
+                        .Builder(artworkContext)
                         .data(mediaMetadata.thumbnailUrl)
                         .crossfade(320)
-                        .build(),
+                        .build()
+                }
+            AsyncImage(
+                model = artworkRequest,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier =

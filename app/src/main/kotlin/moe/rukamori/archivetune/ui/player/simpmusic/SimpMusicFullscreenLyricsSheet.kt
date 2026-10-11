@@ -89,6 +89,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -105,7 +106,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import kotlin.math.cos
 import kotlin.math.sin
@@ -249,14 +253,17 @@ internal fun SimpMusicFullscreenLyricsSheet(
     var lyricsSyncOffset by rememberSaveable(mediaMetadata?.id) { mutableIntStateOf(0) }
     var isScrubbing by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(-1L) }
-    LaunchedEffect(mediaMetadata.id, isPlaying) {
-        while (isActive) {
-            val d = playerConnection.player.duration
-            if (d > 0) duration = d
-            if (!isScrubbing) {
-                sliderPosition = playerConnection.player.currentPosition.coerceAtLeast(0L)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(mediaMetadata.id, isPlaying, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                val d = playerConnection.player.duration
+                if (d > 0) duration = d
+                if (!isScrubbing) {
+                    sliderPosition = playerConnection.player.currentPosition.coerceAtLeast(0L)
+                }
+                delay(200L)
             }
-            delay(200L)
         }
     }
 
@@ -370,28 +377,32 @@ internal fun SimpMusicFullscreenLyricsSheet(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors =
-                                    listOf(
-                                        startColor,
-                                        midColor1,
-                                        midColor2,
-                                        endColor.copy(alpha = 0.9f),
-                                        endColor,
-                                    ),
-                                start =
-                                    Offset(
-                                        x = animatedOffsetX + (cos(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
-                                        y = animatedOffsetY + (sin(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
-                                    ),
-                                end =
-                                    Offset(
-                                        x = animatedOffsetX + 2500f + (cos((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
-                                        y = animatedOffsetY + 2500f + (sin((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
-                                    ),
-                            ),
-                        ),
+                        // Drawn rather than set with background(): the three infinite animations
+                        // are read here, in the draw phase, so they never recompose the sheet.
+                        .drawBehind {
+                            drawRect(
+                                Brush.linearGradient(
+                                    colors =
+                                        listOf(
+                                            startColor,
+                                            midColor1,
+                                            midColor2,
+                                            endColor.copy(alpha = 0.9f),
+                                            endColor,
+                                        ),
+                                    start =
+                                        Offset(
+                                            x = animatedOffsetX + (cos(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
+                                            y = animatedOffsetY + (sin(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
+                                        ),
+                                    end =
+                                        Offset(
+                                            x = animatedOffsetX + 2500f + (cos((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                            y = animatedOffsetY + 2500f + (sin((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                        ),
+                                ),
+                            )
+                        },
             )
 
             Column(

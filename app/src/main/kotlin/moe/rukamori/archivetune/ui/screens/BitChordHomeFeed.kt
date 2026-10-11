@@ -421,14 +421,12 @@ private fun BitChordShimmerBox(
             .clip(shape)
             .drawWithCache {
                 val band = size.width * 0.5f
-                val startX = -band + sweep * (size.width + band * 2f)
-                val brush =
-                    Brush.horizontalGradient(
-                        listOf(base, highlight, base),
-                        startX,
-                        startX + band,
-                    )
-                onDrawBehind { drawRect(brush) }
+                val colors = listOf(base, highlight, base)
+                // sweep is read only in the draw block so the animation does not rebuild this cache every frame.
+                onDrawBehind {
+                    val startX = -band + sweep * (size.width + band * 2f)
+                    drawRect(Brush.horizontalGradient(colors, startX, startX + band))
+                }
             },
     )
 }
@@ -511,11 +509,7 @@ fun BitChordRecentsShelf(
     when (view) {
         BitChordRecentsView.LIST -> {
             val columns =
-                remember(songs) {
-                    songs
-                        .distinctBy { it.id }
-                        .chunked(BitChordRecentTracksPerColumn)
-                }
+                remember(distinctSongs) { distinctSongs.chunked(BitChordRecentTracksPerColumn) }
             LazyRow(
                 contentPadding = PaddingValues(horizontal = BitChordPageGutter),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

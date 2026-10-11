@@ -70,7 +70,10 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -235,18 +238,21 @@ fun SimpMusicLyrics(
     var currentLineIndex by remember(lyrics) { mutableIntStateOf(-1) }
     val latestSliderPositionProvider = rememberUpdatedState(sliderPositionProvider)
 
-    LaunchedEffect(entries, isSynced, isTtmlFormat, lyricsSyncOffset, disableAnimations) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(entries, isSynced, isTtmlFormat, lyricsSyncOffset, disableAnimations, lifecycleOwner) {
         if (!isSynced || entries.isEmpty()) return@LaunchedEffect
         val leadMs = if (isTtmlFormat) TTML_LEAD_MS else LRC_LEAD_MS
         // A word-timed line needs a fine tick to light one word at a time; a line-synced one
         // changes state a few times a minute and a 50 ms poll is already far finer than it needs.
         val pollMs = if (isTtmlFormat) 16L else 50L
-        while (isActive) {
-            val raw = latestSliderPositionProvider.value() ?: player.currentPosition
-            val shifted = (raw + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
-            positionState.longValue = (shifted + leadMs + VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
-            currentLineIndex = findCurrentLineIndex(entries, positionState.longValue, 0L)
-            delay(pollMs)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                val raw = latestSliderPositionProvider.value() ?: player.currentPosition
+                val shifted = (raw + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
+                positionState.longValue = (shifted + leadMs + VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
+                currentLineIndex = findCurrentLineIndex(entries, positionState.longValue, 0L)
+                delay(pollMs)
+            }
         }
     }
 

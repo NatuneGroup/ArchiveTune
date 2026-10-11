@@ -256,7 +256,7 @@ fun V10PlayerContent(
 
     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
     val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
-    val currentSong by playerConnection.currentSong.collectAsState(initial = null)
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val liked = currentSong?.song?.liked == true
     val onToggleLike = playerConnection::toggleLike
 

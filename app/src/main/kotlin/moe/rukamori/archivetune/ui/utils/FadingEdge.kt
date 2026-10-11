@@ -7,7 +7,6 @@
  */
 
 package moe.rukamori.archivetune.ui.utils
-import moe.rukamori.archivetune.LocalBlurDisabled
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -18,6 +17,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
+import moe.rukamori.archivetune.LocalBlurDisabled
 
 fun Modifier.fadingEdge(
     left: Dp? = null,

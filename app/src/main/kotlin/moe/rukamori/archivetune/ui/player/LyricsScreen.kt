@@ -101,7 +101,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.C
 import androidx.media3.common.Player.STATE_BUFFERING
@@ -538,12 +541,15 @@ fun LyricsScreen(
         }
     }
 
-    LaunchedEffect(player, playbackState, mediaMetadata.id) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(player, playbackState, mediaMetadata.id, lifecycleOwner) {
         if (playbackState != STATE_READY && playbackState != STATE_BUFFERING) return@LaunchedEffect
-        while (isActive) {
-            positionState.longValue = player.currentPosition.coerceAtLeast(0L)
-            durationState.longValue = player.duration
-            delay(250)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                positionState.longValue = player.currentPosition.coerceAtLeast(0L)
+                durationState.longValue = player.duration
+                delay(250)
+            }
         }
     }
 

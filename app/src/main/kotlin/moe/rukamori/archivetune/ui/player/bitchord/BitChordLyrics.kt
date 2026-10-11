@@ -443,11 +443,17 @@ internal fun SweptLyricLine(
         modifier
             .graphicsLayer {
                 val pos = clock.longValue
-                val sinceStart = ((pos - line.timeMs) / 1000f).coerceAtLeast(0f)
-                val phase = 2f * PI.toFloat() * sinceStart / BitChordLyricRiseResponseSec
-                val rise = (1f - (1f + phase) * exp(-phase)).coerceIn(0f, 1f)
-                val lineEndReached = pos >= line.endMs
-                translationY = if (lineEndReached) 0f else -BitChordLyricLiftEm * style.fontSize.toPx() * rise
+                // Most lines on screen are before or after the sung one; skip the exp() for them.
+                // toPx() throws for a non-Sp size, and a style is not obliged to declare one.
+                translationY =
+                    if (pos <= line.timeMs || pos >= line.endMs || !style.fontSize.isSp) {
+                        0f
+                    } else {
+                        val sinceStart = (pos - line.timeMs) / 1000f
+                        val phase = 2f * PI.toFloat() * sinceStart / BitChordLyricRiseResponseSec
+                        val rise = (1f - (1f + phase) * exp(-phase)).coerceIn(0f, 1f)
+                        -BitChordLyricLiftEm * style.fontSize.toPx() * rise
+                    }
             },
     ) {
         Text(

@@ -14,10 +14,6 @@ import android.media.AudioManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.EaseInOutSine
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -48,6 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -55,9 +52,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
@@ -91,13 +92,16 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
 
     var pollTick by remember { mutableIntStateOf(0) }
     var routedLabelValue by remember { mutableStateOf("Android Mixer") }
-    LaunchedEffect(Unit) {
-        while (true) {
-            withContext(Dispatchers.IO) {
-                routedLabelValue = readRoutedOutputLabel(context)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                withContext(Dispatchers.IO) {
+                    routedLabelValue = readRoutedOutputLabel(context)
+                }
+                pollTick++
+                delay(1_000L)
             }
-            pollTick++
-            delay(1_000L)
         }
     }
     val routedLabel = routedLabelValue
@@ -283,26 +287,29 @@ fun LiveAudioChainPill(
     val accent = MaterialTheme.colorScheme.primary
     val outputAccent = MaterialTheme.colorScheme.tertiary
 
-    val liveDotAlpha by rememberInfiniteTransition(label = "liveChainDot")
-        .animateFloat(
-            initialValue = 0.35f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 1_200, easing = EaseInOutSine),
-                repeatMode = RepeatMode.Reverse,
-            ),
-            label = "liveChainDotAlpha",
-        )
-
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val liveDotAlpha = remember { Animatable(0.35f) }
     val shimmerProgress = remember { Animatable(0f) }
-    LaunchedEffect(labels.hasSignal) {
-        if (labels.hasSignal) {
-            while (true) {
-                shimmerProgress.animateTo(1f, tween(2_600, easing = EaseInOutSine))
-                shimmerProgress.animateTo(0f, tween(2_600, easing = EaseInOutSine))
-            }
-        } else {
+    // Both loops stop while the activity is not STARTED, so a hidden app does not keep drawing frames.
+    LaunchedEffect(labels.hasSignal, lifecycleOwner) {
+        if (!labels.hasSignal) {
             shimmerProgress.snapTo(0f)
+            liveDotAlpha.snapTo(0.35f)
+            return@LaunchedEffect
+        }
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            launch {
+                while (true) {
+                    shimmerProgress.animateTo(1f, tween(2_600, easing = EaseInOutSine))
+                    shimmerProgress.animateTo(0f, tween(2_600, easing = EaseInOutSine))
+                }
+            }
+            launch {
+                while (true) {
+                    liveDotAlpha.animateTo(1f, tween(1_200, easing = EaseInOutSine))
+                    liveDotAlpha.animateTo(0.35f, tween(1_200, easing = EaseInOutSine))
+                }
+            }
         }
     }
 
@@ -321,8 +328,9 @@ fun LiveAudioChainPill(
                 modifier =
                     Modifier
                         .size(8.dp)
+                        .graphicsLayer { alpha = liveDotAlpha.value }
                         .clip(CircleShape)
-                        .background(outputAccent.copy(alpha = liveDotAlpha)),
+                        .background(outputAccent),
             )
             Spacer(Modifier.width(8.dp))
             Text(

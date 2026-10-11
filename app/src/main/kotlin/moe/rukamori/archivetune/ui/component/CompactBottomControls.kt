@@ -21,7 +21,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -58,9 +58,9 @@ fun Modifier.glassGlowOverlay(
     if (strength <= 0.01f) {
         this
     } else {
-        drawWithContent {
-            drawContent()
-            if (strength <= 0.01f) return@drawWithContent
+        // The outline, stroke and brushes depend only on size and strength, so they are built
+        // once per size change instead of on every draw.
+        drawWithCache {
             val outline = shape.createOutline(size, layoutDirection, this)
             val corner =
                 when (val r = (outline as? Outline.Rounded)?.roundRect?.topLeftCornerRadius) {
@@ -68,42 +68,49 @@ fun Modifier.glassGlowOverlay(
                     else -> CornerRadius(r.x, r.y)
                 }
             val stroke = GlowEdgeStrokeWidth.toPx()
-
-            drawRoundRect(
-                brush =
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.White.copy(alpha = 0.27f),
-                            Color.White.copy(alpha = 0.02f),
-                        ),
+            val edgeBrush =
+                Brush.verticalGradient(
+                    listOf(
+                        Color.White.copy(alpha = 0.27f),
+                        Color.White.copy(alpha = 0.02f),
                     ),
-                topLeft = Offset(stroke / 2f, stroke / 2f),
-                size = Size(size.width - stroke, size.height - stroke),
-                cornerRadius = corner,
-                style = Stroke(stroke),
-                alpha = strength,
-            )
+                )
+            val sheenBrush =
+                Brush.verticalGradient(
+                    0f to Color.White.copy(alpha = 0.10f),
+                    0.45f to Color.Transparent,
+                    1f to Color.White.copy(alpha = 0.05f),
+                )
+            val baseBrush =
+                Brush.verticalGradient(
+                    0.72f to Color.Transparent,
+                    1f to Color.White.copy(alpha = 0.14f),
+                )
+            val edgeStyle = Stroke(stroke)
+            val edgeTopLeft = Offset(stroke / 2f, stroke / 2f)
+            val edgeSize = Size(size.width - stroke, size.height - stroke)
 
-            drawRoundRect(
-                brush =
-                    Brush.verticalGradient(
-                        0f to Color.White.copy(alpha = 0.10f),
-                        0.45f to Color.Transparent,
-                        1f to Color.White.copy(alpha = 0.05f),
-                    ),
-                cornerRadius = corner,
-                alpha = strength,
-            )
-
-            drawRoundRect(
-                brush =
-                    Brush.verticalGradient(
-                        0.72f to Color.Transparent,
-                        1f to Color.White.copy(alpha = 0.14f),
-                    ),
-                cornerRadius = corner,
-                alpha = strength * 0.7f,
-            )
+            onDrawWithContent {
+                drawContent()
+                drawRoundRect(
+                    brush = edgeBrush,
+                    topLeft = edgeTopLeft,
+                    size = edgeSize,
+                    cornerRadius = corner,
+                    style = edgeStyle,
+                    alpha = strength,
+                )
+                drawRoundRect(
+                    brush = sheenBrush,
+                    cornerRadius = corner,
+                    alpha = strength,
+                )
+                drawRoundRect(
+                    brush = baseBrush,
+                    cornerRadius = corner,
+                    alpha = strength * 0.7f,
+                )
+            }
         }
     }
 

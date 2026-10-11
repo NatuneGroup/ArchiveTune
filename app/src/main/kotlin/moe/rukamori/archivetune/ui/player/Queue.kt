@@ -160,10 +160,10 @@ fun Queue(
 
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
-    val currentSong by playerConnection.currentSong.collectAsState(initial = null)
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val currentSongLiked = currentSong?.song?.liked == true
 
-    val currentFormat by playerConnection.currentFormat.collectAsState(initial = null)
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
     val queueTitle by playerConnection.queueTitle.collectAsStateWithLifecycle()
 
     val selectedSongs = remember { mutableStateListOf<MediaMetadata>() }

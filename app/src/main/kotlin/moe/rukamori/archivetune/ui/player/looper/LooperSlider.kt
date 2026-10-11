@@ -37,6 +37,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import java.util.Locale
 import kotlin.math.sin
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -48,7 +51,7 @@ private val LooperThumbHeight = 16.dp
 
 @Composable
 internal fun LooperExpressiveSlider(
-    position: Long,
+    positionProvider: () -> Long,
     duration: Long,
     isPlaying: Boolean,
     scrubPosition: Long?,
@@ -57,6 +60,9 @@ internal fun LooperExpressiveSlider(
     onSeekFinished: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // Read here, not by the caller: the 100 ms position tick then invalidates only this slider
+    // instead of the whole player screen.
+    val position = positionProvider()
     val safeDuration = if (duration > 0) duration else 1L
     val displayPosition = (scrubPosition ?: position).coerceIn(0L, safeDuration)
     val progress = (displayPosition.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
@@ -70,18 +76,23 @@ internal fun LooperExpressiveSlider(
 
     var trackWidthPx by remember { mutableFloatStateOf(0f) }
     var wavePhase by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(isPlaying) {
-        var lastNanos = 0L
-        while (isPlaying) {
-            withFrameNanos { frameNanos ->
-                if (lastNanos != 0L) {
-                    val advance = (frameNanos - lastNanos) / 1_000_000_000f * 0.05f
-                    wavePhase = (wavePhase + advance) % 1f
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(enableWave, lifecycleOwner) {
+        if (!enableWave) return@LaunchedEffect
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            var lastNanos = 0L
+            while (true) {
+                withFrameNanos { frameNanos ->
+                    if (lastNanos != 0L) {
+                        val advance = (frameNanos - lastNanos) / 1_000_000_000f * 0.05f
+                        wavePhase = (wavePhase + advance) % 1f
+                    }
+                    lastNanos = frameNanos
                 }
-                lastNanos = frameNanos
             }
         }
     }
+    val wavePath = remember { Path() }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Canvas(
@@ -144,7 +155,9 @@ internal fun LooperExpressiveSlider(
                     )
                 } else {
                     val easeLength = wavelength * 3f
-                    val path = Path()
+                    val path = wavePath
+                    path.rewind()
+                    val step = 1.dp.toPx().coerceAtLeast(1f)
                     var x = 0f
                     while (x <= activeEnd) {
                         val ease =
@@ -160,8 +173,9 @@ internal fun LooperExpressiveSlider(
                                     ease *
                                     waveBlend
                         if (x == 0f) path.moveTo(x, y) else path.lineTo(x, y)
-                        x += 1f
+                        x += step
                     }
+                    path.lineTo(activeEnd, centerY)
                     drawPath(
                         path = path,
                         color = accentColor,

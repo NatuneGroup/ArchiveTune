@@ -983,7 +983,19 @@ fun BottomSheetPlayer(
 
     val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
-        if (playbackState != STATE_READY) return@LaunchedEffect
+        if (playbackState != STATE_READY) {
+            mediaMetadata?.let {
+                val metaDuration = it.duration.toLong() * 1000
+                duration = if (metaDuration > 0) metaDuration else 0L
+            }
+            val player = playerConnection.player
+            val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
+            val currentPlayerPosition = player.currentPosition
+            if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
+                position = currentPlayerPosition
+            }
+            return@LaunchedEffect
+        }
         lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             val startTime = SystemClock.elapsedRealtime()
             while (isActive) {
@@ -1012,7 +1024,6 @@ fun BottomSheetPlayer(
                     if (currentPlayerDuration > 0L && currentPlayerDuration != C.TIME_UNSET) {
                         duration = currentPlayerDuration
                     } else if (duration <= 0L || duration == C.TIME_UNSET) {
-        }
                         mediaMetadata?.let {
                             val metadataDuration = it.duration.toLong() * 1000
                             if (metadataDuration > 0L) duration = metadataDuration
@@ -1036,16 +1047,7 @@ fun BottomSheetPlayer(
                         }
                     }
                 }
-        }
-        mediaMetadata?.let {
-            val metaDuration = it.duration.toLong() * 1000
-            duration = if (metaDuration > 0) metaDuration else 0L
-        }
-        val player = playerConnection.player
-        val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
-        val currentPlayerPosition = player.currentPosition
-        if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
-            position = currentPlayerPosition
+            }
         }
     }
 
@@ -2112,7 +2114,7 @@ fun BottomSheetPlayer(
                             canSkipPrevious = canSkipPrevious,
                             canSkipNext = canSkipNext,
                             sliderPosition = sliderPosition,
-                            position = position,
+                            positionProvider = positionProvider,
                             duration = duration,
                             playerConnection = playerConnection,
                             navController = navController,
@@ -2682,7 +2684,7 @@ fun BottomSheetPlayer(
                             canSkipPrevious = canSkipPrevious,
                             canSkipNext = canSkipNext,
                             sliderPosition = sliderPosition,
-                            position = position,
+                            positionProvider = positionProvider,
                             duration = duration,
                             playerConnection = playerConnection,
                             navController = navController,

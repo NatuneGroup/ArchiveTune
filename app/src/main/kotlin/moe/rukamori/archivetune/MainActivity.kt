@@ -991,7 +991,7 @@ class MainActivity : ComponentActivity() {
             // restores whichever bar the user had chosen instead of overwriting that choice.
             val navigationBarStyle =
                 if (rememberAppleMusicExperience()) {
-                    NavigationBarStyle.APPLE_MUSIC
+                    NavigationBarStyle.YUMA_PLAYER
                 } else {
                     navigationBarStyleStored
                 }
@@ -1614,9 +1614,12 @@ class MainActivity : ComponentActivity() {
                         defaultValue = MiniPlayerBackgroundStyle.THEME,
                     )
                     val anyFrostedConsumerActive =
-                        navigationBarFrostedBlur ||
-                            navigationBarTintFrostedBlur ||
-                            miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED
+                        !disableBlur &&
+                            (
+                                navigationBarFrostedBlur ||
+                                    navigationBarTintFrostedBlur ||
+                                    miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED
+                            )
                     val navBarFrostedBackdrop =
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && anyFrostedConsumerActive) {
                             val frostedLayer = rememberGraphicsLayer()
@@ -3100,12 +3103,11 @@ class MainActivity : ComponentActivity() {
                                                     // does the Apple Music bar: it keeps its own rounded corners on
                                                     // all four sides, so pinching the mini player's bottom corners
                                                     // toward a junction left them square against nothing (#169).
-                                                    // The BitChord pill is floating too, so it never docks either.
                                                     if (
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
-                                                                                    navigationBarStyle == NavigationBarStyle.YUMA_PLAYER
+                                                        navigationBarStyle == NavigationBarStyle.YUMA_PLAYER
                                                     ) {
                                                         0f
                                                     } else {
@@ -3167,29 +3169,32 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                     },
                                         ) {
-                                            // The BitChord pill replaces the stock toolbar when its
-                                            // switch is on. Apple Music keeps its coordinated bar.
-                                            // Same gate FloatingNavigationToolbar uses below: the
-                                            // app-wide Liquid Glass switch alone must not change the
-                                            // BitChord bar, only the Liquid Glass bar setting.
-                                            val navBarLiquidGlassBackdrop =
-                                                if (liquidGlassEnabled && liquidGlassNavBarEnabled) liquidGlassBackdrop else null
-                                            val compactFraction by bottomUiCompactFractionState
-                                            if (compactFraction > 0.01f) {
+                                            // Boolean gates only: the animated fraction itself is read in
+                                            // graphicsLayer blocks so the spring does not recompose this scope.
+                                            val compactRowVisible by remember {
+                                                derivedStateOf { bottomUiCompactFractionState.value > 0.01f }
+                                            }
+                                            val compactToolbarVisible by remember {
+                                                derivedStateOf { bottomUiCompactFractionState.value < 0.99f }
+                                            }
+                                            if (compactRowVisible) {
                                                 Row(
                                                     modifier =
                                                         Modifier
                                                             .fillMaxWidth()
                                                             .align(Alignment.BottomCenter)
                                                             .padding(horizontal = 24.dp)
-                                                            .padding(bottom = bottomInset + 16.dp)
-                                                            .height(CompactControlSize)
-                                                            .graphicsLayer { alpha = compactFraction },
+                                                            .padding(
+                                                                bottom =
+                                                                    bottomInset + floatingBarsBottomPadding +
+                                                                        ((navVisibleHeight - CompactControlSize) / 2).coerceAtLeast(0.dp),
+                                                            ).height(CompactControlSize)
+                                                            .graphicsLayer { alpha = bottomUiCompactFractionState.value },
                                                     verticalAlignment = Alignment.CenterVertically,
                                                     horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
                                                 ) {
-                                                    val isLibraryRoute =
-                                                        navBackStackEntry?.destination?.route in
+                                                    val compactLibraryRoutes =
+                                                        remember {
                                                             setOf(
                                                                 "home",
                                                                 "history",
@@ -3197,6 +3202,9 @@ class MainActivity : ComponentActivity() {
                                                                 "library_playlists",
                                                                 "library_spotify_playlists",
                                                             )
+                                                        }
+                                                    val isLibraryRoute =
+                                                        navBackStackEntry?.destination?.route in compactLibraryRoutes
                                                     CompactControlCircle(
                                                         iconRes =
                                                             if (isLibraryRoute) {
@@ -3237,6 +3245,7 @@ class MainActivity : ComponentActivity() {
                                                     )
                                                 }
                                             }
+                                            if (compactToolbarVisible) {
                                                 FloatingNavigationToolbar(
                                                     items = navigationItems,
                                                     pureBlack = pureBlack,
@@ -3250,6 +3259,7 @@ class MainActivity : ComponentActivity() {
                                                     modifier =
                                                         Modifier
                                                             .align(Alignment.BottomCenter)
+                                                            .graphicsLayer { alpha = 1f - bottomUiCompactFractionState.value }
                                                             .padding(
                                                                 start = navBarHorizontalPadding,
                                                                 end = navBarHorizontalPadding,
@@ -3267,6 +3277,7 @@ class MainActivity : ComponentActivity() {
                                                         openSearch()
                                                     },
                                                 )
+                                            }
                                        }
                                     }
                                 },

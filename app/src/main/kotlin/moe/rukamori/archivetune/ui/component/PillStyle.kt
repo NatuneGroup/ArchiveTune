@@ -234,7 +234,7 @@ fun rememberPillStyle(
         primary,
         schemeIsDark,
     ) {
-        val isAppleMusic = style == NavigationBarStyle.YUMA_PLAYER
+        val isYumaPlayer = style == NavigationBarStyle.YUMA_PLAYER
         val supportsBackdrop = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         val canLiquidGlass = liquidGlass && liquidGlassBackdropAvailable && supportsBackdrop
         val canBlurBackdrop =
@@ -254,7 +254,7 @@ fun rememberPillStyle(
                     }
                 tintFrostedBlur -> tintedBase
                 pureBlack -> Color.Black
-                isAppleMusic -> surfaceContainer.copy(alpha = ApplePillContainerAlpha)
+                isYumaPlayer -> surfaceContainer.copy(alpha = ApplePillContainerAlpha)
                 // Transparency applies only without a frost overlay, which already provides the
                 // see-through effect; adding it there would double-count.
                 else -> surfaceContainer.copy(alpha = (opacity * (1f - transparency)).coerceIn(0.05f, 1f))
@@ -278,17 +278,15 @@ fun rememberPillStyle(
                 },
             widthFraction =
                 when (style) {
-                    // Apple Music's bar is inset only slightly: its five labels have to fit, so the
-                    // floating default of 0.8 (a fraction for a four-item bar) would squash them. An
-                    // untouched slider keeps the wide look; a width the user picked is honoured.
                     NavigationBarStyle.YUMA_PLAYER ->
                         if (widthPreference == NAVIGATION_BAR_WIDTH_DEFAULT) 0.94f else widthPreference.coerceIn(0.6f, 1f)
+                    NavigationBarStyle.APPLE_MUSIC -> NAVIGATION_BAR_PILL_WIDTH_DEFAULT
                     NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
                     NavigationBarStyle.DEFAULT -> if (useCompactPills) 0.88f else 1f
                 },
             containerColor = containerColor,
             raisedContainerColor =
-                if (isAppleMusic) surfaceContainerHigh.copy(alpha = ApplePillContainerAlpha) else surfaceContainerHigh,
+                if (isYumaPlayer) surfaceContainerHigh.copy(alpha = ApplePillContainerAlpha) else surfaceContainerHigh,
             contentColor =
                 when {
                     tintFrostedBlur -> tintedContent
@@ -297,7 +295,7 @@ fun rememberPillStyle(
                 },
             tintedContent = tintedContent,
             compact = useCompactPills,
-            borderColor = if (isAppleMusic) outlineVariant else null,
+            borderColor = if (isYumaPlayer) outlineVariant else null,
         )
     }
 }

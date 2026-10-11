@@ -1357,6 +1357,7 @@ val NavigationBarHideOnScrollKey = booleanPreferencesKey("navigationBarHideOnScr
 // DEFAULT). Defaults preserve the pre-existing look.
 val NavigationBarWidthKey = floatPreferencesKey("navigationBarWidth")
 const val NAVIGATION_BAR_WIDTH_DEFAULT = 0.8f // fraction of screen width when FLOATING
+const val NAVIGATION_BAR_PILL_WIDTH_DEFAULT = 0.55f // compact centred pill (Apple Music)
 
 val NavigationBarHeightKey = floatPreferencesKey("navigationBarHeight")
 const val NAVIGATION_BAR_HEIGHT_DEFAULT = 1.0f // multiplier on NavigationBarHeight

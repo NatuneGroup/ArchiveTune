@@ -236,7 +236,7 @@ fun FloatingNavigationToolbar(
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     // Apple Music's tab bar is icon + label by definition, so the style wins over the global
     // "hide labels" preference rather than silently losing its own look to it.
-    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isAppleMusic
+    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isYumaPlayer
     val density = LocalDensity.current
 
     val indicatorColor =
@@ -247,14 +247,14 @@ fun FloatingNavigationToolbar(
             canLiquidGlass -> Color.Transparent
             // Apple Music's active tab sits in a tinted pill: the reference shows a solid
             // primary-coloured capsule with the glyph knocked out of it and the label in the accent.
-            isAppleMusic -> MaterialTheme.colorScheme.primary
+            isYumaPlayer -> MaterialTheme.colorScheme.primary
             tintFrostedBlur && !isFloating -> tintedContent.copy(alpha = 0.18f)
             isFloating -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
             pureBlack -> Color.White.copy(alpha = 0.16f)
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
-    val indicatorWidth = if (isFloating || isAppleMusic) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
-    val indicatorHeight = if (isFloating || isAppleMusic) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
+    val indicatorWidth = if (isFloating || isYumaPlayer) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
+    val indicatorHeight = if (isFloating || isYumaPlayer) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
 
     // The built-in per-item indicator just fades in place; hide it so our single pill can slide
     // between items instead. On pure-black we also pin the icon/label colors for contrast.
@@ -280,7 +280,7 @@ fun FloatingNavigationToolbar(
                     unselectedTextColor =
                         if (pureBlack) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            isAppleMusic ->
+            isYumaPlayer ->
                 ShortNavigationBarItemDefaults.colors(
                     // The pill is drawn behind the item (see indicatorColor), so the item's own
                     // indicator stays transparent and the glyph is knocked out of the accent.

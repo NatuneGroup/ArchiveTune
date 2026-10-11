@@ -606,6 +606,34 @@ interface DatabaseDao {
     @Query("SELECT * FROM song WHERE id = :songId LIMIT 1")
     suspend fun getSongById(songId: String): Song?
 
+    /**
+     * The cover of a stored song named [title], preferring one whose artist appears in [artist].
+     *
+     * [artist] is a scrobble's artist string, which joins every credited artist, so it is matched by
+     * containment rather than equality. A title alone can be shared by unrelated songs; the ordering
+     * only makes the right one win when both exist, it does not require the artist to match.
+     */
+    @Query(
+        """
+        SELECT song.thumbnailUrl FROM song
+        LEFT JOIN song_artist_map ON song_artist_map.songId = song.id
+        LEFT JOIN artist ON artist.id = song_artist_map.artistId
+        WHERE song.title = :title COLLATE NOCASE
+            AND song.thumbnailUrl IS NOT NULL AND song.thumbnailUrl != ''
+        ORDER BY CASE WHEN artist.name IS NOT NULL AND instr(lower(:artist), lower(artist.name)) > 0 THEN 0 ELSE 1 END,
+            song.inLibrary DESC
+        LIMIT 1
+        """,
+    )
+    suspend fun libraryCoverForTrack(
+        title: String,
+        artist: String,
+    ): String?
+
+    /** The stored portrait of the artist called [name], if one has been fetched. */
+    @Query("SELECT thumbnailUrl FROM artist WHERE name = :name COLLATE NOCASE AND thumbnailUrl IS NOT NULL AND thumbnailUrl != '' LIMIT 1")
+    suspend fun libraryArtistImage(name: String): String?
+
     @Transaction
     @Query("SELECT * FROM song WHERE id = :songId LIMIT 1")
     fun getSongByIdBlocking(songId: String): Song?

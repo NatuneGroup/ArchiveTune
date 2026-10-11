@@ -105,7 +105,9 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
+import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.DarkModeKey
@@ -630,6 +632,7 @@ fun LastFmDashboardScreen(
         // whose image array is empty we fall back to a YouTube artist-channel
         // search and use the returned thumbnail. Mirrors the track artwork
         // pipeline (seed cache → resolve missing → publish snapshot).
+        val database = LocalDatabase.current
         val artistSeedMap = remember(artists) {
             val snapshot = HashMap<String, String>()
             for (artist in artists) {
@@ -669,7 +672,11 @@ fun LastFmDashboardScreen(
                         async(Dispatchers.IO) {
                             val name = artist.name.orEmpty()
                             val key = name.trim().lowercase()
-                            val url = resolveArtistImage(name)
+                            // Last.fm has no portraits at all now, so the artists the library already
+                            // knows by name come first; the YouTube search is for the rest.
+                            val url =
+                                runCatching { database.libraryArtistImage(name.trim()) }.getOrNull()?.takeIf(String::isNotBlank)
+                                    ?: resolveArtistImage(name)
                             if (url != null) {
                                 CachedArtworkStore.put("artist::$key", url)
                                 key to url
@@ -860,12 +867,22 @@ fun LastFmDashboardScreen(
                                     albumsFiltered.withIndex().toList(),
                                     key = { "album_${it.index}_${it.value.name}_${it.value.artist?.text ?: ""}" },
                                 ) { (index, album) ->
+                                    val albumTitle = album.name.orEmpty()
+                                    val albumArtist = album.artist?.text
                                     DashboardAlbumRow(
-                                        title = album.name.orEmpty(),
-                                        artist = album.artist?.text,
+                                        title = albumTitle,
+                                        artist = albumArtist,
                                         playCount = album.playcount,
                                         rank = index + 1,
-                                        artworkUrl = bestArtwork(album.image),
+                                        // 29 of a typical 50 top albums come back with no image at all,
+                                        // so the row resolves its own the way a track row does.
+                                        artworkUrl =
+                                            rememberResolvedArtwork(
+                                                lastFmUrl = bestArtwork(album.image),
+                                                key = "album::${albumTitle.trim().lowercase()}::${albumArtist.orEmpty().trim().lowercase()}",
+                                                title = albumTitle,
+                                                artist = albumArtist,
+                                            ),
                                         theme = theme,
                                     )
                                 }
@@ -1428,6 +1445,7 @@ private fun DashboardTrackRow(
     // Resolved URLs are written back to the [CachedArtworkStore] so re-composition (filter switch,
     // scroll back) doesn't re-resolve.
     val artworkKey = track.artworkKey()
+    val database = LocalDatabase.current
     // When the user has enabled "Prefer YouTube thumbnails" in settings,
     // skip the Last.fm image array entirely (it can return non-square /
     // brown-matted images from Last.fm's catalogue) and go straight to
@@ -1449,7 +1467,7 @@ private fun DashboardTrackRow(
     LaunchedEffect(artworkKey, resolvedArtworkUrl) {
         if (!resolvedArtworkUrl.isNullOrBlank()) return@LaunchedEffect
         val url = withContext(Dispatchers.IO) {
-            resolveCatalogueCover(ArtworkLookup(artworkKey, track.title, track.artist))
+            resolveCatalogueCover(ArtworkLookup(artworkKey, track.title, track.artist), database)
         }
         if (!url.isNullOrBlank()) {
             CachedArtworkStore.put(artworkKey, url)
@@ -2268,13 +2286,50 @@ private object CachedArtworkStore {
     }
 }
 
-private suspend fun resolveCatalogueCover(lookup: ArtworkLookup): String? {
+/**
+ * Last.fm answers most of what ArchiveTune scrobbles with its grey placeholder, since it has no
+ * catalogue entry for a YouTube upload. But the app scrobbled those plays itself, so the song —
+ * and the cover it already shows everywhere else — is in the library: asking the database first
+ * is instant, exact, and costs no network. The rest of the chain only runs for what it lacks.
+ */
+private suspend fun resolveCatalogueCover(
+    lookup: ArtworkLookup,
+    database: MusicDatabase? = null,
+): String? {
     if (lookup.title.isBlank()) return null
     val title = lookup.title
     val artist = lookup.artist
+    database
+        ?.let { db -> runCatching { db.libraryCoverForTrack(title.trim(), artist.orEmpty()) }.getOrNull() }
+        ?.takeIf(String::isNotBlank)
+        ?.let { return it }
     return resolveYtThumbnail(title, artist)
         ?: TelegramCoverProvider.coverUrl(title, artist)
         ?: CatalogueCoverProvider.resolveCoverUrl(title, artist)
+}
+
+/**
+ * The artwork for a row whose own Last.fm image may be missing: [lastFmUrl] when it is real, else
+ * what the process already resolved, else a lookup that runs only while the row is composed.
+ */
+@Composable
+private fun rememberResolvedArtwork(
+    lastFmUrl: String?,
+    key: String,
+    title: String,
+    artist: String?,
+): String? {
+    val database = LocalDatabase.current
+    var resolved by remember(key, lastFmUrl) { mutableStateOf(lastFmUrl ?: CachedArtworkStore.get(key)) }
+    LaunchedEffect(key, lastFmUrl) {
+        if (!resolved.isNullOrBlank()) return@LaunchedEffect
+        val url = withContext(Dispatchers.IO) { resolveCatalogueCover(ArtworkLookup(key, title, artist), database) }
+        if (!url.isNullOrBlank()) {
+            CachedArtworkStore.put(key, url)
+            resolved = url
+        }
+    }
+    return resolved
 }
 
 private suspend fun resolveYtThumbnail(title: String, artist: String?): String? {

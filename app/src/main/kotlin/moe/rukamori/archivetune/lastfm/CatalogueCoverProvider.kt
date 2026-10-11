@@ -327,7 +327,9 @@ object CatalogueCoverProvider {
                     "<meta[^>]+property=\"og:image\"[^>]+content=\"([^\"]+)\"",
                     RegexOption.IGNORE_CASE,
                 ).find(body)
-                ogImageMatch?.groupValues?.getOrNull(1)?.takeIf(String::isNotBlank)
+                // Only a CDN cover is artwork for this track; any other og:image is site chrome
+                // that would land on every row the earlier providers missed.
+                ogImageMatch?.groupValues?.getOrNull(1)?.takeIf { it.startsWith("https://i.scdn.co/image/") }
             }
         }
 

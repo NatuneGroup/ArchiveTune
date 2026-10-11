@@ -1043,6 +1043,8 @@
     <string name="discord_reauthorize_required_title">Discord session expired</string>
     <string name="discord_reauthorize_required_description">The saved access token expired. Reauthorize to relink your account and resume Rich Presence.</string>
     <string name="discord_reauthorize_action">Reauthorize</string>
+    <string name="discord_presence_unavailable_title">Rich Presence is unavailable in this build</string>
+    <string name="discord_presence_unavailable_description">OAuth account linking and profile details remain available, but Now Playing is disabled because this build does not include Discord’s official Social SDK Android integration. The ArchiveTune application owner must enable Social SDK and download the official Android SDK from Developer Portal → application → Downloads, then integrate it. OAuth user tokens must not be sent to Discord Gateway.</string>
     <string name="discord_saved_auth_checking">Checking saved Discord authorization</string>
     <string name="discord_saved_auth_expired">Discord authorization expired</string>
     <string name="discord_saved_auth_expired_message">The saved access token has expired. Sign in to Discord again; an expired token is not treated as connected.</string>

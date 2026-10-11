@@ -439,6 +439,7 @@ class LyricsHelper
                         artist,
                         mediaMetadata.album?.title,
                         mediaMetadata.duration,
+                        mediaMetadata.isrc,
                     ).fold(
                         onSuccess = { lyrics ->
                             LyricsUtils.lyricsOrNotFound(lyrics).takeIf { it != LYRICS_NOT_FOUND }

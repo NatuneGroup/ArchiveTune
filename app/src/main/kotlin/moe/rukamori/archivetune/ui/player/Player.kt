@@ -86,6 +86,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -983,7 +984,7 @@ fun BottomSheetPlayer(
 
     LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
         if (playbackState != STATE_READY) return@LaunchedEffect
-        repeatOnLifecycle(Lifecycle.State.STARTED) {
+        LocalLifecycleOwner.current.repeatOnLifecycle(Lifecycle.State.STARTED) {
             val startTime = SystemClock.elapsedRealtime()
             while (isActive) {
                 delay(if (aodModeEnabled) 500L else 100L)

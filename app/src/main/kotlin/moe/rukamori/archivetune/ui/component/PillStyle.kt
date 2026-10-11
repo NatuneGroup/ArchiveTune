@@ -34,6 +34,7 @@ import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_OPACITY_DEFAULT
+import moe.rukamori.archivetune.constants.NAVIGATION_BAR_PILL_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_TRANSPARENCY_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NavigationBarBottomPadding

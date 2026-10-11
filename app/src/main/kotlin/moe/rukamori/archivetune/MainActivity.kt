@@ -959,7 +959,6 @@ class MainActivity : ComponentActivity() {
                 defaultValue = defaultDisableAnimations,
             )
             val disableBlur by rememberPreference(DisableBlurKey, defaultValue = false)
-            val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
             // Task 8: app-wide scrollbar toggle. Provided via LocalHideScrollbar so any
             // composable that draws a scrollbar can opt-out when the user has hidden them.
             val hideScrollbar by rememberPreference(
@@ -998,6 +997,7 @@ class MainActivity : ComponentActivity() {
                 NavigationBarTintFrostedBlurKey,
                 defaultValue = false,
             )
+            val liquidGlassEnabled by rememberPreference(
                 LiquidGlassEnabledKey,
                 defaultValue = false,
             )

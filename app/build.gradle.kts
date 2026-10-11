@@ -422,6 +422,10 @@ android {
         warningsAsErrors = false
         abortOnError = false
         checkDependencies = false
+        // lintVital re-analyses the whole app on every assembleRelease and, with abortOnError off,
+        // can never fail the build. On a 4-vCPU runner it ran beside R8 for minutes and slowed it.
+        // PR builds still run the full :app:lint task.
+        checkReleaseBuilds = false
     }
 
     androidResources {

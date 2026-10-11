@@ -41,6 +41,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarArrangement
@@ -77,6 +78,7 @@ import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -120,6 +122,7 @@ import com.kyant.backdrop.drawBackdrop
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
+import com.kyant.backdrop.shadow.Shadow as KyantShadow
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -179,6 +182,7 @@ fun FloatingNavigationToolbar(
     frostedBackdrop: NavigationBarBackdrop? = null,
     liquidGlass: Boolean = false,
     liquidGlassBackdrop: LayerBackdrop? = null,
+    glowStrength: Float = 0f,
     isSelected: (Screens) -> Boolean,
     onItemClick: (Screens, Boolean) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
@@ -258,6 +262,16 @@ fun FloatingNavigationToolbar(
             pureBlack -> Color.White.copy(alpha = 0.16f)
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
+    val glassIsNight = isSystemInDarkTheme()
+    val glassContentColor = if (glassIsNight) Color.White else MaterialTheme.colorScheme.onSurface
+    // White labels over a bright patch of artwork need a soft dark halo to stay readable.
+    val glassLabelStyle =
+        if (glassIsNight) {
+            LocalTextStyle.current.copy(shadow = Shadow(color = Color.Black.copy(alpha = 0.8f), blurRadius = 10f))
+        } else {
+            LocalTextStyle.current
+        }
+    val glassUnselectedContentColor = if (glassIsNight) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
     val largeIndicator = isFloating || isYumaPlayer || isAppleMusic
     val indicatorWidth = if (largeIndicator) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
     val indicatorHeight = if (largeIndicator) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
@@ -268,13 +282,15 @@ fun FloatingNavigationToolbar(
     // onPrimary for contrast (selected = full opacity, unselected = 0.85 opacity for legibility).
     val itemColors =
         when {
+            // White-on-glass vanishes over a light backdrop, so light themes take the scheme's
+            // on-surface tones instead.
             canLiquidGlass ->
                 ShortNavigationBarItemDefaults.colors(
                     selectedIndicatorColor = Color.Transparent,
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
-                    unselectedIconColor = Color.White,
-                    unselectedTextColor = Color.White,
+                    selectedIconColor = glassContentColor,
+                    selectedTextColor = glassContentColor,
+                    unselectedIconColor = glassUnselectedContentColor,
+                    unselectedTextColor = glassUnselectedContentColor,
                 )
             isFloating || isAppleMusic ->
                 ShortNavigationBarItemDefaults.colors(
@@ -445,7 +461,15 @@ fun FloatingNavigationToolbar(
     val selectedCenter = if (selectedIndex >= 0) iconCenters[selectedIndex] else null
     val selectedItemBounds = if (selectedIndex >= 0) itemBounds[selectedIndex] else null
     var itemsRowTopInContainer by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, indicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
+    // A narrow bar (or a big font scale) can leave a tab slimmer than the large indicator, which
+    // then spills past the bar's edge; keep the capsule inside its own tab.
+    val fittedIndicatorWidth =
+        if (tabWidthPx > 0f) {
+            minOf(indicatorWidth, with(density) { tabWidthPx.toDp() } - 8.dp).coerceAtLeast(indicatorHeight)
+        } else {
+            indicatorWidth
+        }
+    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, fittedIndicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
         if (canLiquidGlass) {
             if (tabWidthPx <= 0f) return@LaunchedEffect
             liquidGlassPillWidth = with(density) { tabWidthPx.toDp() }
@@ -460,7 +484,7 @@ fun FloatingNavigationToolbar(
             // Default / frosted / floating: pill wraps only the icon (label
             // stays outside). This is the original behavior.
             val center = selectedCenter ?: return@LaunchedEffect
-            val widthPx = with(density) { indicatorWidth.toPx() }
+            val widthPx = with(density) { fittedIndicatorWidth.toPx() }
             val heightPx = with(density) { indicatorHeight.toPx() }
             val targetX = (center.x - containerPos.x) - widthPx / 2f
             indicatorY = (center.y - containerPos.y) - heightPx / 2f
@@ -520,7 +544,7 @@ fun FloatingNavigationToolbar(
                         } else {
                             Modifier
                         },
-                    ),
+                    ).glassGlowOverlay(strength = glowStrength, shape = navigationShape),
             shape = navigationShape,
             color = navigationContainerColor,
             border = pill.border,
@@ -599,7 +623,7 @@ fun FloatingNavigationToolbar(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (selectedIndex >= 0 && indicatorPlaced && !canLiquidGlass) {
-                        val pillWidth = indicatorWidth
+                        val pillWidth = fittedIndicatorWidth
                         val pillHeight = indicatorHeight
                         if (pillWidth > 0.dp && pillHeight > 0.dp) {
                             val pillShape = RoundedCornerShape(percent = 50)
@@ -769,6 +793,7 @@ fun FloatingNavigationToolbar(
                                                 // The pill overlay renders the active label in
                                                 // SemiBold (primary color) on top of the glass.
                                                 fontWeight = FontWeight.Normal,
+                                                style = glassLabelStyle,
                                             )
                                         } else {
                                             Spacer(Modifier.height(navBarLabelSpacing.dp))
@@ -794,11 +819,7 @@ fun FloatingNavigationToolbar(
             val dragAnim = dampedDragAnimation
             if (pillWidth > 0.dp && pillHeight > 0.dp && dragAnim != null && tabWidthPx > 0f) {
                 val pillShape = RoundedCornerShape(percent = 50)
-                val isDark = isSystemInDarkTheme()
-                // Liquid Glass pill: always use white for the active icon/label so
-                // they don't change with the app's color theme. The pill's glass
-                // effect provides enough contrast on its own.
-                val primaryColor = Color.White
+                val isDark = glassIsNight
                 // Fallback surface drawn UNDER the backdrop sample. Hoisted to the
                 // composable scope because MaterialTheme.colorScheme is only
                 // accessible from a @Composable context (onDrawBehind is a plain
@@ -857,6 +878,9 @@ fun FloatingNavigationToolbar(
                                         chromaticAberration = false,
                                     )
                                 },
+                                // A drop shadow lifts the pill off a dark bar; on a light one it
+                                // reads as a grey smudge.
+                                shadow = { if (isDark) KyantShadow.Default else null },
                                 onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
                                 shape = { pillShape },
                                 // Fallback surface drawn UNDER the backdrop sample.
@@ -875,8 +899,8 @@ fun FloatingNavigationToolbar(
                                 onDrawSurface = {
                                     val progress = dragAnim.pressProgress
                                     drawRect(
-                                        color = (if (isDark) Color.Black else Color.White).copy(alpha = 0.1f),
-                                        alpha = 1f - progress,
+                                        color = if (isDark) Color.Black else Color.White,
+                                        alpha = (if (isDark) 0.28f else 0.1f) * (1f - progress),
                                     )
                                     drawRect(Color.Black.copy(alpha = 0.03f * progress))
                                 },
@@ -905,7 +929,7 @@ fun FloatingNavigationToolbar(
                         Icon(
                             painter = painterResource(displayScreen.iconIdActive),
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = glassContentColor,
                             modifier =
                                 Modifier.graphicsLayer {
                                     // SukiSU LocalFloatingBottomBarTabScale: the
@@ -918,10 +942,11 @@ fun FloatingNavigationToolbar(
                         if (!hideNavigationLabels) {
                             Text(
                                 text = stringResource(displayScreen.titleId),
-                                color = Color.White,
+                                color = glassContentColor,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                style = glassLabelStyle,
                             )
                         }
                     }

@@ -345,6 +345,10 @@
     <string name="liquid_glass_nav_bar_disabled">Turn on Liquid Glass effects in Appearance first</string>
     <string name="compact_controls_stock_color">Stock colours instead of Liquid Glass</string>
     <string name="compact_controls_stock_color_desc">Draw the navigation bar, round buttons and mini player in plain theme colours with no glass effect</string>
+    <string name="navigation_bar_glass_glow">Glass glow</string>
+    <string name="navigation_bar_glass_glow_desc">Rim light and soft sheen on the navigation bar and the round bottom buttons</string>
+    <string name="navigation_bar_glass_glow_intensity">Glass glow intensity</string>
+    <string name="navigation_bar_glass_glow_intensity_desc">Scales the rim light and sheen. 100% is the default look</string>
     <string name="navigation_bar_compact_behavior">Mini player and bar behavior</string>
     <string name="navigation_bar_compact_behavior_desc">Fold the navigation bar into round Library and Search buttons with the mini player between them. Adaptive does it while you scroll down</string>
     <string name="navigation_bar_compact_adaptive">Adaptive</string>

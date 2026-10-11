@@ -38,8 +38,8 @@ Also shipped since this note was written:
   back row) instead of the fork's chip row.
 - **Tab bar** — the Apple Music style is a floating rounded bar, inset, with a solid accent pill
   behind the active tab, its glyph knocked out, and the label in the accent.
-  That bar is `NavigationBarStyle.YUMA_PLAYER`; `APPLE_MUSIC` is a separate, user-picked style (a
-  compact centred capsule with a neutral indicator) that the experience does not force. Either
+  That bar is `NavigationBarStyle.YUMA_PLAYER`; `APPLE_MUSIC` is a separate, user-picked style (4nx3b's
+  bar geometry: a capsule at the user's width, 80% by default, with a neutral indicator) that the experience does not force. Either
   Apple style, or the experience itself, draws the mini player in grayscale.
 - **One-row bottom bar** — `NavigationBarCompactBehaviorKey` (Navigation bar → behaviour) folds the
   tab bar into round Library/Home and Search buttons with a slim mini player between them, the

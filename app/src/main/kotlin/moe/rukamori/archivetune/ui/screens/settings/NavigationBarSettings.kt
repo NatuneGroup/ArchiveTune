@@ -93,6 +93,9 @@ import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
+import moe.rukamori.archivetune.ui.component.NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowIntensityKey
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowKey
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -148,6 +151,10 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
             if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
         }
     }
+    val (navigationBarGlassGlow, onNavigationBarGlassGlowChange) =
+        rememberPreference(NavigationBarGlassGlowKey, defaultValue = true)
+    val (navigationBarGlassGlowIntensity, onNavigationBarGlassGlowIntensityChange) =
+        rememberPreference(NavigationBarGlassGlowIntensityKey, defaultValue = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT)
     val (hideNavigationBarLabels, onHideNavigationBarLabelsChange) =
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     val (hideOnScroll, onHideOnScrollChange) =
@@ -360,6 +367,32 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         icon = { Icon(painterResource(R.drawable.palette), null) },
                         checked = compactControlsStockColor,
                         onCheckedChange = onCompactControlsStockColorChange,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("navigation_bar_glass_glow"),
+                        title = { Text(stringResource(R.string.navigation_bar_glass_glow)) },
+                        description = stringResource(R.string.navigation_bar_glass_glow_desc),
+                        icon = { Icon(painterResource(R.drawable.solar_brightness_high_linear), null) },
+                        checked = navigationBarGlassGlow,
+                        onCheckedChange = onNavigationBarGlassGlowChange,
+                        isEnabled = !compactControlsStockColor,
+                    )
+                }
+
+                item {
+                    SliderPreferenceRow(
+                        title = stringResource(R.string.navigation_bar_glass_glow_intensity),
+                        description = stringResource(R.string.navigation_bar_glass_glow_intensity_desc),
+                        iconRes = R.drawable.tune,
+                        value = navigationBarGlassGlowIntensity,
+                        onValueChange = onNavigationBarGlassGlowIntensityChange,
+                        range = 0.2f..2f,
+                        valueLabel = { "${(it * 100).roundToInt()}%" },
+                        default = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT,
+                        enabled = navigationBarGlassGlow && !compactControlsStockColor,
                     )
                 }
 

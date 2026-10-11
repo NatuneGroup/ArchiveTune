@@ -34,7 +34,6 @@ import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_OPACITY_DEFAULT
-import moe.rukamori.archivetune.constants.NAVIGATION_BAR_PILL_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_TRANSPARENCY_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
@@ -308,7 +307,9 @@ fun rememberPillStyle(
                 when (style) {
                     NavigationBarStyle.YUMA_PLAYER ->
                         if (widthPreference == NAVIGATION_BAR_WIDTH_DEFAULT) 0.94f else widthPreference.coerceIn(0.6f, 1f)
-                    NavigationBarStyle.APPLE_MUSIC -> NAVIGATION_BAR_PILL_WIDTH_DEFAULT
+                    // 4nx3b's bar geometry: the user's width (80% by default), never a fixed narrow
+                    // pill that three labelled tabs cannot fit in.
+                    NavigationBarStyle.APPLE_MUSIC -> widthPreference.coerceIn(0.5f, 1f)
                     NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
                     NavigationBarStyle.DEFAULT -> if (useCompactPills) 0.88f else 1f
                 },

@@ -59,8 +59,11 @@ fun Modifier.glassGlowOverlay(
         this
     } else {
         // The outline, stroke and brushes depend only on size and strength, so they are built
-        // once per size change instead of on every draw.
+        // once per size change instead of on every draw. Strength scales the colour stops rather
+        // than the draw alpha: paint alpha clamps at 1, which would make every intensity above
+        // 100% look the same.
         drawWithCache {
+            fun glow(alpha: Float) = Color.White.copy(alpha = (alpha * strength).coerceIn(0f, 1f))
             val outline = shape.createOutline(size, layoutDirection, this)
             val corner =
                 when (val r = (outline as? Outline.Rounded)?.roundRect?.topLeftCornerRadius) {
@@ -68,23 +71,17 @@ fun Modifier.glassGlowOverlay(
                     else -> CornerRadius(r.x, r.y)
                 }
             val stroke = GlowEdgeStrokeWidth.toPx()
-            val edgeBrush =
-                Brush.verticalGradient(
-                    listOf(
-                        Color.White.copy(alpha = 0.27f),
-                        Color.White.copy(alpha = 0.02f),
-                    ),
-                )
+            val edgeBrush = Brush.verticalGradient(listOf(glow(0.27f), glow(0.02f)))
             val sheenBrush =
                 Brush.verticalGradient(
-                    0f to Color.White.copy(alpha = 0.10f),
+                    0f to glow(0.10f),
                     0.45f to Color.Transparent,
-                    1f to Color.White.copy(alpha = 0.05f),
+                    1f to glow(0.05f),
                 )
             val baseBrush =
                 Brush.verticalGradient(
                     0.72f to Color.Transparent,
-                    1f to Color.White.copy(alpha = 0.14f),
+                    1f to glow(0.14f * 0.7f),
                 )
             val edgeStyle = Stroke(stroke)
             val edgeTopLeft = Offset(stroke / 2f, stroke / 2f)
@@ -98,18 +95,9 @@ fun Modifier.glassGlowOverlay(
                     size = edgeSize,
                     cornerRadius = corner,
                     style = edgeStyle,
-                    alpha = strength,
                 )
-                drawRoundRect(
-                    brush = sheenBrush,
-                    cornerRadius = corner,
-                    alpha = strength,
-                )
-                drawRoundRect(
-                    brush = baseBrush,
-                    cornerRadius = corner,
-                    alpha = strength * 0.7f,
-                )
+                drawRoundRect(brush = sheenBrush, cornerRadius = corner)
+                drawRoundRect(brush = baseBrush, cornerRadius = corner)
             }
         }
     }

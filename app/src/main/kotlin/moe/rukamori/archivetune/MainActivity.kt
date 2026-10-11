@@ -321,6 +321,9 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.CompactControlCircle
 import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
 import moe.rukamori.archivetune.ui.component.CompactControlSize
+import moe.rukamori.archivetune.ui.component.NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowIntensityKey
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowKey
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.DISMISSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.EXPANDED_ANCHOR
@@ -1016,6 +1019,13 @@ class MainActivity : ComponentActivity() {
                 CompactControlsStockColorKey,
                 defaultValue = false,
             )
+            val navigationBarGlassGlow by rememberPreference(NavigationBarGlassGlowKey, defaultValue = true)
+            val navigationBarGlassGlowIntensity by rememberPreference(
+                NavigationBarGlassGlowIntensityKey,
+                defaultValue = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT,
+            )
+            val navGlassStrength =
+                if (navigationBarGlassGlow && !compactControlsStockColor) navigationBarGlassGlowIntensity else 0f
             val liquidGlassNavBarEnabled by rememberPreference(
                 LiquidGlassNavBarEnabledKey,
                 defaultValue = false,
@@ -3343,6 +3353,7 @@ class MainActivity : ComponentActivity() {
                                                 frostedBackdrop = navBarFrostedBackdrop,
                                                 liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !compactControlsStockColor,
                                                 liquidGlassBackdrop = liquidGlassBackdrop,
+                                                glowStrength = navGlassStrength,
                                                 modifier =
                                                     Modifier
                                                         .align(Alignment.BottomCenter)
@@ -3384,7 +3395,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                         if (compactRowVisible) {
                                             val compactBackdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor }
-                                            val compactGlow = if (compactControlsStockColor) 0f else 1f
+                                            val compactGlow = navGlassStrength
                                             Box(
                                                 modifier =
                                                     Modifier

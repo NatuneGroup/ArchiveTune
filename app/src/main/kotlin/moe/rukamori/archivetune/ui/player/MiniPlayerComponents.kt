@@ -634,3 +634,93 @@ fun NewMiniPlayerContent(
         )
     }
 }
+
+@Composable
+fun CompactMiniPlayerContent(
+    positionProvider: () -> Long,
+    durationProvider: () -> Long,
+    playerConnection: PlayerConnection,
+    colors: MiniPlayerContentColors,
+    modifier: Modifier = Modifier,
+    showTransportControls: Boolean = false,
+    onArtworkSlotPositioned: ((androidx.compose.ui.geometry.Rect) -> Unit)? = null,
+) {
+    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
+    val canSkipNext by playerConnection.canSkipNext.collectAsStateWithLifecycle()
+
+    val onPlayPause =
+        remember(playbackState, playerConnection) {
+            {
+                if (playbackState == Player.STATE_ENDED) {
+                    playerConnection.player.seekTo(0, 0)
+                    playerConnection.player.playWhenReady = true
+                } else {
+                    playerConnection.player.togglePlayPause()
+                }
+            }
+        }
+    val onPrevious = remember(playerConnection) { { playerConnection.seekToPrevious() } }
+    val onNext = remember(playerConnection) { { playerConnection.seekToNext() } }
+
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier =
+            modifier
+                .padding(start = 10.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+    ) {
+        MiniPlayerArtwork(
+            mediaMetadata = mediaMetadata,
+            colors = colors,
+            onArtworkSlotPositioned = onArtworkSlotPositioned,
+        )
+
+        mediaMetadata?.let {
+            MiniPlayerInfo(
+                mediaMetadata = it,
+                colors = colors,
+            )
+        } ?: Spacer(Modifier.weight(1f))
+
+        if (showTransportControls) {
+            MiniPlayerTransportButton(
+                iconResId = R.drawable.apple_skip_previous,
+                contentDescription = stringResource(R.string.widget_previous),
+                onClick = onPrevious,
+                enabled = canSkipPrevious,
+                compact = true,
+                colors = colors,
+            )
+        }
+
+        MiniPlayerTransportButton(
+            iconResId =
+                when {
+                    playbackState == Player.STATE_ENDED -> R.drawable.solar_replay_linear
+                    isPlaying -> R.drawable.pause_applemusic
+                    else -> R.drawable.play_applemusic
+                },
+            contentDescription =
+                stringResource(
+                    if (playbackState == Player.STATE_ENDED || !isPlaying) R.string.play else R.string.widget_pause,
+                ),
+            onClick = onPlayPause,
+            isPrimary = true,
+            compact = true,
+            colors = colors,
+        )
+
+        if (showTransportControls) {
+            MiniPlayerTransportButton(
+                iconResId = R.drawable.apple_skip_next,
+                contentDescription = stringResource(R.string.next),
+                onClick = onNext,
+                enabled = canSkipNext,
+                compact = true,
+                colors = colors,
+            )
+        }
+    }
+}

@@ -38,6 +38,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
@@ -1551,11 +1552,31 @@ class MainActivity : ComponentActivity() {
                                         navigationBarHiddenByScroll = false
                                         travelled = 0f
                                     }
+                                    if (navigationBarCompactBehavior == NavigationBarCompactBehavior.ADAPTIVE) {
+                                        isBottomUiCompact = consumed.y < 0f
+                                    }
                                     return Offset.Zero
                                 }
                             }
                         }
                     val navigationBarVisible = shouldShowNavigationBar && !navigationBarHiddenByScroll
+
+                    val navigationBarCompactBehavior by rememberPreference(
+                        NavigationBarCompactBehaviorKey,
+                        defaultValue = NavigationBarCompactBehavior.ADAPTIVE,
+                    )
+                    var isBottomUiCompact by remember { mutableStateOf(false) }
+                    LaunchedEffect(navBackStackEntry?.destination?.route, navigationBarCompactBehavior) {
+                        isBottomUiCompact =
+                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_COMPACT
+                    }
+                    val bottomUiCompactFractionState =
+                        animateFloatAsState(
+                            targetValue = if (isBottomUiCompact) 1f else 0f,
+                            animationSpec =
+                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 400f),
+                            label = "bottomUiCompactFraction",
+                        )
 
                     fun getBottomNavPadding(): Dp =
                         if (shouldShowNavigationBar && !useRail) {
@@ -2221,6 +2242,7 @@ class MainActivity : ComponentActivity() {
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides disableAnimations,
                         moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
+                        moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
                         moe.rukamori.archivetune.LocalAnimationScale provides systemAnimationScale,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
@@ -3147,6 +3169,69 @@ class MainActivity : ComponentActivity() {
                                             // BitChord bar, only the Liquid Glass bar setting.
                                             val navBarLiquidGlassBackdrop =
                                                 if (liquidGlassEnabled && liquidGlassNavBarEnabled) liquidGlassBackdrop else null
+                                            val compactFraction by bottomUiCompactFractionState
+                                            if (compactFraction > 0.01f) {
+                                                Row(
+                                                    modifier =
+                                                        Modifier
+                                                            .fillMaxWidth()
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(horizontal = 24.dp)
+                                                            .padding(bottom = bottomInset + 16.dp)
+                                                            .height(CompactControlSize)
+                                                            .graphicsLayer { alpha = compactFraction },
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
+                                                ) {
+                                                    val isLibraryRoute =
+                                                        navBackStackEntry?.destination?.route in
+                                                            setOf(
+                                                                "home",
+                                                                "history",
+                                                                "local_songs",
+                                                                "library_playlists",
+                                                                "library_spotify_playlists",
+                                                            )
+                                                    CompactControlCircle(
+                                                        iconRes =
+                                                            if (isLibraryRoute) {
+                                                                Screens.Library.iconIdActive
+                                                            } else {
+                                                                Screens.Home.iconIdActive
+                                                            },
+                                                        contentDescription =
+                                                            stringResource(
+                                                                if (isLibraryRoute) {
+                                                                    Screens.Library.titleId
+                                                                } else {
+                                                                    Screens.Home.titleId
+                                                                },
+                                                            ),
+                                                        onClick = {
+                                                            handlePrimaryNavigationClick(
+                                                                if (isLibraryRoute) Screens.Library else Screens.Home,
+                                                                false,
+                                                            )
+                                                        },
+                                                        backdrop = liquidGlassBackdrop,
+                                                        glowStrength = 1f,
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                    )
+                                                    CompactControlCircle(
+                                                        iconRes = Screens.Search.iconIdInactive,
+                                                        contentDescription = stringResource(Screens.Search.titleId),
+                                                        onClick = {
+                                                            handlePrimaryNavigationClick(
+                                                                Screens.Search,
+                                                                navBackStackEntry?.destination?.hierarchy
+                                                                    ?.any { it.route == Screens.Search.route } == true,
+                                                            )
+                                                        },
+                                                        backdrop = liquidGlassBackdrop,
+                                                        glowStrength = 1f,
+                                                    )
+                                                }
+                                            }
                                                 FloatingNavigationToolbar(
                                                     items = navigationItems,
                                                     pureBlack = pureBlack,

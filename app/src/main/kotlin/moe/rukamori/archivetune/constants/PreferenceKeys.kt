@@ -1325,6 +1325,14 @@ enum class NavigationBarStyle {
 }
 
 val NavigationBarStyleKey = stringPreferencesKey("navigationBarStyle")
+
+enum class NavigationBarCompactBehavior {
+    ADAPTIVE,
+    ALWAYS_EXPANDED,
+    ALWAYS_COMPACT,
+}
+
+val NavigationBarCompactBehaviorKey = stringPreferencesKey("navigationBarCompactBehavior")
 val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
 
 enum class InterfaceStyle {

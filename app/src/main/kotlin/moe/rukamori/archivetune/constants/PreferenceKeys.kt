@@ -2129,3 +2129,13 @@ enum class VideoAspectRatio {
 }
 
 val VideoAspectRatioKey = stringPreferencesKey("videoAspectRatio")
+
+// Tryptify/LastWave audio engine toggles and bit-perfect output (ported from upstream).
+val FloatDspEnabledKey = booleanPreferencesKey("floatDspEnabled")
+val UsbExclusiveAudioKey = booleanPreferencesKey("usbExclusiveAudio")
+val BitPerfectOutputKey = booleanPreferencesKey("bitPerfectOutput")
+const val BIT_PERFECT_OUTPUT_DEFAULT = false
+val BitPerfectNativeRateKey = booleanPreferencesKey("bitPerfectNativeRate")
+const val BIT_PERFECT_NATIVE_RATE_DEFAULT = true
+val TryptifyAudioProcessingKey = booleanPreferencesKey("tryptifyAudioProcessing")
+val LastwaveAudioProcessingKey = booleanPreferencesKey("lastwaveAudioProcessing")

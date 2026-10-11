@@ -44,6 +44,9 @@ class NativeAudioEngine @Inject constructor(
         } catch (error: LinkageError) {
             Log.e(TAG, "Native audio engine is unavailable; using Android audio", error)
             0L
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Native audio engine failed to initialise; using Android audio", error)
+            0L
         }
     } else {
         0L

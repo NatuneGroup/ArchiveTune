@@ -202,19 +202,28 @@ class StretchAudioProcessor @Inject constructor() : AudioProcessor {
             releaseEngine()
         }
         if (StretchNative.isAvailable && inputFormat != AudioFormat.NOT_SET && handle == 0L) {
-            handle = StretchNative.nativeCreate(
-                inputFormat.channelCount, inputFormat.sampleRate,
-            )
-            if (handle != 0L) {
+            val created = synchronized(handleLock) {
+                val h = StretchNative.nativeCreate(
+                    inputFormat.channelCount, inputFormat.sampleRate,
+                )
+                if (h != 0L) {
+                    StretchNative.nativeSetSemitones(h, semitones)
+                    StretchNative.nativeSetEngine(h, engine.nativeId, quality.nativeId)
+                    handle = h
+                }
+                h != 0L
+            }
+            if (created) {
                 maxBlock = StretchNative.nativeMaxBlockFrames().coerceAtLeast(1)
-                StretchNative.nativeSetSemitones(handle, semitones)
-                StretchNative.nativeSetEngine(handle, engine.nativeId, quality.nativeId)
                 val bytes = maxBlock * inputFormat.channelCount * 4
                 nativeIn = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
                 nativeOut = ByteBuffer.allocateDirect(bytes).order(ByteOrder.nativeOrder())
             }
-        } else if (handle != 0L) {
-            StretchNative.nativeReset(handle)
+        } else {
+            synchronized(handleLock) {
+                val h = handle
+                if (h != 0L) StretchNative.nativeReset(h)
+            }
         }
     }
 

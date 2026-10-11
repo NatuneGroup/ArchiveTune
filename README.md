@@ -284,6 +284,13 @@ ArchiveTune is made possible by the work of many open-source projects and commun
 - **SimpMusic** by [maxrave-dev](https://github.com/maxrave-dev/SimpMusic) for the lyrics API provider.
 - **4nx3b** [ArchiveTune](https://github.com/4nx3b/ArchiveTune) for the upstream base and the Bini, Genius, LRCRed and Megalobiz lyrics providers.
 - **rukamori** [ArchiveTune](https://github.com/rukamori/ArchiveTune) for the original ArchiveTune project this fork builds on.
+- **tryptz** [Tryptify](https://github.com/tryptz/Tryptify) and [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) for the audio engine this app's DSP chain, parametric/AutoEq, USB audio output and pitch/time stretch are ported from.
+- **Clash-Projects** [LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) for the native audio engine, bit-perfect USB output and Last.fm dashboard.
+- **Marcelo Silva** for the [decent-usb-audio-driver](audio/decent-usb-audio-driver) exclusive USB audio output module (MIT).
+- [libusb](https://libusb.info), [SoX Resampler](https://sourceforge.net/projects/soxr/) and [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) for USB access, resampling and pitch shifting.
+- [brahmkshatriya/echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) for how Spotify's web player reads its recently played list.
+
+Full per-project detail, licences and the files each one touches are in [docs/CREDITS.md](docs/CREDITS.md).
 - [BetterLyrics](https://better-lyrics.boidu.dev/) for word-by-word lyrics, unison and artwork provider support.
 - [Material Color Utilities](https://github.com/material-foundation/material-color-utilities)
 - [Read You](https://github.com/Ashinch/ReadYou) and [Seal](https://github.com/JunkFood02/Seal) for UI component inspiration.

@@ -61,6 +61,10 @@ where their approaches were followed.
   glass backdrop and crossfade scheduling our implementation is based on.
 - [Metrolist](https://github.com/Metrolist/Metrolist) — crossfade handoff timing
   and the Listen Together codec.
+- [brahmkshatriya/echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) — read
+  to confirm how Spotify's web player lists recently played contexts and resolves them with
+  `fetchEntitiesForRecentlyPlayed`. The parsing in `SpotifyPlayContexts.kt` is written for this
+  app from the live response shape; no source was copied (the repository publishes no licence).
 - [NewPipe / InnerTube](https://github.com/TeamNewPipe/NewPipeExtractor) — the
   InnerTube request lineage behind `core`.
 

@@ -981,9 +981,10 @@ fun BottomSheetPlayer(
         mutableStateOf(false)
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
         if (playbackState != STATE_READY) return@LaunchedEffect
-        LocalLifecycleOwner.current.repeatOnLifecycle(Lifecycle.State.STARTED) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             val startTime = SystemClock.elapsedRealtime()
             while (isActive) {
                 delay(if (aodModeEnabled) 500L else 100L)

@@ -133,3 +133,6 @@ core.*
 
 # Agent plan artifacts (local only)
 docs/superpowers/
+
+# libusb core.c is a real source file, not a Python/coverage artifact
+!third_party/libusb/libusb/core.c

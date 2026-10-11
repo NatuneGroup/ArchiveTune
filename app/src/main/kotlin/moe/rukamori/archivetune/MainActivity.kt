@@ -316,6 +316,8 @@ import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.CompactControlCircle
+import moe.rukamori.archivetune.ui.player.CompactMiniPlayerContent
+import moe.rukamori.archivetune.ui.player.rememberMiniPlayerContentColors
 import moe.rukamori.archivetune.ui.component.CompactControlGap
 import moe.rukamori.archivetune.ui.component.CompactControlSize
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
@@ -3234,6 +3236,14 @@ class MainActivity : ComponentActivity() {
                                                         },
                                                         backdrop = liquidGlassBackdrop,
                                                         glowStrength = 1f,
+                                                    )
+                                                    CompactMiniPlayerContent(
+                                                        positionProvider = { playerConnection.player.currentPosition },
+                                                        durationProvider = { playerConnection.player.duration },
+                                                        playerConnection = playerConnection,
+                                                        colors = rememberMiniPlayerContentColors(false),
+                                                        modifier = Modifier.weight(1f),
+                                                        showTransportControls = false,
                                                     )
                                                 }
                                             }

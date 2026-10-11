@@ -309,7 +309,7 @@ private fun NewMiniPlayer(
 }
 
 @Composable
-private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): MiniPlayerContentColors {
+internal fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): MiniPlayerContentColors {
     val colorScheme = MaterialTheme.colorScheme
     return remember(
         useArtworkBackground,

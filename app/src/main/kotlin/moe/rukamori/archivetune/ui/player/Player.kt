@@ -99,6 +99,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
@@ -139,6 +140,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -373,6 +375,9 @@ fun BottomSheetPlayer(
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
     onLyricsVisibilityChange: (Boolean) -> Unit = {},
+    compactFractionState: State<Float>? = null,
+    compactHorizontalPadding: Dp = 0.dp,
+    compactReserveEndControl: Boolean = false,
     immersivePlayerViewModel: ImmersivePlayerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -1389,6 +1394,9 @@ fun BottomSheetPlayer(
                 duration = duration,
                 pureBlack = pureBlack,
                 navigationProximityProvider = navigationProximityProvider,
+                compactFractionState = compactFractionState,
+                compactHorizontalPadding = compactHorizontalPadding,
+                compactReserveEndControl = compactReserveEndControl,
             )
         },
     ) {

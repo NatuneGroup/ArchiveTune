@@ -183,6 +183,16 @@ fun HistoryScreen(
         mutableStateOf(TextFieldValue())
     }
     var selectedEventIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    // Set by the round Search button of the one-row bottom bar.
+    LaunchedEffect(navController) {
+        val handle = navController.currentBackStackEntry?.savedStateHandle ?: return@LaunchedEffect
+        handle.getStateFlow("openInPageSearch", false).collect { requested ->
+            if (requested) {
+                handle["openInPageSearch"] = false
+                isSearching = true
+            }
+        }
+    }
 
     val focusRequester = remember { FocusRequester() }
     val localListState = rememberLazyListState()

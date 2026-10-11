@@ -13,6 +13,7 @@ package moe.rukamori.archivetune.ui.player
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -53,6 +55,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,9 +67,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.State
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import moe.rukamori.archivetune.ui.player.PlayerFadeConfig
@@ -76,6 +81,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp
+import androidx.compose.ui.unit.offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
@@ -84,11 +91,14 @@ import kotlinx.coroutines.launch
 
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.constants.MiniPlayerCompactHeight
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
+import moe.rukamori.archivetune.ui.component.CompactControlGap
+import moe.rukamori.archivetune.ui.component.CompactControlSize
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.absoluteValue
@@ -123,9 +133,21 @@ fun SwipeableMiniPlayerBox(
     coroutineScope: CoroutineScope,
     pureBlack: Boolean = false,
     useLegacyBackground: Boolean = false,
+    /**
+     * 0 = the full-width mini player, 1 = the slim pill that shares a row with the round compact
+     * buttons. Read in the layout phase only, so animating it does not recompose the player.
+     */
+    compactFraction: (() -> Float)? = null,
+    compactHorizontalPadding: Dp = horizontalInset,
+    compactReserveEndControl: Boolean = false,
     content: @Composable (Float) -> Unit,
 ) {
     val offsetXAnimatable = remember { Animatable(0f) }
+    val compactEndReserve =
+        animateDpAsState(
+            targetValue = if (compactReserveEndControl) CompactControlSize + CompactControlGap else 0.dp,
+            label = "miniPlayerEndReserve",
+        )
     var dragStartTime by remember { mutableLongStateOf(0L) }
     var totalDragDistance by remember { mutableFloatStateOf(0f) }
 
@@ -154,7 +176,7 @@ fun SwipeableMiniPlayerBox(
         modifier =
             modifier
                 .fillMaxWidth()
-                .height(MiniPlayerHeight)
+                .miniPlayerHeight(compactFraction)
                 .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal)),
         contentAlignment = Alignment.Center,
     ) {
@@ -169,8 +191,9 @@ fun SwipeableMiniPlayerBox(
                                 .widthIn(max = containerMaxWidth)
                                 .fillMaxWidth()
                         }
-                    }.height(MiniPlayerHeight)
-                    .let { baseModifier ->
+                    }.let { baseModifier ->
+                        if (compactFraction != null) baseModifier.fillMaxHeight() else baseModifier.height(MiniPlayerHeight)
+                    }.let { baseModifier ->
                         if (useLegacyBackground) {
                             baseModifier.background(
                                 if (pureBlack) {
@@ -178,6 +201,14 @@ fun SwipeableMiniPlayerBox(
                                 } else {
                                     MaterialTheme.colorScheme.surfaceContainer
                                 },
+                            )
+                        } else if (compactFraction != null) {
+                            baseModifier.compactAwareHorizontalInset(
+                                compactFraction = compactFraction,
+                                startInset = horizontalInset,
+                                endInset = horizontalInset,
+                                compactStartInset = compactHorizontalPadding + CompactControlSize + CompactControlGap,
+                                compactEndInset = { compactHorizontalPadding + compactEndReserve.value },
                             )
                         } else {
                             baseModifier.padding(horizontal = horizontalInset)
@@ -290,6 +321,38 @@ fun SwipeableMiniPlayerBox(
         }
     }
 }
+
+private fun Modifier.miniPlayerHeight(compactFraction: (() -> Float)?): Modifier =
+    if (compactFraction == null) {
+        height(MiniPlayerHeight)
+    } else {
+        layout { measurable, constraints ->
+            val target = lerp(MiniPlayerHeight, MiniPlayerCompactHeight, compactFraction().coerceIn(0f, 1f))
+            val height = constraints.constrainHeight(target.roundToPx())
+            val placeable = measurable.measure(constraints.copy(minHeight = height, maxHeight = height))
+            layout(placeable.width, placeable.height) { placeable.place(0, 0) }
+        }
+    }
+
+// Equivalent to Modifier.padding(start, end), except the insets follow an animated fraction in the
+// layout phase instead of forcing a recomposition for every frame of the animation.
+private fun Modifier.compactAwareHorizontalInset(
+    compactFraction: () -> Float,
+    startInset: Dp,
+    endInset: Dp,
+    compactStartInset: Dp,
+    compactEndInset: () -> Dp,
+): Modifier =
+    layout { measurable, constraints ->
+        val fraction = compactFraction().coerceIn(0f, 1f)
+        val start = lerp(startInset, compactStartInset, fraction).roundToPx()
+        val end = lerp(endInset, compactEndInset(), fraction).roundToPx()
+        val horizontal = start + end
+        val placeable = measurable.measure(constraints.offset(horizontal = -horizontal))
+        layout(constraints.constrainWidth(placeable.width + horizontal), placeable.height) {
+            placeable.placeRelative(start, 0)
+        }
+    }
 
 @Composable
 fun RowScope.MiniPlayerInfo(
@@ -519,6 +582,7 @@ private fun MiniPlayerTransportControls(
     playerConnection: PlayerConnection,
     colors: MiniPlayerContentColors,
     compact: Boolean,
+    showSkipButtons: Boolean = true,
 ) {
     val onPrevious = remember(playerConnection) { { playerConnection.seekToPrevious() } }
     val onNext = remember(playerConnection) { { playerConnection.seekToNext() } }
@@ -538,14 +602,16 @@ private fun MiniPlayerTransportControls(
         horizontalArrangement = Arrangement.spacedBy(if (compact) 1.dp else MiniPlayerTransportButtonSpacing),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MiniPlayerTransportButton(
-            iconResId = R.drawable.player_skip_previous,
-            contentDescription = stringResource(R.string.widget_previous),
-            onClick = onPrevious,
-            enabled = canSkipPrevious,
-            compact = compact,
-            colors = colors,
-        )
+        if (showSkipButtons) {
+            MiniPlayerTransportButton(
+                iconResId = R.drawable.player_skip_previous,
+                contentDescription = stringResource(R.string.widget_previous),
+                onClick = onPrevious,
+                enabled = canSkipPrevious,
+                compact = compact,
+                colors = colors,
+            )
+        }
 
         MiniPlayerTransportButton(
             iconResId =
@@ -564,14 +630,16 @@ private fun MiniPlayerTransportControls(
             colors = colors,
         )
 
-        MiniPlayerTransportButton(
-            iconResId = R.drawable.player_skip_next,
-            contentDescription = stringResource(R.string.next),
-            onClick = onNext,
-            enabled = canSkipNext,
-            compact = compact,
-            colors = colors,
-        )
+        if (showSkipButtons) {
+            MiniPlayerTransportButton(
+                iconResId = R.drawable.player_skip_next,
+                contentDescription = stringResource(R.string.next),
+                onClick = onNext,
+                enabled = canSkipNext,
+                compact = compact,
+                colors = colors,
+            )
+        }
     }
 }
 
@@ -582,6 +650,10 @@ fun NewMiniPlayerContent(
     playerConnection: PlayerConnection,
     colors: MiniPlayerContentColors,
     compact: Boolean = false,
+    /** See [SwipeableMiniPlayerBox]: crossfades to the slim row as the fraction goes 0 -> 1. */
+    compactFraction: (() -> Float)? = null,
+    /** The slim row has room for previous/next only when the search button is not beside it. */
+    compactShowTransportControls: Boolean = false,
 ) {
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
@@ -595,42 +667,108 @@ fun NewMiniPlayerContent(
             { if (duration > 0) (position.toFloat() / duration).coerceIn(0f, 1f) else 0f }
         }
 
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier =
-            Modifier
-                .fillMaxSize()
-                .padding(
-                    start = if (compact) 6.dp else 8.dp,
-                    end = if (compact) 2.dp else 4.dp,
-                    top = if (compact) 10.dp else 8.dp,
-                    bottom = if (compact) 10.dp else 8.dp,
-                ),
-    ) {
-        MiniPlayerArtwork(
-            mediaMetadata = mediaMetadata,
-            progress = progressProvider,
-            isLoading = isLoading,
-            colors = colors,
-            compact = compact,
-        )
+    // Only the rows that are visible are composed; the fraction itself is read in graphicsLayer
+    // blocks, so the crossfade costs no recomposition.
+    val showFullRow by remember(compactFraction) {
+        derivedStateOf { compactFraction == null || compactFraction() < 0.99f }
+    }
+    val showCompactRow by remember(compactFraction) {
+        derivedStateOf { compactFraction != null && compactFraction() > 0.01f }
+    }
 
-        mediaMetadata?.let {
-            MiniPlayerInfo(
-                mediaMetadata = it,
-                colors = colors,
-                compact = compact,
-            )
-        } ?: Spacer(Modifier.weight(1f))
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (showFullRow) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .then(
+                            if (compactFraction != null) {
+                                Modifier.graphicsLayer {
+                                    val fraction = compactFraction().coerceIn(0f, 1f)
+                                    alpha = 1f - fraction
+                                    scaleX = 1f - 0.1f * fraction
+                                    scaleY = 1f - 0.1f * fraction
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ).padding(
+                            start = if (compact) 6.dp else 8.dp,
+                            end = if (compact) 2.dp else 4.dp,
+                            top = if (compact) 10.dp else 8.dp,
+                            bottom = if (compact) 10.dp else 8.dp,
+                        ),
+            ) {
+                MiniPlayerArtwork(
+                    mediaMetadata = mediaMetadata,
+                    progress = progressProvider,
+                    isLoading = isLoading,
+                    colors = colors,
+                    compact = compact,
+                )
 
-        MiniPlayerTransportControls(
-            isPlaying = isPlaying,
-            playbackState = playbackState,
-            canSkipPrevious = canSkipPrevious,
-            canSkipNext = canSkipNext,
-            playerConnection = playerConnection,
-            colors = colors,
-            compact = compact,
-        )
+                mediaMetadata?.let {
+                    MiniPlayerInfo(
+                        mediaMetadata = it,
+                        colors = colors,
+                        compact = compact,
+                    )
+                } ?: Spacer(Modifier.weight(1f))
+
+                MiniPlayerTransportControls(
+                    isPlaying = isPlaying,
+                    playbackState = playbackState,
+                    canSkipPrevious = canSkipPrevious,
+                    canSkipNext = canSkipNext,
+                    playerConnection = playerConnection,
+                    colors = colors,
+                    compact = compact,
+                )
+            }
+        }
+
+        if (showCompactRow && compactFraction != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val fraction = compactFraction().coerceIn(0f, 1f)
+                            alpha = fraction
+                            scaleX = 0.9f + 0.1f * fraction
+                            scaleY = 0.9f + 0.1f * fraction
+                        }.padding(start = 8.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+            ) {
+                MiniPlayerArtwork(
+                    mediaMetadata = mediaMetadata,
+                    progress = progressProvider,
+                    isLoading = isLoading,
+                    colors = colors,
+                    compact = true,
+                )
+
+                mediaMetadata?.let {
+                    MiniPlayerInfo(
+                        mediaMetadata = it,
+                        colors = colors,
+                        compact = true,
+                    )
+                } ?: Spacer(Modifier.weight(1f))
+
+                MiniPlayerTransportControls(
+                    isPlaying = isPlaying,
+                    playbackState = playbackState,
+                    canSkipPrevious = canSkipPrevious,
+                    canSkipNext = canSkipNext,
+                    playerConnection = playerConnection,
+                    colors = colors,
+                    compact = true,
+                    showSkipButtons = compactShowTransportControls,
+                )
+            }
+        }
     }
 }

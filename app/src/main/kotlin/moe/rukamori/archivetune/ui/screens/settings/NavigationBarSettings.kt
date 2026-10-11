@@ -63,6 +63,7 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT
@@ -91,6 +92,7 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -109,6 +111,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         rememberPreference(CompactBottomPillsKey, defaultValue = false)
     val (compactControlsStockColor, onCompactControlsStockColorChange) =
         rememberPreference(CompactControlsStockColorKey, defaultValue = false)
+    val (navigationBarCompactBehavior, onNavigationBarCompactBehaviorChange) =
+        rememberNavigationBarCompactBehavior()
     val appleMusicExperience = rememberAppleMusicExperience()
     val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
         rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
@@ -254,27 +258,31 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
                             }
                         },
-                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.YUMA_PLAYER,
+                        isEnabled =
+                            !appleMusicExperience &&
+                                navigationBarStyle != NavigationBarStyle.YUMA_PLAYER &&
+                                navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
                     )
                 }
 
                 item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("compact_controls_stock_color"),
-                        title = { Text(stringResource(R.string.compact_controls_stock_color)) },
-                        description =
-                            stringResource(
-                                if (liquidGlassEnabled) {
-                                    R.string.compact_controls_stock_color_desc
-                                } else {
-                                    R.string.liquid_glass_nav_bar_disabled
-                                },
-                            ),
-                        icon = { Icon(painterResource(R.drawable.palette), null) },
-                        checked = compactControlsStockColor,
-                        // Without Liquid Glass the buttons are already solid, so there is nothing to choose.
-                        isEnabled = liquidGlassEnabled,
-                        onCheckedChange = onCompactControlsStockColorChange,
+                    EnumListPreference(
+                        modifier = positions.modifierFor("navigation_bar_compact_behavior"),
+                        title = { Text(stringResource(R.string.navigation_bar_compact_behavior)) },
+                        description = stringResource(R.string.navigation_bar_compact_behavior_desc),
+                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
+                        selectedValue = navigationBarCompactBehavior,
+                        onValueSelected = onNavigationBarCompactBehaviorChange,
+                        valueText = {
+                            when (it) {
+                                NavigationBarCompactBehavior.ADAPTIVE ->
+                                    stringResource(R.string.navigation_bar_compact_adaptive)
+                                NavigationBarCompactBehavior.ALWAYS_EXPANDED ->
+                                    stringResource(R.string.navigation_bar_compact_always_expanded)
+                                NavigationBarCompactBehavior.ALWAYS_COMPACT ->
+                                    stringResource(R.string.navigation_bar_compact_always_compact)
+                            }
+                        },
                     )
                 }
 
@@ -341,6 +349,17 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         // stack requires API 31+.
                         isEnabled = liquidGlassEnabled && supported,
                         onCheckedChange = onLiquidGlassNavBarChange,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("compact_controls_stock_color"),
+                        title = { Text(stringResource(R.string.compact_controls_stock_color)) },
+                        description = stringResource(R.string.compact_controls_stock_color_desc),
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        checked = compactControlsStockColor,
+                        onCheckedChange = onCompactControlsStockColorChange,
                     )
                 }
 

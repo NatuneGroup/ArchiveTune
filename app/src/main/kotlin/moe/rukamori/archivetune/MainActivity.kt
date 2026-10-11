@@ -45,6 +45,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -266,10 +267,11 @@ import moe.rukamori.archivetune.constants.MiniPlayerLastAnchorKey
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
 import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
+import moe.rukamori.archivetune.constants.BottomSheetAnimationSpec
+import moe.rukamori.archivetune.constants.MiniPlayerCompactHeight
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
-import moe.rukamori.archivetune.constants.NavigationBarCompactBehaviorKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NeverShowUpdatePopupKey
@@ -317,7 +319,7 @@ import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.CompactControlCircle
-import moe.rukamori.archivetune.ui.component.CompactControlGap
+import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
 import moe.rukamori.archivetune.ui.component.CompactControlSize
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.DISMISSED_ANCHOR
@@ -991,8 +993,9 @@ class MainActivity : ComponentActivity() {
             // The Apple Music Experience carries the tab bar with it, the same way it carries the
             // iOS page headers. Written as a read-side override so turning the switch back off
             // restores whichever bar the user had chosen instead of overwriting that choice.
+            val appleMusicExperience = rememberAppleMusicExperience()
             val navigationBarStyle =
-                if (rememberAppleMusicExperience()) {
+                if (appleMusicExperience) {
                     NavigationBarStyle.YUMA_PLAYER
                 } else {
                     navigationBarStyleStored
@@ -1538,24 +1541,44 @@ class MainActivity : ComponentActivity() {
                         NavigationBarHideOnScrollKey,
                         defaultValue = false,
                     )
-                    var navigationBarHiddenByScroll by remember { mutableStateOf(false) }
-                    LaunchedEffect(navBackStackEntry?.destination?.route, hideNavigationBarOnScroll) {
-                        navigationBarHiddenByScroll = false
+                    val (navigationBarCompactBehavior) = rememberNavigationBarCompactBehavior()
+                    // Written by the scroll connection below; every destination starts expanded.
+                    var scrolledDown by remember { mutableStateOf(false) }
+                    LaunchedEffect(navBackStackEntry?.destination?.route) {
+                        scrolledDown = false
                     }
-                    val navigationBarCompactBehavior by rememberEnumPreference(
-                        NavigationBarCompactBehaviorKey,
-                        defaultValue = NavigationBarCompactBehavior.ADAPTIVE,
-                    )
-                    var isBottomUiCompact by remember { mutableStateOf(false) }
-                    LaunchedEffect(navBackStackEntry?.destination?.route, navigationBarCompactBehavior) {
-                        isBottomUiCompact =
-                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_COMPACT
-                    }
+                    // The one-row layout: the tab bar folds into round Library/Home and Search buttons
+                    // with the mini player between them.
+                    val isBottomUiCompact =
+                        !useRail &&
+                            when (navigationBarCompactBehavior) {
+                                NavigationBarCompactBehavior.ALWAYS_COMPACT -> true
+                                NavigationBarCompactBehavior.ADAPTIVE -> scrolledDown
+                                NavigationBarCompactBehavior.ALWAYS_EXPANDED -> false
+                            }
+                    // "Hide while scrolling" with the one-row layout turned off keeps the older look:
+                    // the bar slides away and the full-width mini player drops into its place.
+                    val navigationBarHiddenByScroll =
+                        hideNavigationBarOnScroll &&
+                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED &&
+                            scrolledDown
+                    val scrollDrivesBottomUi =
+                        !useRail &&
+                            (
+                                navigationBarCompactBehavior == NavigationBarCompactBehavior.ADAPTIVE ||
+                                    (
+                                        hideNavigationBarOnScroll &&
+                                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED &&
+                                            shouldShowNavigationBar
+                                    )
+                            )
+                    // Same stiffness as BottomSheetAnimationSpec: the mini player's drop into the row is
+                    // a sheet-bound animation, so its resize stays in step with it.
                     val bottomUiCompactFractionState =
                         animateFloatAsState(
                             targetValue = if (isBottomUiCompact) 1f else 0f,
                             animationSpec =
-                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 400f),
+                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
                             label = "bottomUiCompactFraction",
                         )
                     val navigationBarScrollThresholdPx = with(density) { NavigationBarHideScrollThreshold.toPx() }
@@ -1573,28 +1596,41 @@ class MainActivity : ComponentActivity() {
                                     if (travelled != 0f && (travelled < 0f) != (consumed.y < 0f)) travelled = 0f
                                     travelled += consumed.y
                                     if (travelled <= -navigationBarScrollThresholdPx) {
-                                        navigationBarHiddenByScroll = true
+                                        scrolledDown = true
                                         travelled = 0f
                                     } else if (travelled >= navigationBarScrollThresholdPx) {
-                                        navigationBarHiddenByScroll = false
+                                        scrolledDown = false
                                         travelled = 0f
-                                    }
-                                    if (navigationBarCompactBehavior == NavigationBarCompactBehavior.ADAPTIVE) {
-                                        isBottomUiCompact = consumed.y < 0f
                                     }
                                     return Offset.Zero
                                 }
                             }
                         }
-                    val navigationBarVisible = shouldShowNavigationBar && !navigationBarHiddenByScroll
+                    val navigationBarVisible =
+                        shouldShowNavigationBar && !navigationBarHiddenByScroll && !isBottomUiCompact
 
-
-                    fun getBottomNavPadding(): Dp =
-                        if (shouldShowNavigationBar && !useRail) {
-                            NavigationBarHeight
-                        } else {
-                            0.dp
+                    val compactLeftCircleIsLibrary =
+                        remember(currentRoute) {
+                            val route = currentRoute.orEmpty()
+                            route == Screens.Home.route ||
+                                route == "history" ||
+                                route == "local_songs" ||
+                                route == "library_playlists" ||
+                                route == "library_spotify_playlists" ||
+                                route == "library_artists" ||
+                                route.startsWith("local_playlist/") ||
+                                route.startsWith("auto_playlist/") ||
+                                route.startsWith("cache_playlist/") ||
+                                route.startsWith("spotify_playlist/") ||
+                                route.startsWith("online_playlist/") ||
+                                route.startsWith("top_playlist/")
                         }
+                    // These pages have their own search field; the round button opens it in place.
+                    val compactRouteHasInPageSearch =
+                        currentRoute == "history" || currentRoute == "local_songs"
+                    val compactSearchCircleVisible =
+                        currentRoute?.startsWith("artist/") != true &&
+                            (compactRouteHasInPageSearch || !compactLeftCircleIsLibrary || currentRoute == Screens.Home.route)
 
                     // FLOATING detaches the bar into a pill: bigger bottom margin, tighter width.
                     // Every consumer below (collapsed player anchor, slide distance, insets, FAB
@@ -1652,14 +1688,25 @@ class MainActivity : ComponentActivity() {
                         )
                     val bottomNavigationBarHeight by bottomNavigationBarHeightState
 
+                    // Top edge of the slim mini player in the one-row layout, measured from the bottom inset:
+                    // centred on the tab bar's line where there is one, at its usual height elsewhere.
+                    val compactMiniPlayerTop =
+                        if (shouldShowNavigationBar) {
+                            floatingBarsBottomPadding + (navVisibleHeight + MiniPlayerCompactHeight) / 2
+                        } else {
+                            MiniPlayerBottomSpacing + MiniPlayerHeight
+                        }
                     val playerBottomSheetState =
                         rememberBottomSheetState(
                             dismissedBound = 0.dp,
                             collapsedBound =
                                 bottomInset +
-                                    (if (navigationBarVisible && !useRail) floatingBarsBottomPadding + NavigationBarHeight else 0.dp) +
-                                    MiniPlayerBottomSpacing +
-                                    MiniPlayerHeight,
+                                    when {
+                                        navigationBarVisible && !useRail ->
+                                            floatingBarsBottomPadding + navVisibleHeight + MiniPlayerBottomSpacing + MiniPlayerHeight
+                                        isBottomUiCompact -> compactMiniPlayerTop
+                                        else -> MiniPlayerBottomSpacing + MiniPlayerHeight
+                                    },
                             expandedBound = maxHeight,
                         )
 
@@ -1897,6 +1944,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Stepped in 5% increments so the compact animation re-provides the insets a handful
+                    // of times instead of on every frame.
+                    val quantizedCompactFraction by remember {
+                        derivedStateOf { kotlin.math.round(bottomUiCompactFractionState.value * 20f) / 20f }
+                    }
                     val playerAwareWindowInsets =
                         remember(
                             useRail,
@@ -1904,14 +1956,25 @@ class MainActivity : ComponentActivity() {
                             shouldShowNavigationBar,
                             playerBottomSheetState.isDismissed,
                             navigationBarStyle,
+                            navVisibleHeight,
                             effectiveStatusBarTop,
+                            quantizedCompactFraction,
                         ) {
                             var bottom = bottomInset
-                            if (shouldShowNavigationBar && !useRail) {
-                                bottom += getBottomNavPadding() + floatingBarsBottomPadding
-                            }
+                            val navStack = shouldShowNavigationBar && !useRail
                             if (!playerBottomSheetState.isDismissed) {
-                                bottom += MiniPlayerHeight + MiniPlayerBottomSpacing
+                                bottom +=
+                                    if (navStack) {
+                                        androidx.compose.ui.unit.lerp(
+                                            floatingBarsBottomPadding + navVisibleHeight + MiniPlayerBottomSpacing + MiniPlayerHeight,
+                                            floatingBarsBottomPadding + (navVisibleHeight + MiniPlayerCompactHeight) / 2,
+                                            quantizedCompactFraction,
+                                        )
+                                    } else {
+                                        MiniPlayerHeight + MiniPlayerBottomSpacing
+                                    }
+                            } else if (navStack) {
+                                bottom += floatingBarsBottomPadding + navVisibleHeight
                             }
                             effectiveWindowsInsets
                                 .only(
@@ -1977,6 +2040,26 @@ class MainActivity : ComponentActivity() {
                                     launchSingleTop = true
                                     restoreState = true
                                 }
+                            }
+                        }
+                    }
+
+                    // The round Library/Home button returns to the tab's root even from deep inside it,
+                    // where the tab item itself would only reselect the current page.
+                    val navigateToTabRoot: (Screens) -> Unit = { screen ->
+                        val popped = runCatching { navController.popBackStack(screen.route, false) }.getOrDefault(false)
+                        if (!popped && navController.currentDestination?.route != screen.route) {
+                            navController.navigate(screen.route) {
+                                popUpTo(navController.graph.startDestinationId) {
+                                    saveState = true
+                                }
+                                launchSingleTop = true
+                            }
+                        }
+                        if (navController.currentDestination?.route == screen.route) {
+                            navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                            if (screen == Screens.Home) {
+                                coroutineScope.launch { homeScrollBehavior.state.resetHeightOffset() }
                             }
                         }
                     }
@@ -2143,13 +2226,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    var shouldShowTopBar by rememberSaveable { mutableStateOf(false) }
-
-                    LaunchedEffect(navBackStackEntry) {
-                        shouldShowTopBar =
-                            !active && navBackStackEntry?.destination?.route in topLevelScreens &&
-                            navBackStackEntry?.destination?.route != "settings"
-                    }
+                    // Derived in composition, not in an effect: an effect flips it a frame after the
+                    // route changes, so the header used to vanish before the outgoing page had moved.
+                    val shouldShowTopBar =
+                        !active && currentRoute in topLevelScreens && currentRoute != "settings"
+                    // While the header fades out it keeps drawing the page it belongs to instead of
+                    // restyling itself for the incoming route.
+                    val lastTopBarRoute = remember { arrayOfNulls<String>(1) }
+                    if (shouldShowTopBar) lastTopBarRoute[0] = currentRoute
+                    val topBarRoute = if (shouldShowTopBar) currentRoute else lastTopBarRoute[0]
 
                     LaunchedEffect(Unit) {
                         if (pendingIntent != null) {
@@ -2509,21 +2594,25 @@ class MainActivity : ComponentActivity() {
 
                             Scaffold(
                                 topBar = {
-                                    if (shouldShowTopBar) {
+                                    AnimatedVisibility(
+                                        visible = shouldShowTopBar,
+                                        enter = fadeIn(tween(if (disableAnimations) 0 else 220, delayMillis = if (disableAnimations) 0 else 60)),
+                                        exit = fadeOut(tween(if (disableAnimations) 0 else 180)),
+                                    ) {
                                         val shouldUseFloatingTopBar =
-                                            remember(navBackStackEntry) {
-                                                navBackStackEntry?.destination?.route == Screens.Home.route ||
-                                                    navBackStackEntry?.destination?.route == Screens.Search.route ||
-                                                    navBackStackEntry?.destination?.route == Screens.Library.route
+                                            remember(topBarRoute) {
+                                                topBarRoute == Screens.Home.route ||
+                                                    topBarRoute == Screens.Search.route ||
+                                                    topBarRoute == Screens.Library.route
                                             }
                                         val shouldShowBlurBackground =
-                                            remember(navBackStackEntry) {
+                                            remember(topBarRoute) {
                                                 shouldUseFloatingTopBar
                                             }
 
                                         val surfaceColor = MaterialTheme.colorScheme.surface
                                         val currentScrollBehavior =
-                                            when (navBackStackEntry?.destination?.route) {
+                                            when (topBarRoute) {
                                                 Screens.Home.route -> homeScrollBehavior
 
                                                 Screens.Search.route -> searchScrollBehavior
@@ -2532,12 +2621,12 @@ class MainActivity : ComponentActivity() {
                                                 // sub-screens use the shared shell behavior.
                                                 else -> topAppBarScrollBehavior
                                             }
-                                        val isLibraryRoute = navBackStackEntry?.destination?.route == Screens.Library.route
+                                        val isLibraryRoute = topBarRoute == Screens.Library.route
                                         // Home keeps its bar pinned so content scrolls under it into
                                         // the progressive blur. The title stays put with it — see the
                                         // note on AutoResizeText below for why the fade that came with
                                         // this design was wrong here.
-                                        val isHomeRoute = navBackStackEntry?.destination?.route == Screens.Home.route
+                                        val isHomeRoute = topBarRoute == Screens.Home.route
 
                                         var headerHeightPx by remember { mutableIntStateOf(0) }
                                         LaunchedEffect(currentScrollBehavior, headerHeightPx) {
@@ -2849,7 +2938,7 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 },
                                                 scrollBehavior =
-                                                    if (navBackStackEntry?.destination?.route == Screens.Library.route ||
+                                                    if (topBarRoute == Screens.Library.route ||
                                                         shouldUseFloatingTopBar
                                                     ) {
                                                         null
@@ -3177,7 +3266,8 @@ class MainActivity : ComponentActivity() {
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
-                                                        navigationBarStyle == NavigationBarStyle.YUMA_PLAYER
+                                                        navigationBarStyle == NavigationBarStyle.YUMA_PLAYER ||
+                                                        navigationBarStyle == NavigationBarStyle.APPLE_MUSIC
                                                     ) {
                                                         0f
                                                     } else {
@@ -3193,6 +3283,9 @@ class MainActivity : ComponentActivity() {
                                                 pureBlack = pureBlack,
                                                 navigationProximityProvider = navigationProximityProvider,
                                                 onLyricsVisibilityChange = { isPlayerLyricsFullScreen = it },
+                                                compactFractionState = bottomUiCompactFractionState,
+                                                compactHorizontalPadding = navBarHorizontalPadding,
+                                                compactReserveEndControl = compactSearchCircleVisible,
                                             )
                                         }
 
@@ -3237,118 +3330,126 @@ class MainActivity : ComponentActivity() {
                                                                         )
                                                                 slideOffset + hideOffset
                                                             }
+                                                        alpha = 1f - bottomUiCompactFractionState.value * 0.9f
                                                     },
                                         ) {
-                                            // Boolean gates only: the animated fraction itself is read in
-                                            // graphicsLayer blocks so the spring does not recompose this scope.
-                                            val compactRowVisible by remember {
-                                                derivedStateOf { bottomUiCompactFractionState.value > 0.01f }
+                                            FloatingNavigationToolbar(
+                                                items = navigationItems,
+                                                pureBlack = pureBlack,
+                                                miniPlayerProximityProvider = navigationProximityProvider,
+                                                style = navigationBarStyle,
+                                                frostedBlur = navigationBarFrostedBlur,
+                                                tintFrostedBlur = navigationBarTintFrostedBlur,
+                                                frostedBackdrop = navBarFrostedBackdrop,
+                                                liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !compactControlsStockColor,
+                                                liquidGlassBackdrop = liquidGlassBackdrop,
+                                                modifier =
+                                                    Modifier
+                                                        .align(Alignment.BottomCenter)
+                                                        .padding(
+                                                            start = navBarHorizontalPadding,
+                                                            end = navBarHorizontalPadding,
+                                                            bottom = bottomInset + floatingBarsBottomPadding,
+                                                        ).height(navVisibleHeight),
+                                                isSelected = { screen ->
+                                                    navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                        true
+                                                },
+                                                onItemClick = { screen, isSelected ->
+                                                    handlePrimaryNavigationClick(screen, isSelected)
+                                                },
+                                                onSearchItemDoubleClick = {
+                                                    searchSource = SearchSource.ONLINE
+                                                    openSearch()
+                                                },
+                                            )
+                                        }
+
+                                        // The round buttons share the slim mini player's centre line. Animated so
+                                        // the row glides with the sheet when the tab bar comes or goes.
+                                        val compactRowBottom by animateDpAsState(
+                                            targetValue =
+                                                bottomInset + compactMiniPlayerTop -
+                                                    (MiniPlayerCompactHeight + CompactControlSize) / 2,
+                                            animationSpec = if (disableAnimations) snap() else BottomSheetAnimationSpec,
+                                            label = "compactRowBottom",
+                                        )
+                                        // Boolean gate only: the fraction itself is read in graphicsLayer, so the
+                                        // spring does not recompose this scope every frame.
+                                        val compactRowVisible by remember {
+                                            derivedStateOf {
+                                                bottomUiCompactFractionState.value *
+                                                    (1f - playerBottomSheetState.progress.coerceIn(0f, 1f)) > 0.01f
                                             }
-                                            val compactToolbarVisible by remember {
-                                                derivedStateOf { bottomUiCompactFractionState.value < 0.99f }
-                                            }
-                                            if (compactRowVisible) {
-                                                Row(
-                                                    modifier =
-                                                        Modifier
-                                                            .fillMaxWidth()
-                                                            .align(Alignment.BottomCenter)
-                                                            .padding(horizontal = 24.dp)
-                                                            .padding(
-                                                                bottom =
-                                                                    bottomInset + floatingBarsBottomPadding +
-                                                                        ((navVisibleHeight - CompactControlSize) / 2).coerceAtLeast(0.dp),
-                                                            ).height(CompactControlSize)
-                                                            .graphicsLayer { alpha = bottomUiCompactFractionState.value },
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                    horizontalArrangement = Arrangement.spacedBy(CompactControlGap),
-                                                ) {
-                                                    val compactLibraryRoutes =
-                                                        remember {
-                                                            setOf(
-                                                                "home",
-                                                                "history",
-                                                                "local_songs",
-                                                                "library_playlists",
-                                                                "library_spotify_playlists",
-                                                            )
-                                                        }
-                                                    val isLibraryRoute =
-                                                        navBackStackEntry?.destination?.route in compactLibraryRoutes
-                                                    CompactControlCircle(
-                                                        iconRes =
-                                                            if (isLibraryRoute) {
-                                                                Screens.Library.iconIdActive
-                                                            } else {
-                                                                Screens.Home.iconIdActive
-                                                            },
-                                                        contentDescription =
-                                                            stringResource(
-                                                                if (isLibraryRoute) {
-                                                                    Screens.Library.titleId
-                                                                } else {
-                                                                    Screens.Home.titleId
-                                                                },
-                                                            ),
-                                                        onClick = {
-                                                            handlePrimaryNavigationClick(
-                                                                if (isLibraryRoute) Screens.Library else Screens.Home,
-                                                                false,
-                                                            )
+                                        }
+                                        if (compactRowVisible) {
+                                            val compactBackdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor }
+                                            val compactGlow = if (compactControlsStockColor) 0f else 1f
+                                            Box(
+                                                modifier =
+                                                    Modifier
+                                                        .align(Alignment.BottomCenter)
+                                                        .fillMaxWidth()
+                                                        .offset { IntOffset(0, -compactRowBottom.roundToPx()) }
+                                                        .padding(horizontal = navBarHorizontalPadding)
+                                                        .height(CompactControlSize)
+                                                        .graphicsLayer {
+                                                            val rowAlpha =
+                                                                bottomUiCompactFractionState.value *
+                                                                    (1f - playerBottomSheetState.progress.coerceIn(0f, 1f))
+                                                            alpha = rowAlpha
+                                                            translationY = (1f - rowAlpha) * (CompactControlSize + 8.dp).toPx()
                                                         },
-                                                        backdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor },
-                                                        glowStrength = if (compactControlsStockColor) 0f else 1f,
-                                                        tint = MaterialTheme.colorScheme.primary,
-                                                    )
+                                            ) {
+                                                CompactControlCircle(
+                                                    iconRes =
+                                                        if (compactLeftCircleIsLibrary) {
+                                                            Screens.Library.iconIdActive
+                                                        } else {
+                                                            Screens.Home.iconIdActive
+                                                        },
+                                                    contentDescription =
+                                                        stringResource(
+                                                            if (compactLeftCircleIsLibrary) {
+                                                                Screens.Library.titleId
+                                                            } else {
+                                                                Screens.Home.titleId
+                                                            },
+                                                        ),
+                                                    onClick = {
+                                                        navigateToTabRoot(
+                                                            if (compactLeftCircleIsLibrary) Screens.Library else Screens.Home,
+                                                        )
+                                                    },
+                                                    backdrop = compactBackdrop,
+                                                    glowStrength = compactGlow,
+                                                    modifier = Modifier.align(Alignment.CenterStart),
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                                if (compactSearchCircleVisible) {
                                                     CompactControlCircle(
                                                         iconRes = Screens.Search.iconIdInactive,
                                                         contentDescription = stringResource(Screens.Search.titleId),
                                                         onClick = {
-                                                            handlePrimaryNavigationClick(
-                                                                Screens.Search,
-                                                                navBackStackEntry?.destination?.hierarchy
-                                                                    ?.any { it.route == Screens.Search.route } == true,
-                                                            )
+                                                            if (compactRouteHasInPageSearch) {
+                                                                navController.currentBackStackEntry
+                                                                    ?.savedStateHandle
+                                                                    ?.set("openInPageSearch", true)
+                                                            } else {
+                                                                handlePrimaryNavigationClick(
+                                                                    Screens.Search,
+                                                                    navBackStackEntry?.destination?.hierarchy
+                                                                        ?.any { it.route == Screens.Search.route } == true,
+                                                                )
+                                                            }
                                                         },
-                                                        backdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor },
-                                                        glowStrength = if (compactControlsStockColor) 0f else 1f,
+                                                        backdrop = compactBackdrop,
+                                                        glowStrength = compactGlow,
+                                                        modifier = Modifier.align(Alignment.CenterEnd),
                                                     )
                                                 }
                                             }
-                                            if (compactToolbarVisible) {
-                                                FloatingNavigationToolbar(
-                                                    items = navigationItems,
-                                                    pureBlack = pureBlack,
-                                                    miniPlayerProximityProvider = navigationProximityProvider,
-                                                    style = navigationBarStyle,
-                                                    frostedBlur = navigationBarFrostedBlur,
-                                                    tintFrostedBlur = navigationBarTintFrostedBlur,
-                                                    frostedBackdrop = navBarFrostedBackdrop,
-                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled,
-                                                    liquidGlassBackdrop = liquidGlassBackdrop,
-                                                    modifier =
-                                                        Modifier
-                                                            .align(Alignment.BottomCenter)
-                                                            .graphicsLayer { alpha = 1f - bottomUiCompactFractionState.value }
-                                                            .padding(
-                                                                start = navBarHorizontalPadding,
-                                                                end = navBarHorizontalPadding,
-                                                                bottom = bottomInset + floatingBarsBottomPadding,
-                                                            ).height(navVisibleHeight),
-                                                    isSelected = { screen ->
-                                                        navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
-                                                            true
-                                                    },
-                                                    onItemClick = { screen, isSelected ->
-                                                        handlePrimaryNavigationClick(screen, isSelected)
-                                                    },
-                                                    onSearchItemDoubleClick = {
-                                                        searchSource = SearchSource.ONLINE
-                                                        openSearch()
-                                                    },
-                                                )
-                                            }
-                                       }
+                                        }
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
@@ -3365,9 +3466,13 @@ class MainActivity : ComponentActivity() {
                                                 else -> Screens.Home.route
                                             }
                                         },
+                                    // Opening Settings from a tab is a destination change, not a tab switch:
+                                    // the old 90 ms cut-out exit left the header and page popping away.
                                     enterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopEnter
                                         } else if (initialState.destination.route in topLevelScreens &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
@@ -3387,6 +3492,8 @@ class MainActivity : ComponentActivity() {
                                     exitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopExit
                                         } else if (initialState.destination.route in topLevelScreens &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
@@ -3398,6 +3505,8 @@ class MainActivity : ComponentActivity() {
                                     popEnterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopEnter
                                         } else if ((
                                                 initialState.destination.route in topLevelScreens ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
@@ -3416,6 +3525,8 @@ class MainActivity : ComponentActivity() {
                                     popExitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopExit
                                         } else if ((
                                                 initialState.destination.route in topLevelScreens ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
@@ -3471,7 +3582,7 @@ class MainActivity : ComponentActivity() {
                                             ).nestedScroll(
                                                 topAppBarScrollBehavior.nestedScrollConnection,
                                             ).then(
-                                                if (hideNavigationBarOnScroll && shouldShowNavigationBar && !useRail) {
+                                                if (scrollDrivesBottomUi) {
                                                     Modifier.nestedScroll(navigationBarScrollConnection)
                                                 } else {
                                                     Modifier
@@ -4084,3 +4195,20 @@ private fun Context.isTvDevice(): Boolean {
 }
 
 private val NavigationBarHideScrollThreshold = 14.dp
+
+private fun isSettingsHop(
+    from: String?,
+    to: String?,
+): Boolean {
+    fun isTab(route: String?) = Screens.MainScreens.any { it.route == route }
+    return (from == "settings" && isTab(to)) || (to == "settings" && isTab(from))
+}
+
+private val SettingsHopEnter =
+    fadeIn(tween(260, delayMillis = 60, easing = FastOutSlowInEasing)) +
+        scaleIn(
+            animationSpec = tween(260, delayMillis = 60, easing = FastOutSlowInEasing),
+            initialScale = 0.94f,
+        )
+
+private val SettingsHopExit = fadeOut(tween(220, easing = LinearOutSlowInEasing))

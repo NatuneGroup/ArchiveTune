@@ -38,8 +38,11 @@ import moe.rukamori.archivetune.constants.NAVIGATION_BAR_PILL_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_TRANSPARENCY_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_WIDTH_DEFAULT
 import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehaviorKey
 import moe.rukamori.archivetune.constants.NavigationBarCornerRadiusKey
 import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
+import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
 import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.NavigationBarOpacityKey
@@ -49,6 +52,7 @@ import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -88,11 +92,14 @@ enum class PillBackdrop {
     LIQUID_GLASS,
 }
 
+private val NavigationBarStyle.floats: Boolean
+    get() = this == NavigationBarStyle.FLOATING || this == NavigationBarStyle.APPLE_MUSIC
+
 val NavigationBarStyle.pillHorizontalInset: Dp
-    get() = if (this == NavigationBarStyle.FLOATING) FloatingNavigationBarHorizontalPadding else NavigationBarHorizontalPadding
+    get() = if (floats) FloatingNavigationBarHorizontalPadding else NavigationBarHorizontalPadding
 
 val NavigationBarStyle.pillBottomInset: Dp
-    get() = if (this == NavigationBarStyle.FLOATING) FloatingNavigationBarBottomPadding else NavigationBarBottomPadding
+    get() = if (floats) FloatingNavigationBarBottomPadding else NavigationBarBottomPadding
 
 val NavigationBarStyle.pillMaxWidth: Dp
     get() = if (this == NavigationBarStyle.DEFAULT) NavigationBarMaxWidth else FloatingNavigationBarMaxWidth
@@ -142,6 +149,7 @@ class PillStyle(
         if (backdrop == PillBackdrop.LIQUID_GLASS && role != PillRole.MINI_PLAYER) {
             return RoundedCornerShape(percent = 50)
         }
+        if (navigationStyle == NavigationBarStyle.APPLE_MUSIC) return RoundedCornerShape(percent = 50)
         if (!isDocked) return RoundedCornerShape(cornerRadius)
         val docking = proximity.coerceIn(0f, 1f)
         val standalone = if (compact) 24.dp else FloatingBarStandaloneCornerRadius
@@ -165,6 +173,21 @@ class PillStyle(
     }
 }
 
+/**
+ * The stored compact behaviour, or — while the user has never picked one — Adaptive when "Hide
+ * while scrolling" is on and Always expanded when it is off, so scroll-driven chrome stays opt-in.
+ * Read raw because rememberEnumPreference captures its default once and could not follow the switch.
+ */
+@Composable
+fun rememberNavigationBarCompactBehavior(): Pair<NavigationBarCompactBehavior, (NavigationBarCompactBehavior) -> Unit> {
+    val (hideOnScroll) = rememberPreference(NavigationBarHideOnScrollKey, defaultValue = false)
+    val (stored, setStored) = rememberPreference(NavigationBarCompactBehaviorKey, defaultValue = "")
+    val behavior =
+        NavigationBarCompactBehavior.entries.firstOrNull { it.name == stored }
+            ?: if (hideOnScroll) NavigationBarCompactBehavior.ADAPTIVE else NavigationBarCompactBehavior.ALWAYS_EXPANDED
+    return behavior to { selected: NavigationBarCompactBehavior -> setStored(selected.name) }
+}
+
 @Composable
 fun rememberNavigationPillStyle(): NavigationBarStyle {
     val (stored) = rememberEnumPreference(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT)
@@ -178,12 +201,13 @@ fun rememberPillStyle(): PillStyle {
     val (tintFrostedBlur) = rememberPreference(NavigationBarTintFrostedBlurKey, defaultValue = false)
     val (liquidGlassEnabled) = rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
     val (liquidGlassNavBar) = rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
+    val (stockColours) = rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     return rememberPillStyle(
         style = rememberNavigationPillStyle(),
         pureBlack = MaterialTheme.colorScheme.background == Color.Black,
         frostedBlur = frostedBlur,
         tintFrostedBlur = tintFrostedBlur,
-        liquidGlass = liquidGlassEnabled && liquidGlassNavBar,
+        liquidGlass = liquidGlassEnabled && liquidGlassNavBar && !stockColours,
         frostedBackdropAvailable = LocalNavigationBarBackdrop.current != null,
         liquidGlassBackdropAvailable = LocalLiquidGlassBackdrop.current != null,
     )
@@ -201,7 +225,8 @@ fun rememberPillStyle(
 ): PillStyle {
     val colors = MaterialTheme.colorScheme
     val (compactBottomPills) = rememberPreference(CompactBottomPillsKey, defaultValue = false)
-    val useCompactPills = compactBottomPills && style != NavigationBarStyle.YUMA_PLAYER
+    val useCompactPills =
+        compactBottomPills && style != NavigationBarStyle.YUMA_PLAYER && style != NavigationBarStyle.APPLE_MUSIC
     val (widthPreference) = rememberPreference(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
     val (opacity) = rememberPreference(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
     val (transparency) =
@@ -236,6 +261,8 @@ fun rememberPillStyle(
         schemeIsDark,
     ) {
         val isYumaPlayer = style == NavigationBarStyle.YUMA_PLAYER
+        // Both Apple-flavoured bars sit on a neutral translucent surface with a hairline edge.
+        val isNeutralCapsule = isYumaPlayer || style == NavigationBarStyle.APPLE_MUSIC
         val supportsBackdrop = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         val canLiquidGlass = liquidGlass && liquidGlassBackdropAvailable && supportsBackdrop
         val canBlurBackdrop =
@@ -255,7 +282,7 @@ fun rememberPillStyle(
                     }
                 tintFrostedBlur -> tintedBase
                 pureBlack -> Color.Black
-                isYumaPlayer -> surfaceContainer.copy(alpha = ApplePillContainerAlpha)
+                isNeutralCapsule -> surfaceContainer.copy(alpha = ApplePillContainerAlpha)
                 // Transparency applies only without a frost overlay, which already provides the
                 // see-through effect; adding it there would double-count.
                 else -> surfaceContainer.copy(alpha = (opacity * (1f - transparency)).coerceIn(0.05f, 1f))
@@ -287,7 +314,7 @@ fun rememberPillStyle(
                 },
             containerColor = containerColor,
             raisedContainerColor =
-                if (isYumaPlayer) surfaceContainerHigh.copy(alpha = ApplePillContainerAlpha) else surfaceContainerHigh,
+                if (isNeutralCapsule) surfaceContainerHigh.copy(alpha = ApplePillContainerAlpha) else surfaceContainerHigh,
             contentColor =
                 when {
                     tintFrostedBlur -> tintedContent
@@ -296,7 +323,7 @@ fun rememberPillStyle(
                 },
             tintedContent = tintedContent,
             compact = useCompactPills,
-            borderColor = if (isYumaPlayer) outlineVariant else null,
+            borderColor = if (isNeutralCapsule) outlineVariant else null,
         )
     }
 }

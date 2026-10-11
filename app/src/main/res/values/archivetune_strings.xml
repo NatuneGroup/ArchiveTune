@@ -343,8 +343,13 @@
     <string name="liquid_glass_nav_bar">Liquid Glass navigation bar</string>
     <string name="liquid_glass_nav_bar_desc">Use the Liquid Glass effect for the bottom navigation bar</string>
     <string name="liquid_glass_nav_bar_disabled">Turn on Liquid Glass effects in Appearance first</string>
-    <string name="compact_controls_stock_color">Stock-colour bottom buttons</string>
-    <string name="compact_controls_stock_color_desc">Draw the round library and search buttons in solid theme colours instead of Liquid Glass</string>
+    <string name="compact_controls_stock_color">Stock colours instead of Liquid Glass</string>
+    <string name="compact_controls_stock_color_desc">Draw the navigation bar, round buttons and mini player in plain theme colours with no glass effect</string>
+    <string name="navigation_bar_compact_behavior">Mini player and bar behavior</string>
+    <string name="navigation_bar_compact_behavior_desc">Fold the navigation bar into round Library and Search buttons with the mini player between them. Adaptive does it while you scroll down</string>
+    <string name="navigation_bar_compact_adaptive">Adaptive</string>
+    <string name="navigation_bar_compact_always_expanded">Always expanded</string>
+    <string name="navigation_bar_compact_always_compact">Always compact</string>
     <string name="liquid_glass_mini_player_unsupported">Liquid Glass mini player requires Android 12 or above</string>
     <string name="player_design_style">Player design style</string>
     <string name="player_design_v1">Classic</string>

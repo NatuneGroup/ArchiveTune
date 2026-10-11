@@ -13,14 +13,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +47,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
@@ -59,10 +62,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerConnection
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
-import moe.rukamori.archivetune.constants.MiniPlayerHeight
+import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
 import moe.rukamori.archivetune.playback.artwork.guessArtworkProvider
@@ -89,6 +93,9 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
+    compactFractionState: State<Float>? = null,
+    compactHorizontalPadding: Dp = 0.dp,
+    compactReserveEndControl: Boolean = false,
 ) {
     NewMiniPlayer(
         position = position,
@@ -96,6 +103,9 @@ fun MiniPlayer(
         modifier = modifier,
         pureBlack = pureBlack,
         navigationProximityProvider = navigationProximityProvider,
+        compactFractionState = compactFractionState,
+        compactHorizontalPadding = compactHorizontalPadding,
+        compactReserveEndControl = compactReserveEndControl,
     )
 }
 
@@ -106,6 +116,9 @@ private fun NewMiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float,
+    compactFractionState: State<Float>?,
+    compactHorizontalPadding: Dp,
+    compactReserveEndControl: Boolean,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
@@ -118,7 +131,8 @@ private fun NewMiniPlayer(
         defaultValue = MiniPlayerBackgroundStyle.THEME,
     )
     val compactMiniPlayerPreference by rememberPreference(CompactMiniPlayerKey, defaultValue = false)
-    val compactMiniPlayer = compactMiniPlayerPreference && !rememberAppleMusicExperience()
+    val appleMusicExperience = rememberAppleMusicExperience()
+    val compactMiniPlayer = compactMiniPlayerPreference && !appleMusicExperience
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     // Keep the previous valid palette while the next artwork loads; replace only on success.
     var gradientColors by remember {
@@ -223,17 +237,24 @@ private fun NewMiniPlayer(
         }
     }
 
+    val pill = rememberPillStyle()
+    // Next to an Apple Music tab bar the mini player drops its accent and artwork-derived colours so
+    // it does not compete with the bar's accent. The artwork itself stays in colour.
+    val grayscale = appleMusicExperience || pill.navigationStyle == NavigationBarStyle.APPLE_MUSIC
     val backgroundPalette =
-        remember(gradientColors) {
-            MiniPlayerBackgroundPalette.from(gradientColors)
+        remember(gradientColors, grayscale) {
+            MiniPlayerBackgroundPalette.from(
+                if (grayscale) gradientColors.map { it.toGrayscale() } else gradientColors,
+            )
         }
     val liquidGlassMaster by rememberPreference(
         moe.rukamori.archivetune.constants.LiquidGlassEnabledKey,
         defaultValue = false,
     )
+    val stockColours by rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     val effectiveBackgroundStyle =
         when {
-            miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS && !liquidGlassMaster ->
+            miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS && (!liquidGlassMaster || stockColours) ->
                 MiniPlayerBackgroundStyle.THEME
             miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> MiniPlayerBackgroundStyle.THEME
@@ -250,6 +271,7 @@ private fun NewMiniPlayer(
                 effectiveBackgroundStyle == MiniPlayerBackgroundStyle.GRADIENT ||
                     effectiveBackgroundStyle == MiniPlayerBackgroundStyle.GLOW ||
                     effectiveBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS,
+            grayscale = grayscale,
         )
     // The provider fires every sheet-drag frame; route it through derivedStateOf so the
     // shape below only recomputes when the snapped proximity value changes, and remember
@@ -257,9 +279,7 @@ private fun NewMiniPlayer(
     val navigationProximity by remember(navigationProximityProvider) {
         derivedStateOf { navigationProximityProvider().coerceIn(0f, 1f) }
     }
-    val pill = rememberPillStyle()
-    val miniPlayerShape =
-        remember(pill, navigationProximity) { pill.shape(PillRole.MINI_PLAYER, navigationProximity) }
+    val unconstrainedShape = remember(pill, navigationProximity) { pill.shape(PillRole.MINI_PLAYER, navigationProximity) }
     val restingShape = remember(pill) { pill.shape(PillRole.MINI_PLAYER) }
     // Width snaps instead of morphing: a docked mini player is full-width until contact, then
     // clamps to the nav bar width; floating and Apple Music pills never dock, so they always sit at
@@ -269,9 +289,28 @@ private fun NewMiniPlayer(
         derivedStateOf { navigationProximityProvider() > 0f }
     }
 
+    // The compact row spans the whole bottom edge between the round buttons, so the bar-width cap
+    // and the style's corner radii give way to a full capsule as soon as the layout starts to compact.
+    val compactFraction: (() -> Float)? =
+        remember(compactFractionState) { compactFractionState?.let { state -> { state.value } } }
+    val compactActive by remember(compactFractionState) {
+        derivedStateOf { (compactFractionState?.value ?: 0f) > 0.01f }
+    }
+    val compactCapsule by remember(compactFractionState) {
+        derivedStateOf { (compactFractionState?.value ?: 0f) > 0.5f }
+    }
+    val capsuleShape = remember { RoundedCornerShape(percent = 50) }
+    val miniPlayerShape = if (compactCapsule) capsuleShape else unconstrainedShape
+    val backgroundShape = if (compactCapsule) capsuleShape else restingShape
+    val themeColor =
+        remember(pill, grayscale) {
+            if (grayscale) pill.raisedContainerColor.toGrayscale() else pill.raisedContainerColor
+        }
+
     SwipeableMiniPlayerBox(
         modifier = modifier,
-        contentMaxWidth = if (constrainToNavigationWidth || !pill.isDocked || pill.compact) pill.maxWidth else null,
+        contentMaxWidth =
+            if (!compactActive && (constrainToNavigationWidth || !pill.isDocked || pill.compact)) pill.maxWidth else null,
         horizontalInset = pill.horizontalInset,
         swipeSensitivity = swipeSensitivity,
         swipeThumbnail = swipeThumbnail,
@@ -280,12 +319,15 @@ private fun NewMiniPlayer(
         coroutineScope = coroutineScope,
         pureBlack = pureBlack,
         useLegacyBackground = false,
+        compactFraction = compactFraction,
+        compactHorizontalPadding = compactHorizontalPadding,
+        compactReserveEndControl = compactReserveEndControl,
     ) { offsetX ->
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(MiniPlayerHeight)
+                    .fillMaxHeight()
                     .offset { IntOffset(offsetX.roundToInt(), 0) }
                     .clip(miniPlayerShape)
                     .then(pill.border?.let { Modifier.border(it, miniPlayerShape) } ?: Modifier),
@@ -293,8 +335,8 @@ private fun NewMiniPlayer(
             MiniPlayerBackground(
                 style = effectiveBackgroundStyle,
                 palette = backgroundPalette,
-                themeColor = pill.raisedContainerColor,
-                shape = restingShape,
+                themeColor = themeColor,
+                shape = backgroundShape,
                 modifier = Modifier.fillMaxSize(),
             )
             NewMiniPlayerContent(
@@ -303,16 +345,28 @@ private fun NewMiniPlayer(
                 playerConnection = playerConnection,
                 colors = contentColors,
                 compact = compactMiniPlayer,
+                compactFraction = compactFraction,
+                compactShowTransportControls = !compactReserveEndControl,
             )
         }
     }
 }
 
+/** Collapses hue and saturation, keeping the colour's perceived brightness and alpha. */
+private fun Color.toGrayscale(): Color {
+    val luma = 0.299f * red + 0.587f * green + 0.114f * blue
+    return Color(luma, luma, luma, alpha)
+}
+
 @Composable
-private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): MiniPlayerContentColors {
+private fun rememberMiniPlayerContentColors(
+    useArtworkBackground: Boolean,
+    grayscale: Boolean,
+): MiniPlayerContentColors {
     val colorScheme = MaterialTheme.colorScheme
     return remember(
         useArtworkBackground,
+        grayscale,
         colorScheme.primary,
         colorScheme.onPrimary,
         colorScheme.outline,
@@ -337,6 +391,21 @@ private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): Mini
                 secondaryButtonContainer = Color.Black.copy(alpha = 0.22f),
                 buttonIcon = Color.White,
                 disabledButtonIcon = Color.White.copy(alpha = 0.38f),
+            )
+        } else if (grayscale) {
+            val strong = colorScheme.onSurface.toGrayscale()
+            MiniPlayerContentColors(
+                title = strong,
+                secondary = colorScheme.onSurfaceVariant.toGrayscale(),
+                progress = strong,
+                progressTrack = colorScheme.outline.toGrayscale().copy(alpha = 0.18f),
+                artworkContainer = colorScheme.surfaceVariant.toGrayscale(),
+                artworkBorder = colorScheme.outline.toGrayscale().copy(alpha = 0.2f),
+                primaryButtonContainer = strong,
+                primaryButtonIcon = colorScheme.surface.toGrayscale(),
+                secondaryButtonContainer = colorScheme.surfaceContainerHighest.toGrayscale(),
+                buttonIcon = strong,
+                disabledButtonIcon = strong.copy(alpha = 0.38f),
             )
         } else {
             MiniPlayerContentColors(

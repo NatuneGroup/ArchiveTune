@@ -38,6 +38,15 @@ Also shipped since this note was written:
   back row) instead of the fork's chip row.
 - **Tab bar** — the Apple Music style is a floating rounded bar, inset, with a solid accent pill
   behind the active tab, its glyph knocked out, and the label in the accent.
+  That bar is `NavigationBarStyle.YUMA_PLAYER`; `APPLE_MUSIC` is a separate, user-picked style (a
+  compact centred capsule with a neutral indicator) that the experience does not force. Either
+  Apple style, or the experience itself, draws the mini player in grayscale.
+- **One-row bottom bar** — `NavigationBarCompactBehaviorKey` (Navigation bar → behaviour) folds the
+  tab bar into round Library/Home and Search buttons with a slim mini player between them, the
+  4nx3b layout. Unset, it follows `NavigationBarHideOnScrollKey`: adaptive (fold while scrolling
+  down) when that is on, always expanded otherwise. The fold is a sheet-bound change of
+  `collapsedBound`, not a translation. On History and Local songs the Search button opens the
+  page's own search field (`openInPageSearch` on the entry's saved state).
 - **Home pages** — the Home tab's pages are a multi-select set (`ActiveHomeSourcesKey`) with a
   single-choice switcher sheet in the top bar when more than one is active; YouTube and Spotify
   today, and the enum/selector take more.

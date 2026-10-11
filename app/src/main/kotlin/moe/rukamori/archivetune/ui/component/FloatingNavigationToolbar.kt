@@ -185,6 +185,7 @@ fun FloatingNavigationToolbar(
 ) {
     val isFloating = style == NavigationBarStyle.FLOATING
     val isYumaPlayer = style == NavigationBarStyle.YUMA_PLAYER
+    val isAppleMusic = style == NavigationBarStyle.APPLE_MUSIC
     // Navigation bar customization. Read directly here so the toolbar picks up the user's
     // tuning without the call site needing to thread 6 extra params.
     val (navBarHeightMultiplier) =
@@ -236,7 +237,7 @@ fun FloatingNavigationToolbar(
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     // Apple Music's tab bar is icon + label by definition, so the style wins over the global
     // "hide labels" preference rather than silently losing its own look to it.
-    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isYumaPlayer
+    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isYumaPlayer && !isAppleMusic
     val density = LocalDensity.current
 
     val indicatorColor =
@@ -248,13 +249,18 @@ fun FloatingNavigationToolbar(
             // Apple Music's active tab sits in a tinted pill: the reference shows a solid
             // primary-coloured capsule with the glyph knocked out of it and the label in the accent.
             isYumaPlayer -> MaterialTheme.colorScheme.primary
+            // Apple Music: the active tab gets a faint neutral capsule and the accent goes to the
+            // glyph and label only, so the bar itself stays monochrome.
+            isAppleMusic && pureBlack -> Color.White.copy(alpha = 0.16f)
+            isAppleMusic -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
             tintFrostedBlur && !isFloating -> tintedContent.copy(alpha = 0.18f)
             isFloating -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
             pureBlack -> Color.White.copy(alpha = 0.16f)
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
-    val indicatorWidth = if (isFloating || isYumaPlayer) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
-    val indicatorHeight = if (isFloating || isYumaPlayer) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
+    val largeIndicator = isFloating || isYumaPlayer || isAppleMusic
+    val indicatorWidth = if (largeIndicator) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
+    val indicatorHeight = if (largeIndicator) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
 
     // The built-in per-item indicator just fades in place; hide it so our single pill can slide
     // between items instead. On pure-black we also pin the icon/label colors for contrast.
@@ -270,7 +276,7 @@ fun FloatingNavigationToolbar(
                     unselectedIconColor = Color.White,
                     unselectedTextColor = Color.White,
                 )
-            isFloating ->
+            isFloating || isAppleMusic ->
                 ShortNavigationBarItemDefaults.colors(
                     selectedIndicatorColor = Color.Transparent,
                     selectedIconColor = MaterialTheme.colorScheme.primary,

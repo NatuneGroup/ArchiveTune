@@ -2140,3 +2140,8 @@ val BitPerfectNativeRateKey = booleanPreferencesKey("bitPerfectNativeRate")
 const val BIT_PERFECT_NATIVE_RATE_DEFAULT = true
 val TryptifyAudioProcessingKey = booleanPreferencesKey("tryptifyAudioProcessing")
 val LastwaveAudioProcessingKey = booleanPreferencesKey("lastwaveAudioProcessing")
+
+// Lyrics provider enable toggles (ported from 4nx3b).
+val EnableBiniLyricsKey = booleanPreferencesKey("enableBiniLyrics")
+val EnableGeniusLyricsKey = booleanPreferencesKey("enableGeniusLyrics")
+val EnableLrcRedKey = booleanPreferencesKey("enableLrcRed")

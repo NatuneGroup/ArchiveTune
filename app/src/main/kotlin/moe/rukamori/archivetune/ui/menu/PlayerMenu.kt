@@ -1921,7 +1921,6 @@ private fun SongSourceDialog(
         key1 = searchQuery,
         key2 = sourceFilter,
         key3 = searchMode,
-        key4 = amazonSourceEnabled,
     ) {
         if (!searchMode || searchQuery.length < 2 || backendMissing) {
             value = emptyList()

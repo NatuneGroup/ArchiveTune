@@ -46,6 +46,8 @@ class LyricsHelper
     ) {
         private val baseProviders =
             listOf(
+                LrcRedLyricsProvider,
+                BiniLyricsProvider,
                 BetterLyricsProvider,
                 BetterLyricsPortatoProvider,
                 YouLyPlusLyricsProvider,
@@ -66,6 +68,7 @@ class LyricsHelper
                 YouTubeLyricsProvider,
 
                 MusixmatchExperimentalLyricsProvider,
+                GeniusLyricsProvider,
             )
 
         private val cache = LruCache<String, List<LyricsResult>>(MAX_CACHE_SIZE)

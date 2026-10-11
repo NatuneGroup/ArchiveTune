@@ -282,6 +282,8 @@ ArchiveTune is made possible by the work of many open-source projects and commun
 
 - **Metrolist** by [Mostafa Alagamy](https://github.com/mostafaalagamy/Metrolist) for the base framework.
 - **SimpMusic** by [maxrave-dev](https://github.com/maxrave-dev/SimpMusic) for the lyrics API provider.
+- **4nx3b** [ArchiveTune](https://github.com/4nx3b/ArchiveTune) for the upstream base and the Bini, Genius, LRCRed and Megalobiz lyrics providers.
+- **rukamori** [ArchiveTune](https://github.com/rukamori/ArchiveTune) for the original ArchiveTune project this fork builds on.
 - [BetterLyrics](https://better-lyrics.boidu.dev/) for word-by-word lyrics, unison and artwork provider support.
 - [Material Color Utilities](https://github.com/material-foundation/material-color-utilities)
 - [Read You](https://github.com/Ashinch/ReadYou) and [Seal](https://github.com/JunkFood02/Seal) for UI component inspiration.

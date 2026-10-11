@@ -1,18 +1,9 @@
 name: Unit tests
 
-# Unit tests live in their own workflow on purpose. A job's log only becomes readable once its whole
-# run completes, and the canary run spends ~20 minutes building five APK variants — so a test failure
-# hosted there takes that long to even read. Here a push gets its verdict in a few minutes.
-#
-# The APK jobs assemble release builds, and a release assembly never compiles src/test, so until this
-# workflow existed the test sources could rot invisibly: listentogether/ProtoWireTest had stopped
-# compiling while every canary run still reported green.
+# Manual only (Actions → Unit tests → Run workflow). Push-triggered runs added ~4 minutes of runner
+# time to every canary push. Release assemblies never compile src/test, so these fork contract tests
+# can only rot unnoticed between manual runs: run this after merges and before promoting canary.
 on:
-  push:
-    branches:
-      - 'main'
-      - 'dev'
-      - 'canary'
   workflow_dispatch:
 
 concurrency:

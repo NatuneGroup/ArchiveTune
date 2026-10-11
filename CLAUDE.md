@@ -23,8 +23,10 @@ on push to `main`/`dev`) builds `gms-mobile-arm64` and `gms-tv-universal`; a pus
 to `canary` runs `Canary build` (`canary.yml`), which publishes the C-tagged
 prerelease the in-app updater takes, and a push to `dev` also runs `Nightly
 (canary) build` (`nightly.yml`, N-tagged). Unit tests are their own workflow
-(`tests.yml`, on `main`/`dev`/`canary`) because the APK jobs assemble releases and
-never compile `app/src/test`. There is no `foss`+`tv` variant, deliberately — the
+(`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK jobs
+assemble releases and never compile `app/src/test`, so start it by hand after merges
+and before promoting canary. There is no separate Kotlin compile check: the APK build
+is the compile signal. There is no `foss`+`tv` variant, deliberately — the
 fork ships GMS-only.
 
 ## Branches

@@ -716,6 +716,19 @@ class MusicService :
         }
     }
 
+    private fun publishDirectStreamInfo(mediaId: String, stream: DirectStream) {
+        publishCurrentStreamInfo(
+            mediaId,
+            CurrentStreamInfo(
+                mediaId = mediaId,
+                source = stream.source,
+                label = stream.label,
+                sampleRate = stream.sampleRate,
+                bitDepth = stream.bitDepth,
+            ),
+        )
+    }
+
     private fun promotePendingStreamInfo(mediaId: String?) {
         if (mediaId == null) return
         synchronized(pendingStreamInfoById) {
@@ -6429,6 +6442,10 @@ class MusicService :
         super.onMediaItemTransition(mediaItem, reason)
         crossfadeFailureTracker.reset()
         setAudioAuthenticityContext(localPlayer, mediaItem?.mediaId)
+        if (_currentStreamInfo.value?.mediaId != mediaItem?.mediaId) {
+            _currentStreamInfo.value = null
+        }
+        promotePendingStreamInfo(mediaItem?.mediaId)
         Timber.tag("PlaybackDiagnostics").d(
             "Media transition reason=%d state=%d playWhenReady=%s positionMs=%d gain=%.3f",
             reason,
@@ -8292,6 +8309,7 @@ class MusicService :
                 )
                 tidalActiveMediaIds.add(mediaId)
                 audioNormalizationFactorCache[mediaId] = 1f
+                publishDirectStreamInfo(mediaId, cached.stream)
                 selectedPlaybackSourceByMediaId[mediaId] = cached.stream.source
                 authenticityClaimedLosslessByMediaId[mediaId] =
                     isClaimedLosslessFormat(cached.stream.mimeType, cached.stream.codecs, cached.stream.label)
@@ -9385,6 +9403,7 @@ class MusicService :
         // for Tidal (and any non-YouTube source), because only the YouTube resolver wrote a format.
         // itag = 0 is a sentinel for "not a YouTube itag" and is hidden in the UI.
         persistDirectStreamFormat(mediaId, stream)
+        publishDirectStreamInfo(mediaId, stream)
         // Cache the resolved DirectStream so the next playback / prefetch for
         // this media id skips the slow Qobuz/Tidal resolution. The TTL matches
         // the typical signed-URL lifetime on those providers (~5 min).

@@ -184,9 +184,7 @@ fun FloatingNavigationToolbar(
     onSearchItemDoubleClick: (() -> Unit)? = null,
 ) {
     val isFloating = style == NavigationBarStyle.FLOATING
-    // Apple Music's tab bar is flat and edge-to-edge, always shows its labels, and draws no
-    // selection pill — the style is expressed entirely by those four facts below.
-    val isAppleMusic = style == NavigationBarStyle.APPLE_MUSIC
+    val isYumaPlayer = style == NavigationBarStyle.YUMA_PLAYER
     // Navigation bar customization. Read directly here so the toolbar picks up the user's
     // tuning without the call site needing to thread 6 extra params.
     val (navBarHeightMultiplier) =

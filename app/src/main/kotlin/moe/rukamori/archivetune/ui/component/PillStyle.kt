@@ -167,7 +167,7 @@ class PillStyle(
 @Composable
 fun rememberNavigationPillStyle(): NavigationBarStyle {
     val (stored) = rememberEnumPreference(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT)
-    return if (rememberAppleMusicExperience()) NavigationBarStyle.APPLE_MUSIC else stored
+    return if (rememberAppleMusicExperience()) NavigationBarStyle.YUMA_PLAYER else stored
 }
 
 /** Resolves the style from the stored preferences, for surfaces that are not handed it by the shell. */
@@ -200,7 +200,7 @@ fun rememberPillStyle(
 ): PillStyle {
     val colors = MaterialTheme.colorScheme
     val (compactBottomPills) = rememberPreference(CompactBottomPillsKey, defaultValue = false)
-    val useCompactPills = compactBottomPills && style != NavigationBarStyle.APPLE_MUSIC
+    val useCompactPills = compactBottomPills && style != NavigationBarStyle.YUMA_PLAYER
     val (widthPreference) = rememberPreference(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
     val (opacity) = rememberPreference(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
     val (transparency) =
@@ -234,7 +234,7 @@ fun rememberPillStyle(
         primary,
         schemeIsDark,
     ) {
-        val isAppleMusic = style == NavigationBarStyle.APPLE_MUSIC
+        val isAppleMusic = style == NavigationBarStyle.YUMA_PLAYER
         val supportsBackdrop = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
         val canLiquidGlass = liquidGlass && liquidGlassBackdropAvailable && supportsBackdrop
         val canBlurBackdrop =
@@ -281,7 +281,7 @@ fun rememberPillStyle(
                     // Apple Music's bar is inset only slightly: its five labels have to fit, so the
                     // floating default of 0.8 (a fraction for a four-item bar) would squash them. An
                     // untouched slider keeps the wide look; a width the user picked is honoured.
-                    NavigationBarStyle.APPLE_MUSIC ->
+                    NavigationBarStyle.YUMA_PLAYER ->
                         if (widthPreference == NAVIGATION_BAR_WIDTH_DEFAULT) 0.94f else widthPreference.coerceIn(0.6f, 1f)
                     NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
                     NavigationBarStyle.DEFAULT -> if (useCompactPills) 0.88f else 1f

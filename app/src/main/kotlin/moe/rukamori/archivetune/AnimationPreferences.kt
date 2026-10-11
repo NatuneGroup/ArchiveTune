@@ -14,6 +14,8 @@ import androidx.compose.runtime.compositionLocalOf
 
 val LocalAnimationsDisabled = compositionLocalOf { false }
 
+val LocalBlurDisabled = compositionLocalOf { false }
+
 /**
  * The system's animator duration scale, as set in developer options.
  *

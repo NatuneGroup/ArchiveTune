@@ -7,8 +7,10 @@
  */
 
 package moe.rukamori.archivetune.ui.utils
+import moe.rukamori.archivetune.LocalBlurDisabled
 
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
@@ -149,3 +151,8 @@ fun Modifier.smoothFadingEdge(vertical: Dp) =
         top = vertical,
         bottom = vertical,
     )
+
+fun Modifier.optionalBlur(
+    radius: Dp,
+    blurDisabled: Boolean = LocalBlurDisabled.current,
+): Modifier = if (blurDisabled) this else this.blur(radius)

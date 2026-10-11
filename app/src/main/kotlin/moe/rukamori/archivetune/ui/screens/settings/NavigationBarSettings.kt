@@ -73,7 +73,6 @@ import moe.rukamori.archivetune.constants.NavigationBarCornerRadiusKey
 import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
-import moe.rukamori.archivetune.constants.NavigationBarBitchordKey
 import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarHeightKey
@@ -120,14 +119,11 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
     val (liquidGlassNavBarEnabled, onLiquidGlassNavBarEnabledChange) =
         rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
     // Turning on any nav treatment turns the other treatments off.
-    val (navigationBarBitchord, onNavigationBarBitchordChange) =
-        rememberPreference(NavigationBarBitchordKey, defaultValue = false)
     // Mutual-exclusivity wrappers: turning one frosted variant on turns the other off.
     val onFrostedBlurChange: (Boolean) -> Unit = { checked ->
         onNavigationBarFrostedBlurChange(checked)
         if (checked) {
             if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
-            if (navigationBarBitchord) onNavigationBarBitchordChange(false)
             if (liquidGlassNavBarEnabled) onLiquidGlassNavBarEnabledChange(false)
         }
     }
@@ -135,7 +131,6 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         onNavigationBarTintFrostedBlurChange(checked)
         if (checked) {
             if (navigationBarFrostedBlur) onNavigationBarFrostedBlurChange(false)
-            if (navigationBarBitchord) onNavigationBarBitchordChange(false)
             if (liquidGlassNavBarEnabled) onLiquidGlassNavBarEnabledChange(false)
         }
     }
@@ -144,15 +139,6 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         if (checked) {
             if (navigationBarFrostedBlur) onNavigationBarFrostedBlurChange(false)
             if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
-            if (navigationBarBitchord) onNavigationBarBitchordChange(false)
-        }
-    }
-    val onBitchordChange: (Boolean) -> Unit = { checked ->
-        onNavigationBarBitchordChange(checked)
-        if (checked) {
-            if (navigationBarFrostedBlur) onNavigationBarFrostedBlurChange(false)
-            if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
-            if (liquidGlassNavBarEnabled) onLiquidGlassNavBarEnabledChange(false)
         }
     }
     val (hideNavigationBarLabels, onHideNavigationBarLabelsChange) =
@@ -241,6 +227,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                         stringResource(R.string.navigation_bar_style_default)
                                     NavigationBarStyle.FLOATING ->
                                         stringResource(R.string.navigation_bar_style_floating)
+                                    NavigationBarStyle.YUMA_PLAYER ->
+                                        stringResource(R.string.navigation_bar_style_yuma_player)
                                     NavigationBarStyle.APPLE_MUSIC ->
                                         stringResource(R.string.navigation_bar_style_apple_music)
                                 }
@@ -263,7 +251,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
                             }
                         },
-                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
+                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.YUMA_PLAYER,
                     )
                 }
 
@@ -333,16 +321,6 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                     )
                 }
 
-                item {
-                    SwitchPreference(
-                        modifier = positions.modifierFor("navigation_bar_bitchord"),
-                        title = { Text(stringResource(R.string.navigation_bar_bitchord)) },
-                        description = stringResource(R.string.navigation_bar_bitchord_desc),
-                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                        checked = navigationBarBitchord,
-                        onCheckedChange = onBitchordChange,
-                    )
-                }
 
                 item {
                     SwitchPreference(

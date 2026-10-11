@@ -242,6 +242,7 @@ import moe.rukamori.archivetune.constants.CustomThemeColorKey
 import moe.rukamori.archivetune.constants.DarkModeKey
 import moe.rukamori.archivetune.constants.DefaultOpenTabKey
 import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
+import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableScreenshotKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
@@ -957,6 +958,7 @@ class MainActivity : ComponentActivity() {
                 DisableAnimationsKey,
                 defaultValue = defaultDisableAnimations,
             )
+            val disableBlur by rememberPreference(DisableBlurKey, defaultValue = false)
             // Task 8: app-wide scrollbar toggle. Provided via LocalHideScrollbar so any
             // composable that draws a scrollbar can opt-out when the user has hidden them.
             val hideScrollbar by rememberPreference(
@@ -995,11 +997,6 @@ class MainActivity : ComponentActivity() {
                 NavigationBarTintFrostedBlurKey,
                 defaultValue = false,
             )
-            val navigationBarBitchordEnabled by rememberPreference(
-                moe.rukamori.archivetune.constants.NavigationBarBitchordKey,
-                defaultValue = false,
-            )
-            val liquidGlassEnabled by rememberPreference(
                 LiquidGlassEnabledKey,
                 defaultValue = false,
             )
@@ -1592,7 +1589,6 @@ class MainActivity : ComponentActivity() {
                     val anyFrostedConsumerActive =
                         navigationBarFrostedBlur ||
                             navigationBarTintFrostedBlur ||
-                            navigationBarBitchordEnabled ||
                             miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED
                     val navBarFrostedBackdrop =
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && anyFrostedConsumerActive) {
@@ -2223,6 +2219,7 @@ class MainActivity : ComponentActivity() {
                     CompositionLocalProvider(
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides disableAnimations,
+                        moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
                         moe.rukamori.archivetune.LocalAnimationScale provides systemAnimationScale,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
@@ -3047,7 +3044,6 @@ class MainActivity : ComponentActivity() {
                                                 bottomNavigationBarHeightState,
                                                 navVisibleHeight,
                                                 isFloatingNavBar,
-                                                navigationBarBitchordEnabled,
                                                 navigationBarStyle,
                                             ) {
                                                 {
@@ -3081,8 +3077,7 @@ class MainActivity : ComponentActivity() {
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
-                                                        navigationBarBitchordEnabled ||
-                                                        navigationBarStyle == NavigationBarStyle.APPLE_MUSIC
+                                                                                    navigationBarStyle == NavigationBarStyle.YUMA_PLAYER
                                                     ) {
                                                         0f
                                                     } else {
@@ -3151,42 +3146,6 @@ class MainActivity : ComponentActivity() {
                                             // BitChord bar, only the Liquid Glass bar setting.
                                             val navBarLiquidGlassBackdrop =
                                                 if (liquidGlassEnabled && liquidGlassNavBarEnabled) liquidGlassBackdrop else null
-                                            if (navigationBarBitchordEnabled && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC) {
-                                                moe.rukamori.archivetune.ui.component.BitChordNavBar(
-                                                    barHeight = navVisibleHeight,
-                                                    selectedRoute =
-                                                        navBackStackEntry?.destination?.route,
-                                                    onRouteSelected = { route ->
-                                                        navigationItems
-                                                            .firstOrNull { it.route == route }
-                                                            ?.let { screen ->
-                                                                handlePrimaryNavigationClick(
-                                                                    screen,
-                                                                    navBackStackEntry?.destination?.hierarchy
-                                                                        ?.any { it.route == screen.route } == true,
-                                                                )
-                                                            }
-                                                    },
-                                                    itemCount = navigationItems.size,
-                                                    itemRoute = { navigationItems[it].route },
-                                                    itemLabel = { androidx.compose.ui.res.stringResource(navigationItems[it].titleId) },
-                                                    itemIcon = { index ->
-                                                        when (navigationItems[index].route) {
-                                                            "home" -> moe.rukamori.archivetune.ui.component.BitChordHomeIcon
-                                                            "search" -> moe.rukamori.archivetune.ui.component.BitChordSearchIcon
-                                                            else -> moe.rukamori.archivetune.ui.component.BitChordLibraryIcon
-                                                        }
-                                                    },
-                                                    modifier =
-                                                        Modifier
-                                                            .align(Alignment.BottomCenter)
-                                                            .padding(
-                                                                bottom = bottomInset + floatingBarsBottomPadding,
-                                                            ),
-                                                    frostedBackdrop = if (navBarLiquidGlassBackdrop != null) null else navBarFrostedBackdrop,
-                                                    liquidGlassBackdrop = navBarLiquidGlassBackdrop,
-                                                )
-                                            } else {
                                                 FloatingNavigationToolbar(
                                                     items = navigationItems,
                                                     pureBlack = pureBlack,
@@ -3217,8 +3176,7 @@ class MainActivity : ComponentActivity() {
                                                         openSearch()
                                                     },
                                                 )
-                                            }
-                                        }
+                                       }
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),

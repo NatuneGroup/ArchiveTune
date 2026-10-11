@@ -1320,11 +1320,7 @@ enum class NavigationBarStyle {
     DEFAULT,
     FLOATING,
 
-    /**
-     * The Apple Music tab bar: edge-to-edge and flat, labels always shown, no selection pill.
-     *
-     * Forced by the Apple Music Experience switch, and selectable on its own here.
-     */
+    YUMA_PLAYER,
     APPLE_MUSIC,
 }
 
@@ -1354,7 +1350,6 @@ val NavigationBarFrostedBlurKey = booleanPreferencesKey("navigationBarFrostedBlu
 val NavigationBarTintFrostedBlurKey = booleanPreferencesKey("navigationBarTintFrostedBlur")
 // Opt-in BitChord pill bar (icons, stretch-squash selection pill, drag-to-switch).
 // Mutually exclusive with the frosted, tinted and liquid-glass nav treatments.
-val NavigationBarBitchordKey = booleanPreferencesKey("navigationBarBitchord")
 val HideNavigationBarLabelsKey = booleanPreferencesKey("hideNavigationBarLabels")
 val NavigationBarHideOnScrollKey = booleanPreferencesKey("navigationBarHideOnScroll")
 

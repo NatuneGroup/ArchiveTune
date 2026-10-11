@@ -367,6 +367,7 @@ fun PlayerMenu(
         SongSourceDialog(
             sources = availableSources,
             selected = currentSongSource,
+            amazonSourceEnabled = amazonSourceEnabled,
             onDismiss = { showSourceDialog = false },
             onSelect = { source ->
                 onSongSourceChange(SongSourceOverride.withOverride(songSourceRaw, mediaMetadata.id, source))
@@ -1875,6 +1876,7 @@ private data class SourceSearchResult(
 private fun SongSourceDialog(
     sources: List<AudioSourceType>,
     selected: AudioSourceType?,
+    amazonSourceEnabled: Boolean,
     onDismiss: () -> Unit,
     onSelect: (AudioSourceType?) -> Unit,
     onPlaySong: (SongItem) -> Unit,

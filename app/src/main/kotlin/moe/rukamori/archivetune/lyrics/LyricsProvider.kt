@@ -23,6 +23,15 @@ interface LyricsProvider {
         duration: Int,
     ): Result<String>
 
+    suspend fun getLyrics(
+        id: String,
+        title: String,
+        artist: String,
+        album: String?,
+        duration: Int,
+        isrc: String?,
+    ): Result<String> = getLyrics(id, title, artist, album, duration)
+
     suspend fun getAllLyrics(
         id: String,
         title: String,

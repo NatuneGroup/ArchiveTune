@@ -1,3 +1,12 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ * Portions © vossgraves — github.com/vossgraves
+ * Portions © Clash-Projects — github.com/Clash-Projects/LastWave-Native (GPL-3.0)
+ */
+
 @file:OptIn(androidx.media3.common.util.UnstableApi::class)
 
 package com.lastwave.app.playback

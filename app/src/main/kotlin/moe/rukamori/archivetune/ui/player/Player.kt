@@ -172,7 +172,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalDownloadUtil
@@ -986,7 +985,6 @@ fun BottomSheetPlayer(
         if (playbackState != STATE_READY) return@LaunchedEffect
         repeatOnLifecycle(Lifecycle.State.STARTED) {
             val startTime = SystemClock.elapsedRealtime()
-            launch {
             while (isActive) {
                 delay(if (aodModeEnabled) 500L else 100L)
                 val isTransitioning = playerConnection.player.currentMediaItem?.mediaId != mediaMetadata?.id
@@ -1013,6 +1011,7 @@ fun BottomSheetPlayer(
                     if (currentPlayerDuration > 0L && currentPlayerDuration != C.TIME_UNSET) {
                         duration = currentPlayerDuration
                     } else if (duration <= 0L || duration == C.TIME_UNSET) {
+        }
                         mediaMetadata?.let {
                             val metadataDuration = it.duration.toLong() * 1000
                             if (metadataDuration > 0L) duration = metadataDuration
@@ -1036,8 +1035,6 @@ fun BottomSheetPlayer(
                         }
                     }
                 }
-            }
-            }
         }
         mediaMetadata?.let {
             val metaDuration = it.duration.toLong() * 1000

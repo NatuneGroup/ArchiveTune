@@ -9,6 +9,7 @@
 package moe.rukamori.archivetune.ui.utils
 import moe.rukamori.archivetune.LocalBlurDisabled
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
@@ -152,6 +153,7 @@ fun Modifier.smoothFadingEdge(vertical: Dp) =
         bottom = vertical,
     )
 
+@Composable
 fun Modifier.optionalBlur(
     radius: Dp,
     blurDisabled: Boolean = LocalBlurDisabled.current,

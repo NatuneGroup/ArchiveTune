@@ -593,6 +593,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
     // LastWave audio engine output backend (Oboe/AAudio, prefab)
     implementation("com.google.oboe:oboe:1.10.0")
+    implementation(project(":audio:decent-usb-audio-driver"))
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
     implementation("androidx.media3:media3-ui:${libs.versions.media3.get()}")

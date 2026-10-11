@@ -2146,13 +2146,17 @@ private fun TranslationStack(
 }
 
 /** A separating space only between Latin-script words — CJK syllables join seamlessly. */
-private fun needsLatinWordGap(previous: String, next: String): Boolean =
-    isLatinWordChar(previous.lastOrNull()) && isLatinWordChar(next.firstOrNull())
-
-private fun isLatinWordChar(ch: Char?): Boolean {
-    if (ch == null) return false
-    return ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\'' || ch == ','
+private fun needsLatinWordGap(previous: String, next: String): Boolean {
+    val prevTail = previous.lastOrNull() ?: return false
+    val nextHead = next.firstOrNull() ?: return false
+    if (!isLatinWordChar(nextHead) || prevTail.isWhitespace() || nextHead.isWhitespace()) return false
+    return isLatinWordChar(prevTail) || prevTail in SENTENCE_PUNCTUATION
 }
+
+private const val SENTENCE_PUNCTUATION = ".,!?;:…"
+
+private fun isLatinWordChar(ch: Char): Boolean =
+    ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\''
 
 private fun List<KaraokeSyllable>.joinSyllableContents(): String {
     val builder = StringBuilder()

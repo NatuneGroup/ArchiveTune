@@ -11,6 +11,7 @@ package moe.rukamori.archivetune
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.Build
 import androidx.datastore.preferences.core.edit
@@ -167,6 +168,12 @@ class App :
         // Direct call like upstream: the body is map ops that cannot throw, and a
         // silent catch here would hide exactly the injection failure that matters.
         youtubeiStreamRepository.trimMemory(level)
+        // The UI cache only exists to make scrolling cheap. Once the activity is
+        // hidden the decoded artwork is reconstructible, so drop it instead of
+        // holding it for background playback that only needs the audio buffers.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            runCatching { SingletonImageLoader.get(this).memoryCache?.clear() }
+        }
     }
 
     private fun initializeCriticalSync() {

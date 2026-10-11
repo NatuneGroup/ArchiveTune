@@ -86,6 +86,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -982,8 +983,10 @@ fun BottomSheetPlayer(
     }
 
     LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
-        val startTime = SystemClock.elapsedRealtime()
-        if (playbackState == STATE_READY) {
+        if (playbackState != STATE_READY) return@LaunchedEffect
+        repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val startTime = SystemClock.elapsedRealtime()
+            launch {
             while (isActive) {
                 delay(if (aodModeEnabled) 500L else 100L)
                 val isTransitioning = playerConnection.player.currentMediaItem?.mediaId != mediaMetadata?.id
@@ -1034,17 +1037,17 @@ fun BottomSheetPlayer(
                     }
                 }
             }
-        } else {
-            mediaMetadata?.let {
-                val metaDuration = it.duration.toLong() * 1000
-                duration = if (metaDuration > 0) metaDuration else 0L
             }
-            val player = playerConnection.player
-            val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
-            val currentPlayerPosition = player.currentPosition
-            if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
-                position = currentPlayerPosition
-            }
+        }
+        mediaMetadata?.let {
+            val metaDuration = it.duration.toLong() * 1000
+            duration = if (metaDuration > 0) metaDuration else 0L
+        }
+        val player = playerConnection.player
+        val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
+        val currentPlayerPosition = player.currentPosition
+        if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
+            position = currentPlayerPosition
         }
     }
 

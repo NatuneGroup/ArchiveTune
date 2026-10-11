@@ -393,14 +393,14 @@ internal fun rememberLyricClock(positionMs: Long, isPlaying: Boolean): MutableLo
 
 // ── SweptLyricLine (verbatim) ─────────────────────────────────────────────────
 
+private const val BitChordLyricRiseResponseSec = 1.4f
+private const val BitChordLyricLiftEm = 0.055f
+
 /**
  * A lyric line with the sung part of it lit, the rest dimmed, and the boundary travelling across
  * the words in time with the vocal.
  */
 @Composable
-private const val BitChordLyricRiseResponseSec = 1.4f
-private const val BitChordLyricLiftEm = 0.055f
-
 internal fun SweptLyricLine(
     line: LyricLine,
     clock: MutableLongState,

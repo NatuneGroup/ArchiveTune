@@ -1335,6 +1335,10 @@ enum class NavigationBarCompactBehavior {
 val NavigationBarCompactBehaviorKey = stringPreferencesKey("navigationBarCompactBehavior")
 val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
 
+// The round library and search buttons that replace the tab bar while it is compacted. Off follows
+// the Liquid Glass master switch (glass when it is on); on keeps them in solid theme colours.
+val CompactControlsStockColorKey = booleanPreferencesKey("compactControlsStockColor")
+
 enum class InterfaceStyle {
     MATERIAL_EXPRESSIVE,
     APPLE_MUSIC,

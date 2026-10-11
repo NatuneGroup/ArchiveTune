@@ -62,6 +62,7 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT
@@ -106,6 +107,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         )
     val (compactBottomPills, onCompactBottomPillsChange) =
         rememberPreference(CompactBottomPillsKey, defaultValue = false)
+    val (compactControlsStockColor, onCompactControlsStockColorChange) =
+        rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     val appleMusicExperience = rememberAppleMusicExperience()
     val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
         rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
@@ -252,6 +255,26 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                             }
                         },
                         isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.YUMA_PLAYER,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("compact_controls_stock_color"),
+                        title = { Text(stringResource(R.string.compact_controls_stock_color)) },
+                        description =
+                            stringResource(
+                                if (liquidGlassEnabled) {
+                                    R.string.compact_controls_stock_color_desc
+                                } else {
+                                    R.string.liquid_glass_nav_bar_disabled
+                                },
+                            ),
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        checked = compactControlsStockColor,
+                        // Without Liquid Glass the buttons are already solid, so there is nothing to choose.
+                        isEnabled = liquidGlassEnabled,
+                        onCheckedChange = onCompactControlsStockColorChange,
                     )
                 }
 

@@ -343,6 +343,8 @@
     <string name="liquid_glass_nav_bar">Liquid Glass navigation bar</string>
     <string name="liquid_glass_nav_bar_desc">Use the Liquid Glass effect for the bottom navigation bar</string>
     <string name="liquid_glass_nav_bar_disabled">Turn on Liquid Glass effects in Appearance first</string>
+    <string name="compact_controls_stock_color">Stock-colour bottom buttons</string>
+    <string name="compact_controls_stock_color_desc">Draw the round library and search buttons in solid theme colours instead of Liquid Glass</string>
     <string name="liquid_glass_mini_player_unsupported">Liquid Glass mini player requires Android 12 or above</string>
     <string name="player_design_style">Player design style</string>
     <string name="player_design_v1">Classic</string>

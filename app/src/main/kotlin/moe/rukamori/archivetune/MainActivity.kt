@@ -255,6 +255,7 @@ import moe.rukamori.archivetune.constants.HasPressedStarKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.LastShownUpdatePopupVersionKey
 import moe.rukamori.archivetune.constants.LaunchCountKey
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
@@ -323,6 +324,7 @@ import moe.rukamori.archivetune.ui.component.DISMISSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.EXPANDED_ANCHOR
 import moe.rukamori.archivetune.ui.component.FloatingNavigationToolbar
 import moe.rukamori.archivetune.ui.component.FontSizeRange
+import moe.rukamori.archivetune.ui.component.HeaderCircleButton
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassBackdrop
@@ -1005,6 +1007,10 @@ class MainActivity : ComponentActivity() {
             )
             val liquidGlassEnabled by rememberPreference(
                 LiquidGlassEnabledKey,
+                defaultValue = false,
+            )
+            val compactControlsStockColor by rememberPreference(
+                CompactControlsStockColorKey,
                 defaultValue = false,
             )
             val liquidGlassNavBarEnabled by rememberPreference(
@@ -2613,91 +2619,152 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                         ) + WindowInsetsSides.Top,
                                                     ),
+                                                navigationIcon = {
+                                                    if (isHomeRoute) {
+                                                        HeaderCircleButton(
+                                                            onClick = { profileMenuExpanded = true },
+                                                            contentDescription = stringResource(R.string.account),
+                                                            backdrop = LocalLiquidGlassBackdrop.current,
+                                                            modifier = Modifier.padding(start = 12.dp),
+                                                        ) {
+                                                            if (!accountImageUrl.isNullOrBlank()) {
+                                                                AsyncImage(
+                                                                    model = accountImageUrl,
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop,
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.account),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(24.dp),
+                                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                },
                                                 title = {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        // app icon
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.about_appbar),
-                                                            contentDescription = null,
-                                                            modifier =
-                                                                Modifier
-                                                                    .size(35.dp)
-                                                                    .padding(end = 3.dp),
-                                                        )
-                                                        // Always visible, on Home too. The BitChord
-                                                        // design this came from fades the bar title in
-                                                        // only once scrolled, because there the big
-                                                        // in-list header IS the page title and the two
-                                                        // would otherwise say the same thing twice.
-                                                        // Ours is a greeting — "Good morning, <name>" —
-                                                        // so fading the bar title left nothing on the
-                                                        // home screen naming the app at all.
-                                                        AutoResizeText(
-                                                            text = stringResource(R.string.app_name),
-                                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                                            fontSizeRange = FontSizeRange(min = 14.sp, max = 22.sp),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Visible,
-                                                            softWrap = true,
-                                                            modifier = Modifier.weight(1f, fill = false),
-                                                        )
+                                                    if (isHomeRoute) {
+                                                        Box(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            Text(
+                                                                text = stringResource(R.string.home),
+                                                                color = MaterialTheme.colorScheme.onBackground,
+                                                                fontWeight = FontWeight.Bold,
+                                                                style = MaterialTheme.typography.titleLarge,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            // app icon
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.about_appbar),
+                                                                contentDescription = null,
+                                                                modifier =
+                                                                    Modifier
+                                                                        .size(35.dp)
+                                                                        .padding(end = 3.dp),
+                                                            )
+                                                            // Always visible rather than faded in on scroll:
+                                                            // BitChord fades it because its big in-list header
+                                                            // is the page title, but ours is a greeting.
+                                                            AutoResizeText(
+                                                                text = stringResource(R.string.app_name),
+                                                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                                fontSizeRange = FontSizeRange(min = 14.sp, max = 22.sp),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Visible,
+                                                                softWrap = true,
+                                                                modifier = Modifier.weight(1f, fill = false),
+                                                            )
+                                                        }
                                                     }
                                                 },
                                                 actions = {
-                                                    // Home only, and only with a Spotify session:
-                                                    // the toggle swaps which home page the tab
-                                                    // shows, which means nothing anywhere else.
-                                                    // Sits left of the avatar, and carries the
-                                                    // logo of the page it switches TO.
+                                                    val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
+                                                        latestUpdateChannel == effectiveUpdateChannel &&
+                                                        Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                     if (isHomeRoute) {
-                                        HomeSourceToggleButton(
-                                            onOpenSpotifySettings = {
-                                                navController.navigate("settings/integration?scrollTo=spotify")
-                                            },
-                                        )
-                                                    }
-                                                    Box(
-                                                        modifier = Modifier.padding(end = 4.dp),
-                                                    ) {
-                                                        IconButton(
-                                                            onClick = { profileMenuExpanded = true },
-                                                            colors = IconButtonDefaults.iconButtonColors(
-                                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                                                    .copy(alpha = TopAppBarIconButtonContainerAlpha),
-                                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            ),
-                                                        ) {
-                                                            Surface(
-                                                                modifier = Modifier.size(28.dp),
-                                                                shape = CircleShape,
-                                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                        // Only with a Spotify session: the toggle swaps which home
+                                                        // page the tab shows, which means nothing anywhere else.
+                                                        // Sits left of the settings button, and carries the logo of
+                                                        // the page it switches TO.
+                                                        HomeSourceToggleButton(
+                                                            onOpenSpotifySettings = {
+                                                                navController.navigate("settings/integration?scrollTo=spotify")
+                                                            },
+                                                        )
+                                                        Box(modifier = Modifier.padding(start = 4.dp, end = 12.dp)) {
+                                                            HeaderCircleButton(
+                                                                onClick = { navController.navigate("settings") },
+                                                                contentDescription = stringResource(R.string.settings),
+                                                                backdrop = LocalLiquidGlassBackdrop.current,
                                                             ) {
-                                                                if (!accountImageUrl.isNullOrBlank()) {
-                                                                    AsyncImage(
-                                                                        model = accountImageUrl,
-                                                                        contentDescription = stringResource(R.string.account),
-                                                                        modifier = Modifier
-                                                                            .fillMaxSize()
-                                                                            .clip(CircleShape),
-                                                                        contentScale = ContentScale.Crop,
-                                                                    )
-                                                                } else {
-                                                                    Box(contentAlignment = Alignment.Center) {
-                                                                        Icon(
-                                                                            painter = painterResource(R.drawable.account),
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.settings),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(22.dp),
+                                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                                )
+                                                            }
+                                                            if (showSettingsBadge) {
+                                                                Box(
+                                                                    modifier =
+                                                                        Modifier
+                                                                            .align(Alignment.TopEnd)
+                                                                            .offset(x = 2.dp, y = 2.dp)
+                                                                            .size(10.dp)
+                                                                            .background(MaterialTheme.colorScheme.error, CircleShape),
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier.padding(end = 4.dp),
+                                                        ) {
+                                                            IconButton(
+                                                                onClick = { profileMenuExpanded = true },
+                                                                colors = IconButtonDefaults.iconButtonColors(
+                                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                                        .copy(alpha = TopAppBarIconButtonContainerAlpha),
+                                                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                ),
+                                                            ) {
+                                                                Surface(
+                                                                    modifier = Modifier.size(28.dp),
+                                                                    shape = CircleShape,
+                                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                                ) {
+                                                                    if (!accountImageUrl.isNullOrBlank()) {
+                                                                        AsyncImage(
+                                                                            model = accountImageUrl,
                                                                             contentDescription = stringResource(R.string.account),
-                                                                            modifier = Modifier.size(20.dp),
-                                                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                            modifier = Modifier
+                                                                                .fillMaxSize()
+                                                                                .clip(CircleShape),
+                                                                            contentScale = ContentScale.Crop,
                                                                         )
+                                                                    } else {
+                                                                        Box(contentAlignment = Alignment.Center) {
+                                                                            Icon(
+                                                                                painter = painterResource(R.drawable.account),
+                                                                                contentDescription = stringResource(R.string.account),
+                                                                                modifier = Modifier.size(20.dp),
+                                                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                            )
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
                                                     }
                                                     if (profileMenuExpanded) {
-                                                        val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
-                                                            latestUpdateChannel == effectiveUpdateChannel &&
-                                                            Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                         ProfileMenuDialog(
                                                             accountName = accountName,
                                                             accountImageUrl = accountImageUrl,
@@ -2760,19 +2827,22 @@ class MainActivity : ComponentActivity() {
                                                                 } else {
                                                                     null
                                                                 },
-                                                                // Settings entry removed — the Home route's
-                                                                // top-end settings icon in liquid glass is
-                                                                // now the sole entry point, and it carries
-                                                                // the update-available badge.
-                                                                ProfileMenuItem(
-                                                                    icon = R.drawable.settings,
-                                                                    label = stringResource(R.string.settings),
-                                                                    showBadge = showSettingsBadge,
-                                                                    onClick = {
-                                                                        profileMenuExpanded = false
-                                                                        navController.navigate("settings")
-                                                                    },
-                                                                ),
+                                                                // Home has its own settings button, with the
+                                                                // update badge; every other tab reaches
+                                                                // settings from here.
+                                                                if (!isHomeRoute) {
+                                                                    ProfileMenuItem(
+                                                                        icon = R.drawable.settings,
+                                                                        label = stringResource(R.string.settings),
+                                                                        showBadge = showSettingsBadge,
+                                                                        onClick = {
+                                                                            profileMenuExpanded = false
+                                                                            navController.navigate("settings")
+                                                                        },
+                                                                    )
+                                                                } else {
+                                                                    null
+                                                                },
                                                             ).filterNotNull(),
                                                             onDismiss = { profileMenuExpanded = false },
                                                         )
@@ -3226,8 +3296,8 @@ class MainActivity : ComponentActivity() {
                                                                 false,
                                                             )
                                                         },
-                                                        backdrop = liquidGlassBackdrop,
-                                                        glowStrength = 1f,
+                                                        backdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor },
+                                                        glowStrength = if (compactControlsStockColor) 0f else 1f,
                                                         tint = MaterialTheme.colorScheme.primary,
                                                     )
                                                     CompactControlCircle(
@@ -3240,8 +3310,8 @@ class MainActivity : ComponentActivity() {
                                                                     ?.any { it.route == Screens.Search.route } == true,
                                                             )
                                                         },
-                                                        backdrop = liquidGlassBackdrop,
-                                                        glowStrength = 1f,
+                                                        backdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor },
+                                                        glowStrength = if (compactControlsStockColor) 0f else 1f,
                                                     )
                                                 }
                                             }

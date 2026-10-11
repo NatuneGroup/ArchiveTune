@@ -2572,7 +2572,6 @@ class MainActivity : ComponentActivity() {
                                                                 ),
                                                             ),
                                                 )
-                                                }
                                             }
 
                                             TopAppBar(

@@ -267,6 +267,8 @@ import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehaviorKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NeverShowUpdatePopupKey
@@ -1531,6 +1533,22 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(navBackStackEntry?.destination?.route, hideNavigationBarOnScroll) {
                         navigationBarHiddenByScroll = false
                     }
+                    val navigationBarCompactBehavior by rememberPreference(
+                        NavigationBarCompactBehaviorKey,
+                        defaultValue = NavigationBarCompactBehavior.ADAPTIVE,
+                    )
+                    var isBottomUiCompact by remember { mutableStateOf(false) }
+                    LaunchedEffect(navBackStackEntry?.destination?.route, navigationBarCompactBehavior) {
+                        isBottomUiCompact =
+                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_COMPACT
+                    }
+                    val bottomUiCompactFractionState =
+                        animateFloatAsState(
+                            targetValue = if (isBottomUiCompact) 1f else 0f,
+                            animationSpec =
+                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 400f),
+                            label = "bottomUiCompactFraction",
+                        )
                     val navigationBarScrollThresholdPx = with(density) { NavigationBarHideScrollThreshold.toPx() }
                     val navigationBarScrollConnection =
                         remember(navigationBarScrollThresholdPx) {
@@ -1561,22 +1579,6 @@ class MainActivity : ComponentActivity() {
                         }
                     val navigationBarVisible = shouldShowNavigationBar && !navigationBarHiddenByScroll
 
-                    val navigationBarCompactBehavior by rememberPreference(
-                        NavigationBarCompactBehaviorKey,
-                        defaultValue = NavigationBarCompactBehavior.ADAPTIVE,
-                    )
-                    var isBottomUiCompact by remember { mutableStateOf(false) }
-                    LaunchedEffect(navBackStackEntry?.destination?.route, navigationBarCompactBehavior) {
-                        isBottomUiCompact =
-                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_COMPACT
-                    }
-                    val bottomUiCompactFractionState =
-                        animateFloatAsState(
-                            targetValue = if (isBottomUiCompact) 1f else 0f,
-                            animationSpec =
-                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = 400f),
-                            label = "bottomUiCompactFraction",
-                        )
 
                     fun getBottomNavPadding(): Dp =
                         if (shouldShowNavigationBar && !useRail) {

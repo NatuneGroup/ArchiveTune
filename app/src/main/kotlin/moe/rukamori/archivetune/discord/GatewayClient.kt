@@ -193,7 +193,10 @@ class GatewayClient {
                 }
             }
 
-        ready.await()
+        // HELLO has its own timer; without this a gateway that never sends READY would hold the
+        // presence client's mutex forever.
+        withTimeoutOrNull(GatewayDefaults.HELLO_TIMEOUT_MS) { ready.await() }
+            ?: throw IllegalStateException("Gateway READY timeout")
     }
 
     fun sendPresenceUpdate(presenceJson: JSONObject): Boolean = sendFrame(GatewayOp.PRESENCE_UPDATE, presenceJson, requireReady = true)
@@ -354,28 +357,18 @@ class GatewayClient {
         }
     }
 
+    // Presence only needs the session itself. Requesting user-client intents or capabilities makes
+    // Discord stream DM, relationship and friend-presence events to the phone for no benefit.
     private fun sendIdentify() {
-        val capabilities = GatewayCapabilitiesFlags.FLAGS
-        val intents = IntentsFlags.FLAGS
-
-        val capsBitfield = capabilities.values.reduce { a, b -> a or b }
-        val intentsBitfield = intents.values.reduce { a, b -> a or b }
-
         val d = JSONObject()
-        d.put("capabilities", capsBitfield)
-        d.put("intents", intentsBitfield)
         d.put("token", token)
+        d.put("intents", 0)
         val properties = JSONObject()
-        properties.put("os", "Android")
-        properties.put("browser", "ArchiveTune")
-        properties.put("device", "Android")
-        properties.put("browser_user_agent", "ArchiveTune")
-        properties.put("browser_version", "1.0")
-        properties.put("client_version", "1.0")
-        properties.put("client_build_number", 1)
-        properties.put("native_build_number", 1)
-        properties.put("release_channel", "unknown")
+        properties.put("os", "android")
+        properties.put("browser", "Discord Android")
+        properties.put("device", DiscordOAuthRepository.applicationId.toString())
         d.put("properties", properties)
+        d.put("compress", false)
         debug("sending IDENTIFY")
         send(GatewayOp.IDENTIFY, d)
     }
@@ -484,6 +477,7 @@ class GatewayClient {
             runCatching { session?.close(closeCode, closeReason ?: "") }
         }
         runCatching { client?.dispatcher?.executorService?.shutdown() }
+        runCatching { client?.connectionPool?.evictAll() }
     }
 
     private fun isActiveGeneration(generation: Long): Boolean = generation == activeConnectionGeneration

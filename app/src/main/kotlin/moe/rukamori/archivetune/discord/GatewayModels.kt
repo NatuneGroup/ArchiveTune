@@ -23,16 +23,18 @@ data class GatewayReadyEvent(
 ) {
     companion object {
         fun fromJson(obj: JSONObject): GatewayReadyEvent {
-            val userObj = obj.getJSONObject("user")
+            // An OAuth-scoped session may carry a trimmed user object and no resume URL; only the
+            // session id is required for presence to work.
+            val userObj = obj.optJSONObject("user")
             return GatewayReadyEvent(
                 user =
                     GatewayReadyUser(
-                        id = userObj.getString("id"),
-                        username = userObj.getString("username"),
-                        globalName = userObj.optString("global_name", null),
+                        id = userObj?.optString("id", "").orEmpty(),
+                        username = userObj?.optString("username", "").orEmpty(),
+                        globalName = userObj?.optString("global_name", null),
                     ),
                 sessionId = obj.getString("session_id"),
-                resumeGatewayUrl = obj.getString("resume_gateway_url"),
+                resumeGatewayUrl = obj.optString("resume_gateway_url", ""),
             )
         }
     }

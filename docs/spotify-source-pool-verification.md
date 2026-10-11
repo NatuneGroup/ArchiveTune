@@ -94,30 +94,30 @@ administrator, session-signing, database, or at-rest encryption secrets.
 
 ## Discord authentication and now playing
 
-The legacy presence path sent user OAuth tokens to raw Gateway IDENTIFY and
-received authentication failures. The compared `rukamori/dev` path uses the same
-approach; it is not a supported fix.
+Presence follows Metrolist's design (`MetrolistGroup/Metrolist`, `music/discord/`):
+PKCE OAuth with scopes `openid identify sdk.social_layer_presence`, then
+`GatewayClient` identifies with `Bearer <access token>` in a minimal frame
+(`intents = 0`, no capabilities, gateway v10, no compression) and sends op 3
+presence updates. An earlier verification pass recorded authentication failures
+from the previous, heavier IDENTIFY (user-client intents and capabilities). The
+minimal frame is the shape Metrolist ships, but it has not been exercised against
+Discord from this repository's CI or tooling: confirm on a device with a real
+account and watch the `GatewayClient` log for close code 4004 (token rejected) or
+4013/4014 (intents rejected).
 
-The raw Gateway implementation is removed. PKCE OAuth/profile linking remains,
-expired or unverifiable saved authorization is not treated as connected, and a
-failed refresh cannot fall back to an expired token. Settings distinguish account
-linking from Rich Presence availability. Playback does not start auth or Gateway
-retry loops when the official SDK is unavailable. Settings-only backups exclude
-Discord refresh tokens, expiry, and profile fields as account data. Pool credential
-caches are likewise excluded; the user's Pool opt-out choice remains a setting.
+Expired or unverifiable saved authorization is not treated as connected, and a
+failed refresh cannot fall back to an expired token. Playback does not start auth
+or Gateway retry loops. Settings-only backups exclude Discord refresh tokens,
+expiry, and profile fields as account data. Pool credential caches are likewise
+excluded; the user's Pool opt-out choice remains a setting.
 
-Actual per-user presence is still unavailable: the repository does not contain
-the official Discord Social SDK Android integration. The application owner must
-enable Social SDK in their Developer Portal application, register the existing
-`discord-<APP_ID>:/authorize/callback` redirect, obtain the official Android
-artifact, and review/integrate its native API and distribution terms. No client
-secret belongs in the APK. Enabling a Portal setting alone does not implement the
-missing native bridge.
+The application owner must register the `discord-<APP_ID>:/authorize/callback`
+redirect on the Developer Portal application. No client secret belongs in the APK.
 
 A dedicated bot is possible, but its activity belongs to the bot, not each
 listener's Discord profile. A channel/webhook can display an opt-in now-playing
-message. A bot does not substitute for per-user Rich Presence, and no self-bot
-workaround is supported.
+message. A bot does not substitute for per-user Rich Presence, and a user-token
+(self-bot) route is not supported.
 
 The Social SDK runs on-device and does not require a permanently hosted bot or
 Neon writes for track updates. A small Cloudflare Durable Object bot can be viable,

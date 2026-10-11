@@ -313,6 +313,7 @@ internal fun PlaybackSourceSections(
                     when (it) {
                         MetadataSource.YOUTUBE -> stringResource(R.string.metadata_source_youtube)
                         MetadataSource.SPOTIFY -> stringResource(R.string.metadata_source_spotify)
+                        MetadataSource.APPLE_MUSIC -> stringResource(R.string.metadata_source_apple_music)
                     }
                 },
                 onValueSelected = onDefaultMetadataSourceChange,

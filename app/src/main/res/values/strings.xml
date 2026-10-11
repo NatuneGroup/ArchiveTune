@@ -861,6 +861,7 @@
     <string name="default_search_source_desc">Choose which online catalog the Search page queries. This is independent from metadata.</string>
     <string name="metadata_source_youtube">YouTube Music</string>
     <string name="metadata_source_spotify">Spotify</string>
+    <string name="metadata_source_apple_music">Apple Music</string>
     <string name="search_source_youtube">YouTube Music</string>
     <string name="search_source_spotify">Spotify</string>
     <string name="search_source_apple_music">Apple Music</string>

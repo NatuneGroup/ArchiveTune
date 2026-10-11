@@ -136,7 +136,10 @@ import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.parseSpeedDialPins
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
+import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.AudioSourceType
+import moe.rukamori.archivetune.applemusic.AppleMusicCatalog
+import moe.rukamori.archivetune.applemusic.AppleMusicSearchItem
 import moe.rukamori.archivetune.constants.SongSourceOverrideKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
@@ -191,6 +194,7 @@ fun PlayerMenu(
     val (externalDownloaderEnabled) = rememberPreference(ExternalDownloaderEnabledKey, defaultValue = false)
     val (externalDownloaderPackage) = rememberPreference(ExternalDownloaderPackageKey, defaultValue = "")
     val (archiveTuneCanvasEnabled) = rememberPreference(ArchiveTuneCanvasKey, defaultValue = false)
+    val (amazonSourceEnabled) = rememberPreference(AmazonEnabledKey, defaultValue = false)
     val playerDesignStyle by rememberEnumPreference(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
     val lowDataModeActive = rememberLowDataModeActive()
     val isCanvasArtworkRefetching by playerConnection.isCanvasArtworkRefetching.collectAsStateWithLifecycle()
@@ -1917,6 +1921,7 @@ private fun SongSourceDialog(
         key1 = searchQuery,
         key2 = sourceFilter,
         key3 = searchMode,
+        key4 = amazonSourceEnabled,
     ) {
         if (!searchMode || searchQuery.length < 2 || backendMissing) {
             value = emptyList()
@@ -1930,6 +1935,7 @@ private fun SongSourceDialog(
         val searchQobuzBackup = sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ_BACKUP
         val searchDeezer = sourceFilter == null || sourceFilter == AudioSourceType.DEEZER
         val searchSaavn = sourceFilter == null || sourceFilter == AudioSourceType.JIOSAAVN
+        val searchAmazon = (sourceFilter == null || sourceFilter == AudioSourceType.AMAZON) && amazonSourceEnabled
 
         if (searchYtm) {
             withContext(Dispatchers.IO) {
@@ -1987,6 +1993,27 @@ private fun SongSourceDialog(
                         ),
                     )
                 }
+            }
+        }
+        if (searchAmazon) {
+            withContext(Dispatchers.IO) {
+                runCatching { AppleMusicCatalog.searchTrackSuggestions(searchQuery, limit = 8) }
+                    .getOrNull()
+                    ?.filterIsInstance<AppleMusicSearchItem.Track>()
+                    ?.forEach { track ->
+                        out.add(
+                            SourceSearchResult(
+                                source = AudioSourceType.AMAZON,
+                                trackId = track.title,
+                                title = track.title,
+                                artist = track.artist,
+                                thumbnailUrl = track.artworkUrl,
+                                durationMs = track.durationMs,
+                                qualityLabel = null,
+                                songItem = null,
+                            ),
+                        )
+                    }
             }
         }
         if (searchQobuz) {

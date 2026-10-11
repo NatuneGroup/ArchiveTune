@@ -205,6 +205,8 @@ import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.TidalInstancesKey
+import moe.rukamori.archivetune.applemusic.AppleMusicCatalog
+import moe.rukamori.archivetune.applemusic.AppleMusicSearchItem
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.AudioSourceOrderKey
 import moe.rukamori.archivetune.constants.TidalAccountFirstKey
@@ -4902,6 +4904,16 @@ class MusicService :
         onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
     }
 
+    private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
+        val query = listOf(metadata.title, metadata.artists.firstOrNull()?.name).filterNotNull().joinToString(" ")
+        val match =
+            AppleMusicCatalog.searchTrackSuggestions(query, limit = 5)
+                .filterIsInstance<AppleMusicSearchItem.Track>()
+                .firstOrNull { it.title.equals(metadata.title, ignoreCase = true) }
+                ?: return metadata
+        return metadata.copy(thumbnailUrl = match.artworkUrl ?: metadata.thumbnailUrl)
+    }
+
     private suspend fun recoverSong(
         mediaId: String,
         playbackData: YTPlayerUtils.PlaybackData? = null,
@@ -4916,12 +4928,16 @@ class MusicService :
                 .get(DefaultMetadataSourceKey, MetadataSource.YOUTUBE.name)
                 .toEnum(MetadataSource.YOUTUBE)
         val effectiveMetadata =
-            if (metadataSource == MetadataSource.SPOTIFY) {
-                withTimeoutOrNull(5_000L) {
-                    spotifyLibraryRepository.enrichMetadata(mediaMetadata)
-                } ?: mediaMetadata
-            } else {
-                mediaMetadata
+            when (metadataSource) {
+                MetadataSource.SPOTIFY ->
+                    withTimeoutOrNull(5_000L) {
+                        spotifyLibraryRepository.enrichMetadata(mediaMetadata)
+                    } ?: mediaMetadata
+                MetadataSource.APPLE_MUSIC ->
+                    withTimeoutOrNull(5_000L) {
+                        enrichFromAppleMusic(mediaMetadata)
+                    } ?: mediaMetadata
+                MetadataSource.YOUTUBE -> mediaMetadata
             }
         if (effectiveMetadata != mediaMetadata) {
             withContext(Dispatchers.Main) {

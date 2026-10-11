@@ -1471,6 +1471,7 @@ val DefaultSearchSourceKey = stringPreferencesKey("defaultSearchSource")
 enum class MetadataSource {
     YOUTUBE,
     SPOTIFY,
+    APPLE_MUSIC,
 }
 
 enum class SearchProvider {

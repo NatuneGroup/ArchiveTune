@@ -251,6 +251,7 @@ import moe.rukamori.archivetune.jiosaavn.SaavnService
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzBackupProvider
 import moe.rukamori.archivetune.qobuz.QobuzToken
+import moe.rukamori.archivetune.audiosource.CurrentStreamInfo
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
@@ -695,6 +696,32 @@ class MusicService :
 
     private val normalizeFactor = MutableStateFlow(1f)
     private val audioNormalizationFactorCache = ConcurrentHashMap<String, Float>()
+
+    private val _currentStreamInfo = MutableStateFlow<CurrentStreamInfo?>(null)
+    val currentStreamInfo: StateFlow<CurrentStreamInfo?> get() = _currentStreamInfo
+
+    private val pendingStreamInfoById = object : LinkedHashMap<String, CurrentStreamInfo>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, CurrentStreamInfo>?): Boolean = size > 12
+    }
+
+    private fun publishCurrentStreamInfo(mediaId: String, info: CurrentStreamInfo) {
+        synchronized(pendingStreamInfoById) {
+            pendingStreamInfoById[mediaId] = info
+            if (mediaId == currentMediaMetadata.value?.id) {
+                pendingStreamInfoById.remove(mediaId)
+                _currentStreamInfo.value = info
+            }
+        }
+    }
+
+    private fun promotePendingStreamInfo(mediaId: String?) {
+        if (mediaId == null) return
+        synchronized(pendingStreamInfoById) {
+            pendingStreamInfoById.remove(mediaId)?.let { _currentStreamInfo.value = it }
+        }
+    }
+
+    val liveNormalizeFactor: StateFlow<Float> get() = normalizeFactor
 
     // Media ids currently served by a resolved Tidal stream. Audio normalization is skipped for
     // these because the loudness metadata we have describes the YouTube stream, not the Tidal one.

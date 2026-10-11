@@ -102,7 +102,6 @@ import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
 import moe.rukamori.archivetune.utils.rememberPreference
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeProgressive
-import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 
@@ -891,31 +890,6 @@ fun HomeTopFadeBlur(
     modifier: Modifier = Modifier,
 ) {
     val height = barHeight + HomeTopFadeRun
-    Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(height)
-                .hazeEffect(
-                    state = hazeState,
-                    // Keyed to the colour of the page underneath, not the theme's.
-                    style = HazeMaterials.ultraThin(pageColor),
-                ) {
-                    // Cubic rather than haze's quadratic, and eased out rather than
-                    // in: the ramp falls away quickly under the bar and then spends
-                    // the rest of its run near nothing, which is what hides where
-                    // the layer ends.
-                    progressive =
-                        HazeProgressive.verticalGradient(
-                            easing = EaseOutCubic,
-                            startIntensity = HomeTopFadePeak,
-                            endIntensity = 0f,
-                        )
-                    // Uniform across the layer, so it would show as texture over
-                    // the untouched foot of the ramp — the edge being hidden.
-                    noiseFactor = 0f
-                },
-    )
     val scrim =
         remember(pageColor) {
             Brush.verticalGradient(

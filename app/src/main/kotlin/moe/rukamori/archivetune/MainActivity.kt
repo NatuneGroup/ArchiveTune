@@ -343,7 +343,6 @@ import moe.rukamori.archivetune.ui.component.splash.SplashVectorLoader
 import moe.rukamori.archivetune.ui.player.BottomSheetPlayer
 import moe.rukamori.archivetune.ui.player.ProvideVideoFullscreenState
 import moe.rukamori.archivetune.ui.screens.HomeSourceToggleButton
-import moe.rukamori.archivetune.ui.screens.HomeTopFadeBlur
 import moe.rukamori.archivetune.ui.screens.LOGIN_URL_ARGUMENT
 import moe.rukamori.archivetune.ui.screens.LocalHomeHazeState
 import moe.rukamori.archivetune.ui.screens.LoginScreen
@@ -2544,23 +2543,6 @@ class MainActivity : ComponentActivity() {
                                                     },
                                         ) {
                                             if (shouldShowBlurBackground) {
-                                                if (isHomeRoute &&
-                                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                                                    !playerBottomSheetState.isExpandedOrExpanding
-                                                ) {
-                                                    // ── TopFadeBlur ────────────────────────────────────────
-                                                    // Full blur along the top edge ramping to nothing on the
-                                                    // way down (progressive vertical gradient, EaseOutCubic,
-                                                    // peak 0.75), over the HazeState HomeScreen tags its
-                                                    // content with. A modest readability scrim sits over
-                                                    // the blur so the bar's glyphs keep a floor whatever
-                                                    // scrolls beneath them.
-                                                    HomeTopFadeBlur(
-                                                        hazeState = homeHazeState,
-                                                        pageColor = surfaceColor,
-                                                        barHeight = AppBarHeight + effectiveStatusBarTop,
-                                                    )
-                                                } else {
                                                 val appBarHeightPx = with(LocalDensity.current) { AppBarHeight.toPx() }
                                                 Box(
                                                     modifier =

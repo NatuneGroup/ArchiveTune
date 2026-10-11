@@ -146,6 +146,8 @@ import moe.rukamori.archivetune.ui.player.inlineLyricChunkText
 import moe.rukamori.archivetune.ui.player.inlineLyricChunkWordText
 import moe.rukamori.archivetune.ui.player.rememberMeasuredInlineLyricPages
 import moe.rukamori.archivetune.utils.rememberPreference
+import kotlin.math.PI
+import kotlin.math.exp
 import kotlin.math.abs
 
 // ── Model (verbatim from BitChord's data/lyrics/LyricLine.kt) ─────────────────
@@ -396,6 +398,9 @@ internal fun rememberLyricClock(positionMs: Long, isPlaying: Boolean): MutableLo
  * the words in time with the vocal.
  */
 @Composable
+private const val BitChordLyricRiseResponseSec = 1.4f
+private const val BitChordLyricLiftEm = 0.055f
+
 internal fun SweptLyricLine(
     line: LyricLine,
     clock: MutableLongState,
@@ -434,7 +439,17 @@ internal fun SweptLyricLine(
         }
     }
 
-    Box(modifier) {
+    Box(
+        modifier
+            .graphicsLayer {
+                val pos = clock.longValue
+                val sinceStart = ((pos - line.timeMs) / 1000f).coerceAtLeast(0f)
+                val phase = 2f * PI.toFloat() * sinceStart / BitChordLyricRiseResponseSec
+                val rise = (1f - (1f + phase) * exp(-phase)).coerceIn(0f, 1f)
+                val lineEndReached = pos >= line.endMs
+                translationY = if (lineEndReached) 0f else -BitChordLyricLiftEm * style.fontSize.toPx() * rise
+            },
+    ) {
         Text(
             text = line.text,
             style = style,

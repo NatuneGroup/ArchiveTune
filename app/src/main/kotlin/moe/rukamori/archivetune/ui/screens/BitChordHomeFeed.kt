@@ -67,8 +67,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -78,15 +76,8 @@ import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.ui.theme.LocalArchiveTuneFontFamily
 
-val BitChordFontFamily =
-    FontFamily(
-        Font(R.font.sf_pro_display_regular, FontWeight.W400),
-        Font(R.font.sf_pro_display_medium, FontWeight.W500),
-        Font(R.font.sf_pro_display_semibold, FontWeight.W600),
-        Font(R.font.sfprodisplaybold, FontWeight.W700),
-        Font(R.font.sf_pro_display_heavy, FontWeight.W800),
-    )
 
 val BitChordPageGutter = 16.dp
 val BitChordShelfCardWidth = 150.dp
@@ -129,7 +120,7 @@ fun BitChordSectionHeader(
             text = title,
             fontSize = 22.sp,
             fontWeight = FontWeight.W700,
-            fontFamily = BitChordFontFamily,
+            fontFamily = LocalArchiveTuneFontFamily.current,
             letterSpacing = (-0.4).sp,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
@@ -140,7 +131,7 @@ fun BitChordSectionHeader(
                 text = subtitle,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W400,
-                fontFamily = BitChordFontFamily,
+                fontFamily = LocalArchiveTuneFontFamily.current,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -251,7 +242,7 @@ fun BitChordHeroCard(
                 text = title,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.W700,
-                fontFamily = BitChordFontFamily,
+                fontFamily = LocalArchiveTuneFontFamily.current,
                 color = if (isCurrent) BitChordPlayingAccent else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -260,7 +251,7 @@ fun BitChordHeroCard(
                 text = subtitle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.W400,
-                fontFamily = BitChordFontFamily,
+                fontFamily = LocalArchiveTuneFontFamily.current,
                 color = Color.White.copy(alpha = 0.72f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -322,7 +313,7 @@ fun BitChordShelfCard(
             text = title,
             fontSize = 16.sp,
             fontWeight = FontWeight.W600,
-            fontFamily = BitChordFontFamily,
+            fontFamily = LocalArchiveTuneFontFamily.current,
             letterSpacing = (-0.2).sp,
             color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
@@ -332,7 +323,7 @@ fun BitChordShelfCard(
             text = subtitle,
             fontSize = 14.sp,
             fontWeight = FontWeight.W400,
-            fontFamily = BitChordFontFamily,
+            fontFamily = LocalArchiveTuneFontFamily.current,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -387,7 +378,7 @@ fun BitChordCompactTrackRow(
                 text = title,
                 fontSize = 16.sp,
                 fontWeight = FontWeight.W600,
-                fontFamily = BitChordFontFamily,
+                fontFamily = LocalArchiveTuneFontFamily.current,
                 letterSpacing = (-0.2).sp,
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -397,7 +388,7 @@ fun BitChordCompactTrackRow(
                 text = subtitle,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.W400,
-                fontFamily = BitChordFontFamily,
+                fontFamily = LocalArchiveTuneFontFamily.current,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -491,7 +482,7 @@ fun BitChordRecentsShelf(
             text = androidx.compose.ui.res.stringResource(R.string.home_recently_played),
             fontSize = 22.sp,
             fontWeight = FontWeight.W700,
-            fontFamily = BitChordFontFamily,
+            fontFamily = LocalArchiveTuneFontFamily.current,
             letterSpacing = (-0.4).sp,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.weight(1f),

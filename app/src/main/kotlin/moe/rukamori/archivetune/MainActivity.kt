@@ -315,6 +315,9 @@ import moe.rukamori.archivetune.systemAnimationScale
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
+import moe.rukamori.archivetune.ui.component.CompactControlCircle
+import moe.rukamori.archivetune.ui.component.CompactControlGap
+import moe.rukamori.archivetune.ui.component.CompactControlSize
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.DISMISSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.EXPANDED_ANCHOR
@@ -1533,7 +1536,7 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(navBackStackEntry?.destination?.route, hideNavigationBarOnScroll) {
                         navigationBarHiddenByScroll = false
                     }
-                    val navigationBarCompactBehavior by rememberPreference(
+                    val navigationBarCompactBehavior by rememberEnumPreference(
                         NavigationBarCompactBehaviorKey,
                         defaultValue = NavigationBarCompactBehavior.ADAPTIVE,
                     )

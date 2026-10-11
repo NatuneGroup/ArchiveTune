@@ -170,3 +170,24 @@ target_include_directories(lastwave_audio PRIVATE
 )
 target_link_libraries(lastwave_audio PRIVATE oboe::oboe soxr android log)
 target_link_options(lastwave_audio PRIVATE "-Wl,-z,max-page-size=16384")
+
+# ---------------------------------------------------------------------------
+# archivetune_dsp: 32-bit float DSP chain + AAudio exclusive output. Loaded by
+# FloatDsp.kt; the float path engages only when this library loads.
+# ---------------------------------------------------------------------------
+get_filename_component(ARCHIVETUNE_NATIVE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../native"
+    ABSOLUTE)
+add_library(archivetune_dsp SHARED
+    ${ARCHIVETUNE_NATIVE_DIR}/dsp/float_dsp.cpp
+    ${ARCHIVETUNE_NATIVE_DIR}/dsp/aaudio_output.cpp
+    jni/dsp_jni.cpp
+)
+target_include_directories(archivetune_dsp PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ARCHIVETUNE_NATIVE_DIR}
+)
+target_compile_options(archivetune_dsp PRIVATE -O3 -fvisibility=hidden -fexceptions)
+find_library(log-lib-dsp log)
+target_link_libraries(archivetune_dsp ${log-lib-dsp} aaudio)
+target_link_options(archivetune_dsp PRIVATE "-Wl,-z,max-page-size=16384")

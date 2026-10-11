@@ -1143,4 +1143,8 @@
     <string name="signal_label_sysvol">System volume</string>
     <string name="signal_label_tempo">Tempo</string>
     <string name="signal_stream">Stream</string>
+    <string name="home_welcome_line">Hi, %1$s 🔥</string>
+    <string name="home_welcome_line_anonymous">Hi, Welcome Back 🔥</string>
+    <string name="home_headline_line1">Listen to Your</string>
+    <string name="home_headline_line2">Favourite Music</string>
 </resources>

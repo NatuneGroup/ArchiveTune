@@ -335,21 +335,10 @@ fun ShowMediaInfo(videoId: String) {
     val overviewTitleValue = song?.title ?: info?.title
     val overviewArtistsValue =
         song?.artists?.takeIf { it.isNotEmpty() }?.joinToString { it.name } ?: info?.author
-    val youtubeCredits =
-        info?.credits.orEmpty().mapNotNull { row ->
-            val value = row.value.trim()
-            if (value.isBlank()) return@mapNotNull null
-            val duplicatesOverview =
-                (row.label.equals("Song", ignoreCase = true) && value == overviewTitleValue) ||
-                    (row.label.equals("Artist", ignoreCase = true) && value == overviewArtistsValue)
-            if (duplicatesOverview) return@mapNotNull null
-            MediaInfoDetail(
-                iconRes = creditIconFor(row.label),
-                label = row.label,
-                value = value,
-                multiline = true,
-            )
-        }
+    // The fork's MediaInfo (core/innertube/models) has no credits field, so the
+    // YouTube credit rows the upstream sheet showed are not available here.
+    // Lyrics writers below still come from the TTML tags.
+    val youtubeCredits: List<MediaInfoDetail> = emptyList()
     val hasWriterRowFromYouTube =
         youtubeCredits.any { detail ->
             detail.label.contains(Regex("writ|compos|lyricis", RegexOption.IGNORE_CASE))
@@ -1628,6 +1617,8 @@ internal fun providerDisplayName(source: AudioSourceType): String =
         AudioSourceType.QOBUZ_BACKUP -> "Qobuz Backup (Mirror)"
         AudioSourceType.DEEZER -> "Deezer (Lossless FLAC)"
         AudioSourceType.APPLE -> "Apple Music (Catalogue)"
+        AudioSourceType.AMAZON -> "Amazon Music (Streaming)"
+        AudioSourceType.QQ -> "QQ Music (Streaming)"
         AudioSourceType.JIOSAAVN -> "JioSaavn (AAC)"
         AudioSourceType.YOUTUBE -> "YouTube Music (Standard)"
     }
@@ -1639,6 +1630,8 @@ internal fun providerNote(source: AudioSourceType): String =
         AudioSourceType.QOBUZ_BACKUP -> "Secondary mirror • endpoint chain"
         AudioSourceType.DEEZER -> "Lossless resolver"
         AudioSourceType.APPLE -> "Metadata & lyrics tier"
+        AudioSourceType.AMAZON -> "Amazon Music Stream API"
+        AudioSourceType.QQ -> "QQ Music resolver"
         AudioSourceType.JIOSAAVN -> "AAC resolver"
         AudioSourceType.YOUTUBE -> "Ultimate zero-skip fallback"
     }

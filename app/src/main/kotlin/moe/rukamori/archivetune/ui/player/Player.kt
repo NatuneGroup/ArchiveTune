@@ -1091,7 +1091,6 @@ fun BottomSheetPlayer(
     // roundtrip, so the user has to manually close the queue sheet every time they return to
     // the app. Collapsing on ON_STOP writes COLLAPSED_ANCHOR into previousAnchor via the
     // sheet's onAnchorChanged callback, so the queue stays collapsed on return.
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, queueSheetState) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && !queueSheetState.isCollapsed) {

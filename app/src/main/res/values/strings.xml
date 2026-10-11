@@ -1237,6 +1237,7 @@
     <string name="track_label">Track</string>
     <string name="no_track_playing">No track playing</string>
     <string name="codec_label">Codec</string>
+    <string name="stream_source_label">Stream Source</string>
     <string name="unknown_codec">Unknown codec</string>
     <string name="bitrate_label">Bitrate</string>
     <string name="unknown_bitrate">Unknown bitrate</string>

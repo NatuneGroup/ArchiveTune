@@ -446,6 +446,7 @@ private fun NerdStatsSection(playerConnection: moe.rukamori.archivetune.playback
 
     val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val streamInfo by playerConnection.service.currentStreamInfo.collectAsStateWithLifecycle(initialValue = null)
     val player = playerConnection.player
     val downloadUtil = LocalDownloadUtil.current
 
@@ -542,6 +543,16 @@ private fun NerdStatsSection(playerConnection: moe.rukamori.archivetune.playback
                     value = mediaMetadata?.title ?: stringResource(R.string.no_track_playing),
                     accentColor = MaterialTheme.colorScheme.primary,
                 )
+
+                streamInfo?.let { info ->
+                    val detail = listOfNotNull(info.label, info.protocol).joinToString(" · ")
+                    NerdStatCard(
+                        icon = R.drawable.graphic_eq,
+                        label = stringResource(R.string.stream_source_label),
+                        value = detail.ifBlank { info.source.name },
+                        accentColor = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
 
                 if (currentFormat != null) {
                     Row(

@@ -135,3 +135,38 @@ target_compile_options(monochrome_usb PRIVATE -O3 -fno-exceptions -fno-rtti)
 set_target_properties(monochrome_usb PROPERTIES DEBUG_POSTFIX "")
 target_link_libraries(monochrome_usb android log usb1.0)
 target_link_options(monochrome_usb PRIVATE "-Wl,-z,max-page-size=16384")
+
+# ---------------------------------------------------------------------------
+# LastWave audio engine (ported from https://github.com/Clash-Projects/
+# LastWave-native, vendored under lastwave/). Oboe/AAudio output + the
+# Studio Master Clarity DSP chain + libsoxr HQ resampling. Loaded by
+# NativeAudioEngine as "lastwave_audio". libsoxr 0.1.3 is vendored at
+# third_party/soxr (LGPL-2.1+), built as its own shared library.
+# ---------------------------------------------------------------------------
+set(SOXR_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../../../third_party/soxr)
+list(APPEND CMAKE_MODULE_PATH "${SOXR_DIR}/cmake/Modules")
+set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_LSR_TESTS OFF CACHE BOOL "" FORCE)
+set(WITH_LSR_BINDINGS OFF CACHE BOOL "" FORCE)
+set(WITH_OPENMP OFF CACHE BOOL "" FORCE)
+set(WITH_CR32S OFF CACHE BOOL "" FORCE)
+set(WITH_CR64S OFF CACHE BOOL "" FORCE)
+set(WITH_PFFFT OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS ON CACHE BOOL "" FORCE)
+add_subdirectory("${SOXR_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/soxr" EXCLUDE_FROM_ALL)
+set_target_properties(soxr PROPERTIES VERSION "" SOVERSION "")
+
+find_package(oboe REQUIRED CONFIG)
+
+add_library(lastwave_audio SHARED
+    lastwave/AudioEngine.cpp
+    lastwave/DspProcessor.cpp
+    lastwave/NativeBridge.cpp
+)
+target_include_directories(lastwave_audio PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/lastwave
+    "${SOXR_DIR}/src"
+)
+target_link_libraries(lastwave_audio PRIVATE oboe::oboe soxr android log)
+target_link_options(lastwave_audio PRIVATE "-Wl,-z,max-page-size=16384")

@@ -523,3 +523,12 @@ object SongSourceQobuzBackupVideoId {
         videoId: String?,
     ): String = SongSourceQobuzTrackId.withOverride(raw, songId, videoId)
 }
+
+data class CurrentStreamInfo(
+    val mediaId: String,
+    val source: AudioSourceType,
+    val label: String,
+    val protocol: String? = null,
+    val sampleRate: Int? = null,
+    val bitDepth: Int? = null,
+)

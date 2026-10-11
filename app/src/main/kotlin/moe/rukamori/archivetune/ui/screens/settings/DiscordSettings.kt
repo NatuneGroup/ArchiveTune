@@ -545,23 +545,6 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                         modifier = Modifier.padding(horizontal = 16.dp),
                     )
                 }
-                item {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                    ) {
-                        Text(
-                            text = stringResource(R.string.discord_presence_unavailable_title),
-                            color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.titleSmall,
-                        )
-                        Text(
-                            text = stringResource(R.string.discord_presence_unavailable_description),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                }
             }
 
             PreferenceGroup(
@@ -571,14 +554,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 item {
                     PreferenceEntry(
                         title = { Text(stringResource(R.string.refresh)) },
-                        description =
-                            stringResource(
-                                if (presenceSupported) {
-                                    R.string.description_refresh
-                                } else {
-                                    R.string.discord_presence_unavailable_title
-                                },
-                            ),
+                        description = stringResource(R.string.description_refresh),
                         icon = { Icon(painterResource(R.drawable.update), null) },
                         isEnabled = presenceSupported && discordRPC && isLoggedIn,
                         trailingContent = {

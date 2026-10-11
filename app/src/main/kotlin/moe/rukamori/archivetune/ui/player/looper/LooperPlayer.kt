@@ -54,6 +54,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -187,7 +188,7 @@ fun LooperPlayerContent(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.close),
-                            contentDescription = "Collapse player",
+                            contentDescription = stringResource(R.string.looper_collapse_player),
                             tint = Color.White,
                             modifier = Modifier.size(22.dp),
                         )
@@ -206,7 +207,7 @@ fun LooperPlayerContent(
                                 ).padding(horizontal = 10.dp, vertical = 3.dp),
                     ) {
                         Text(
-                            text = looperQualityText(currentFormat),
+                            text = looperQualityText(context, currentFormat),
                             style = LooperTypography.labelSmall,
                             color = Color.White.copy(alpha = 0.7f),
                             maxLines = 1,
@@ -241,7 +242,7 @@ fun LooperPlayerContent(
                     ) {
                         Icon(
                             painter = painterResource(R.drawable.more_vert),
-                            contentDescription = "More options",
+                            contentDescription = stringResource(R.string.more_options),
                             tint = Color.White,
                             modifier = Modifier.size(22.dp),
                         )
@@ -347,7 +348,7 @@ fun LooperPlayerContent(
                                 painterResource(
                                     if (currentSongLiked) R.drawable.player_favorite else R.drawable.player_favorite_border,
                                 ),
-                            contentDescription = "Favourite",
+                            contentDescription = stringResource(R.string.looper_favourite),
                             tint =
                                 if (currentSongLiked) accentColor else Color.White.copy(alpha = 0.2f),
                             modifier = Modifier.size(28.dp),
@@ -390,7 +391,7 @@ fun LooperPlayerContent(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.player_fast_forward),
-                                contentDescription = "Previous",
+                                contentDescription = stringResource(R.string.widget_previous),
                                 tint = Color.White,
                                 modifier =
                                     Modifier
@@ -427,7 +428,7 @@ fun LooperPlayerContent(
                                     painterResource(
                                         if (isPlaying) R.drawable.player_pause else R.drawable.player_play,
                                     ),
-                                contentDescription = if (isPlaying) "Pause" else "Play",
+                                contentDescription = stringResource(if (isPlaying) R.string.widget_pause else R.string.play),
                                 tint = if (isPlaying) Color.White else Color.Black,
                                 modifier = Modifier.size(28.dp),
                             )
@@ -446,7 +447,7 @@ fun LooperPlayerContent(
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.player_fast_forward),
-                                contentDescription = "Next",
+                                contentDescription = stringResource(R.string.next),
                                 tint = Color.White,
                                 modifier = Modifier.size(28.dp),
                             )
@@ -475,7 +476,7 @@ fun LooperPlayerContent(
                     ) {
                         LooperUtilityPill(
                             iconRes = R.drawable.player_shuffle,
-                            contentDescription = "Shuffle",
+                            contentDescription = stringResource(R.string.shuffle),
                             active = shuffleModeEnabled,
                             horizontalPadding = 20.dp,
                             iconSize = 16.dp,
@@ -491,7 +492,7 @@ fun LooperPlayerContent(
                                     androidx.media3.common.Player.REPEAT_MODE_ONE -> R.drawable.player_repeat_one
                                     else -> R.drawable.player_repeat
                                 },
-                            contentDescription = "Repeat",
+                            contentDescription = stringResource(R.string.android_auto_action_repeat),
                             active =
                                 repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE ||
                                     repeatMode == androidx.media3.common.Player.REPEAT_MODE_ALL,
@@ -522,12 +523,12 @@ fun LooperPlayerContent(
                     ) {
                         LooperLabeledPill(
                             iconRes = R.drawable.queue_music,
-                            label = "Next Up",
+                            label = stringResource(R.string.looper_next_up),
                             onClick = onQueueClick,
                         )
                         LooperLabeledPill(
                             iconRes = R.drawable.lyrics,
-                            label = "Lyrics",
+                            label = stringResource(R.string.lyrics),
                             onClick = onLyricsClick,
                         )
                     }
@@ -763,15 +764,18 @@ private fun LooperTransportPill(
     }
 }
 
-private fun looperQualityText(format: FormatEntity?): String {
-    if (format == null) return "High Quality • Audio"
+private fun looperQualityText(
+    context: android.content.Context,
+    format: FormatEntity?,
+): String {
+    if (format == null) return context.getString(R.string.looper_quality_high_audio)
     val container = format.mimeType.substringAfter("/").substringBefore(";").uppercase()
     val losslessCodecs = listOf("FLAC", "WAV", "ALAC", "APE")
     val parts = buildList {
         when {
-            losslessCodecs.contains(container) -> add("Lossless")
-            format.bitrate in 1..191_999 -> add("Standard Quality")
-            else -> add("High Quality")
+            losslessCodecs.contains(container) -> add(context.getString(R.string.flamingo_quality_lossless))
+            format.bitrate in 1..191_999 -> add(context.getString(R.string.looper_quality_standard))
+            else -> add(context.getString(R.string.looper_quality_high))
         }
         add(container)
         if (losslessCodecs.contains(container)) {

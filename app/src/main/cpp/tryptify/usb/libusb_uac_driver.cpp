@@ -212,6 +212,7 @@ void LibusbUacDriver::close() {
         device_ = nullptr;
         fd_ = -1;
         format_ = {};
+        publishFormat();
         LOGI("closed device");
     }
 }
@@ -922,6 +923,7 @@ bool LibusbUacDriver::start(int sampleRateHz, int bitsPerSample, int channels) {
         }
     }
     format_ = fmt;
+    publishFormat();
 
     int rc = libusb_set_interface_alt_setting(
         device_, format_.interfaceNumber, format_.altSetting);
@@ -1004,9 +1006,11 @@ void LibusbUacDriver::flushRing() {
 
 bool LibusbUacDriver::isStreamingFormat(int sampleRate, int bitsPerSample, int channels) const {
     if (!streaming_.load(std::memory_order_acquire)) return false;
-    return format_.sampleRateHz == sampleRate
-        && format_.bitsPerSample == bitsPerSample
-        && format_.channels == channels;
+    auto fmt = std::atomic_load(&publishedFormat_);
+    return fmt
+        && fmt->sampleRateHz == sampleRate
+        && fmt->bitsPerSample == bitsPerSample
+        && fmt->channels == channels;
 }
 
 void LibusbUacDriver::stop() {
@@ -1339,7 +1343,7 @@ void LibusbUacDriver::onIso(libusb_transfer* xfr) {
     // per-packet length (packet i starts at offset = sum of
     // lengths[0..i-1]), so we drain into a running cursor — no
     // worst-case padding.
-    int frameStride = format_.channels * format_.bytesPerSample;
+    int frameStride = frameStride_.load(std::memory_order_acquire);
     uint32_t rate_q16 = framesPerUframe_q16_.load(std::memory_order_acquire);
     uint8_t* cursor = xfr->buffer;
     for (int p = 0; p < xfr->num_iso_packets; ++p) {
@@ -1410,7 +1414,7 @@ int LibusbUacDriver::drainRing(uint8_t* dst, int bytes) {
     // Frames "played" = frames the pump has dispatched, including the
     // silence padding (since the device hears those samples too). Used
     // for accurate position reporting back to ExoPlayer.
-    int frameStride = format_.channels * format_.bytesPerSample;
+    int frameStride = frameStride_.load(std::memory_order_acquire);
     if (frameStride > 0) {
         playedFrames_.fetch_add(bytes / frameStride, std::memory_order_acq_rel);
     }
@@ -1418,16 +1422,16 @@ int LibusbUacDriver::drainRing(uint8_t* dst, int bytes) {
 }
 
 int LibusbUacDriver::writePcm(const uint8_t* data, int frames) {
-    if (frames <= 0 || format_.channels == 0) return 0;
-    int bytes = frames * format_.channels * format_.bytesPerSample;
+    const int frameStride = frameStride_.load(std::memory_order_acquire);
+    if (frames <= 0 || frameStride <= 0) return 0;
+    int bytes = frames * frameStride;
     uint64_t head = ringHead_.load(std::memory_order_relaxed);
     uint64_t tail = ringTail_.load(std::memory_order_acquire);
     uint64_t free = ringBytes_ - (head - tail);
     int writable = static_cast<int>(std::min<uint64_t>(free, static_cast<uint64_t>(bytes)));
     // Round down to whole frames to avoid splitting a frame across
     // calls — saves the consumer from having to track partial frames.
-    int frameStride = format_.channels * format_.bytesPerSample;
-    if (frameStride > 0) writable -= writable % frameStride;
+    writable -= writable % frameStride;
     if (writable <= 0) return 0;
 
     size_t off = static_cast<size_t>(head % ringBytes_);
@@ -1443,11 +1447,11 @@ int LibusbUacDriver::writePcm(const uint8_t* data, int frames) {
 }
 
 int LibusbUacDriver::writableFrames() const {
-    if (format_.channels == 0) return 0;
+    const int frameStride = frameStride_.load(std::memory_order_acquire);
+    if (frameStride <= 0) return 0;
     uint64_t head = ringHead_.load(std::memory_order_relaxed);
     uint64_t tail = ringTail_.load(std::memory_order_acquire);
     uint64_t free = ringBytes_ - (head - tail);
-    int frameStride = format_.channels * format_.bytesPerSample;
     return static_cast<int>(free / frameStride);
 }
 

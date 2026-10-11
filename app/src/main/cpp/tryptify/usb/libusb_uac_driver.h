@@ -17,6 +17,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -176,7 +177,12 @@ public:
         return writtenFrames_.load(std::memory_order_acquire);
     }
 
-    const StreamFormat& currentFormat() const { return format_; }
+    // By value: the stored format is replaced by start()/close() on other
+    // threads, so a reference into it could change under the caller.
+    StreamFormat currentFormat() const {
+        auto snap = std::atomic_load(&publishedFormat_);
+        return snap ? *snap : StreamFormat{};
+    }
 
     // Reason the most recent start() returned false, or Ok if it
     // succeeded / hasn't been attempted. Reset to Ok on the next
@@ -255,7 +261,19 @@ private:
     int fd_ = -1;
     std::atomic<bool> contextReady_{false};
 
+    // format_ is owned by mutex_. Threads that don't hold it (JNI getters,
+    // audio write path, iso completion) read publishedFormat_ / frameStride_,
+    // which publishFormat() refreshes after every write to format_.
     StreamFormat format_;
+    std::shared_ptr<const StreamFormat> publishedFormat_;
+    std::atomic<int> frameStride_{0};  // channels * bytesPerSample, 0 = none
+    void publishFormat() {
+        std::atomic_store(&publishedFormat_,
+                          std::make_shared<const StreamFormat>(format_));
+        frameStride_.store(static_cast<int>(format_.channels) *
+                               static_cast<int>(format_.bytesPerSample),
+                           std::memory_order_release);
+    }
     std::atomic<bool> streaming_{false};
     std::atomic<bool> stopRequested_{false};
     // True iff we currently hold libusb_claim_interface on

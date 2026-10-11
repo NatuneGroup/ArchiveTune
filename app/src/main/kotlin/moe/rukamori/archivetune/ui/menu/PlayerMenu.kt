@@ -2005,7 +2005,7 @@ private fun SongSourceDialog(
                         out.add(
                             SourceSearchResult(
                                 source = AudioSourceType.AMAZON,
-                                trackId = track.title,
+                                trackId = track.id,
                                 title = track.title,
                                 artist = track.artist,
                                 thumbnailUrl = track.artworkUrl,

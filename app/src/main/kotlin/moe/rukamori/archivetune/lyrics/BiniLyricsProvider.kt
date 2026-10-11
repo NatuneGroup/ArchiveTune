@@ -12,6 +12,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.EnableBiniLyricsKey
@@ -45,7 +46,7 @@ object BiniLyricsProvider : LyricsProvider {
         runCatching {
             fetchLyrics(title, artist, album, duration, isrc)
                 ?: throw IllegalStateException("No BiniLyrics lyrics for $title — $artist")
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     private suspend fun fetchLyrics(
         title: String,
@@ -84,7 +85,7 @@ object BiniLyricsProvider : LyricsProvider {
             val results = root.array("results") ?: return@withContext null
             val hit = results.firstOrNull().asObject() ?: return@withContext null
 
-            val document = hit.string("lyricsUrl") ?: return@withContext null
+            val document = hit.string("lyricsUrl")?.takeIf { it.startsWith("https://") } ?: return@withContext null
             LyricsProviderHttp.get(document)?.let(LyricsPayload::toLyrics)
         }
 }

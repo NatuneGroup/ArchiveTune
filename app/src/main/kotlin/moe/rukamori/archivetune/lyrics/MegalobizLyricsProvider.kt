@@ -12,6 +12,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,7 +41,7 @@ object MegalobizLyricsProvider : LyricsProvider {
         runCatching {
             fetchLyrics(title.forLyricsSearch(), artist.artistForLyricsSearch(), duration)
                 ?: throw IllegalStateException("No Megalobiz lyrics for $title — $artist")
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     private suspend fun fetchLyrics(
         title: String,

@@ -660,6 +660,9 @@
     <string name="prioritize_word_synced_lyrics_desc">Only accept word-synced lyrics, from BetterLyrics, YouLyPlus and Unison.</string>
     <string name="enable_simpmusic_lyrics">Enable SimpMusic lyrics</string>
     <string name="enable_megalobiz_lyrics">Enable Megalobiz lyrics</string>
+    <string name="enable_bini_lyrics">Enable BiniLyrics</string>
+    <string name="enable_lrcred_lyrics">Enable lrc.red lyrics</string>
+    <string name="enable_genius_lyrics">Enable Genius lyrics (web scraping)</string>
     <string name="enable_paxsenix_lyrics">Enable Paxsenix lyrics</string>
     <string name="enable_musixmatch_experimental">Musixmatch (experimental)</string>
     <string name="enable_musixmatch_experimental_desc">Word-synced TTML from Musixmatch, falling back to line-synced.</string>
@@ -1032,7 +1035,7 @@
     <string name="discord_authorization_failed">Discord authorization failed</string>
     <string name="discord_account_ready">Your Discord account is linked. Rich Presence availability is shown separately.</string>
     <string name="discord_reauthorize_required_title">Discord session expired</string>
-    <string name="discord_reauthorize_required_description">The saved access token expired. Reauthorize to relink your account; Rich Presence remains unavailable until the official Social SDK integration is added.</string>
+    <string name="discord_reauthorize_required_description">The saved access token expired. Reauthorize to relink your account and resume Rich Presence.</string>
     <string name="discord_reauthorize_action">Reauthorize</string>
     <string name="discord_presence_unavailable_title">Rich Presence is unavailable in this build</string>
     <string name="discord_presence_unavailable_description">OAuth account linking and profile details remain available, but Now Playing is disabled because this build does not include Discord’s official Social SDK Android integration. The ArchiveTune application owner must enable Social SDK and download the official Android SDK from Developer Portal → application → Downloads, then integrate it. OAuth user tokens must not be sent to Discord Gateway.</string>

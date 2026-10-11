@@ -12,6 +12,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.EnableLrcRedKey
@@ -45,7 +46,7 @@ object LrcRedLyricsProvider : LyricsProvider {
         runCatching {
             fetchLyrics(title, artist, duration, isrc)
                 ?: throw IllegalStateException("No lrc.red lyrics for $title — $artist")
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     private suspend fun fetchLyrics(
         title: String,

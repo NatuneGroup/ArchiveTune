@@ -12,6 +12,7 @@
 package moe.rukamori.archivetune.lyrics
 
 import android.content.Context
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
@@ -23,7 +24,7 @@ import java.util.Locale
 object GeniusLyricsProvider : LyricsProvider {
     override val name = "Genius"
 
-    override fun isEnabled(context: Context): Boolean = context.dataStore[EnableGeniusLyricsKey] ?: true
+    override fun isEnabled(context: Context): Boolean = context.dataStore[EnableGeniusLyricsKey] ?: false
 
     override suspend fun getLyrics(
         id: String,
@@ -35,7 +36,7 @@ object GeniusLyricsProvider : LyricsProvider {
         runCatching {
             scrapeLyrics(title.forLyricsSearch(), artist.artistForLyricsSearch())
                 ?: throw IllegalStateException("No Genius lyrics for $title — $artist")
-        }
+        }.onFailure { if (it is CancellationException) throw it }
 
     private suspend fun scrapeLyrics(
         title: String,
@@ -91,7 +92,7 @@ object GeniusLyricsProvider : LyricsProvider {
                     } else if (extractedTitle.isNotBlank()) {
                         add(extractedTitle)
                     }
-                }.distinct()
+                }.distinct().take(MAX_SEARCH_ATTEMPTS)
 
             for (query in attempts) {
                 val url = searchSongUrl(query, extractedTitle, extractedArtist) ?: continue
@@ -263,6 +264,7 @@ object GeniusLyricsProvider : LyricsProvider {
     }
 
     private const val SEARCH_ENDPOINT = "https://genius.com/api/search/multi"
+    private const val MAX_SEARCH_ATTEMPTS = 2
 
     private val TITLE_SEPARATOR by lazy { Regex("""\s+[-–—:]\s+""") }
     private val DECORATIVE_CHARS by lazy { Regex("""[♪♫★☆【】《》「」~_]""") }

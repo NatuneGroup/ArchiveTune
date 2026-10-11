@@ -50,6 +50,9 @@ import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableBetterLyricsKey
+import moe.rukamori.archivetune.constants.EnableBiniLyricsKey
+import moe.rukamori.archivetune.constants.EnableGeniusLyricsKey
+import moe.rukamori.archivetune.constants.EnableLrcRedKey
 import moe.rukamori.archivetune.constants.EnableBetterLyricsPortatoKey
 import moe.rukamori.archivetune.constants.EnableKugouKey
 import moe.rukamori.archivetune.constants.EnableLrcLibKey
@@ -108,6 +111,12 @@ fun LyricsProvidersSettings(
         rememberPreference(key = EnableSimpMusicLyricsKey, defaultValue = true)
     val (enableMegalobizLyrics, onEnableMegalobizLyricsChange) =
         rememberPreference(key = EnableMegalobizLyricsKey, defaultValue = true)
+    val (enableBiniLyrics, onEnableBiniLyricsChange) =
+        rememberPreference(key = EnableBiniLyricsKey, defaultValue = true)
+    val (enableLrcRed, onEnableLrcRedChange) =
+        rememberPreference(key = EnableLrcRedKey, defaultValue = true)
+    val (enableGeniusLyrics, onEnableGeniusLyricsChange) =
+        rememberPreference(key = EnableGeniusLyricsKey, defaultValue = false)
     val (enablePaxsenixLyrics, onEnablePaxsenixLyricsChange) =
         rememberPreference(key = EnablePaxsenixLyricsKey, defaultValue = true)
     val (enablePaxsenixAppleMusicLyrics, onEnablePaxsenixAppleMusicLyricsChange) =
@@ -330,6 +339,39 @@ fun LyricsProvidersSettings(
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         checked = enableMegalobizLyrics,
                         onCheckedChange = onEnableMegalobizLyricsChange,
+                        isEnabled = providerTogglesEnabled,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_bini_lyrics"),
+                        title = { Text(stringResource(R.string.enable_bini_lyrics)) },
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableBiniLyrics,
+                        onCheckedChange = onEnableBiniLyricsChange,
+                        isEnabled = providerTogglesEnabled,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_lrcred_lyrics"),
+                        title = { Text(stringResource(R.string.enable_lrcred_lyrics)) },
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableLrcRed,
+                        onCheckedChange = onEnableLrcRedChange,
+                        isEnabled = providerTogglesEnabled,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("enable_genius_lyrics"),
+                        title = { Text(stringResource(R.string.enable_genius_lyrics)) },
+                        icon = { Icon(painterResource(R.drawable.lyrics), null) },
+                        checked = enableGeniusLyrics,
+                        onCheckedChange = onEnableGeniusLyricsChange,
                         isEnabled = providerTogglesEnabled,
                     )
                 }

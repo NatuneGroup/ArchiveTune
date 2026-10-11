@@ -384,7 +384,7 @@ Java_tf_monochrome_android_audio_dsp_MixBusProcessor_nativeProcessPlanar(
     engine->processPlanar(channels, numChannels, numFrames);
 }
 
-// Kept from the vossgraves port: MixBusProcessor.kt and DspEngineManager.kt still call this.
+// Called by MixBusProcessor.kt and DspEngineManager.kt; absent upstream.
 extern "C" JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_dsp_MixBusProcessor_nativeResetPluginState(
     JNIEnv* /*env*/, jobject /*thiz*/, jlong enginePtr) {

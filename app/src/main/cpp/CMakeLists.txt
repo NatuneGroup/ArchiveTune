@@ -63,6 +63,9 @@ add_library(monochrome_dsp SHARED
     tryptify/dsp/dsp_engine.cpp
     tryptify/dsp/dsp_jni.cpp
     tryptify/dsp/oxford/oxford_jni.cpp
+    tryptify/dsp/scope/wave_scope.cpp
+    tryptify/dsp/scope/spectrum_waterfall_jni.cpp
+    tryptify/dsp/meter/loudness_jni.cpp
 )
 target_include_directories(monochrome_dsp PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/tryptify/dsp

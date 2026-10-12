@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.logcat
 
 import android.content.Context
 import android.os.Build
+import android.os.Process
 import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.GlobalLog
@@ -23,6 +24,7 @@ internal suspend fun diagnosticReport(context: Context, capturedText: String): S
     } catch (_: IOException) {
         emptyMap()
     }
+    val persisted = parseCapturedLog(PersistentLogCapture.readForExport(context))
     return buildString {
         appendLine("ArchiveTune diagnostic report v2")
         appendLine("Fork: NatuneGroup/ArchiveTune")
@@ -39,12 +41,28 @@ internal suspend fun diagnosticReport(context: Context, capturedText: String): S
         appendLine(diagnosticPreferences(values))
         appendLine()
         appendLine("Retained playback diagnostics:")
-        GlobalLog.diagnosticSnapshot().forEach { appendLine(GlobalLog.format(it)) }
+        // The in-memory ring keeps this process's diagnostics even when a retry storm has
+        // pushed them out of the capped file window; earlier processes only exist on disk.
+        val myPid = Process.myPid()
+        val diagnostics = persisted.filter { !it.isMarker && GlobalLog.isDiagnosticTag(it.tag) }
+        val currentRing = GlobalLog.diagnosticSnapshot()
+        val fromFiles = if (currentRing.isEmpty()) diagnostics else diagnostics.filter { it.pid != myPid }
+        append(formatCapturedLog(fromFiles.takeLast(RETAINED_DIAGNOSTICS_LIMIT)))
+        currentRing.forEach { appendLine(GlobalLog.format(it)) }
         appendLine()
-        appendLine("Application logs:")
-        GlobalLog.snapshot().forEach { appendLine(GlobalLog.format(it)) }
-        appendLine()
-        appendLine("Selected system/application log view:")
-        appendLine(DiagnosticRedaction.redact(capturedText))
+        if (persisted.any { !it.isMarker }) {
+            appendLine("Process log (logcat for this app; earlier sessions first, newest last):")
+            append(formatCapturedLog(persisted))
+        } else {
+            // Persistent capture unavailable (logcat missing or never started): fall back
+            // to the in-memory ring and the on-screen selection so the report is not empty.
+            appendLine("Application logs:")
+            GlobalLog.snapshot().forEach { appendLine(GlobalLog.format(it)) }
+            appendLine()
+            appendLine("Selected system/application log view:")
+            appendLine(DiagnosticRedaction.redact(capturedText))
+        }
     }.let(DiagnosticRedaction::redact)
 }
+
+private const val RETAINED_DIAGNOSTICS_LIMIT = 200

@@ -65,7 +65,7 @@ object GlobalLog {
             buffer.removeFirst()
         }
         buffer.addLast(entry)
-        if (tag != null && (tag.contains("Diagnostics") || tag.contains("Crossfade") || tag.contains("Authenticity"))) {
+        if (isDiagnosticTag(tag)) {
             if (diagnosticBuffer.size >= 200) diagnosticBuffer.removeFirst()
             diagnosticBuffer.addLast(entry)
         }
@@ -110,6 +110,9 @@ object GlobalLog {
             lastFlushMs = System.currentTimeMillis()
         }
     }
+
+    fun isDiagnosticTag(tag: String?): Boolean =
+        tag != null && (tag.contains("Diagnostics") || tag.contains("Crossfade") || tag.contains("Authenticity"))
 
     @Synchronized
     fun snapshot(): List<LogEntry> = buffer.toList()

@@ -194,6 +194,7 @@ class App :
             )
         } catch (_: Exception) {
         }
+        moe.rukamori.archivetune.logcat.PersistentLogCapture.start(this)
 
         initializeCriticalSync()
         initializeDeferredAsync()
@@ -629,6 +630,9 @@ class App :
 
         try {
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                // Replacing the default handler also drops the runtime's FATAL EXCEPTION line, which
+                // is the only place the persistent log capture can see the crash.
+                android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}", throwable)
                 try {
                     val sw = StringWriter()
                     val pw = PrintWriter(sw)

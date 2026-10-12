@@ -11,7 +11,6 @@ package moe.rukamori.archivetune.logcat
 import android.content.Context
 import android.net.Uri
 import android.os.Process
-import android.util.Log
 import androidx.core.content.FileProvider
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -27,21 +26,16 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.utils.GlobalLog
 import moe.rukamori.archivetune.utils.LogEntry
-import java.io.BufferedReader
 import java.io.File
 import java.io.IOException
-import java.io.InputStreamReader
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.abs
 
 private const val LOGCAT_POLL_INTERVAL_MILLIS = 2_000L
+private const val PERSISTED_POLL_INTERVAL_MILLIS = 1_000L
 private const val LOGCAT_ENTRY_LIMIT = 1_000
-private const val LOGCAT_CHUNK_LENGTH = 4_000
-private const val DUPLICATE_WINDOW_MILLIS = 1_000L
+private const val DUPLICATE_WINDOW_MILLIS = 2_000L
 
 @Singleton
 class LogcatRepository
@@ -105,144 +99,76 @@ class LogcatRepository
 
         private fun observeLogcatSnapshots(): Flow<List<LogEntry>> =
             flow {
+                var signature: String? = null
                 while (currentCoroutineContext().isActive) {
-                    emit(readLogcatEntries())
-                    delay(LOGCAT_POLL_INTERVAL_MILLIS)
+                    if (PersistentLogCapture.isRunning) {
+                        val current = PersistentLogCapture.viewerSignature(context)
+                        if (current != signature) {
+                            signature = current
+                            emit(PersistentLogCapture.readForViewer(context).toLogEntries())
+                        }
+                        delay(PERSISTED_POLL_INTERVAL_MILLIS)
+                    } else {
+                        signature = null
+                        emit(readLogcatEntries())
+                        delay(LOGCAT_POLL_INTERVAL_MILLIS)
+                    }
                 }
             }.flowOn(Dispatchers.IO)
 
         private suspend fun readLogcatEntries(): List<LogEntry> {
-            val processId = Process.myPid()
-            val timestampFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
-            val currentYear = Calendar.getInstance().get(Calendar.YEAR)
-            val linePattern =
-                Regex(
-                    """^(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\s+([VDIWEF])/""" +
-                        """(.+?)\(\s*\d+\):\s*(.*)$""",
-                )
             val logcatProcess =
                 ProcessBuilder(
                     "logcat",
-                    "--pid=$processId",
+                    "--pid=${Process.myPid()}",
                     "-v",
-                    "time",
+                    "threadtime",
                     "-t",
                     LOGCAT_ENTRY_LIMIT.toString(),
                 ).redirectErrorStream(true)
                     .start()
 
             return try {
-                val entries = ArrayList<LogEntry>(LOGCAT_ENTRY_LIMIT)
-                BufferedReader(InputStreamReader(logcatProcess.inputStream)).use { reader ->
-                    reader.forEachLine { line ->
-                        val match = linePattern.matchEntire(line) ?: return@forEachLine
-                        val (timestamp, levelCode, tag, message) = match.destructured
-                        val level =
-                            when (levelCode) {
-                                "V" -> Log.VERBOSE
-                                "D" -> Log.DEBUG
-                                "I" -> Log.INFO
-                                "W" -> Log.WARN
-                                "E", "F" -> Log.ERROR
-                                else -> return@forEachLine
-                            }
-                        val parsedTimestamp = timestampFormat.parse(timestamp) ?: return@forEachLine
-                        val calendar =
-                            Calendar.getInstance().apply {
-                                time = parsedTimestamp
-                                set(Calendar.YEAR, currentYear)
-                            }
-                        entries +=
-                            LogEntry(
-                                time = calendar.timeInMillis,
-                                level = level,
-                                tag = tag.trim(),
-                                message = message,
-                            )
-                    }
-                }
-
+                val text = logcatProcess.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val exitCode = logcatProcess.waitFor()
                 currentCoroutineContext().ensureActive()
                 if (exitCode != 0) {
                     throw IOException("logcat exited with code $exitCode")
                 }
-                entries
+                text.lineSequence()
+                    .filterNot(::isOemNoise)
+                    .joinToString("\n")
+                    .let(DiagnosticRedaction::redact)
+                    .toLogEntries()
             } finally {
                 logcatProcess.destroy()
             }
         }
     }
 
+private fun String.toLogEntries(): List<LogEntry> = parseCapturedLog(this).mapNotNull { it.toLogEntry() }
+
+// Both sides are already redacted (GlobalLog on append, the capture per written line).
+private fun LogEntry.dedupeKey(): String = "$level|$tag|${message.substringBefore('\n')}"
+
+/**
+ * Logcat entries are the complete record (a Timber throwable arrives with its whole
+ * stack trace), so they win. In-memory entries only survive while logcat has not
+ * delivered the same call yet, which keeps the viewer instant without doubling lines.
+ * Matching uses the first line because GlobalLog keeps only the throwable's summary.
+ */
 private fun mergeCapturedAndLogcatEntries(
     capturedEntries: List<LogEntry>,
     logcatEntries: List<LogEntry>,
 ): List<LogEntry> {
-    val consumedLogcatEntries = BooleanArray(logcatEntries.size)
-
-    capturedEntries.forEach { capturedEntry ->
-        capturedEntry.message.toLogcatChunks().forEach { chunk ->
-            val matchingIndex =
-                logcatEntries.indices.firstOrNull { index ->
-                    if (consumedLogcatEntries[index]) {
-                        return@firstOrNull false
-                    }
-
-                    val logcatEntry = logcatEntries[index]
-                    logcatEntry.level == capturedEntry.level &&
-                        (capturedEntry.tag == null || logcatEntry.tag == capturedEntry.tag) &&
-                        logcatEntry.message == chunk &&
-                        abs(logcatEntry.time - capturedEntry.time) <= DUPLICATE_WINDOW_MILLIS
-                }
-            if (matchingIndex != null) {
-                consumedLogcatEntries[matchingIndex] = true
-            }
+    val logcatTimes = HashMap<String, MutableList<Long>>()
+    logcatEntries.forEach { entry ->
+        logcatTimes.getOrPut(entry.dedupeKey()) { ArrayList(1) } += entry.time
+    }
+    val pendingCaptured =
+        capturedEntries.filter { captured ->
+            val times = logcatTimes[captured.dedupeKey()] ?: return@filter true
+            times.none { time -> abs(time - captured.time) <= DUPLICATE_WINDOW_MILLIS }
         }
-    }
-
-    val uniqueLogcatEntries =
-        logcatEntries.filterIndexed { index, _ ->
-            !consumedLogcatEntries[index]
-        }
-
-    return capturedEntries + uniqueLogcatEntries.mergeContinuationChunks()
-}
-
-private fun String.toLogcatChunks(): List<String> {
-    if (length < LOGCAT_CHUNK_LENGTH) {
-        return listOf(this)
-    }
-
-    val chunks = mutableListOf<String>()
-    var start = 0
-    while (start < length) {
-        val newlineIndex = indexOf('\n', start).let { index -> if (index == -1) length else index }
-        do {
-            val end = minOf(newlineIndex, start + LOGCAT_CHUNK_LENGTH)
-            chunks += substring(start, end)
-            start = end
-        } while (start < newlineIndex)
-        start++
-    }
-    return chunks
-}
-
-private fun List<LogEntry>.mergeContinuationChunks(): List<LogEntry> {
-    val mergedEntries = ArrayList<LogEntry>(size)
-    sortedBy(LogEntry::time).forEach { entry ->
-        val previous = mergedEntries.lastOrNull()
-        if (
-            previous != null &&
-            previous.message.length >= LOGCAT_CHUNK_LENGTH &&
-            previous.level == entry.level &&
-            previous.tag == entry.tag &&
-            entry.time - previous.time in 0..DUPLICATE_WINDOW_MILLIS
-        ) {
-            mergedEntries[mergedEntries.lastIndex] =
-                previous.copy(message = previous.message + entry.message)
-        } else {
-            mergedEntries += entry
-        }
-    }
-    return mergedEntries
+    return logcatEntries + pendingCaptured
 }

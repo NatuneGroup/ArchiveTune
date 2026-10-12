@@ -3393,8 +3393,11 @@ class MainActivity : ComponentActivity() {
                                             }
                                         }
                                         if (compactRowVisible) {
-                                            val compactBackdrop = liquidGlassBackdrop.takeUnless { compactControlsStockColor }
-                                            val compactGlow = navGlassStrength
+                                            // The circles stand in for the tab bar, so they are glass only when the
+                                            // tab bar would be; otherwise they are solid Material 3 surfaces.
+                                            val compactBackdrop =
+                                                liquidGlassBackdrop.takeIf { liquidGlassNavBarEnabled && !compactControlsStockColor }
+                                            val compactGlow = if (compactBackdrop != null) navGlassStrength else 0f
                                             Box(
                                                 modifier =
                                                     Modifier

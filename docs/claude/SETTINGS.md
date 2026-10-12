@@ -50,7 +50,9 @@ Also shipped since this note was written:
   tab bar into round Library/Home and Search buttons with a slim mini player between them, the
   4nx3b layout. Unset, it follows `NavigationBarHideOnScrollKey`: adaptive (fold while scrolling
   down) when that is on, always expanded otherwise. The Apple Music bar (style or experience) is
-  always the one-row layout, so the behaviour row is locked while it is active. The fold is a sheet-bound change of
+  always the one-row layout, so the behaviour row is locked while it is active. The row is liquid
+  glass only when the tab bar would be (Liquid Glass on + its navigation-bar toggle); otherwise the
+  circles and the mini player capsule are opaque `surfaceContainerHigh` with no glow. The fold is a sheet-bound change of
   `collapsedBound`, not a translation. On History and Local songs the Search button opens the
   page's own search field (`openInPageSearch` on the entry's saved state).
 - **Home pages** — the Home tab's pages are a multi-select set (`ActiveHomeSourcesKey`) with a

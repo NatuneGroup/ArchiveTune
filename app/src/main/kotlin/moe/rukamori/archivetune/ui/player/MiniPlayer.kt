@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
 import moe.rukamori.archivetune.playback.artwork.guessArtworkProvider
 import moe.rukamori.archivetune.ui.component.LocalNavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassBackdrop
+import moe.rukamori.archivetune.ui.component.PillBackdrop
 import moe.rukamori.archivetune.ui.component.PillFrostBlurRadiusPx
 import moe.rukamori.archivetune.ui.component.PillFrostOverlayAlpha
 import moe.rukamori.archivetune.ui.component.PillRole
@@ -302,10 +303,16 @@ private fun NewMiniPlayer(
     val capsuleShape = remember { RoundedCornerShape(percent = 50) }
     val miniPlayerShape = if (compactCapsule) capsuleShape else unconstrainedShape
     val backgroundShape = if (compactCapsule) capsuleShape else restingShape
+    // In the one-row bar without a glass tab bar the capsule matches the solid Material 3 circles
+    // beside it: opaque and without the Apple hairline.
+    val solidCompactCapsule = compactCapsule && pill.backdrop != PillBackdrop.LIQUID_GLASS
     val themeColor =
-        remember(pill, grayscale) {
-            if (grayscale) pill.raisedContainerColor.toGrayscale() else pill.raisedContainerColor
+        remember(pill, grayscale, solidCompactCapsule) {
+            val raised =
+                if (solidCompactCapsule) pill.raisedContainerColor.copy(alpha = 1f) else pill.raisedContainerColor
+            if (grayscale) raised.toGrayscale() else raised
         }
+    val capsuleBorder = pill.border.takeUnless { solidCompactCapsule }
 
     SwipeableMiniPlayerBox(
         modifier = modifier,
@@ -330,7 +337,7 @@ private fun NewMiniPlayer(
                     .fillMaxHeight()
                     .offset { IntOffset(offsetX.roundToInt(), 0) }
                     .clip(miniPlayerShape)
-                    .then(pill.border?.let { Modifier.border(it, miniPlayerShape) } ?: Modifier),
+                    .then(capsuleBorder?.let { Modifier.border(it, miniPlayerShape) } ?: Modifier),
         ) {
             MiniPlayerBackground(
                 style = effectiveBackgroundStyle,

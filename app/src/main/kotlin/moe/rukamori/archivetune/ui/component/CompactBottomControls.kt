@@ -22,6 +22,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -137,15 +138,16 @@ fun CompactControlCircle(
             )
         }
     } else {
+        // The Material 3 counterpart of the glass circle: an opaque tonal surface in the same tone
+        // as the mini player capsule beside it, with no see-through fill or glass edge.
         Surface(
             shape = CircleShape,
-            color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f),
-            tonalElevation = 3.dp,
-            shadowElevation = 4.dp,
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier =
                 modifier
                     .size(CompactControlSize)
-                    .glassGlowOverlay(glowStrength, CircleShape)
+                    // Ahead of the clip: a shadow inside the clipped bounds would never show.
+                    .shadow(3.dp, CircleShape)
                     .clip(CircleShape)
                     .clickable(onClick = onClick),
         ) {

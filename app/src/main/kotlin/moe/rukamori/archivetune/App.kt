@@ -183,6 +183,7 @@ class App :
         BotGuardTokenGenerator.initialize(this)
         PreferenceStore.start(this)
         JapaneseLanguagePackManager.initialize(this)
+        moe.rukamori.archivetune.addons.AdditionalDownloads.initialize(this)
         Timber.plant(Timber.DebugTree())
         try {
             Timber.plant(

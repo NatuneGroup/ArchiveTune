@@ -1531,6 +1531,12 @@
     <string name="google_drive_sync_provider_suffix_local">(local — not cloud)</string>
     <string name="google_drive_sync_cloud_app_disclaimer">A cloud storage app (Google Drive, Dropbox, Nextcloud, or OneDrive) must be installed on this phone for backups to reach the cloud. Without one, the system folder picker only shows local storage and backups stay on this device.</string>
     <string name="language_packs">Language packs</string>
+    <string name="additional_downloads">Additional downloads</string>
+    <string name="additional_downloads_subtitle">Language packs and other optional data, downloaded only when you want them</string>
+    <string name="additional_downloads_player_fonts">Player fonts</string>
+    <string name="additional_downloads_spatialflow_font">SpatialFlow typeface</string>
+    <string name="additional_downloads_spatialflow_font_description">Google Sans Flex for the SpatialFlow player · about 4 MB. The system font is used until it is installed</string>
+    <string name="additional_downloads_unavailable">Not available in this build</string>
     <string name="language_pack_english">English</string>
     <string name="language_pack_japanese">Japanese romanization</string>
     <string name="language_pack_built_in">Built in</string>

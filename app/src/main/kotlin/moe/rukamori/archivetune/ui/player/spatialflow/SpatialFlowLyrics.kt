@@ -85,7 +85,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.asImageBitmap
@@ -124,11 +123,7 @@ import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.player.blurBackdropFootprint
@@ -219,16 +214,6 @@ internal fun SpatialFlowLyricsOverlay(
 
     var showLyricsMenu by remember { mutableStateOf(false) }
     var moreIconBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
-
-    // The lyrics overflow popup only gets a live liquid-glass backdrop when
-    // the liquid glass preference is enabled; otherwise it renders with the
-    // regular opaque surface so no glass remains with the toggle off.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
 
     val (autoTranslateLyrics) = rememberPreference(AutoTranslateLyricsKey, defaultValue = false)
     val (translatorTargetLang) = rememberPreference(TranslatorTargetLangKey, defaultValue = "")
@@ -337,14 +322,7 @@ internal fun SpatialFlowLyricsOverlay(
         // title showing only the dark scrim/base brush. The blur background fills
         // edge to edge.
         Box(
-            modifier =
-                Modifier.fillMaxSize().let { base ->
-                    if (popupBackdrop != null) {
-                        base.layerBackdrop(popupBackdrop)
-                    } else {
-                        base
-                    }
-                },
+            modifier = Modifier.fillMaxSize(),
         ) {
         // The lyrics backdrop is Apple Music's exact moving-blur recipe: the
         // artwork at 64dp blur, slowly drifting and scaling up as the overlay
@@ -540,10 +518,6 @@ internal fun SpatialFlowLyricsOverlay(
         }
 
         if (showLyricsMenu) {
-            // Dim in the lyrics surface's own hue instead of flashing pure
-            // black over the moving-blur backdrop (task report: "a black
-            // overlay appears as background").
-            val scrimBase = (backgroundBrush as? SolidColor)?.value ?: Color.Black
             AnchoredLyricsOverflowMenu(
                 iconBoundsInRoot = moreIconBounds,
                 lyricsProvider = { currentLyricsEntity },
@@ -551,7 +525,6 @@ internal fun SpatialFlowLyricsOverlay(
                 lyricsSyncOffset = 0,
                 onLyricsSyncOffsetChange = {},
                 onDismiss = { showLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }
@@ -723,9 +696,10 @@ private fun SpatialFlowLyricLineItem(
         label = "SmoothKaraokePos",
     )
 
+    val nonRoundedFamily = rememberSpatialFlowFontFamily(rounded = false)
     val mainTextStyle =
         MaterialTheme.typography.headlineMedium.copy(
-            fontFamily = SpatialFlowGoogleSansFlexNonRounded,
+            fontFamily = nonRoundedFamily,
             fontSize = 38.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 50.sp,
@@ -790,7 +764,7 @@ private fun SpatialFlowLyricLineItem(
                         text = romanized,
                         style =
                             MaterialTheme.typography.bodyLarge.copy(
-                                fontFamily = SpatialFlowGoogleSansFlexNonRounded,
+                                fontFamily = nonRoundedFamily,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.Normal,
                             ),

@@ -529,7 +529,7 @@ fun buildSettingsGroups(
                 SettingsChild("Prioritize word synced lyrics", "prioritize_word_synced_lyrics", listOf("word synced", "word by word", "karaoke lyrics", "prioritize word synced")),
                 SettingsChild("Providers", "providers", listOf("lyrics providers", "providers", "lyrics sources", "which lyrics provider")),
                 SettingsChild("Romanization", "romanization", listOf("romanization", "romanisation", "romanize", "romaji", "transliteration")),
-                SettingsChild("Language packs", "language_packs", listOf("language pack", "language packs", "romanization data", "dictionary")),
+                SettingsChild("Additional downloads", "language_packs", listOf("additional downloads", "language pack", "language packs", "romanization data", "dictionary", "fonts", "spatialflow font", "addons")),
                 SettingsChild("Enable Tidal lyrics", "enable_tidal_lyrics", listOf("tidal lyrics", "enable tidal lyrics", "tidal lyric provider")),
                 SettingsChild("Enable Deezer lyrics", "enable_deezer_lyrics", listOf("deezer lyrics", "enable deezer lyrics", "deezer lyric provider")),
                 SettingsChild("Musixmatch (experimental)", "enable_musixmatch_experimental", listOf("musixmatch", "musixmatch experimental", "musixmatch lyrics")),
@@ -619,10 +619,10 @@ fun buildSettingsGroups(
         SettingsItem(
             key = "language_packs",
             icon = painterResource(R.drawable.translate),
-            title = stringResource(R.string.language_packs),
-            subtitle = stringResource(R.string.settings_language_packs_subtitle),
+            title = stringResource(R.string.additional_downloads),
+            subtitle = stringResource(R.string.additional_downloads_subtitle),
             accentColor = MaterialTheme.colorScheme.secondary,
-            keywords = listOf("language pack", "translation", "translate", "localization", "i18n"),
+            keywords = listOf("additional downloads", "language pack", "translation", "translate", "localization", "i18n", "fonts", "addons"),
             onClick = { navController.navigate("settings/language_packs") },
             // Lyrics sub-page anchor, kept in the search index so existing search shortcuts still
             // work.

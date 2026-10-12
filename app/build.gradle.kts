@@ -74,6 +74,28 @@ val forkDirty = runCatching {
     }.standardOutput.asText.get().isNotBlank()
 }.getOrDefault(false)
 
+// Settings › Additional downloads fetches optional files from addons/ instead of packing them into
+// the APK. The URL pins the last commit that touched addons/ and the digest is this build's copy,
+// so an installed app always fetches the exact bytes it was built with, however later releases
+// change them. Empty outside a git checkout, which hides the downloads rather than guessing.
+val addonsRevision = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "log", "-1", "--format=%H", "--", "addons")
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("")
+val addonsBaseUrl =
+    if (addonsRevision.length == 40) {
+        "https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/$addonsRevision/addons"
+    } else {
+        ""
+    }
+fun addonSha256(relativePath: String): String =
+    rootDir.resolve("addons/$relativePath").takeIf { it.isFile }?.let { file ->
+        java.security.MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+            .joinToString("") { "%02x".format(it) }
+    } ?: ""
+
 val discordApplicationId =
     (
         localProperties.getProperty("DISCORD_APPLICATION_ID")
@@ -152,6 +174,12 @@ android {
         buildConfigField("String", "FORK_REVISION", "\"$forkRevision\"")
         buildConfigField("String", "FORK_BRANCH", "\"$forkBranch\"")
         buildConfigField("boolean", "FORK_DIRTY", forkDirty.toString())
+        buildConfigField("String", "ADDONS_BASE_URL", "\"$addonsBaseUrl\"")
+        buildConfigField(
+            "String",
+            "SPATIALFLOW_FONT_SHA256",
+            "\"${addonSha256("fonts/spatialflow_google_sans_flex.ttf")}\"",
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

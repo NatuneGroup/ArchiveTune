@@ -33,6 +33,9 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.addons.AddonPack
+import moe.rukamori.archivetune.addons.AddonState
+import moe.rukamori.archivetune.addons.AdditionalDownloads
 import moe.rukamori.archivetune.constants.LyricsRomanizeJapaneseKey
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState
@@ -124,10 +127,21 @@ fun LanguagePackSettings(navController: NavController) {
                 )
             }
         }
+
+        PreferenceGroup(title = stringResource(R.string.additional_downloads_player_fonts)) {
+            item {
+                AddonPackEntry(
+                    pack = AdditionalDownloads.spatialFlowFont,
+                    title = stringResource(R.string.additional_downloads_spatialflow_font),
+                    description = stringResource(R.string.additional_downloads_spatialflow_font_description),
+                    iconRes = R.drawable.text_fields,
+                )
+            }
+        }
     }
 
     SettingsTopAppBar(
-        title = { Text(stringResource(R.string.language_packs)) },
+        title = { Text(stringResource(R.string.additional_downloads)) },
         navigationIcon = {
             IconButton(
                 onClick = navController::navigateUp,
@@ -136,5 +150,47 @@ fun LanguagePackSettings(navController: NavController) {
                 Icon(painterResource(R.drawable.arrow_back), contentDescription = null)
             }
         },
+    )
+}
+
+@Composable
+private fun AddonPackEntry(
+    pack: AddonPack,
+    title: String,
+    description: String,
+    iconRes: Int,
+) {
+    val state by pack.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    PreferenceEntry(
+        title = { Text(title) },
+        description =
+            when (val current = state) {
+                AddonState.Unavailable -> stringResource(R.string.additional_downloads_unavailable)
+                AddonState.NotInstalled -> description
+                is AddonState.Downloading -> stringResource(R.string.language_pack_downloading, current.progressPercent)
+                is AddonState.Installed ->
+                    stringResource(R.string.language_pack_installed_size, formatFileSize(current.file.length()))
+                is AddonState.Failed -> current.message
+            },
+        icon = { Icon(painterResource(iconRes), null) },
+        trailingContent = {
+            when (state) {
+                AddonState.Unavailable -> Unit
+                is AddonState.Downloading ->
+                    CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                is AddonState.Installed ->
+                    TextButton(onClick = { scope.launch { pack.remove() } }) {
+                        Text(stringResource(R.string.language_pack_remove))
+                    }
+                AddonState.NotInstalled,
+                is AddonState.Failed,
+                ->
+                    TextButton(onClick = { scope.launch { pack.install() } }) {
+                        Text(stringResource(R.string.download))
+                    }
+            }
+        },
+        isEnabled = state !is AddonState.Downloading && state != AddonState.Unavailable,
     )
 }

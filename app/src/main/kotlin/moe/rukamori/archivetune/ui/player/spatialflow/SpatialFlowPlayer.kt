@@ -464,7 +464,7 @@ fun SpatialFlowPlayerContent(
             }
         }
 
-        MaterialTheme(typography = SpatialFlowTypography) {
+        MaterialTheme(typography = rememberSpatialFlowTypography()) {
                 val configuration = LocalConfiguration.current
                 val screenWidth = configuration.screenWidthDp.dp
                 val screenHeight = configuration.screenHeightDp.dp

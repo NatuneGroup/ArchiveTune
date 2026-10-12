@@ -370,12 +370,12 @@ fun LyricsSettings(
         // toggling romanization for the relevant languages below.
         PreferenceGroup(
             modifier = positions.modifierFor("language_packs"),
-            title = stringResource(R.string.language_packs),
+            title = stringResource(R.string.additional_downloads),
         ) {
             item {
                 PreferenceEntry(
-                    title = { Text(stringResource(R.string.language_packs)) },
-                    description = stringResource(R.string.settings_language_packs_subtitle),
+                    title = { Text(stringResource(R.string.additional_downloads)) },
+                    description = stringResource(R.string.additional_downloads_subtitle),
                     icon = { Icon(painterResource(R.drawable.translate), null) },
                     onClick = { navController.navigate("settings/language_packs") },
                 )

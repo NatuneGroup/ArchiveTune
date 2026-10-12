@@ -75,10 +75,16 @@
 -dontwarn org.slf4j.impl.StaticLoggerBinder
 
 ## Rules for NewPipeExtractor
+# The MetrolistExtractor artifact contains no Class.forName / field or method
+# reflection at all (verified against the shipped jar), so it needs no blanket
+# keep and shrinks/obfuscates like any other library. The two targeted keeps
+# below stay: the YouTube protos are protobuf-javalite generated code whose
+# RawMessageInfo resolves field names reflectively at first use, and the timeago
+# pattern classes are loaded by dynamically built class names from PatternsManager.
+# (ServiceList's enum constants reference every shipped service's constructor, so
+# the non-YouTube services stay reachable through the enum either way.)
 -keep class org.schabi.newpipe.extractor.services.youtube.protos.** { *; }
 -keep class org.schabi.newpipe.extractor.timeago.patterns.** { *; }
--keep class org.schabi.newpipe.extractor.** { *; }
--keepclassmembers class org.schabi.newpipe.extractor.** { *; }
 -keep class org.mozilla.javascript.** { *; }
 -keep class org.mozilla.javascript.engine.** { *; }
 -keep class org.mozilla.classfile.ClassFileWriter
@@ -161,16 +167,37 @@
     java.lang.Object readResolve();
 }
 
-## Media3 Protection Rules
-# Protect Guava from conflicts with system versions
--keep class com.google.common.** { *; }
--keep class com.google.common.util.concurrent.** { *; }
--keep class com.google.common.collect.** { *; }
+## Guava (pulled in by Media3)
+# No blanket keep: Guava is only reflected on internally, at field updaters whose
+# field names must survive (AtomicReferenceFieldUpdater/Unsafe offsets). These are
+# exactly the rules Guava publishes in META-INF/proguard of its -jre artifact; the
+# -android variant this build resolves ships none, so they are inlined here.
+# Everything else in Guava is free to shrink and obfuscate.
+-keepclassmembers class com.google.common.** {
+    volatile <fields>;
+}
+-keepclassmembernames class com.google.common.** {
+    volatile <fields>;
+}
+-keepclassmembers class com.google.common.cache.Striped64 {
+    *** base;
+    *** busy;
+}
+-keepclassmembers class com.google.common.cache.Striped64$Cell {
+    <fields>;
+}
 -dontwarn com.google.common.**
 
-# Protect Media3 from obfuscation
--keep class androidx.media3.** { *; }
--keep interface androidx.media3.** { *; }
+## Media3
+# No blanket keep: every media3 AAR ships consumer rules covering the reflection
+# media3 itself performs (decoder-extension renderer constructors, downloader
+# factories, ExoPlayer scrubbing-mode members, Guava Function member names), and
+# manifest-referenced media3 classes (PlatformScheduler$PlatformSchedulerService,
+# MediaButtonReceiver) are pinned by the keep rules aapt2 generates from the
+# manifest. The app's own reflective lookups
+# (MusicService.updateAudioOffload, ExoPlayerExtensions.setOffloadEnabled) probe
+# members by literal name and no-op silently when absent; R8's identifier-name-string
+# handling pins literal getMethod/forName targets automatically.
 -dontwarn androidx.media3.**
 
 ## JAudioTagger - suppress missing AWT/ImageIO classes (not available on Android)
@@ -192,7 +219,19 @@
 -keep class * extends androidx.glance.appwidget.GlanceAppWidgetReceiver { *; }
 
 # internal Ktor HTTP Client
--keep class io.ktor.** { *; }
+# No blanket keep: these are the rules Ktor itself ships in
+# ktor-utils META-INF/proguard/ktor.pro, inlined so shrinking of everything else
+# in io.ktor is no longer suppressed. AtomicFU-backed volatile fields are updated
+# by name and must not be renamed; client engines are discovered via ServiceLoader.
+-keepclassmembers class io.ktor.** {
+    volatile <fields>;
+}
+-keepclassmembernames class io.ktor.** {
+    volatile <fields>;
+}
+-keep class io.ktor.client.engine.** implements io.ktor.client.HttpClientEngineContainer {
+    public <init>();
+}
 -dontwarn io.ktor.**
 
 # engine HTTP Android/OkHttp Ktor

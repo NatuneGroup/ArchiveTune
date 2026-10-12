@@ -462,6 +462,63 @@ android {
 
     androidResources {
         generateLocaleConfig = true
+        // Restrict resource locales to the languages the app itself ships translations for
+        // (app/src/main/res/values-*) plus the base languages of every entry in the in-app
+        // language picker (LanguageCodeToName), so androidx/Play/Media3 translations for
+        // other locales are dropped from resources.arsc. Measured against the canary APK:
+        // ~1.16 MB of the stored (uncompressible) resources.arsc. Entries use aapt2 -c
+        // qualifier syntax ("de-rDE", "zh-rTW"); "in"/"iw" are the legacy Java codes aapt2
+        // normalizes to id/he, "nb" covers the picker's "no". The default (English) config
+        // is always kept and must not be listed.
+        localeFilters += listOf(
+            "en",
+            "en-rGB",
+            "ar",
+            "arz",
+            "bg",
+            "cs",
+            "da",
+            "de",
+            "de-rDE",
+            "el",
+            "es",
+            "et",
+            "fi",
+            "fr",
+            "hi",
+            "hr",
+            "hu",
+            "in",
+            "in-rID",
+            "it",
+            "iw",
+            "ja",
+            "jv",
+            "ko",
+            "lt",
+            "lv",
+            "ml",
+            "ms",
+            "nb",
+            "nl",
+            "pl",
+            "pt",
+            "pt-rBR",
+            "ro",
+            "ru",
+            "sa",
+            "sk",
+            "sr",
+            "sv",
+            "ta",
+            "th",
+            "tr",
+            "uk",
+            "ur",
+            "vi",
+            "zh-rCN",
+            "zh-rTW",
+        )
     }
 
     // Automix's native analysis front end (tempo/key/energy/structure DSP plus the mel and vocal
@@ -581,7 +638,6 @@ dependencies {
     implementation(libs.hilt.navigation)
     implementation(libs.datastore)
     implementation(libs.work.runtime)
-    implementation("androidx.browser:browser:1.10.0")
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
@@ -695,7 +751,6 @@ dependencies {
     // so it is not on :app's compile classpath). Declared here only so the NewPipe tier can drive
     // NewPipe's stream extractor directly; Gradle resolves one copy, so the APK does not grow.
     implementation(libs.metrolist.extractor)
-    implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

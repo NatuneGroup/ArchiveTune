@@ -62,6 +62,7 @@ import androidx.media3.common.Player.STATE_IDLE
 import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
@@ -326,7 +327,6 @@ import moe.rukamori.archivetune.extensions.mediaItems
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toEnum
-import moe.rukamori.archivetune.extensions.setOffloadEnabled
 import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.extensions.toPersistQueue
@@ -1245,7 +1245,6 @@ class MusicService :
                 .apply {
                     addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
                     addListener(audioEffectPlayerListener)
-                    setOffloadEnabled(false)
                 }
         audioAuthenticityContextByPlayer[localPlayer] = primaryAudioAuthenticityContext
         observeAudioTrackConfiguration(localPlayer)
@@ -3525,7 +3524,6 @@ class MusicService :
             .build()
             .apply {
                 addListener(secondaryCrossfadeListener)
-                setOffloadEnabled(false)
                 skipSilenceEnabled = localPlayer.skipSilenceEnabled
             }
         audioAuthenticityContextByPlayer[secondaryPlayer] = authenticityContext
@@ -10789,28 +10787,24 @@ class MusicService :
 
     private fun updateAudioOffload(enabled: Boolean) {
         val effectiveEnabled = enabled && !crossfadeEnabled
-        runCatching {
-            val builder = localPlayer.trackSelectionParameters.buildUpon()
-            val audioOffloadPrefsClass = Class.forName("androidx.media3.common.AudioOffloadPreferences")
-            val audioOffloadPrefsBuilderClass = Class.forName("androidx.media3.common.AudioOffloadPreferences\$Builder")
-
-            val modeFieldName = if (effectiveEnabled) "AUDIO_OFFLOAD_MODE_ENABLED" else "AUDIO_OFFLOAD_MODE_DISABLED"
-            val mode = audioOffloadPrefsClass.getField(modeFieldName).getInt(null)
-
-            val prefsBuilder = audioOffloadPrefsBuilderClass.getDeclaredConstructor().newInstance()
-            audioOffloadPrefsBuilderClass.getMethod("setAudioOffloadMode", Int::class.javaPrimitiveType).invoke(prefsBuilder, mode)
-            val prefs = audioOffloadPrefsBuilderClass.getMethod("build").invoke(prefsBuilder)
-
-            val setMethod =
-                builder.javaClass.methods.firstOrNull { method ->
-                    method.name == "setAudioOffloadPreferences" && method.parameterTypes.size == 1
-                }
-            if (setMethod != null) {
-                setMethod.invoke(builder, prefs)
-                localPlayer.trackSelectionParameters = builder.build()
+        // TrackSelectionParameters.AudioOffloadPreferences is the only offload switch left in
+        // media3 1.10: the stand-alone class and ExoPlayer.setOffloadSchedulingEnabled are gone,
+        // and setting the parameters both picks offload-compatible tracks and schedules offload.
+        val offloadMode =
+            if (effectiveEnabled) {
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+            } else {
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
             }
-        }
-        localPlayer.setOffloadEnabled(effectiveEnabled)
+        localPlayer.trackSelectionParameters =
+            localPlayer.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(
+                    TrackSelectionParameters.AudioOffloadPreferences
+                        .Builder()
+                        .setAudioOffloadMode(offloadMode)
+                        .build(),
+                ).build()
     }
 
     private fun updateWakeLock() {

@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.MessageDigest
 import java.util.Properties
 
 @DisableCachingByDefault(because = "Validation-only task has no outputs.")
@@ -92,7 +93,7 @@ val addonsBaseUrl =
     }
 fun addonSha256(relativePath: String): String =
     rootDir.resolve("addons/$relativePath").takeIf { it.isFile }?.let { file ->
-        java.security.MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+        MessageDigest.getInstance("SHA-256").digest(file.readBytes())
             .joinToString("") { "%02x".format(it) }
     } ?: ""
 

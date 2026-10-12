@@ -60,6 +60,14 @@ internal object QqMusicAudioProvider {
     private const val CACHE_LIMIT_BYTES = 300L * 1024 * 1024
 
     /**
+     * The budget for the whole attempt when a protected container has to be downloaded before it
+     * can be decrypted. The catalogue and url-minter calls keep the ordinary provider budget inside
+     * it; this only matters when the caller's own deadline allows a transfer that long, because a
+     * child deadline never outlives its parent.
+     */
+    private const val CONTAINER_TRANSFER_MS = 120_000L
+
+    /**
      * Generous read timeout, no overall cap: a lossless container is a large download and the
      * decrypt only starts once all of it has arrived.
      */
@@ -89,40 +97,68 @@ internal object QqMusicAudioProvider {
         cacheDir: File,
         trusted: Boolean,
     ): DirectStream? =
-        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+        AudioSourceAttemptScope.withinSuspending(CONTAINER_TRANSFER_MS) {
             withContext(Dispatchers.IO) {
-            if (title.isBlank()) return@withContext null
-            val searchQuery =
-                listOfNotNull(title, artists.firstOrNull())
-                    .joinToString(" ")
-                    .trim()
-            val candidates = QqMusicApi.search(searchQuery, CANDIDATE_LIMIT, session)
-            if (candidates.isEmpty()) {
-                Timber.tag(TAG).d("QQ Music catalogue had no hit for \"%s\"", searchQuery)
-                return@withContext null
-            }
-            for (candidate in candidates) {
-                val detail = QqMusicApi.detail(candidate.mid, session)
-                val matched =
-                    candidate.copy(
-                        title = candidate.title ?: detail?.title,
-                        artist = candidate.artist ?: detail?.artist,
-                        album = candidate.album ?: detail?.album,
-                        durationMs = detail?.durationMs ?: candidate.durationMs,
-                        mediaMid = detail?.mediaMid ?: candidate.mediaMid,
-                    )
-                // The gate runs before the stream call because that call is the expensive one. It
-                // reads only the matched* fields, so this probe never reaches the player.
-                if (!accepted(title, artists, album, durationMs, matched, trusted)) continue
-                val source = QqMusicApi.streamSource(session, matched.mid, matched.mediaMid, quality) ?: continue
-                val stream = playable(source, matched, quality, cacheDir, trusted) ?: continue
+                if (title.isBlank()) return@withContext null
+                val resolved =
+                    AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+                        findSource(title, artists, album, durationMs, quality, session, trusted)
+                    } ?: return@withContext null
+                val (matched, source) = resolved
+                val stream = playable(source, matched, cacheDir, trusted) ?: return@withContext null
                 Timber.tag(TAG).i("QQ Music resolved \"%s\" as %s (%s)", title, matched.mid, stream.label)
-                return@withContext stream
-            }
-            null
+                stream
             }
         }
-            ?: null
+
+    /**
+     * The first catalogue hit that clears the metadata gate and that this account is served, with
+     * the resource the url-minter named for it.
+     *
+     * A search hit already carries the title, artists, album, duration and resource id the gate and
+     * the url-minter need, so the detail call is only spent on a hit that lacks one of them.
+     */
+    private suspend fun findSource(
+        title: String,
+        artists: List<String>,
+        album: String?,
+        durationMs: Long?,
+        quality: QqAudioQuality,
+        session: QqMusicSession,
+        trusted: Boolean,
+    ): Pair<QqTrack, QqStreamSource>? {
+        val searchQuery =
+            listOfNotNull(title, artists.firstOrNull())
+                .joinToString(" ")
+                .trim()
+        val candidates = QqMusicApi.search(searchQuery, CANDIDATE_LIMIT, session)
+        if (candidates.isEmpty()) {
+            Timber.tag(TAG).d("QQ Music catalogue had no hit for \"%s\"", searchQuery)
+            return null
+        }
+        for (candidate in candidates) {
+            val complete =
+                candidate.title != null && candidate.artist != null && candidate.durationMs != null &&
+                    !candidate.mediaMid.isNullOrBlank()
+            val detail = if (complete) null else QqMusicApi.detail(candidate.mid, session)
+            val matched =
+                candidate.copy(
+                    title = candidate.title ?: detail?.title,
+                    artist = candidate.artist ?: detail?.artist,
+                    album = candidate.album ?: detail?.album,
+                    durationMs = detail?.durationMs ?: candidate.durationMs,
+                    mediaMid = detail?.mediaMid ?: candidate.mediaMid,
+                )
+            // The gate runs before the stream call because that call is the expensive one. It
+            // reads only the matched* fields, so this probe never reaches the player.
+            if (!accepted(title, artists, album, durationMs, matched, trusted)) continue
+            val source =
+                QqMusicApi.streamSource(session, matched.mid, matched.mediaMid, matched.songType, quality)
+                    ?: continue
+            return matched to source
+        }
+        return null
+    }
 
     /** The shared metadata gate, with the override bypass the playback layer uses. */
     private fun accepted(
@@ -171,42 +207,64 @@ internal object QqMusicAudioProvider {
 
     /**
      * Either hands the remote path straight to the player, or downloads a protected container,
-     * decrypts it, and hands over the local file.
+     * decrypts it, and hands over the local file. A container already decrypted for the same
+     * resource is reused without being fetched again.
      */
     private fun playable(
         source: QqStreamSource,
         matched: QqTrack,
-        quality: QqAudioQuality,
         cacheDir: File,
         trusted: Boolean,
     ): DirectStream? {
         val extension = source.url.substringBefore('?').substringAfterLast('.', "")
-        val protected = source.encrypted || source.ekey != null
-        if (!protected) {
+        if (!source.encrypted) {
             val (mimeType, codecs) = plainMimeType(extension)
-            return DirectStream(
-                uri = source.url,
-                mimeType = mimeType,
-                codecs = codecs,
-                contentLength = null,
-                label = "QQ Music ${source.tier}",
-                source = AudioSourceType.QQ,
-                matchedTitle = matched.title,
-                matchedArtist = matched.artist,
-                matchedAlbum = matched.album,
-                matchedDurationMs = matched.durationMs,
-                trustedDirectId = trusted,
+            return stream(source.url, mimeType, codecs, null, source, matched, trusted)
+        }
+
+        val directory = File(cacheDir, "qqmusic").apply { mkdirs() }
+        val stem = cacheStem(source.url)
+        cachedContainer(directory, stem)?.let { (file, container) ->
+            file.setLastModified(System.currentTimeMillis())
+            return stream(
+                android.net.Uri.fromFile(file).toString(),
+                container.mimeType,
+                codec(container, readHead(file)),
+                file.length(),
+                source,
+                matched,
+                trusted,
             )
         }
 
         val downloaded = download(source.url) ?: return null
         val decrypted = QmcDecryptor.decrypt(downloaded, extension, source.ekey) ?: return null
-        val file = cacheContainer(cacheDir, source.url, quality, decrypted) ?: return null
-        return DirectStream(
-            uri = android.net.Uri.fromFile(file).toString(),
-            mimeType = decrypted.container.mimeType,
-            codecs = codec(decrypted.container, decrypted.bytes),
-            contentLength = file.length(),
+        val file = cacheContainer(directory, stem, decrypted) ?: return null
+        return stream(
+            android.net.Uri.fromFile(file).toString(),
+            decrypted.container.mimeType,
+            codec(decrypted.container, decrypted.bytes),
+            file.length(),
+            source,
+            matched,
+            trusted,
+        )
+    }
+
+    private fun stream(
+        uri: String,
+        mimeType: String,
+        codecs: String,
+        contentLength: Long?,
+        source: QqStreamSource,
+        matched: QqTrack,
+        trusted: Boolean,
+    ): DirectStream =
+        DirectStream(
+            uri = uri,
+            mimeType = mimeType,
+            codecs = codecs,
+            contentLength = contentLength,
             label = "QQ Music ${source.tier}",
             source = AudioSourceType.QQ,
             matchedTitle = matched.title,
@@ -215,7 +273,6 @@ internal object QqMusicAudioProvider {
             matchedDurationMs = matched.durationMs,
             trustedDirectId = trusted,
         )
-    }
 
     private fun download(url: String): ByteArray? =
         runCatching {
@@ -240,31 +297,63 @@ internal object QqMusicAudioProvider {
         }
 
     /**
-     * Writes the decrypted payload under a name derived from the resource path, so a replay of the
-     * same track and tier reuses the file, and prunes the directory oldest-first past
-     * [CACHE_LIMIT_BYTES].
+     * The cache name for a resource. It comes from the resource name in the path — which already
+     * names the track and the tier — and not from the whole URL, whose `vkey` changes on every
+     * mint and would make every replay a miss.
+     */
+    private fun cacheStem(url: String): String {
+        val resource = url.substringBefore('?').substringAfterLast('/').substringBeforeLast('.')
+        return "qq_" + resource.filter { it.isLetterOrDigit() }.ifEmpty { url.hashCode().toString() }
+    }
+
+    private fun cachedContainer(
+        directory: File,
+        stem: String,
+    ): Pair<File, QmcContainer>? {
+        for (container in QmcContainer.entries) {
+            val file = File(directory, "$stem.${container.extension}")
+            if (file.isFile && file.length() > 0) return file to container
+        }
+        return null
+    }
+
+    private fun readHead(file: File): ByteArray =
+        runCatching {
+            file.inputStream().use { input ->
+                val head = ByteArray(256)
+                val read = input.read(head).coerceAtLeast(0)
+                head.copyOf(read)
+            }
+        }.getOrDefault(ByteArray(0))
+
+    /**
+     * Writes the decrypted payload under [stem], so a replay of the same resource reuses it, and
+     * prunes the directory oldest-first past [CACHE_LIMIT_BYTES]. The bytes go to a temporary file
+     * first, so an interrupted write never leaves a truncated file that a replay would take as whole.
      */
     private fun cacheContainer(
-        cacheDir: File,
-        url: String,
-        quality: QqAudioQuality,
+        directory: File,
+        stem: String,
         decrypted: QmcDecrypted,
     ): File? {
-        val directory = File(cacheDir, "qqmusic").apply { mkdirs() }
         val existing = directory.listFiles()?.sortedBy { it.lastModified() }.orEmpty()
-        var total = existing.sumOf { it.length() }
+        var total = existing.sumOf { it.length() } + decrypted.bytes.size
         for (stale in existing) {
             if (total <= CACHE_LIMIT_BYTES) break
             total -= stale.length()
             stale.delete()
         }
-        val name = "qq_${url.hashCode()}_${quality.name.lowercase()}.${decrypted.container.extension}"
-        val file = File(directory, name)
-        return runCatching { file.writeBytes(decrypted.bytes) }
-            .getOrElse { error ->
-                Timber.tag(TAG).w(error, "could not write the decrypted QQ Music file")
-                null
-            }.let { file }
+        val file = File(directory, "$stem.${decrypted.container.extension}")
+        val partial = File(directory, "$stem.part")
+        return runCatching {
+            partial.writeBytes(decrypted.bytes)
+            if (!partial.renameTo(file)) error("could not move the decrypted file into place")
+            file
+        }.getOrElse { error ->
+            partial.delete()
+            Timber.tag(TAG).w(error, "could not write the decrypted QQ Music file")
+            null
+        }
     }
 
     private fun codec(

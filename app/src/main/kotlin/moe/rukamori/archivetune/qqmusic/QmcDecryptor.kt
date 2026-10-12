@@ -681,17 +681,21 @@ internal object QmcDecryptor {
         val extension = encryptedExtension.lowercase().let { if (it.startsWith(".")) it else ".$it" }
 
         val footer = QmcEkey.findFooter(data)
-        val keyText = footer.keyText ?: ekey?.trim()?.takeIf { it.isNotEmpty() }
+        val disclosed = ekey?.trim()?.takeIf { it.isNotEmpty() }
+        // A footer key comes first, then the key the service disclosed. The second matters when the
+        // tail of a footer-less stream happens to read as a length word: that "key" is audio bytes,
+        // and the disclosed one is the real key.
+        val keyTexts = listOfNotNull(footer.keyText, disclosed).distinct()
         val plain: ByteArray
-        if (keyText != null) {
-            val key =
-                QmcEkey.derive(keyText) ?: run {
-                    Timber.tag(TAG).w("QQ Music container carried a key that could not be derived")
+        if (keyTexts.isNotEmpty()) {
+            if (footer.audioLength < 16) return null
+            val cipher =
+                keyTexts.firstNotNullOfOrNull { keyText -> cipherFor(keyText, data) } ?: run {
+                    Timber.tag(TAG).w("QQ Music container %s: no key decrypts it to audio", extension)
                     return null
                 }
-            if (footer.audioLength < 16) return null
             plain = data.copyOfRange(0, footer.audioLength)
-            if (key.size > 300) QmcRc4Cipher(key).decrypt(0, plain) else QmcMapCipher(key).decrypt(0, plain)
+            cipher(plain)
         } else {
             if (footer.kind != QmcEkey.FooterKind.NONE) {
                 Timber.tag(TAG).i("QQ Music container %s (%s) carries no key", extension, footer.kind)
@@ -709,4 +713,31 @@ internal object QmcDecryptor {
         Timber.tag(TAG).d("QQ Music container %s decrypted to %s", extension, container)
         return QmcDecrypted(plain, container)
     }
+
+    /**
+     * The stream cipher [keyText] selects, or null when it cannot be derived or does not turn the
+     * head of [data] into a container signature. Only the head is decrypted here, so a wrong key
+     * costs a few bytes rather than a pass over the whole file.
+     */
+    private fun cipherFor(
+        keyText: String,
+        data: ByteArray,
+    ): ((ByteArray) -> Unit)? {
+        val key =
+            QmcEkey.derive(keyText) ?: run {
+                Timber.tag(TAG).w("QQ Music container key could not be derived")
+                return null
+            }
+        val cipher: (ByteArray) -> Unit =
+            if (key.size > 300) {
+                QmcRc4Cipher(key).let { rc4 -> { buffer: ByteArray -> rc4.decrypt(0, buffer) } }
+            } else {
+                QmcMapCipher(key).let { map -> { buffer: ByteArray -> map.decrypt(0, buffer) } }
+            }
+        val head = data.copyOfRange(0, minOf(data.size, HEAD_PROBE_BYTES))
+        cipher(head)
+        return if (QmcContainer.sniff(head) != null) cipher else null
+    }
+
+    private const val HEAD_PROBE_BYTES = 16
 }

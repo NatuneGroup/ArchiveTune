@@ -427,9 +427,24 @@ internal object QqQrLogin {
         code: String,
         nickname: String?,
     ): QqMusicSession? {
+        // The web profile of the comm block, as an anonymous caller sends it, plus the QQ login type.
         val body =
             buildJsonObject {
-                putJsonObject("comm") { put("tmeLoginType", 2) }
+                putJsonObject("comm") {
+                    put("ct", "24")
+                    put("cv", "4747474")
+                    put("platform", "yqq.json")
+                    put("chid", "0")
+                    put("uin", "0")
+                    put("g_tk", "5381")
+                    put("g_tk_new_20200303", "5381")
+                    put("format", "json")
+                    put("inCharset", "utf-8")
+                    put("outCharset", "utf-8")
+                    put("notice", "0")
+                    put("need_new_code", "1")
+                    put("tmeLoginType", "2")
+                }
                 putJsonObject("req_0") {
                     put("module", "QQConnectLogin.LoginServer")
                     put("method", "QQLogin")
@@ -452,18 +467,27 @@ internal object QqQrLogin {
                     Timber.tag(TAG).w(error, "the login exchange body was not a JSON object")
                     return null
                 }
+        val code = parsed["req_0"]?.jsonObjectOrNull()?.textOrNull("code")
+        if (code != null && code != "0") {
+            // 20279 is the account's device limit, 20277/20278/20450 a restricted account, 104604
+            // rate limiting; the reply is logged as-is so the reason is visible.
+            Timber.tag(TAG).w("the login exchange was refused with code %s", code)
+            return null
+        }
         val credential = credentialOf(parsed) ?: run {
             Timber.tag(TAG).w("the login exchange returned no credential")
             return null
         }
-        val uin = credential.textOrNull("musicid") ?: credential.textOrNull("str_musicid")
-        val musicKey = credential.textOrNull("musickey")
-        if (uin.isNullOrBlank() || musicKey.isNullOrBlank()) {
-            Timber.tag(TAG).w("the login exchange credential held no account id or ticket")
-            return null
+        val session =
+            QqMusicSession.fromCredential(credential, nickname) ?: run {
+                Timber.tag(TAG).w("the login exchange credential held no account id or ticket")
+                return null
+            }
+        if (session.refresh?.refreshKey.isNullOrBlank()) {
+            Timber.tag(TAG).w("the login reply carried no refresh_key; the ticket cannot be renewed")
         }
-        Timber.tag(TAG).i("QQ Music signed in as %s", nickname ?: uin)
-        return QqMusicSession(uin = uin, musicKey = musicKey, nickname = nickname)
+        Timber.tag(TAG).i("QQ Music signed in as %s", nickname ?: session.uin)
+        return session
     }
 
     /** The credential object, wherever the envelope put it. */

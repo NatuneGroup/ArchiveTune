@@ -124,7 +124,8 @@ internal object QqAudioQualityFormats {
         when (quality) {
             QqAudioQuality.LOSSLESS -> QqAudioFormat("F0M0", ".mflac", "FLAC")
             QqAudioQuality.HIGH -> QqAudioFormat("O8M0", ".mgg", "320 kbps")
-            QqAudioQuality.STANDARD -> QqAudioFormat("O4M0", ".mgg", "128 kbps")
+            // O4M0 is the 96 kbps Ogg tier; there is no encrypted 128 kbps resource.
+            QqAudioQuality.STANDARD -> QqAudioFormat("O4M0", ".mgg", "96 kbps")
         }
 
     /** True when [url]'s path names an encrypted container. */
@@ -143,6 +144,8 @@ internal data class QqTrack(
     val durationMs: Long?,
     val mediaMid: String? = null,
     val coverUrl: String? = null,
+    /** The catalogue's `type` for the song, which the url-minter takes back as `songtype`. */
+    val songType: Int = 0,
 )
 
 /**
@@ -179,6 +182,14 @@ internal object QqMusicApi {
      * back, so every reply is looked up under this and under the other spelling clients use.
      */
     private const val ENVELOPE_KEY = "req_0"
+
+    private val EVKEY_MODULE = "music.vkey.GetEVkey" to "CgiGetEVkey"
+
+    /**
+     * Sub-response codes that mean the ticket itself is no longer honoured (L-1124/QQMusicApi maps
+     * them to `CredentialExpiredError`).
+     */
+    private val TICKET_REJECTED_CODES = setOf(1000, 104400, 104401)
 
     /** `search_type: 0` is a song search. */
     private const val SEARCH_TYPE_SONG = 0
@@ -270,9 +281,10 @@ internal object QqMusicApi {
     ): Boolean =
         withContext(Dispatchers.IO) {
             if (query.isBlank()) return@withContext false
-            val response = post(searchBody(query, 1, session), session)
-            val sub = response?.let(::subResponse)
-            sub?.get("code")?.stringOrNull()?.toIntOrNull() == 0
+            val response = post(searchBody(query, 1, session), session) ?: return@withContext false
+            val code = subCode(response)
+            if (code != 0) Timber.tag(TAG).w("QQ Music catalogue check answered code=%s", code?.toString() ?: "none")
+            code == 0
         }
 
     private fun searchBody(
@@ -455,47 +467,75 @@ internal object QqMusicApi {
      * The playable resource for [mid], or null when this account is not served one.
      *
      * The plain container is asked for first. Only if the service refuses that does the encrypted
-     * call happen, with the encrypted prefix and `songtype: 1` — the combination that makes the
-     * service disclose the `ekey` alongside the path. A refusal at both tiers is reported as "not
-     * available to this account" and the resolver moves on.
+     * resource get asked for, through `music.vkey.GetEVkey`, which discloses the `ekey` alongside
+     * the path. A refusal at both is reported as "not available to this account" and the resolver
+     * moves on.
      */
     suspend fun streamSource(
         session: QqMusicSession,
         mid: String,
         mediaMid: String?,
+        songType: Int,
         quality: QqAudioQuality,
     ): QqStreamSource? =
         withContext(Dispatchers.IO) {
-            mintUrl(session, mid, mediaMid, QqAudioQualityFormats.plain(quality), encrypted = false)
-                ?: mintUrl(session, mid, mediaMid, QqAudioQualityFormats.encrypted(quality), encrypted = true)
+            val plain = QqAudioQualityFormats.plain(quality)
+            when (val outcome = mintUrl(session, mid, mediaMid, songType, plain, encrypted = false)) {
+                is MintOutcome.Minted -> outcome.source
+                MintOutcome.TicketRejected -> null
+                MintOutcome.NotServed ->
+                    (
+                        mintUrl(
+                            session,
+                            mid,
+                            mediaMid,
+                            songType,
+                            QqAudioQualityFormats.encrypted(quality),
+                            encrypted = true,
+                        ) as? MintOutcome.Minted
+                    )?.source
+            }
         }
+
+    private sealed interface MintOutcome {
+        data class Minted(val source: QqStreamSource) : MintOutcome
+
+        /** The service answered and named no path for this resource. */
+        data object NotServed : MintOutcome
+
+        /** The ticket itself was refused, so no other resource name will fare better. */
+        data object TicketRejected : MintOutcome
+    }
 
     /**
      * Mints a URL for one resource name.
      *
-     * Tries the current module (`music.vkey.GetVkey` / `UrlGetVkey`) and, if the service answers
-     * without a path, the older but still working `vkey.GetVkeyServer` / `CgiGetVkey`. The
-     * encrypted tier uses `music.vkey.GetEVkey` / `CgiGetEVkey`, which is the only call that
-     * returns the `ekey`; asking it for anything but an encrypted name, or with `songtype: 0`,
-     * yields an error instead of a key.
+     * The plain name is asked of `music.vkey.GetVkey` / `UrlGetVkey` (L-1124/QQMusicApi's
+     * `get_song_urls`), then of `music.vkey.GetEVkey` / `CgiGetEVkey` — which also mints plain
+     * names, and has been observed to do so for an entitled account that `UrlGetVkey` answered
+     * with 104003 (music-assistant/support#6628) — and last of the legacy `vkey.GetVkeyServer` /
+     * `CgiGetVkey`. An encrypted name only goes to `GetEVkey`, the one call that returns an `ekey`.
+     * `songtype` is the song's own catalogue type, as the maintained client sends it.
      */
     private fun mintUrl(
         session: QqMusicSession,
         mid: String,
         mediaMid: String?,
+        songType: Int,
         format: QqAudioFormat,
         encrypted: Boolean,
-    ): QqStreamSource? {
+    ): MintOutcome {
         // The resource name doubles the mid when the catalogue exposes no separate resource id.
         val resourceId = mediaMid?.takeIf { it.isNotBlank() } ?: "$mid$mid"
         val filename = "${format.prefix}$resourceId${format.extension}"
 
         val attempts =
             if (encrypted) {
-                listOf("music.vkey.GetEVkey" to "CgiGetEVkey")
+                listOf(EVKEY_MODULE)
             } else {
                 listOf(
                     "music.vkey.GetVkey" to "UrlGetVkey",
+                    EVKEY_MODULE,
                     "vkey.GetVkeyServer" to "CgiGetVkey",
                 )
             }
@@ -511,21 +551,28 @@ internal object QqMusicApi {
                             put("guid", guid())
                             putJsonArray("songmid") { add(mid) }
                             putJsonArray("filename") { add(filename) }
-                            if (encrypted) {
-                                putJsonArray("songtype") { add(1) }
-                                put("ctx", 1)
-                            } else {
-                                putJsonArray("songtype") { add(0) }
-                                put("ctx", 0)
-                            }
-                            // The legacy minter names these explicitly; the current one ignores
-                            // them, and sending them either way keeps one param builder for both.
+                            putJsonArray("songtype") { add(songType) }
+                            put("ctx", 0)
+                            // The legacy minter names these explicitly; the current ones ignore
+                            // them, and sending them either way keeps one param builder for all.
                             put("loginflag", 1)
                             put("platform", "20")
                         }
                     }
                 }
-            val data = post(body, session)?.let(::businessData) ?: continue
+            val response = post(body, session) ?: continue
+            val code = subCode(response)
+            if (code != null && code != 0) {
+                if (code in TICKET_REJECTED_CODES) {
+                    Timber
+                        .tag(TAG)
+                        .w("%s refused the account ticket (code=%d); sign in to QQ Music again", module, code)
+                    return MintOutcome.TicketRejected
+                }
+                Timber.tag(TAG).w("%s answered code=%d for %s", module, code, filename)
+                continue
+            }
+            val data = businessData(response) ?: continue
             val entry =
                 data["midurlinfo"]
                     ?.jsonArrayOrNull()
@@ -533,26 +580,44 @@ internal object QqMusicApi {
                     ?.jsonObjectOrNull()
                     ?: continue
             val purl = entry["purl"]?.stringOrNull().orEmpty()
-            if (!purl.startsWith("http")) {
+            if (purl.isBlank()) {
+                val result = entry["result"]?.stringOrNull()?.toIntOrNull()
                 Timber
                     .tag(TAG)
                     .i(
-                        "%s gave no path for %s (result=%s); this account is not served that tier",
+                        "%s gave no path for %s (result=%s: %s)",
                         module,
                         filename,
-                        entry["result"]?.stringOrNull() ?: "?",
+                        result?.toString() ?: "?",
+                        describeUrlResult(result),
                     )
                 continue
             }
-            return QqStreamSource(
-                url = absoluteUrl(data, purl),
-                encrypted = encrypted || QqAudioQualityFormats.isEncryptedUrl(purl),
-                ekey = entry["ekey"]?.stringOrNull(),
-                tier = format.tier,
+            val protected = encrypted || QqAudioQualityFormats.isEncryptedUrl(purl)
+            return MintOutcome.Minted(
+                QqStreamSource(
+                    url = absoluteUrl(data, purl),
+                    encrypted = protected,
+                    ekey = if (protected) entry["ekey"]?.stringOrNull() else null,
+                    tier = format.tier,
+                ),
             )
         }
-        return null
+        return MintOutcome.NotServed
     }
+
+    /**
+     * The per-file `result` codes L-1124/QQMusicApi documents (docs/tutorial/download.md). The
+     * service names no code for a regional refusal; an unexplained empty path is the usual sign
+     * of one, so that case says so.
+     */
+    private fun describeUrlResult(result: Int?): String =
+        when (result) {
+            104003 -> "no permission: the account is not entitled to this tier, or is not signed in"
+            104004 -> "the service could not issue a vkey"
+            104013 -> "playback restricted on this device"
+            else -> "no reason given; QQ Music withholds many tracks from addresses outside mainland China"
+        }
 
     /**
      * The CDN prefix plus the response's relative path.
@@ -587,6 +652,11 @@ internal object QqMusicApi {
     private fun businessData(response: JsonObject): JsonObject? =
         subResponse(response)?.get("data")?.jsonObjectOrNull()
 
+    /** The sub-response's own status, or null when the reply carries none. */
+    private fun subCode(response: JsonObject): Int? =
+        subResponse(response)?.get("code")?.stringOrNull()?.toIntOrNull()
+            ?: response["code"]?.stringOrNull()?.toIntOrNull()?.takeIf { it != 0 }
+
     /**
      * The desktop identity block, which is the one documented profile that carries the account
      * without also needing an Android device session or the web client's page context.
@@ -604,16 +674,62 @@ internal object QqMusicApi {
         }
 
     /**
-     * The reduced block the url-minter is called with in practice: the ticket travels as `authst`,
-     * which is how the song-URL call is documented by the maintained clients.
+     * The reduced block the url-minter and the account server are called with: the ticket travels
+     * as `authst` and its login type as `tmeLoginType`. This is the shape verified against
+     * `GetVkey`/`GetEVkey` in music-assistant/support#6628; without `tmeLoginType` the server
+     * cannot tell a QQ ticket from a WeChat one.
      */
     private fun authComm(session: QqMusicSession): JsonObject =
         buildJsonObject {
-            put("uin", session.uin)
-            put("format", "json")
-            put("ct", 19)
+            put("ct", 24)
             put("cv", 0)
+            put("format", "json")
+            put("uin", session.uin)
             put("authst", session.musicKey)
+            put("tmeLoginType", session.loginType)
+        }
+
+    /**
+     * A new ticket for [session], minted by the account server from the refresh material the login
+     * reply carried, or null when there is none or the server refuses it. This is
+     * `music.login.LoginServer` / `Login` with `loginMode: 2`, the parameters split by login type
+     * exactly as L-1124/QQMusicApi's `refresh_credential` sends them.
+     */
+    suspend fun refresh(session: QqMusicSession): QqMusicSession? =
+        withContext(Dispatchers.IO) {
+            val material = session.refresh ?: return@withContext null
+            val body =
+                buildJsonObject {
+                    put("comm", authComm(session))
+                    putJsonObject(ENVELOPE_KEY) {
+                        put("module", "music.login.LoginServer")
+                        put("method", "Login")
+                        putJsonObject("param") {
+                            put("openid", material.openId.orEmpty())
+                            put("refresh_token", material.refreshToken.orEmpty())
+                            put("musickey", session.musicKey)
+                            put("refresh_key", material.refreshKey.orEmpty())
+                            put("loginMode", 2)
+                            if (session.loginType == 1) {
+                                put("str_musicid", session.uin)
+                                put("unionid", material.unionId.orEmpty())
+                            } else {
+                                put("access_token", material.accessToken.orEmpty())
+                                put("expired_in", material.expiredAt)
+                                put("musicid", session.uin.toLongOrNull() ?: 0L)
+                            }
+                        }
+                    }
+                }
+            val response = post(body, session) ?: return@withContext null
+            val code = subCode(response)
+            if (code != null && code != 0) {
+                Timber.tag(TAG).w("the account server refused the ticket refresh (code=%d)", code)
+                return@withContext null
+            }
+            val data = businessData(response) ?: return@withContext null
+            val credential = data["credential"]?.jsonObjectOrNull() ?: data
+            QqMusicSession.fromCredential(credential, session.nickname, material)
         }
 
     private fun post(
@@ -717,6 +833,7 @@ internal object QqMusicApi {
                 file?.get("media_mid")?.stringOrNull()
                     ?: element["media_mid"]?.stringOrNull(),
             coverUrl = coverUrl(element),
+            songType = element["type"]?.stringOrNull()?.toIntOrNull() ?: 0,
         )
     }
 

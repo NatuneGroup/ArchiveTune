@@ -645,11 +645,8 @@ fun buildSettingsGroups(
             title = stringResource(R.string.additional_downloads),
             subtitle = stringResource(R.string.additional_downloads_subtitle),
             accentColor = MaterialTheme.colorScheme.secondary,
-            keywords = listOf("additional downloads", "language pack", "translation", "translate", "localization", "i18n", "fonts", "addons"),
+            keywords = listOf("additional downloads", "additional resources", "language pack", "translation", "translate", "localization", "i18n", "dictionary", "japanese", "fonts", "spatialflow font", "addons"),
             onClick = { navController.navigate("settings/language_packs") },
-            // Lyrics sub-page anchor, kept in the search index so existing search shortcuts still
-            // work.
-            hidden = true,
         )
     val behavior =
         SettingsItem(
@@ -1132,7 +1129,6 @@ fun buildSettingsGroups(
                     lyrics,
                     lyricsProviders,
                     lyricsRomanisation,
-                    languagePacks,
                     content,
                     behavior,
                 ),
@@ -1160,7 +1156,7 @@ fun buildSettingsGroups(
         ),
         SettingsGroup(
             title = stringResource(R.string.storage),
-            items = listOf(storage, downloads, backupRestore),
+            items = listOf(storage, downloads, languagePacks, backupRestore),
         ),
         SettingsGroup(
             title = stringResource(R.string.about),

@@ -66,11 +66,13 @@ Also shipped since this note was written:
 - **Flamingo player** — `PlayerDesignStyle.FLAMINGO` (Appearance → Player), 4nx3b's album / lyrics /
   queue pager with its own floating-light backdrop. Its two options, `flamingo_background_effect`
   (moving blur) and `flamingo_volume_bar`, render only while it is the selected style.
-- **Additional downloads** (`settings/language_packs`, reached from Lyrics settings and search) —
-  the Japanese dictionary plus files kept out of the APK in `addons/` (today the SpatialFlow
-  typeface). `AddonPack` fetches them from the last commit that touched `addons/` and checks the
-  SHA-256 baked in at build time, so each release keeps getting its own bytes; anything that reads
-  an addon must work without it.
+- **Additional downloads** (`settings/language_packs`, search key `language_packs`) — a visible row
+  in the main page's Storage group (after Downloads), also linked from Lyrics settings and found
+  by search. It holds the Japanese dictionary (about 13 MB) plus files kept out of the APK in
+  `addons/` (today the SpatialFlow typeface, about 4 MB). `AddonPack` fetches them from the last
+  commit that touched `addons/` and checks the SHA-256 baked in at build time, so each release
+  keeps getting its own bytes; anything that reads an addon must work without it. Resources under
+  1 MB belong in the APK instead of this screen; both current packs are well above that.
 
 Not complete, and must not be described as shipped: a non-locking preset that writes those
 sub-controls independently, YouTube/Spotify Apple-style *Home variants* (the Home selector switches

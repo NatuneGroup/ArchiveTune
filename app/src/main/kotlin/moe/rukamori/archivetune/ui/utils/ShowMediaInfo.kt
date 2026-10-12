@@ -95,13 +95,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Locale
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import androidx.compose.runtime.snapshotFlow
@@ -112,6 +110,7 @@ import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.codecLabel
 import moe.rukamori.archivetune.db.entities.isLossless
 import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
+import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime
 import moe.rukamori.archivetune.playback.dsp.EngineRuntime
 import androidx.media3.common.C
@@ -247,6 +246,10 @@ fun ShowMediaInfo(videoId: String) {
     val qualityLabel = stringResource(R.string.ti_quality)
     val workedProviderLabel = stringResource(R.string.ti_worked_provider)
     val engineLabel = stringResource(R.string.ti_engine)
+    val engineOffText = stringResource(R.string.ti_engine_off)
+    val bitPerfectUsbTitle = stringResource(R.string.bit_perfect_usb_title)
+    val bitPerfectUsbStatus by BitPerfectUsbOutput.status.collectAsStateWithLifecycle()
+    val enginePendingText = stringResource(R.string.ti_engine_pending)
     val normalizationLabel = stringResource(R.string.ti_normalization)
     val streamDeliveryLabel = stringResource(R.string.ti_stream_delivery)
     val protocolLabel = stringResource(R.string.ti_protocol)
@@ -642,7 +645,10 @@ fun ShowMediaInfo(videoId: String) {
                                                     MediaInfoDetail(
                                                         iconRes = R.drawable.graphic_eq,
                                                         label = engineLabel,
-                                                        value = facts?.engineName ?: "None",
+                                                        value =
+                                                            facts?.pendingEngineName?.let { enginePendingText.format(it) }
+                                                                ?: facts?.engineName
+                                                                ?: engineOffText,
                                                     ),
                                                 )
                                                 add(
@@ -650,7 +656,7 @@ fun ShowMediaInfo(videoId: String) {
                                                         iconRes = R.drawable.bolt,
                                                         label = workedProviderLabel,
                                                         value =
-                                                            liveStreamInfo?.label
+                                                            liveStreamInfo?.source?.let(::providerDisplayName)
                                                                 ?: if (isLocal) "Local Library" else unknownText,
                                                     ),
                                                 )
@@ -725,6 +731,8 @@ fun ShowMediaInfo(videoId: String) {
                                                         value =
                                                             when {
                                                                 factsHere?.usbExclusive == true -> "USB Exclusive (Direct DAC)"
+                                                                bitPerfectUsbStatus is BitPerfectUsbOutput.Status.Active ->
+                                                                    bitPerfectUsbTitle
                                                                 EngineRuntime.tryptifyUsbPinActive -> "USB Framework (Pinned Route)"
                                                                 else -> "Default Android System Mixer"
                                                             },
@@ -1449,6 +1457,7 @@ class TrackInfoViewModel @Inject constructor(
     usbDacMonitor: UsbDacMonitor,
 ) : ViewModel() {
     data class Polled(
+        val routedName: String?,
         val halSampleRateHz: Int?,
         val usbExclusive: Boolean,
         val usbVendorId: Int,
@@ -1457,43 +1466,54 @@ class TrackInfoViewModel @Inject constructor(
         val tryptifyUsbBits: Int,
     )
 
-    private val polled = flow {
-        while (true) {
-            val runtime = EngineRuntime
-            emit(
-                Polled(
-                    halSampleRateHz = outputProbe.halSampleRateHz(),
-                    usbExclusive = runtime.usbExclusiveActive,
-                    usbVendorId = usbDacMonitor.state.value.dac?.vendorId ?: -1,
-                    usbProductId = usbDacMonitor.state.value.dac?.productId ?: -1,
-                    tryptifyUsbRateHz = runtime.tryptifyUsbStream?.sampleRateHz ?: 0,
-                    tryptifyUsbBits = runtime.tryptifyUsbStream?.bitsPerSample ?: 0,
-                ),
-            )
-            delay(POLL_INTERVAL_MS)
-        }
+    private data class UsbRuntime(val exclusive: Boolean, val rateHz: Int, val bits: Int)
+
+    // Every EngineRuntime publisher bumps its revision, so reading it here re-runs the block on
+    // any change without a timer.
+    private val usbRuntime = snapshotFlow {
+        EngineRuntime.revision
+        val stream = EngineRuntime.tryptifyUsbStream
+        UsbRuntime(EngineRuntime.usbExclusiveActive, stream?.sampleRateHz ?: 0, stream?.bitsPerSample ?: 0)
     }
 
+    // Device and USB listeners are registered only while the sheet collects [facts].
+    private val polled =
+        combine(outputProbe.snapshots, usbDacMonitor.watch(), usbRuntime) { output, usb, runtime ->
+            Polled(
+                routedName = output.routed?.name,
+                halSampleRateHz = output.halSampleRateHz,
+                usbExclusive = runtime.exclusive,
+                usbVendorId = usb.dac?.vendorId ?: -1,
+                usbProductId = usb.dac?.productId ?: -1,
+                tryptifyUsbRateHz = runtime.rateHz,
+                tryptifyUsbBits = runtime.bits,
+            )
+        }
+
+    private data class EngineFacts(
+        val engineName: String?,
+        val pendingEngineName: String?,
+        val outputFloat: Boolean,
+        val tryptifyActive: Boolean,
+    )
+
+    // The active engine is what the router actually runs; a wanted engine that is not running yet
+    // (switched on mid-track, or held by a crossfade's other player) is shown as pending.
     private val engineFacts = snapshotFlow {
         val active = EngineRuntime.activeEngineState
         val wanted = EngineRuntime.wantedEngineState
-        val engineName =
-            when {
-                active == AudioEngineRouterProcessor.Engine.TRYPTIFY -> "Tryptify"
-                active == AudioEngineRouterProcessor.Engine.LASTWAVE -> "LastWave"
-                wanted == AudioEngineRouterProcessor.Engine.TRYPTIFY &&
-                    EngineRuntime.tryptifyAvailableState -> "Tryptify"
-                wanted == AudioEngineRouterProcessor.Engine.LASTWAVE &&
-                    EngineRuntime.lastwaveAvailableState -> "LastWave"
-                else -> "None"
-            }
-        engineName to EngineRuntime.outputFloatState
+        EngineFacts(
+            engineName = engineDisplayName(active),
+            pendingEngineName = engineDisplayName(wanted).takeIf { wanted != active },
+            outputFloat = EngineRuntime.outputFloatState,
+            tryptifyActive = active == AudioEngineRouterProcessor.Engine.TRYPTIFY,
+        )
     }
 
     private data class RuntimeFacts(
+        val routedName: String?,
         val halSampleRateHz: Int?,
-        val engineName: String,
-        val outputFloat: Boolean,
+        val engine: EngineFacts,
         val usbExclusive: Boolean,
         val usbVendorId: Int,
         val usbProductId: Int,
@@ -1502,11 +1522,11 @@ class TrackInfoViewModel @Inject constructor(
     )
 
     private val runtimeFacts: Flow<RuntimeFacts> =
-        combine(polled, engineFacts) { poll, (engineName, outputFloat) ->
+        combine(polled, engineFacts) { poll, engine ->
             RuntimeFacts(
+                routedName = poll.routedName,
                 halSampleRateHz = poll.halSampleRateHz,
-                engineName = engineName,
-                outputFloat = outputFloat,
+                engine = engine,
                 usbExclusive = poll.usbExclusive,
                 usbVendorId = poll.usbVendorId,
                 usbProductId = poll.usbProductId,
@@ -1525,7 +1545,8 @@ class TrackInfoViewModel @Inject constructor(
         val chainLayoutName: String?,
         val routedName: String?,
         val halSampleRateHz: Int?,
-        val engineName: String,
+        val engineName: String?,
+        val pendingEngineName: String?,
         val outputFloat: Boolean,
         val usbExclusive: Boolean,
         val usbVendorId: Int,
@@ -1538,21 +1559,23 @@ class TrackInfoViewModel @Inject constructor(
         monitor.stream,
         monitor.decoderName,
         channelDetector.state,
-        outputProbe.routed,
         runtimeFacts,
-    ) { stream, decoder, chain, routed, runtime ->
+    ) { stream, decoder, chain, runtime ->
         PipelineFacts(
             decodedBits = stream?.pcmBits,
             decodedFloat = stream?.pcmIsFloat == true,
             decodedRateHz = stream?.sampleRate,
             decodedChannels = stream?.channelCount,
             decoderName = decoder,
-            chainChannels = chain?.channelCount,
-            chainLayoutName = chain?.layoutName,
-            routedName = routed?.name,
+            // The channel detector sits inside the Tryptify chain; with any other path its state
+            // is left over from the last time Tryptify ran.
+            chainChannels = chain?.channelCount.takeIf { runtime.engine.tryptifyActive },
+            chainLayoutName = chain?.layoutName.takeIf { runtime.engine.tryptifyActive },
+            routedName = runtime.routedName,
             halSampleRateHz = runtime.halSampleRateHz,
-            engineName = runtime.engineName,
-            outputFloat = runtime.outputFloat,
+            engineName = runtime.engine.engineName,
+            pendingEngineName = runtime.engine.pendingEngineName,
+            outputFloat = runtime.engine.outputFloat,
             usbExclusive = runtime.usbExclusive,
             usbVendorId = runtime.usbVendorId,
             usbProductId = runtime.usbProductId,
@@ -1560,12 +1583,19 @@ class TrackInfoViewModel @Inject constructor(
             tryptifyUsbBits = runtime.tryptifyUsbBits,
         )
     }.flowOn(Dispatchers.Default)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(POLL_INTERVAL_MS), null)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS), null)
 
     private companion object {
-        const val POLL_INTERVAL_MS = 1000L
+        const val STOP_TIMEOUT_MS = 1000L
     }
 }
+
+private fun engineDisplayName(engine: AudioEngineRouterProcessor.Engine): String? =
+    when (engine) {
+        AudioEngineRouterProcessor.Engine.TRYPTIFY -> "Tryptify"
+        AudioEngineRouterProcessor.Engine.LASTWAVE -> "LastWave"
+        AudioEngineRouterProcessor.Engine.NONE -> null
+    }
 
 internal fun formatHz(hz: Int): String =
     when {

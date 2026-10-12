@@ -15,13 +15,16 @@ import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import javax.inject.Inject
 import javax.inject.Singleton
 
 data class RoutedOutput(val name: String, val typeLabel: String)
+
+data class OutputSnapshot(val routed: RoutedOutput?, val halSampleRateHz: Int?)
 
 @Singleton
 class OutputDeviceProbe @Inject constructor(
@@ -30,25 +33,26 @@ class OutputDeviceProbe @Inject constructor(
     private val audioManager =
         appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
-    private val handler = Handler(Looper.getMainLooper())
+    /**
+     * The device callback is registered only while this is collected, so a closed media-info
+     * sheet leaves nothing listening. Registration itself reports the connected devices, which
+     * provides the first value.
+     */
+    val snapshots: Flow<OutputSnapshot> =
+        callbackFlow {
+            val callback =
+                object : AudioDeviceCallback() {
+                    override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
+                        trySend(OutputSnapshot(currentOutput(), halSampleRateHz()))
+                    }
 
-    private val _routed = MutableStateFlow(currentOutput())
-    val routed: StateFlow<RoutedOutput?> = _routed.asStateFlow()
-
-    init {
-        audioManager.registerAudioDeviceCallback(
-            object : AudioDeviceCallback() {
-                override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) {
-                    _routed.value = currentOutput()
+                    override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
+                        trySend(OutputSnapshot(currentOutput(), halSampleRateHz()))
+                    }
                 }
-
-                override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) {
-                    _routed.value = currentOutput()
-                }
-            },
-            handler,
-        )
-    }
+            audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+            awaitClose { audioManager.unregisterAudioDeviceCallback(callback) }
+        }.distinctUntilChanged()
 
     fun halSampleRateHz(): Int? =
         audioManager.getProperty(AudioManager.PROPERTY_OUTPUT_SAMPLE_RATE)

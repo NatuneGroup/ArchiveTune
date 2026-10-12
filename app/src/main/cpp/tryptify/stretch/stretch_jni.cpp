@@ -88,6 +88,14 @@ struct Engine {
      * writer is a coroutine and may spin.
      */
     std::atomic_flag busy = ATOMIC_FLAG_INIT;
+    /**
+     * Transposition published by the UI and taken up at the start of the next
+     * process() call. A slider drag sends a stream of these; taking `busy` for
+     * each one made the setter spin and the playback thread pass blocks
+     * through unpitched while it did.
+     */
+    std::atomic<float> pendingSemitones{0.0f};
+    std::atomic<bool> semitonesDirty{false};
     // Planar scratch. Allocated once, at construction, so process() never does.
     std::vector<float> planarIn;
     std::vector<float> planarOut;
@@ -128,6 +136,16 @@ inline Engine *asEngine(jlong handle) {
     return reinterpret_cast<Engine *>(static_cast<intptr_t>(handle));
 }
 
+// Caller holds `busy`.
+inline void applyPendingSemitones(Engine *e) {
+    if (!e->semitonesDirty.exchange(false, std::memory_order_acq_rel)) return;
+    const float semitones = e->pendingSemitones.load(std::memory_order_relaxed);
+    if (semitones == e->semitones) return;
+    e->semitones = semitones;
+    e->stretch.setTransposeSemitones(semitones);
+    e->wsola.setSemitones(semitones);
+}
+
 }  // namespace
 
 extern "C" {
@@ -150,14 +168,11 @@ JNIEXPORT void JNICALL
 Java_tf_monochrome_android_audio_stretch_StretchNative_nativeSetSemitones(
         JNIEnv *, jclass, jlong handle, jfloat semitones) {
     if (auto *e = asEngine(handle)) {
-        // The ratio is a double that process() reads on every frame; a plain
-        // write from the UI thread can tear on 32-bit ARM. Spinning is fine
-        // here, the audio thread holds the flag for one block at most.
-        while (e->busy.test_and_set(std::memory_order_acquire)) {}
-        e->semitones = semitones;
-        e->stretch.setTransposeSemitones(semitones);
-        e->wsola.setSemitones(semitones);
-        e->busy.clear(std::memory_order_release);
+        // The engines' ratios are plain doubles read on every frame, so they
+        // are written only by whoever holds `busy`; this hands the value over
+        // instead of waiting for the flag.
+        e->pendingSemitones.store(semitones, std::memory_order_relaxed);
+        e->semitonesDirty.store(true, std::memory_order_release);
     }
 }
 
@@ -196,6 +211,7 @@ Java_tf_monochrome_android_audio_stretch_StretchNative_nativeSetEngine(
         ~Release() { e->busy.clear(std::memory_order_release); }
     } release{e};
 
+    applyPendingSemitones(e);
     if (q != e->quality) {
         e->quality = q;
         e->configureVocoder();
@@ -281,6 +297,7 @@ Java_tf_monochrome_android_audio_stretch_StretchNative_nativeProcess(
         ~Release() { e->busy.clear(std::memory_order_release); }
     } release{e};
 
+    applyPendingSemitones(e);
     if (e->engine == kEngineWsola) {
         // Already interleaved, and it works in place, so it skips the planar
         // round trip the vocoder needs.

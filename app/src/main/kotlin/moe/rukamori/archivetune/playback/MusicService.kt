@@ -261,6 +261,9 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimedOutException
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.AmazonTrackPick
+import moe.rukamori.archivetune.audiosource.SongSourceAmazonPick
+import moe.rukamori.archivetune.audiosource.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzTrackId
@@ -459,6 +462,12 @@ class MusicService :
     @Inject
     lateinit var sponsorBlockPlaybackController: SponsorBlockPlaybackController
 
+    @Inject
+    lateinit var audioEngineHost: moe.rukamori.archivetune.playback.dsp.AudioEngineHost
+
+    @Inject
+    lateinit var audioPipelineMonitor: tf.monochrome.android.audio.pipeline.AudioPipelineMonitor
+
     private lateinit var audioManager: AudioManager
 
     /** Owned here because [HapticsPcmProcessor] taps the sink of every player this service builds. */
@@ -641,6 +650,7 @@ class MusicService :
     private val discordSyncEpoch = AtomicLong(0L)
     private val discordSyncRequests = Channel<DiscordSyncRequest>(Channel.CONFLATED)
     private var discordSyncWorkerJob: Job? = null
+    private var discordTransportResyncJob: Job? = null
     private val pendingDiscordRefreshWaiters = mutableListOf<CompletableDeferred<Boolean>>()
     private val discordRefreshWaitersMutex = Mutex()
     private val toggleLikeMutex = Mutex()
@@ -723,10 +733,25 @@ class MusicService :
                 mediaId = mediaId,
                 source = stream.source,
                 label = stream.label,
+                protocol = directStreamProtocol(stream),
                 sampleRate = stream.sampleRate,
                 bitDepth = stream.bitDepth,
             ),
         )
+    }
+
+    private fun directStreamProtocol(stream: DirectStream): String? {
+        val scheme = stream.uri.substringBefore(':', "").lowercase(Locale.ROOT)
+        val mime = stream.mimeType.lowercase(Locale.ROOT)
+        return when {
+            scheme == TidalAudioProvider.PROGRESSIVE_DASH_SCHEME -> "MPEG-DASH (progressive)"
+            mime.contains("dash") -> "MPEG-DASH"
+            mime.contains("mpegurl") -> "HLS"
+            scheme == DeezerCrypto.SCHEME -> "HTTPS (decrypted)"
+            scheme == "https" -> "HTTPS"
+            scheme == "http" -> "HTTP"
+            else -> null
+        }
     }
 
     private fun promotePendingStreamInfo(mediaId: String?) {
@@ -1841,6 +1866,26 @@ class MusicService :
         )
     }
 
+    // One pending resync at most: a newer invalidation replaces the older one, and the delay
+    // is the client's reconnect backoff so a gateway that closes right after READY is retried
+    // at a widening interval instead of immediately.
+    private fun scheduleDiscordTransportResync(
+        reason: String,
+        delayMs: Long,
+    ) {
+        scope.launch {
+            discordTransportResyncJob?.cancel()
+            discordTransportResyncJob =
+                scope.launch {
+                    if (delayMs > 0L) delay(delayMs)
+                    requestDiscordSync(
+                        reason = "transport_invalidated:$reason",
+                        force = true,
+                    )
+                }
+        }
+    }
+
     private fun ensureDiscordSyncFresh(epoch: Long) {
         if (epoch != discordSyncEpoch.get()) {
             throw StaleDiscordSyncException()
@@ -2454,14 +2499,13 @@ class MusicService :
                     token = key,
                 )
                 DiscordPresenceManager.setOnTransportInvalidated { reason ->
+                    val delayMs = DiscordSocialPresenceClient.reconnectBackoffRemainingMs()
                     Timber.tag(DISCORD_SYNC_TAG).w(
-                        "transport invalidated reason=%s; requesting forced sync",
+                        "transport invalidated reason=%s; forced sync in %dms",
                         reason,
+                        delayMs,
                     )
-                    requestDiscordSync(
-                        reason = "transport_invalidated:$reason",
-                        force = true,
-                    )
+                    scheduleDiscordTransportResync(reason, delayMs)
                 }
                 Timber.tag("MusicService").d("Presence manager started")
                 lastPresenceToken = key
@@ -7752,6 +7796,12 @@ class MusicService :
          * Keeping [mediaId] untouched is what makes the switch audio-only.
          */
         val directQobuzBackupVideoId: String? = null,
+        /**
+         * The Amazon row the user tapped in the "Play from" search popup. Amazon instances only
+         * resolve by metadata, so the Amazon resolver searches with this instead of the song's
+         * own title/artist and gates the result against it.
+         */
+        val amazonPick: AmazonTrackPick? = null,
     )
 
     /**
@@ -7859,6 +7909,10 @@ class MusicService :
             runBlocking { dataStore.data.first()[SongSourceQobuzBackupVideoIdKey] }
         }.getOrNull()
         val directQobuzBackupVideoId = SongSourceQobuzBackupVideoId.get(qobuzBackupVideoIdRaw, mediaId)
+        val amazonPickRaw = runCatching {
+            runBlocking { dataStore.data.first()[SongSourceAmazonPickKey] }
+        }.getOrNull()
+        val amazonPick = SongSourceAmazonPick.get(amazonPickRaw, mediaId)
         return SourceQuery(
             mediaId = mediaId,
             title = title,
@@ -7868,6 +7922,7 @@ class MusicService :
             isrc = isrc,
             directQobuzTrackId = directQobuzTrackId,
             directQobuzBackupVideoId = directQobuzBackupVideoId,
+            amazonPick = amazonPick,
         )
     }
 
@@ -8028,6 +8083,24 @@ class MusicService :
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = qobuzBackupVideoId)
     }
 
+    /**
+     * Pins [mediaId] to Amazon AND persists the row the user tapped, so the resolver searches the
+     * instance for that track instead of the song's own metadata.
+     */
+    fun setSongSourceOverrideWithAmazonPick(
+        mediaId: String,
+        amazonPick: AmazonTrackPick,
+    ) {
+        clearAudioAuthenticitySourceFailures(mediaId)
+        setSongSourceOverrideInternal(
+            mediaId,
+            AudioSourceType.AMAZON,
+            qobuzTrackId = null,
+            qobuzBackupVideoId = null,
+            amazonPick = amazonPick,
+        )
+    }
+
     private fun clearAudioAuthenticitySourceFailures(mediaId: String) {
         authenticityRejectedSourcesByMediaId.remove(mediaId)
         selectedPlaybackSourceByMediaId.remove(mediaId)
@@ -8043,6 +8116,7 @@ class MusicService :
         qobuzBackupVideoId: String?,
         authenticityRejectedSource: AudioSourceType? = null,
         preservedPositionMs: Long? = null,
+        amazonPick: AmazonTrackPick? = null,
     ) {
         Timber.tag("PlaybackDiagnostics").i(
             "Source override changed provider=%s currentItem=%s state=%d positionMs=%d gain=%.3f",
@@ -8079,6 +8153,15 @@ class MusicService :
                         mediaId,
                         qobuzBackupVideoId,
                     )
+                    // An authenticity retry re-applies the user's existing choice, so it keeps the
+                    // stored Amazon pick rather than clearing it.
+                    if (authenticityRejectedSource == null) {
+                        prefs[SongSourceAmazonPickKey] = SongSourceAmazonPick.withOverride(
+                            prefs[SongSourceAmazonPickKey],
+                            mediaId,
+                            amazonPick,
+                        )
+                    }
                 }
             }
         }
@@ -8451,7 +8534,7 @@ class MusicService :
                             AudioSourceType.AMAZON ->
                                 resolveAmazonStream(
                                     query,
-                                    trusted = overrideIsSourceOverride && override == AudioSourceType.AMAZON,
+                                    pick = query.amazonPick.takeIf { override == AudioSourceType.AMAZON },
                                 )
                             AudioSourceType.JIOSAAVN -> resolveJioSaavnStream(query)
                             AudioSourceType.QQ ->
@@ -8480,7 +8563,10 @@ class MusicService :
             }
             val match =
                 if (overrideIsSourceOverride && source == override) {
-                    // Explicit per-song override: trust the user's choice. Still record the source
+                    // Explicit per-song override: trust the user's choice. Amazon is the exception
+                    // handled inside resolveAmazonStream: its result comes from a metadata search, so
+                    // it has already been gated there against the metadata it searched with (the
+                    // tapped row's, when there is one). Still record the source
                     // as resolved so the Source chooser remembers it for next time.
                     Timber.tag("MusicService").i(
                         "Source %s ACCEPTED for \"%s\" via per-song override (skipping metadata gate) [%s]",
@@ -8808,10 +8894,15 @@ class MusicService :
      * to a local file, and hands back a [DirectStream] with the matched *instance* metadata (never
      * the query's) so the match gate below sees what actually came back. The provider was restored
      * from this repo's own earlier instance-based source (see AmazonAudioProvider's header).
+     *
+     * [pick] is the row the user tapped in the "Play from" search. Instances have no track-id
+     * route, so the pick is searched by its own metadata and the result is gated against that
+     * same metadata. The gate is never skipped, not even for a per-song override: a metadata
+     * search can return a different recording, and an override only states which source to use.
      */
     private fun resolveAmazonStream(
         query: SourceQuery,
-        trusted: Boolean,
+        pick: AmazonTrackPick?,
     ): DirectStream? {
         // One reading of the clock for both expiry decisions below.
         val nowMs = System.currentTimeMillis()
@@ -8850,14 +8941,19 @@ class MusicService :
                 )
             }.getOrDefault(AmazonAudioQuality.Default)
 
+        val wantedTitle = pick?.title ?: query.title
+        val wantedArtists = pick?.let { listOf(it.artist) } ?: query.artists
+        val wantedAlbum = if (pick != null) pick.album else query.album
+        val wantedDurationMs = if (pick != null) pick.durationMs else query.durationMs
+
         for (instance in instances) {
             val stream =
                 runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     AmazonAudioProvider.resolveByMetadata(
-                        title = query.title,
-                        artists = query.artists,
-                        album = query.album,
-                        durationMs = query.durationMs,
+                        title = wantedTitle,
+                        artists = wantedArtists,
+                        album = wantedAlbum,
+                        durationMs = wantedDurationMs,
                         cacheDir = cacheDir,
                         instanceBaseUrl = instance.baseUrl,
                         bypassToken = instance.bypassToken,
@@ -8866,21 +8962,22 @@ class MusicService :
                     )
                 } ?: continue
             val match =
-                if (trusted) {
-                    TitleMatch.Result(true, 1.0, 1.0, 1.0, 1.0, "per-song override bypass")
-                } else {
-                    TitleMatch.evaluate(
-                        wantedTitle = query.title,
-                        wantedArtists = query.artists,
-                        wantedAlbum = query.album,
-                        wantedDurationMs = query.durationMs,
-                        stream = stream,
-                    )
-                }
-            if (!match.accepted) continue
+                TitleMatch.evaluate(
+                    wantedTitle = wantedTitle,
+                    wantedArtists = wantedArtists,
+                    wantedAlbum = wantedAlbum,
+                    wantedDurationMs = wantedDurationMs,
+                    stream = stream,
+                )
+            if (!match.accepted) {
+                Timber
+                    .tag("MusicService")
+                    .i("Amazon Music result for \"%s\" rejected: %s", wantedTitle, match.reason)
+                continue
+            }
             Timber
                 .tag("MusicService")
-                .i("Amazon Music resolved \"%s\" via %s", query.title, instance.baseUrl)
+                .i("Amazon Music resolved \"%s\" via %s (picked=%s)", wantedTitle, instance.baseUrl, pick != null)
             return stream
         }
         return null
@@ -10495,6 +10592,17 @@ class MusicService :
                         mediaId,
                         ReportedAudioFormat(mediaId, source, rate ?: previous?.sampleRateHz, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 }),
                     )
+                    audioPipelineMonitorPlayer = observedPlayer
+                    audioPipelineMonitor.onStreamFormat(
+                        tf.monochrome.android.audio.pipeline.DecodedStream(
+                            mimeType = format.sampleMimeType,
+                            sampleRate = rate,
+                            channelCount = format.channelCount.takeIf { it > 0 },
+                            bitrate = format.bitrate.takeIf { it > 0 } ?: format.averageBitrate.takeIf { it > 0 },
+                            pcmBits = depth?.takeIf { it > 0 },
+                            pcmIsFloat = format.pcmEncoding == C.ENCODING_PCM_FLOAT,
+                        ),
+                    )
                     if (source != null && source != AudioSourceType.YOUTUBE && rate != null) {
                         authenticitySampleRateByMediaId[mediaId] = rate
                         val claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true || lossless
@@ -10528,9 +10636,30 @@ class MusicService :
                     audioTrackConfigurationsByPlayer.remove(observedPlayer, audioTrackConfig)
                     publishDecodedPcmFormat()
                 }
+
+                override fun onAudioDecoderInitialized(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    audioPipelineMonitorPlayer = observedPlayer
+                    audioPipelineMonitor.onDecoderInitialized(decoderName)
+                }
+
+                override fun onAudioDecoderReleased(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    decoderName: String,
+                ) {
+                    // A crossfade's outgoing player releases its decoder after the incoming one
+                    // has already reported; only the player that last reported may clear it.
+                    if (audioPipelineMonitorPlayer === observedPlayer) audioPipelineMonitor.onDecoderReleased()
+                }
             },
         )
     }
+
+    private var audioPipelineMonitorPlayer: ExoPlayer? = null
 
     private fun handleAudioAuthenticityResult(
         contextRef: AtomicReference<AudioAuthenticityPlaybackContext?>,
@@ -10675,6 +10804,10 @@ class MusicService :
                                 },
                                 playbackKeyProvider = { authenticityContext.get()?.playbackKey },
                             ),
+                        // After the authenticity analysis and the decoded-format observer, so both
+                        // keep seeing the decoder's own PCM. Inactive (skipped by Media3) unless an
+                        // engine or the float DSP is switched on.
+                        audioEngineHost.newRouter(),
                         // Automix's transition filters ride last in the chain, as in 4nx3b and
                         // BitChord. Wide open (a pass-through) whenever no smart blend runs.
                         transitionFilter,
@@ -10901,10 +11034,14 @@ class MusicService :
     }
 
     private fun clearPersistedQueueFiles() {
-        persistentSaveGeneration.incrementAndGet()
-        lastPersistedQueue = null
-        lastPersistedPlayerState = null
+        // Generation bump, cache reset and deletion happen under the same lock the savers hold
+        // for their check-write-record step, so no save can record a snapshot as persisted
+        // whose file this is about to delete, nor skip as "unchanged" against a cache that
+        // describes files already gone.
         synchronized(persistentStateLock) {
+            persistentSaveGeneration.incrementAndGet()
+            lastPersistedQueue = null
+            lastPersistedPlayerState = null
             listOf(
                 PERSISTENT_QUEUE_FILE,
                 PERSISTENT_PLAYER_STATE_FILE,
@@ -10929,11 +11066,11 @@ class MusicService :
     private fun writePersistentObject(
         fileName: String,
         payload: Serializable,
-    ) {
+    ): Boolean {
         val persistentFile = filesDir.resolve(fileName)
         val tempFile = filesDir.resolve("$fileName.tmp")
 
-        synchronized(persistentStateLock) {
+        return synchronized(persistentStateLock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
                     ObjectOutputStream(fos).use { output ->
@@ -10953,7 +11090,7 @@ class MusicService :
             }.onFailure {
                 runCatching { tempFile.delete() }
                 reportException(it)
-            }
+            }.isSuccess
         }
     }
 
@@ -11065,13 +11202,21 @@ class MusicService :
                 )
             } ?: return
 
+        withContext(Dispatchers.IO) {
+            synchronized(persistentStateLock) {
+                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
+                persistPlayerStateIfChangedLocked(state)
+            }
+        }
+    }
+
+    // Caller holds persistentStateLock. The cache only advances after a write that succeeded,
+    // so a failed write is retried by the next identical snapshot instead of being skipped.
+    private fun persistPlayerStateIfChangedLocked(state: PersistPlayerState) {
         // timestamp defaults to now, so it always differs — compare everything else.
         val previous = lastPersistedPlayerState
         if (previous != null && previous.copy(timestamp = 0L) == state.copy(timestamp = 0L)) return
-
-        withContext(Dispatchers.IO) {
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)
+        if (writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)) {
             lastPersistedPlayerState = state
         }
     }
@@ -11115,18 +11260,16 @@ class MusicService :
             } ?: return
 
         withContext(Dispatchers.IO) {
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            // Transition, play/pause and state-change callbacks fire in bursts for one user action,
-            // each snapshotting the same queue; only the first needs to hit the disk.
-            if (snapshot.first != lastPersistedQueue) {
-                writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
-                lastPersistedQueue = snapshot.first
-            }
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            val previousState = lastPersistedPlayerState
-            if (previousState == null || previousState.copy(timestamp = 0L) != snapshot.second.copy(timestamp = 0L)) {
-                writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, snapshot.second)
-                lastPersistedPlayerState = snapshot.second
+            synchronized(persistentStateLock) {
+                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
+                // Transition, play/pause and state-change callbacks fire in bursts for one user action,
+                // each snapshotting the same queue; only the first needs to hit the disk.
+                if (snapshot.first != lastPersistedQueue &&
+                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
+                ) {
+                    lastPersistedQueue = snapshot.first
+                }
+                persistPlayerStateIfChangedLocked(snapshot.second)
             }
         }
     }

@@ -135,6 +135,7 @@ import moe.rukamori.archivetune.utils.SpeedDialPin
 import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.parseSpeedDialPins
+import moe.rukamori.archivetune.audiosource.AmazonTrackPick
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.AudioSourceType
@@ -394,9 +395,23 @@ fun PlayerMenu(
                     // resolver fetches exactly the row the user tapped:
                     //   - Qobuz     → catalogue trackId
                     //   - Qobuz Backup → the mirror's YouTube video id (its primary key)
+                    //   - Amazon    → the row's title/artist/album/duration; its rows come from
+                    //                 the Apple catalogue and instances only resolve by metadata
                     // For the rest (Tidal / JioSaavn / Deezer) the resolver still searches
                     // by title + artist, which is all their APIs expose here.
                     when (source) {
+                        AudioSourceType.AMAZON ->
+                            playerConnection.service.setSongSourceOverrideWithAmazonPick(
+                                mediaId = mediaMetadata.id,
+                                amazonPick =
+                                    AmazonTrackPick(
+                                        title = result.title,
+                                        artist = result.artist,
+                                        album = result.album,
+                                        durationMs = result.durationMs,
+                                    ),
+                            )
+
                         AudioSourceType.QOBUZ ->
                             playerConnection.service.setSongSourceOverrideWithQobuzTrackId(
                                 mediaId = mediaMetadata.id,
@@ -1870,6 +1885,7 @@ private data class SourceSearchResult(
     val durationMs: Long?,
     val qualityLabel: String?,
     val songItem: SongItem?,
+    val album: String? = null,
 )
 
 @Composable
@@ -2013,6 +2029,7 @@ private fun SongSourceDialog(
                                 durationMs = track.durationMs,
                                 qualityLabel = null,
                                 songItem = null,
+                                album = track.album,
                             ),
                         )
                     }

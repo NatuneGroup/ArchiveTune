@@ -15,39 +15,19 @@ import android.util.Log
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
-import com.lastwave.app.playback.NativePcmAudioProcessor
 import java.nio.ByteBuffer
-import tf.monochrome.android.audio.dsp.ChannelDetectorProcessor
-import tf.monochrome.android.audio.dsp.DownmixProcessor
 import tf.monochrome.android.audio.dsp.DspNativeLoader
-import tf.monochrome.android.audio.dsp.MixBusProcessor
-import tf.monochrome.android.audio.eq.AutoEqProcessor
-import tf.monochrome.android.audio.eq.ParametricEqProcessor
-import tf.monochrome.android.audio.eq.SpectrumAnalyzerTap
-import tf.monochrome.android.audio.usb.ToFloatPcmAudioProcessor
 
-class AudioEngineRouterProcessor(
-
-    private val tryptifyEnabled: () -> Boolean,
-
-    private val lastwaveEnabled: () -> Boolean,
-
-    private val tryptifyMixBus: MixBusProcessor,
-    private val tryptifyAutoEq: AutoEqProcessor,
-    private val tryptifyParamEq: ParametricEqProcessor,
-
-    private val channelDetector: ChannelDetectorProcessor,
-
-    private val downmix: DownmixProcessor,
-
-    private val spectrumTap: SpectrumAnalyzerTap,
-
-    private val variRate: tf.monochrome.android.audio.resample.VariRateAudioProcessor,
-
-    private val stretch: tf.monochrome.android.audio.stretch.StretchAudioProcessor,
-
-    private val lastwaveProcessor: NativePcmAudioProcessor,
-
+/**
+ * One per sink. With no engine wanted and the float DSP off, [onConfigure] returns
+ * [AudioProcessor.AudioFormat.NOT_SET], which leaves [isActive] false so Media3 skips this
+ * processor entirely and the samples are untouched.
+ *
+ * Engine changes requested in [onConfigure] wait for [onFlush]: Media3 configures a sink while the
+ * previous track is still draining through it and flushes only once that drain is done.
+ */
+class AudioEngineRouterProcessor internal constructor(
+    private val host: AudioEngineHost,
     private val stockDsp: FloatDspProcessor,
 ) : BaseAudioProcessor() {
     enum class Engine { NONE, TRYPTIFY, LASTWAVE }
@@ -56,126 +36,81 @@ class AudioEngineRouterProcessor(
     var outputFloat: Boolean = false
 
     @Volatile
-    private var engineDataEncoding: Int = C.ENCODING_PCM_16BIT
-
-    @Volatile
-    private var declaredOutputEncoding: Int = C.ENCODING_PCM_16BIT
-
-    @Volatile
     var activeEngine: Engine = Engine.NONE
         private set
 
-    @Volatile
-    private var activeOutputFloat: Boolean = false
+    private var engineDataEncoding: Int = C.ENCODING_PCM_16BIT
+    private var stockPassthrough: Boolean = false
+
+    private var pendingEngine: Engine = Engine.NONE
+    private var pendingDataEncoding: Int = C.ENCODING_PCM_16BIT
+    private var pendingStockPassthrough: Boolean = false
 
     @Volatile
-    private var reevaluateRequested: Boolean = false
-
-    fun requestEngineReevaluate() {
-        reevaluateRequested = true
-    }
-
-    private val tryptifyChain = tf.monochrome.android.audio.usb.AudioProcessorChain(
-        listOf(
-            ToFloatPcmAudioProcessor(),
-            channelDetector,
-            downmix,
-            tryptifyMixBus,
-            tryptifyAutoEq,
-            tryptifyParamEq,
-            spectrumTap,
-            variRate,
-            stretch,
-        ),
-    )
-
-    private var engineAvailableTryptify: Boolean = tryptifyNativeAvailable()
-    private var engineAvailableLastwave: Boolean = lastwaveProcessor.isAvailable
+    private var seenSettingsGeneration: Int = host.settingsGeneration
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime.chainBypassActive) {
-            return AudioProcessor.AudioFormat.NOT_SET
-        }
+        seenSettingsGeneration = host.settingsGeneration
+        pendingEngine = Engine.NONE
+        pendingStockPassthrough = false
+        if (BitPerfectRuntime.chainBypassActive) return AudioProcessor.AudioFormat.NOT_SET
         val encoding = inputAudioFormat.encoding
         if (encoding != C.ENCODING_PCM_16BIT && encoding != C.ENCODING_PCM_FLOAT &&
             encoding != C.ENCODING_PCM_24BIT && encoding != C.ENCODING_PCM_32BIT
         ) {
             return AudioProcessor.AudioFormat.NOT_SET
         }
-        engineAvailableTryptify = tryptifyNativeAvailable()
-        engineAvailableLastwave = lastwaveProcessor.isAvailable
-        EngineRuntime.publishEngineAvailability(engineAvailableTryptify, engineAvailableLastwave)
+        val outputFloatNow = outputFloat
+        val outEncoding = if (outputFloatNow) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT
 
-        val selected = when {
-            tryptifyEnabled() && engineAvailableTryptify -> Engine.TRYPTIFY
-            lastwaveEnabled() && engineAvailableLastwave -> Engine.LASTWAVE
-            else -> Engine.NONE
-            }
-        val changed = selected != activeEngine
-        activeEngine = selected
-        activeOutputFloat = outputFloat
-
-        EngineRuntime.publishActiveEngine(selected)
-        EngineRuntime.publishOutputFloat(outputFloat)
-
-        return when (selected) {
+        when (host.wantedEngine()) {
             Engine.TRYPTIFY -> {
-                val chainOut = tryptifyChain.configure(inputAudioFormat)
-                engineDataEncoding =
-                    chainOut.encoding.takeIf { it > 0 } ?: inputAudioFormat.encoding
-                val outEncoding =
-                    if (activeOutputFloat) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT
-                declaredOutputEncoding = outEncoding
-                if (changed) {
+                val chain = if (host.acquire(this)) host.tryptifyChain() else null
+                val chainOut =
+                    chain?.let { runCatching { it.configure(inputAudioFormat) }.getOrNull() }
+                        ?.takeIf { it != AudioProcessor.AudioFormat.NOT_SET }
+                if (chainOut != null) {
+                    pendingEngine = Engine.TRYPTIFY
+                    pendingDataEncoding = chainOut.encoding.takeIf { it > 0 } ?: inputAudioFormat.encoding
                     Log.i(
                         TAG,
-                        "Tryptify engine ENGAGED (rate=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount} " +
-                            "in=${encodingName(inputAudioFormat.encoding)} " +
-                            "chainData=${encodingName(engineDataEncoding)} " +
-                            "floatOut=$activeOutputFloat chainOut=${chainOut.encoding})",
+                        "Tryptify engine selected (rate=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount} " +
+                            "in=${encodingName(inputAudioFormat.encoding)} chainData=${encodingName(pendingDataEncoding)} " +
+                            "floatOut=$outputFloatNow)",
+                    )
+                    return AudioProcessor.AudioFormat(
+                        chainOut.sampleRate.takeIf { it > 0 } ?: inputAudioFormat.sampleRate,
+                        chainOut.channelCount.takeIf { it > 0 } ?: inputAudioFormat.channelCount,
+                        outEncoding,
                     )
                 }
-                AudioProcessor.AudioFormat(
-                    chainOut.sampleRate.takeIf { it > 0 } ?: inputAudioFormat.sampleRate,
-                    chainOut.channelCount.takeIf { it > 0 } ?: inputAudioFormat.channelCount,
-                    outEncoding,
-                )
             }
             Engine.LASTWAVE -> {
-                if (inputAudioFormat.channelCount > 2) {
-                    activeEngine = Engine.NONE
-                    EngineRuntime.publishActiveEngine(Engine.NONE)
-                    return configureStock(inputAudioFormat)
-                }
-
-                val lastwaveOut = runCatching { lastwaveProcessor.configure(inputAudioFormat) }
-                    .getOrElse { AudioProcessor.AudioFormat.NOT_SET }
-                if (lastwaveOut == AudioProcessor.AudioFormat.NOT_SET) {
-                    activeEngine = Engine.NONE
-                    EngineRuntime.publishActiveEngine(Engine.NONE)
-                    return configureStock(inputAudioFormat)
-                }
-
-                engineDataEncoding = C.ENCODING_PCM_FLOAT
-                val outEncoding =
-                    if (activeOutputFloat) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT
-                declaredOutputEncoding = outEncoding
-                if (changed) {
+                val lastwave =
+                    if (inputAudioFormat.channelCount <= 2 && host.acquire(this)) host.lastwave() else null
+                val lastwaveOut =
+                    lastwave?.let { runCatching { it.configure(inputAudioFormat) }.getOrNull() }
+                        ?: AudioProcessor.AudioFormat.NOT_SET
+                if (lastwaveOut != AudioProcessor.AudioFormat.NOT_SET) {
+                    pendingEngine = Engine.LASTWAVE
+                    pendingDataEncoding = C.ENCODING_PCM_FLOAT
                     Log.i(
                         TAG,
-                        "Lastwave engine ENGAGED (rate=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount} " +
-                            "in=${encodingName(inputAudioFormat.encoding)} " +
-                            "chainData=float floatOut=$activeOutputFloat out=${lastwaveOut.sampleRate}Hz)",
+                        "LastWave engine selected (rate=${inputAudioFormat.sampleRate} ch=${inputAudioFormat.channelCount} " +
+                            "in=${encodingName(inputAudioFormat.encoding)} out=${lastwaveOut.sampleRate}Hz floatOut=$outputFloatNow)",
                     )
+                    return AudioProcessor.AudioFormat(lastwaveOut.sampleRate, lastwaveOut.channelCount, outEncoding)
                 }
-                AudioProcessor.AudioFormat(
-                    lastwaveOut.sampleRate,
-                    lastwaveOut.channelCount,
-                    outEncoding,
-                )
             }
-            Engine.NONE -> configureStock(inputAudioFormat)
+            Engine.NONE -> Unit
         }
+        val floatDsp = host.floatDspWanted()
+        stockDsp.outputFloat = outputFloatNow
+        stockDsp.setEngaged(floatDsp)
+        // Not even a configure call while the float DSP is off: FloatDspProcessor loads its
+        // native library on first configure.
+        if (!floatDsp) return AudioProcessor.AudioFormat.NOT_SET
+        return configureStock(inputAudioFormat)
     }
 
     private fun configureStock(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat =
@@ -184,8 +119,9 @@ class AudioEngineRouterProcessor(
 
     override fun queueInput(inputBuffer: ByteBuffer) {
         if (!inputBuffer.hasRemaining()) return
-        if (reevaluateRequested) {
-            reevaluateRequested = false
+        val generation = host.settingsGeneration
+        if (generation != seenSettingsGeneration) {
+            seenSettingsGeneration = generation
             rerouteEngineIfChanged()
         }
         when (activeEngine) {
@@ -195,95 +131,98 @@ class AudioEngineRouterProcessor(
         }
     }
 
+    // Mid-track switches are only taken when the new path keeps the format this processor already
+    // declared to the sink; anything else waits for the next configure.
     private fun rerouteEngineIfChanged() {
         val input = inputAudioFormat
-        if (input == AudioProcessor.AudioFormat.NOT_SET) return
-
-        activeOutputFloat = outputFloat
-        engineAvailableTryptify = tryptifyNativeAvailable()
-        engineAvailableLastwave = lastwaveProcessor.isAvailable
-        EngineRuntime.publishEngineAvailability(engineAvailableTryptify, engineAvailableLastwave)
-        val desired =
-            when {
-                tryptifyEnabled() && engineAvailableTryptify -> Engine.TRYPTIFY
-                lastwaveEnabled() && engineAvailableLastwave -> Engine.LASTWAVE
-                else -> Engine.NONE
-            }
-        if (desired == activeEngine) return
-
         val declaredOut = outputAudioFormat
+        if (input == AudioProcessor.AudioFormat.NOT_SET || declaredOut == AudioProcessor.AudioFormat.NOT_SET) return
+
+        val desired = host.wantedEngine()
+        if (desired == activeEngine) return
+        if (desired != Engine.NONE && !host.acquire(this)) {
+            logSwitchDeferred("engine in use by another player")
+            return
+        }
 
         var newDataEncoding = input.encoding
+        var newStockPassthrough = false
         val newOut: AudioProcessor.AudioFormat =
             when (desired) {
                 Engine.TRYPTIFY -> {
-                    val chainOut = tryptifyChain.configure(input)
-                    newDataEncoding =
-                        chainOut.encoding.takeIf { it > 0 } ?: input.encoding
-                    AudioProcessor.AudioFormat(
-                        chainOut.sampleRate.takeIf { it > 0 } ?: input.sampleRate,
-                        chainOut.channelCount.takeIf { it > 0 } ?: input.channelCount,
-                        if (activeOutputFloat) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT,
-                    )
+                    val chainOut =
+                        host.tryptifyChain()?.let { chain -> runCatching { chain.configure(input) }.getOrNull() }
+                            ?.takeIf { it != AudioProcessor.AudioFormat.NOT_SET }
+                    if (chainOut == null) {
+                        AudioProcessor.AudioFormat.NOT_SET
+                    } else {
+                        newDataEncoding = chainOut.encoding.takeIf { it > 0 } ?: input.encoding
+                        AudioProcessor.AudioFormat(
+                            chainOut.sampleRate.takeIf { it > 0 } ?: input.sampleRate,
+                            chainOut.channelCount.takeIf { it > 0 } ?: input.channelCount,
+                            declaredOut.encoding,
+                        )
+                    }
                 }
                 Engine.LASTWAVE -> {
-                    if (input.channelCount > 2) {
-                        logSwitchDeferred("lastwave rejects >2ch")
-                        return
-                    }
+                    val lastwave = host.lastwave()
                     val out =
-                        runCatching { lastwaveProcessor.configure(input) }
-                            .getOrElse { AudioProcessor.AudioFormat.NOT_SET }
-                    if (out == AudioProcessor.AudioFormat.NOT_SET) {
-                        logSwitchDeferred("lastwave configure failed")
-                        return
-                    }
+                        if (lastwave == null || input.channelCount > 2) {
+                            AudioProcessor.AudioFormat.NOT_SET
+                        } else {
+                            runCatching { lastwave.configure(input) }.getOrElse { AudioProcessor.AudioFormat.NOT_SET }
+                        }
                     newDataEncoding = C.ENCODING_PCM_FLOAT
-                    AudioProcessor.AudioFormat(
-                        out.sampleRate,
-                        out.channelCount,
-                        if (activeOutputFloat) C.ENCODING_PCM_FLOAT else C.ENCODING_PCM_16BIT,
-                    )
+                    if (out == AudioProcessor.AudioFormat.NOT_SET) {
+                        out
+                    } else {
+                        AudioProcessor.AudioFormat(out.sampleRate, out.channelCount, declaredOut.encoding)
+                    }
                 }
                 Engine.NONE -> {
+                    stockDsp.setEngaged(host.floatDspWanted())
                     val out =
-                        runCatching { stockDsp.configure(input) }
-                            .getOrElse { AudioProcessor.AudioFormat.NOT_SET }
-                    out
+                        if (stockDsp.engaged) configureStock(input) else AudioProcessor.AudioFormat.NOT_SET
+                    if (out != AudioProcessor.AudioFormat.NOT_SET) {
+                        out
+                    } else {
+                        newStockPassthrough = true
+                        input
+                    }
                 }
             }
-        if (newOut == AudioProcessor.AudioFormat.NOT_SET) {
-            logSwitchDeferred("new path refused the format")
-            return
-        }
-        if (declaredOut != AudioProcessor.AudioFormat.NOT_SET &&
-            newOut.sampleRate != declaredOut.sampleRate &&
-            (newOut.sampleRate > 0 && declaredOut.sampleRate > 0)
-        ) {
-            logSwitchDeferred("rate ${newOut.sampleRate}!=${declaredOut.sampleRate}")
-            return
-        }
-        if (declaredOut != AudioProcessor.AudioFormat.NOT_SET &&
-            newOut.channelCount != declaredOut.channelCount &&
-            (newOut.channelCount > 0 && declaredOut.channelCount > 0)
-        ) {
-            logSwitchDeferred("channels ${newOut.channelCount}!=${declaredOut.channelCount}")
+        val mismatch =
+            when {
+                newOut == AudioProcessor.AudioFormat.NOT_SET -> "new path refused the format"
+                newOut.sampleRate != declaredOut.sampleRate -> "rate ${newOut.sampleRate}!=${declaredOut.sampleRate}"
+                newOut.channelCount != declaredOut.channelCount -> "channels ${newOut.channelCount}!=${declaredOut.channelCount}"
+                newOut.encoding != declaredOut.encoding -> "encoding ${encodingName(newOut.encoding)}!=${encodingName(declaredOut.encoding)}"
+                else -> null
+            }
+        if (mismatch != null) {
+            if (activeEngine == Engine.NONE) host.release(this)
+            logSwitchDeferred(mismatch)
             return
         }
 
+        when (desired) {
+            Engine.TRYPTIFY -> host.tryptifyChain()?.flush()
+            Engine.LASTWAVE -> runCatching { host.lastwave()?.flush() }
+            Engine.NONE -> if (!newStockPassthrough) stockDsp.flush()
+        }
         val old = activeEngine
-
-        runCatching { tryptifyChain.flush() }
-        runCatching { lastwaveProcessor.flush() }
-        runCatching { stockDsp.flush() }
         activeEngine = desired
+        pendingEngine = desired
         engineDataEncoding = newDataEncoding
-        EngineRuntime.publishActiveEngine(desired)
+        pendingDataEncoding = newDataEncoding
+        stockPassthrough = newStockPassthrough
+        pendingStockPassthrough = newStockPassthrough
+        if (desired == Engine.NONE) host.release(this)
+        publishActive()
         Log.i(
             TAG,
             "engine SWITCHED mid-track $old -> $desired " +
-                "(in=${encodingName(input.encoding)} data=${encodingName(engineDataEncoding)} " +
-                "floatOut=$activeOutputFloat)",
+                "(in=${encodingName(input.encoding)} data=${encodingName(engineDataEncoding)} out=${encodingName(declaredOut.encoding)})",
         )
     }
 
@@ -292,21 +231,27 @@ class AudioEngineRouterProcessor(
     }
 
     private fun queueTryptify(inputBuffer: ByteBuffer) {
-        tryptifyChain.refreshActive()
-        val chainOut = tryptifyChain.process(inputBuffer)
-        emitEngineOutput(chainOut)
+        val chain = host.builtTryptifyChain() ?: return queueCopy(inputBuffer)
+        chain.refreshActive()
+        emitEngineOutput(chain.process(inputBuffer))
     }
 
     private fun queueLastwave(inputBuffer: ByteBuffer) {
-        lastwaveProcessor.queueInput(inputBuffer)
-        emitEngineOutput(lastwaveProcessor.output)
+        val lastwave = host.builtLastwave() ?: return queueCopy(inputBuffer)
+        lastwave.queueInput(inputBuffer)
+        emitEngineOutput(lastwave.output)
     }
 
     private fun queueStock(inputBuffer: ByteBuffer) {
+        if (stockPassthrough) return queueCopy(inputBuffer)
         stockDsp.queueInput(inputBuffer)
         val out = stockDsp.output
         if (!out.hasRemaining()) return
         replaceOutputBuffer(out.remaining()).put(out).flip()
+    }
+
+    private fun queueCopy(inputBuffer: ByteBuffer) {
+        replaceOutputBuffer(inputBuffer.remaining()).put(inputBuffer).flip()
     }
 
     private fun emitEngineOutput(engineOutput: ByteBuffer) {
@@ -315,42 +260,67 @@ class AudioEngineRouterProcessor(
         val encoded = EnginePcmCodec.encode(
             data = engineOutput,
             dataEncoding = engineDataEncoding,
-            outputEncoding = if (activeOutputFloat) C.ENCODING_PCM_FLOAT else declaredOutputEncoding,
+            outputEncoding = outputAudioFormat.encoding,
             channels = outputAudioFormat.channelCount,
         )
         replaceOutputBuffer(encoded.remaining()).put(encoded).flip()
     }
 
     override fun onFlush() {
-        tryptifyChain.flush()
-        runCatching { lastwaveProcessor.flush() }
+        activeEngine = pendingEngine
+        engineDataEncoding = pendingDataEncoding
+        stockPassthrough = pendingStockPassthrough
+        when (activeEngine) {
+            Engine.TRYPTIFY -> host.builtTryptifyChain()?.flush()
+            Engine.LASTWAVE -> runCatching { host.builtLastwave()?.flush() }
+            Engine.NONE -> host.release(this)
+        }
         stockDsp.flush()
+        publishActive()
     }
 
     override fun onReset() {
-        tryptifyChain.reset()
-        runCatching { lastwaveProcessor.reset() }
+        if (host.owns(this)) {
+            runCatching { host.builtTryptifyChain()?.reset() }
+            runCatching { host.builtLastwave()?.reset() }
+            host.release(this)
+        }
         stockDsp.reset()
         activeEngine = Engine.NONE
-        activeOutputFloat = false
+        pendingEngine = Engine.NONE
+        stockPassthrough = false
+        pendingStockPassthrough = false
         engineDataEncoding = C.ENCODING_PCM_16BIT
-        EngineRuntime.publishActiveEngine(Engine.NONE)
-        EngineRuntime.publishOutputFloat(false)
+        pendingDataEncoding = C.ENCODING_PCM_16BIT
+        publishActive()
     }
 
     override fun onQueueEndOfStream() {
-        val tryptifyTail = tryptifyChain.queueEndOfStreamAndDrain()
-        if (tryptifyTail.hasRemaining()) {
-            emitEngineOutput(tryptifyTail)
-        }
-        runCatching {
-            lastwaveProcessor.queueEndOfStream()
-            val lastwaveTail = lastwaveProcessor.output
-            if (lastwaveTail.hasRemaining()) {
-                emitEngineOutput(lastwaveTail)
+        when (activeEngine) {
+            Engine.TRYPTIFY -> {
+                val tail = host.builtTryptifyChain()?.queueEndOfStreamAndDrain()
+                if (tail != null && tail.hasRemaining()) emitEngineOutput(tail)
+            }
+            Engine.LASTWAVE -> runCatching {
+                val lastwave = host.builtLastwave() ?: return@runCatching
+                lastwave.queueEndOfStream()
+                val tail = lastwave.output
+                if (tail.hasRemaining()) emitEngineOutput(tail)
+            }
+            Engine.NONE -> if (!stockPassthrough) {
+                stockDsp.queueEndOfStream()
+                val tail = stockDsp.output
+                if (tail.hasRemaining()) replaceOutputBuffer(tail.remaining()).put(tail).flip()
             }
         }
-        stockDsp.queueEndOfStream()
+    }
+
+    private fun publishActive() {
+        if (!host.mayPublish(this)) return
+        val engine = activeEngine
+        val floatOut = engine != Engine.NONE && outputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
+        if (EngineRuntime.activeEngine != engine) EngineRuntime.publishActiveEngine(engine)
+        if (EngineRuntime.outputFloat != floatOut) EngineRuntime.publishOutputFloat(floatOut)
     }
 
     companion object {

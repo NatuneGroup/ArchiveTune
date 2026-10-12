@@ -9,8 +9,11 @@
 package moe.rukamori.archivetune.ui.component
 
 import android.content.Context
+import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.EaseInOutSine
@@ -32,9 +35,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -56,10 +59,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
 import moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime
@@ -90,33 +90,38 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val lastwaveAvailable = runtime.lastwaveAvailableState
     val revision = runtime.revision
 
-    var pollTick by remember { mutableIntStateOf(0) }
     var routedLabelValue by remember { mutableStateOf("Android Mixer") }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                withContext(Dispatchers.IO) {
+    // Registration delivers the devices already connected, so the label is filled at once and then
+    // changes only when a device comes or goes.
+    DisposableEffect(context) {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        val callback =
+            object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
                     routedLabelValue = readRoutedOutputLabel(context)
                 }
-                pollTick++
-                delay(1_000L)
+
+                override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                    routedLabelValue = readRoutedOutputLabel(context)
+                }
             }
-        }
+        audioManager?.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+        onDispose { audioManager?.unregisterAudioDeviceCallback(callback) }
     }
     val routedLabel = routedLabelValue
-    val usbExclusive = remember(revision, pollTick) { runtime.usbExclusiveActive }
-    val tryptifyPinActive = remember(revision, pollTick) { runtime.tryptifyUsbPinActive }
-    val usbRateHz = remember(revision, pollTick) {
+    // Every EngineRuntime publisher bumps [revision], so it is the only key these reads need.
+    val usbExclusive = remember(revision) { runtime.usbExclusiveActive }
+    val tryptifyPinActive = remember(revision) { runtime.tryptifyUsbPinActive }
+    val usbRateHz = remember(revision) {
         runtime.lastwaveUsbRateHz.takeIf { it > 0 }
             ?: runtime.tryptifyUsbStream?.sampleRateHz?.takeIf { it > 0 }
     }
-    val usbBits = remember(revision, pollTick) {
+    val usbBits = remember(revision) {
         runtime.lastwaveUsbBitsPerSample.takeIf { it > 0 }
             ?: runtime.tryptifyUsbStream?.bitsPerSample?.takeIf { it > 0 }
     }
-    val floatRouteActive = remember(revision, pollTick) { runtime.bitPerfectSinkRouteActive }
-    val sinkDecodedEncoding = remember(revision, pollTick) { runtime.sinkDecodedEncoding }
+    val floatRouteActive = remember(revision) { runtime.bitPerfectSinkRouteActive }
+    val sinkDecodedEncoding = remember(revision) { runtime.sinkDecodedEncoding }
 
     val mixerConversionPossible =
         BitPerfectRuntime.requested &&

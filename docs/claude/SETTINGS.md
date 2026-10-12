@@ -6,6 +6,8 @@ Settings search uses parent routes and `?scrollTo=` anchors. Preserve both when 
 
 Important Integration anchors include `external_sources`, `spotify`, `music_sources`, `use_pool_accounts`, `lastfm_scrobbling`, `lastfm_account`, `listenbrainz`, and `cross_service_import`.
 
+The Player page carries three experimental audio-engine switches after `bit_perfect_usb`: `tryptify_engine` (`TryptifyAudioProcessingKey`), `lastwave_engine` (`LastwaveAudioProcessingKey`) and `float_dsp` (`FloatDspEnabledKey`), all off by default. Tryptify and LastWave exclude each other, turning any of them on turns audio offload off, and all three are disabled while bit-perfect USB output is on (that sink skips every processor). Their search entries navigate only and carry no inline switch, so the exclusivity stays on the settings page. `playback/dsp/AudioEngineHost` reads them; with all three off the per-sink router is inactive and Media3 skips it.
+
 ## Spotify integration
 
 The Spotify group contains account login/logout, playlist visibility, playlist reload, and the opt-in `Sync Spotify listening history` switch. The switch exposes Spotify Recently Played in the History screen; it is intentionally passive and does not emulate Spotify playback.
@@ -56,6 +58,9 @@ Also shipped since this note was written:
   opens the ordinary lyrics sheet unless the experience is on; then it is Apple Music's anchored
   action list on a flat charcoal card. No live backdrop blur: recording one cost a full-screen layer
   every frame on every lyrics surface.
+- **Flamingo player** — `PlayerDesignStyle.FLAMINGO` (Appearance → Player), 4nx3b's album / lyrics /
+  queue pager with its own floating-light backdrop. Its two options, `flamingo_background_effect`
+  (moving blur) and `flamingo_volume_bar`, render only while it is the selected style.
 - **Additional downloads** (`settings/language_packs`, reached from Lyrics settings and search) —
   the Japanese dictionary plus files kept out of the APK in `addons/` (today the SpatialFlow
   typeface). `AddonPack` fetches them from the last commit that touched `addons/` and checks the

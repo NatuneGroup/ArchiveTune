@@ -248,10 +248,11 @@ static inline void writeWaveSilence(Bus& bus, int numFrames) {
 
 void DspEngine::process(float* left, float* right, int numFrames) {
     if (numFrames <= 0) return;
-    // The audio thread never waits on a control thread: if a setter or a
-    // reconfigure holds the chain, this block passes through untouched.
-    std::unique_lock<std::mutex> lock(chainMutex_, std::try_to_lock);
-    if (!lock.owns_lock()) return;
+    // A blocking lock, not a try-lock: this runs on ExoPlayer's playback
+    // thread, which buffers ahead of the AudioTrack, so a short wait on a
+    // setter costs nothing audible. Skipping instead let whole blocks play dry
+    // whenever a UI control was being moved.
+    std::lock_guard<std::mutex> lock(chainMutex_);
     // Every scratch buffer holds maxBlockSize_ frames; a longer block runs in
     // pieces instead of writing past them.
     for (int done = 0; done < numFrames; done += maxBlockSize_) {

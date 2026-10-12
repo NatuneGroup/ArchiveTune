@@ -25,9 +25,12 @@ import android.os.Looper
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -72,7 +75,19 @@ class UsbDacMonitor @Inject constructor(
         }
     }
 
-    init {
+    private val watchLock = Any()
+    private var watchers = 0
+
+    /**
+     * [state] while collected. The USB receiver and the device callback are registered only while
+     * at least one collector is watching; [state] keeps its last value in between.
+     */
+    fun watch(): Flow<State> =
+        state
+            .onStart { synchronized(watchLock) { if (watchers++ == 0) register() } }
+            .onCompletion { synchronized(watchLock) { if (--watchers == 0) unregister() } }
+
+    private fun register() {
         runCatching {
             ContextCompat.registerReceiver(
                 context,
@@ -92,6 +107,11 @@ class UsbDacMonitor @Inject constructor(
             )
         }
         applicationScope.launch { refresh() }
+    }
+
+    private fun unregister() {
+        runCatching { context.unregisterReceiver(receiver) }
+        runCatching { audioManager?.unregisterAudioDeviceCallback(deviceCallback) }
     }
 
     fun setRouteRequested(requested: Boolean) {

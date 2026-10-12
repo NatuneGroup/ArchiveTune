@@ -101,6 +101,9 @@ import moe.rukamori.archivetune.ui.component.ArtistSeparatorsDialog
 import moe.rukamori.archivetune.ui.component.CrossfadeSliderPreference
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.constants.BitPerfectUsbOutputKey
+import moe.rukamori.archivetune.constants.FloatDspEnabledKey
+import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
+import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
 import moe.rukamori.archivetune.constants.QueueAddAfterManualKey
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
@@ -184,6 +187,14 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         onBitPerfectUsbChange(false)
         if (BitPerfectUsbOutput.sinkActive) BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
     }
+    val (tryptifyEngine, onTryptifyEngineChange) =
+        rememberPreference(TryptifyAudioProcessingKey, defaultValue = false)
+    val (lastwaveEngine, onLastwaveEngineChange) =
+        rememberPreference(LastwaveAudioProcessingKey, defaultValue = false)
+    val (floatDsp, onFloatDspChange) =
+        rememberPreference(FloatDspEnabledKey, defaultValue = false)
+    // The engines ride the standard sink only; the bit-perfect sink skips every processor.
+    val audioEnginesBlocked = bitPerfectUsb || BitPerfectUsbOutput.sinkActive
 
     val (seekExtraSeconds, onSeekExtraSeconds) =
         rememberPreference(
@@ -657,6 +668,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                 onCrossfadeEnabledChange(false)
                                 onAutomixEnabledChange(false)
                                 releaseBitPerfectUsb()
+                                onTryptifyEngineChange(false)
+                                onLastwaveEngineChange(false)
+                                onFloatDspChange(false)
                             }
                         },
                     )
@@ -708,6 +722,76 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                     // the service restarts, which plays normally without a preference.
                                     BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
                                 }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("tryptify_engine")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.tryptify_audio_processing_title)) },
+                            description =
+                                if (audioEnginesBlocked) {
+                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                } else {
+                                    stringResource(R.string.tryptify_audio_processing_desc)
+                                },
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = tryptifyEngine && !audioEnginesBlocked,
+                            isEnabled = !audioEnginesBlocked,
+                            onCheckedChange = { enabled ->
+                                onTryptifyEngineChange(enabled)
+                                if (enabled) {
+                                    onLastwaveEngineChange(false)
+                                    // Offloaded playback never reaches the audio processors.
+                                    onAudioOffloadChange(false)
+                                }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("lastwave_engine")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.lastwave_audio_processing_title)) },
+                            description =
+                                if (audioEnginesBlocked) {
+                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                } else {
+                                    stringResource(R.string.lastwave_audio_processing_desc)
+                                },
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = lastwaveEngine && !tryptifyEngine && !audioEnginesBlocked,
+                            isEnabled = !audioEnginesBlocked,
+                            onCheckedChange = { enabled ->
+                                onLastwaveEngineChange(enabled)
+                                if (enabled) {
+                                    onTryptifyEngineChange(false)
+                                    onAudioOffloadChange(false)
+                                }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("float_dsp")) {
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.float_dsp_title)) },
+                            description =
+                                if (audioEnginesBlocked) {
+                                    stringResource(R.string.audio_engines_unavailable_bit_perfect)
+                                } else {
+                                    stringResource(R.string.float_dsp_desc)
+                                },
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = floatDsp && !audioEnginesBlocked,
+                            isEnabled = !audioEnginesBlocked,
+                            onCheckedChange = { enabled ->
+                                onFloatDspChange(enabled)
+                                if (enabled) onAudioOffloadChange(false)
                             },
                         )
                     }

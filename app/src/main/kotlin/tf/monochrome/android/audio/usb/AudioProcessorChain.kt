@@ -18,33 +18,39 @@ import java.nio.ByteBuffer
 internal class AudioProcessorChain(
     private val processors: List<AudioProcessor>,
 ) {
-    private val active = BooleanArray(processors.size)
+    private var active = BooleanArray(processors.size)
+
+    // Media3 configures a sink while the previous track is still draining through it, and only
+    // flushes once that drain is done. Membership and the processors' formats therefore wait for
+    // flush(), as AudioProcessor's own configure/flush contract does.
+    private var pendingActive: BooleanArray? = null
     private var outputFormat: AudioProcessor.AudioFormat =
         AudioProcessor.AudioFormat.NOT_SET
 
     fun configure(input: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         var fmt = input
+        val nextActive = BooleanArray(processors.size)
         for (i in processors.indices) {
             val p = processors[i]
             try {
                 val out = p.configure(fmt)
-                active[i] = p.isActive
-                if (active[i] && out != AudioProcessor.AudioFormat.NOT_SET) {
+                nextActive[i] = p.isActive
+                if (nextActive[i] && out != AudioProcessor.AudioFormat.NOT_SET) {
                     fmt = out
                 }
             } catch (e: AudioProcessor.UnhandledAudioFormatException) {
-                active[i] = false
+                nextActive[i] = false
             }
-            p.flush()
         }
+        pendingActive = nextActive
         outputFormat = fmt
-        Log.i(TAG, "configure($input) -> $fmt; chain: ${membership()}")
+        Log.i(TAG, "configure($input) -> $fmt; chain: ${membership(nextActive)}")
         return fmt
     }
 
-    private fun membership(): String = processors.indices.joinToString(", ") { i ->
+    private fun membership(flags: BooleanArray = active): String = processors.indices.joinToString(", ") { i ->
         val name = processors[i].javaClass.simpleName
-        if (active[i]) name else "($name skipped)"
+        if (flags[i]) name else "($name skipped)"
     }
 
     fun process(input: ByteBuffer): ByteBuffer {
@@ -61,6 +67,7 @@ internal class AudioProcessorChain(
     }
 
     fun refreshActive() {
+        if (pendingActive != null) return
         var changed = false
         for (i in processors.indices) {
             val nowActive = processors[i].isActive
@@ -82,11 +89,18 @@ internal class AudioProcessorChain(
     }
 
     fun flush() {
+        pendingActive?.let {
+            active = it
+            pendingActive = null
+        }
         for (p in processors) p.flush()
     }
 
     fun reset() {
         for (p in processors) p.reset()
+        pendingActive = null
+        active = BooleanArray(processors.size)
+        outputFormat = AudioProcessor.AudioFormat.NOT_SET
     }
 
     fun outputFormat(): AudioProcessor.AudioFormat = outputFormat

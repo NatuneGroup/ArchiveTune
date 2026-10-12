@@ -382,6 +382,11 @@
     <string name="player_design_simpmusic">SimpMusic</string>
     <string name="player_design_spatialflow">SpatialFlow</string>
     <string name="player_design_looper">Looper</string>
+    <string name="player_design_flamingo">Flamingo</string>
+    <string name="flamingo_settings_background_effect">Moving blur</string>
+    <string name="flamingo_settings_background_effect_desc">Let the blurred artwork drift behind the player.</string>
+    <string name="flamingo_settings_volume_bar">Flamingo volume bar</string>
+    <string name="flamingo_settings_volume_bar_desc">Show the device volume slider under the transport.</string>
     <string name="rich_synced">Rich Synced</string>
     <string name="line_synced">Line Synced</string>
     <string name="unsynced">Unsynced</string>
@@ -1039,6 +1044,14 @@
     <string name="bit_perfect_usb_default_device">USB DAC</string>
     <string name="bit_perfect_usb_reason_no_mode">%1$s offers no bit-perfect mode at %2$s / %3$s</string>
     <string name="bit_perfect_usb_reason_refused">Android refused bit-perfect mode for this device</string>
+    <string name="audio_engines_experimental_title">Experimental audio engines</string>
+    <string name="tryptify_audio_processing_title">Tryptify DSP engine</string>
+    <string name="tryptify_audio_processing_desc">Experimental. Runs playback through Tryptify\'s 32-bit float chain (mix bus, AutoEQ, parametric EQ). Starts on the next song. Turns off LastWave.</string>
+    <string name="lastwave_audio_processing_title">LastWave DSP engine</string>
+    <string name="lastwave_audio_processing_desc">Experimental. Runs stereo playback through LastWave\'s native processor (clarity, equalizer). Starts on the next song. Turns off Tryptify.</string>
+    <string name="float_dsp_title">Float DSP stage</string>
+    <string name="float_dsp_desc">Experimental. Processes the decoded audio in 32-bit float and dithers it back. Used only when no engine is on. Starts on the next song.</string>
+    <string name="audio_engines_unavailable_bit_perfect">Off while bit-perfect USB output is on</string>
     <string name="deezer_arl_login">Sign in with ARL</string>
     <string name="deezer_arl_login_description">Paste the arl cookie from a signed-in deezer.com browser session</string>
     <string name="deezer_arl_placeholder">arl cookie value</string>
@@ -1095,6 +1108,8 @@
     <string name="ti_decoder">Decoder</string>
     <string name="ti_duration">Duration</string>
     <string name="ti_engine">Engine</string>
+    <string name="ti_engine_off">Off (Android audio path)</string>
+    <string name="ti_engine_pending">%1$s (starts on the next song)</string>
     <string name="ti_hardware_clock">Hardware clock</string>
     <string name="ti_normalization">Normalization</string>
     <string name="ti_pipeline_state">Pipeline state</string>

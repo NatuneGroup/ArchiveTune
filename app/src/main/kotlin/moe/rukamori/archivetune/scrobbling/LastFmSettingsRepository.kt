@@ -241,8 +241,15 @@ class LastFmSettingsRepository
             }
 
             settings.serviceConfig.apply(sessionKey = null)
+            val authMode =
+                when (settings.serviceConfig.provider) {
+                    LastFmProvider.LIBREFM -> LastFM.MobileSessionAuthMode.LEGACY_AUTH_TOKEN
+                    LastFmProvider.LASTFM,
+                    LastFmProvider.CUSTOM,
+                    -> LastFM.MobileSessionAuthMode.PASSWORD
+                }
             return LastFM
-                .getMobileSession(username.trim(), password)
+                .getMobileSession(username.trim(), password, authMode)
                 .onSuccess { authentication ->
                     context.dataStore.edit { preferences ->
                         preferences[LastFMUsernameKey] = authentication.session.name

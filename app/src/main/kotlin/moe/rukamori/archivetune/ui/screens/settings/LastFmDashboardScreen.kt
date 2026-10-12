@@ -286,6 +286,23 @@ private fun dashboardTheme(): DashboardTheme {
 
 private enum class LastFmFilter { RECENT, TOP_TRACKS, TOP_ARTISTS, TOP_ALBUMS }
 
+// Last successful load, shown immediately when the dashboard reopens while a refresh runs, and
+// kept per section when a refresh fails offline.
+private data class LastFmDashboardSnapshot(
+    val username: String,
+    val userInfo: Result<UserInfo>,
+    val recentTracks: Result<List<RecentTrack>>,
+    val topTracks: Result<TopTracksResponse>,
+    val topArtists: Result<TopArtistsResponse>,
+    val topAlbums: Result<TopAlbumsResponse>,
+)
+
+@Volatile
+private var dashboardSnapshot: LastFmDashboardSnapshot? = null
+
+private fun <T> Result<T>.orPreviousSuccess(previous: Result<T>?): Result<T> =
+    if (isFailure && previous?.isSuccess == true) previous else this
+
 /**
  * Process-wide cache of YouTube search results keyed by "<title>::<artist>". Last.fm tracks don't
  * carry YouTube video IDs, so every playback action on a Last.fm track needs to round-trip through
@@ -429,17 +446,6 @@ fun LastFmDashboardScreen(
     var topTracks by remember { mutableStateOf<Result<TopTracksResponse>?>(null) }
     var topArtists by remember { mutableStateOf<Result<TopArtistsResponse>?>(null) }
     var topAlbums by remember { mutableStateOf<Result<TopAlbumsResponse>?>(null) }
-    // Stats-only responses from the limit=1 fetches. Mirrors LastWave-native's
-    // _fetchHomeData() Promise.allSettled batch, which fires four parallel
-    // calls (user.getinfo + the three limit=1 stats calls) so the hero card
-    // reads `attr.total` (the lifetime unique-item count) instead of the
-    // page size. The list calls below (limit=20) feed the filter views; the
-    // stats calls here feed the hero stat pills — separated so that a slow
-    // list fetch can't delay the stats, and a stats fetch failure can't take
-    // the lists down with it.
-    var statsTopTracks by remember { mutableStateOf<Result<TopTracksResponse>?>(null) }
-    var statsTopArtists by remember { mutableStateOf<Result<TopArtistsResponse>?>(null) }
-    var statsTopAlbums by remember { mutableStateOf<Result<TopAlbumsResponse>?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf(LastFmFilter.RECENT) }
     var overflowTrack by remember { mutableStateOf<LastFmTrackRef?>(null) }
@@ -457,6 +463,14 @@ fun LastFmDashboardScreen(
     var searchVisible by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    fun applySnapshot(snapshot: LastFmDashboardSnapshot) {
+        userInfo = snapshot.userInfo
+        recentTracks = snapshot.recentTracks
+        topTracks = snapshot.topTracks
+        topArtists = snapshot.topArtists
+        topAlbums = snapshot.topAlbums
+    }
+
     fun refresh() {
         val username = current?.username?.takeIf { it.isNotBlank() } ?: return
         if (!isLoggedIn) return
@@ -464,16 +478,9 @@ fun LastFmDashboardScreen(
             isRefreshing = true
             try {
                 current.serviceConfig.apply(sessionKey = current.sessionKey)
-                // Eight parallel Last.fm calls — mirrors LastWave-native's _fetchHomeData()
-                // Promise.allSettled batch: • user.getInfo → header + hero scrobbles count •
-                // user.getRecentTracks(200) → RECENT filter view • user.getTopTracks(20) →
-                // TOP_TRACKS filter view • user.getTopArtists(20) → TOP_ARTISTS filter view •
-                // user.getTopAlbums(20) → TOP_ALBUMS filter view • user.getTopTracks(1) → hero stat
-                // pill (attr.total) • user.getTopArtists(1) → hero stat pill (attr.total) •
-                // user.getTopAlbums(1) → hero stat pill (attr.total) The three limit=1 stats calls
-                // only need to read `@attr.total` (the lifetime unique-item count) — fetching a
-                // single item is enough to get the count, and is much lighter than pulling the
-                // whole first page just to count it.
+                // Five parallel calls. The hero stat pills read `@attr.total` (the lifetime
+                // unique-item count) from the same limit=20 top-list responses that feed the
+                // filter views, so no separate limit=1 stats requests are needed.
                 withContext(Dispatchers.IO) {
                     val infoDeferred = async { LastFM.getUserInfo(username) }
                     // Last.fm permits up to 200 recent tracks per request. Keep every
@@ -483,18 +490,12 @@ fun LastFmDashboardScreen(
                     val topTracksDeferred = async { LastFM.getTopTracks(username, period = "overall", limit = 20) }
                     val topArtistsDeferred = async { LastFM.getTopArtists(username, period = "overall", limit = 20) }
                     val topAlbumsDeferred = async { LastFM.getTopAlbums(username, period = "overall", limit = 20) }
-                    val statsTracksDeferred = async { LastFM.getTopTracks(username, period = "overall", limit = 1) }
-                    val statsArtistsDeferred = async { LastFM.getTopArtists(username, period = "overall", limit = 1) }
-                    val statsAlbumsDeferred = async { LastFM.getTopAlbums(username, period = "overall", limit = 1) }
 
                     val infoResult = infoDeferred.await()
                     val recentResult = recentDeferred.await()
                     val topTracksResult = topTracksDeferred.await()
                     val topArtistsResult = topArtistsDeferred.await()
                     val topAlbumsResult = topAlbumsDeferred.await()
-                    val statsTracksResult = statsTracksDeferred.await()
-                    val statsArtistsResult = statsArtistsDeferred.await()
-                    val statsAlbumsResult = statsAlbumsDeferred.await()
 
                     // Surface parse / auth failures to logcat so the dashboard
                     // doesn't silently fall back to "0" stats without any signal
@@ -505,22 +506,21 @@ fun LastFmDashboardScreen(
                     topTracksResult.onFailure { Timber.e(it, "Last.fm user.getTopTracks(limit=20) failed") }
                     topArtistsResult.onFailure { Timber.e(it, "Last.fm user.getTopArtists(limit=20) failed") }
                     topAlbumsResult.onFailure { Timber.e(it, "Last.fm user.getTopAlbums(limit=20) failed") }
-                    statsTracksResult.onFailure { Timber.e(it, "Last.fm user.getTopTracks(limit=1 stats) failed") }
-                    statsArtistsResult.onFailure { Timber.e(it, "Last.fm user.getTopArtists(limit=1 stats) failed") }
-                    statsAlbumsResult.onFailure { Timber.e(it, "Last.fm user.getTopAlbums(limit=1 stats) failed") }
 
-                    userInfo = infoResult
-                    recentTracks = recentResult.map { it.recenttracks.track }
-                    // Keep the wrappers intact (see the var declaration comment
-                    // for why) — the read site unwraps to the page list, and the
-                    // hero stat pills read .toptracks.attr.total etc. directly
-                    // off the same state.
-                    topTracks = topTracksResult
-                    topArtists = topArtistsResult
-                    topAlbums = topAlbumsResult
-                    statsTopTracks = statsTracksResult
-                    statsTopArtists = statsArtistsResult
-                    statsTopAlbums = statsAlbumsResult
+                    // A failed refresh keeps the last successful section instead of replacing
+                    // loaded data with an error while offline.
+                    val previous = dashboardSnapshot?.takeIf { it.username == username }
+                    val snapshot =
+                        LastFmDashboardSnapshot(
+                            username = username,
+                            userInfo = infoResult.orPreviousSuccess(previous?.userInfo),
+                            recentTracks = recentResult.map { it.recenttracks.track }.orPreviousSuccess(previous?.recentTracks),
+                            topTracks = topTracksResult.orPreviousSuccess(previous?.topTracks),
+                            topArtists = topArtistsResult.orPreviousSuccess(previous?.topArtists),
+                            topAlbums = topAlbumsResult.orPreviousSuccess(previous?.topAlbums),
+                        )
+                    dashboardSnapshot = snapshot
+                    applySnapshot(snapshot)
                 }
             } finally {
                 isRefreshing = false
@@ -529,7 +529,9 @@ fun LastFmDashboardScreen(
     }
 
     LaunchedEffect(isLoggedIn, current?.username) {
-        if (isLoggedIn) refresh()
+        if (!isLoggedIn) return@LaunchedEffect
+        dashboardSnapshot?.takeIf { it.username == current?.username }?.let(::applySnapshot)
+        refresh()
     }
 
     // ── Notch / status-bar handling ───────────────────────────────────── The Scaffold's
@@ -730,16 +732,11 @@ fun LastFmDashboardScreen(
                 HeroStatsCard(
                     userInfo = userInfo,
                     isRefreshing = isRefreshing,
-                    // Read the lifetime unique-item counts off the dedicated limit=1 stats
-                    // responses — mirrors LastWave-native's _fetchHomeData() batch where the
-                    // hero stats come from the limit=1 fetches, not the list fetches. Falls
-                    // back to the list responses if the stats fetch failed (defensive: same
-                    // source, so the value is still authoritative).
-                    trackCount = (statsTopTracks ?: topTracks)
+                    trackCount = topTracks
                         ?.getOrNull()?.toptracks?.attr?.total?.toIntOrNull() ?: 0,
-                    artistCount = (statsTopArtists ?: topArtists)
+                    artistCount = topArtists
                         ?.getOrNull()?.topartists?.attr?.total?.toIntOrNull() ?: 0,
-                    albumCount = (statsTopAlbums ?: topAlbums)
+                    albumCount = topAlbums
                         ?.getOrNull()?.topalbums?.attr?.total?.toIntOrNull() ?: 0,
                     onRetry = ::refresh,
                     onOpenProfile = {

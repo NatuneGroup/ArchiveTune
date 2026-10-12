@@ -46,7 +46,11 @@ import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.utils.completed
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
+import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.models.toMediaMetadata
+import moe.rukamori.archivetune.scrobbling.LastFmScrobbleQueue
+import moe.rukamori.archivetune.scrobbling.LastFmSendLovesKey
+import moe.rukamori.archivetune.scrobbling.LastFmTrackMetadata
 import timber.log.Timber
 import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
@@ -247,7 +251,7 @@ class SyncUtils
                     }
                     val shouldSyncRemote = !song.isLocal && isLoggedIn() && isYtmSyncEnabled()
                     if (!shouldSyncRemote) {
-                        return@withLock Result.success(persistSongLike(song))
+                        return@withLock Result.success(persistSongLike(song).also(::mirrorLikeToLastFm))
                     }
 
                     val pending =
@@ -260,6 +264,7 @@ class SyncUtils
                     try {
                         YouTube.likeVideo(song.id, song.liked).getOrThrow()
                         val updatedSong = persistSongLike(song)
+                        mirrorLikeToLastFm(updatedSong)
                         pendingSongLikes.replace(
                             song.id,
                             pending,
@@ -321,6 +326,31 @@ class SyncUtils
                 update(updatedSong)
                 updatedSong
             }
+
+        private fun mirrorLikeToLastFm(song: SongEntity) {
+            syncScope.launch {
+                try {
+                    val preferences = context.dataStore.data.first()
+                    if (preferences[LastFmSendLovesKey] != true) return@launch
+                    val sessionKey = LastFM.sessionKey?.takeIf { it.isNotBlank() } ?: return@launch
+                    val metadata = database.getSongById(song.id)?.toMediaMetadata() ?: return@launch
+                    if (metadata.isPodcast) return@launch
+                    val track = LastFmTrackMetadata.from(metadata, durationSeconds = null) ?: return@launch
+                    LastFM
+                        .setLoveStatus(artist = track.artist, track = track.track, love = song.liked)
+                        .onFailure { error ->
+                            if (error is CancellationException) throw error
+                            Timber.w(error, "Last.fm love sync failed for ${song.id}")
+                            LastFmScrobbleQueue.attach(context)
+                            LastFmScrobbleQueue.onRequestFailed(error, sessionKey)
+                        }
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Timber.w(error, "Last.fm love sync skipped for ${song.id}")
+                }
+            }
+        }
 
         private fun activePendingSongLikes(): Map<String, Boolean> {
             val now = SystemClock.elapsedRealtime()

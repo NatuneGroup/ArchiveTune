@@ -21,6 +21,10 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import moe.rukamori.archivetune.lastfm.models.Authentication
 import moe.rukamori.archivetune.lastfm.models.LastFmError
 import moe.rukamori.archivetune.lastfm.models.RecentTracksResponse
@@ -76,11 +80,46 @@ object LastFM {
         }
     }
 
+    enum class MobileSessionAuthMode {
+        PASSWORD,
+
+        // GNU FM (Libre.fm) only accepts the pre-2.0 md5(username + md5(password)) token here.
+        LEGACY_AUTH_TOKEN,
+    }
+
+    /** One play for `track.scrobble`; [timestamp] is the UTC second playback started. */
+    data class ScrobbleSubmission(
+        val artist: String,
+        val track: String,
+        val timestamp: Long,
+        val album: String? = null,
+        val albumArtist: String? = null,
+        val trackNumber: Int? = null,
+        val duration: Int? = null,
+        val chosenByUser: Boolean = true,
+    )
+
+    /**
+     * Last.fm answers `status="ok"` for a batch even when it drops entries, and only says so per
+     * entry in `ignoredMessage`. Ignored entries are final: re-sending them is ignored again.
+     */
+    data class ScrobbleBatchResult(
+        val accepted: Int,
+        val ignored: Int,
+        val ignoredCodes: List<Int>,
+    )
+
+    const val MAX_SCROBBLES_PER_BATCH = 50
+
+    private fun String.md5(): String {
+        val digest = MessageDigest.getInstance("MD5").digest(toByteArray(Charsets.UTF_8))
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
     private fun Map<String, String>.apiSig(secret: String): String {
         val sorted = toSortedMap()
         val toHash = sorted.entries.joinToString("") { it.key + it.value } + secret
-        val digest = MessageDigest.getInstance("MD5").digest(toHash.toByteArray())
-        return digest.joinToString("") { "%02x".format(it) }
+        return toHash.md5()
     }
 
     private fun HttpRequestBuilder.lastfmParams(
@@ -140,18 +179,31 @@ object LastFM {
     suspend fun getMobileSession(
         username: String,
         password: String,
+        authMode: MobileSessionAuthMode = MobileSessionAuthMode.PASSWORD,
     ) = runCatching {
+        val credentials =
+            when (authMode) {
+                MobileSessionAuthMode.PASSWORD -> mapOf("password" to password)
+                MobileSessionAuthMode.LEGACY_AUTH_TOKEN ->
+                    mapOf("authToken" to (username.lowercase() + password.md5()).md5())
+            }
         postAndDecode<Authentication>(
             method = "auth.getMobileSession",
-            extra = mapOf("username" to username, "password" to password),
+            extra = mapOf("username" to username) + credentials,
         )
     }
 
+    /**
+     * [code] is the Last.fm API error code when [isApiError], otherwise the HTTP status of a
+     * response that carried no API error body (a proxy or server outage page).
+     */
     class LastFmException(
         val code: Int,
         override val message: String,
+        val httpStatus: Int? = null,
+        val isApiError: Boolean = true,
     ) : Exception(message) {
-        override fun toString(): String = "LastFmException(code=$code, message=$message)"
+        override fun toString(): String = "LastFmException(code=$code, httpStatus=$httpStatus, apiError=$isApiError, message=$message)"
     }
 
     suspend fun updateNowPlaying(
@@ -160,6 +212,7 @@ object LastFM {
         album: String? = null,
         trackNumber: Int? = null,
         duration: Int? = null,
+        albumArtist: String? = null,
     ) = runCatching {
         postAndRead(
             method = "track.updateNowPlaying",
@@ -168,9 +221,10 @@ object LastFM {
                 buildMap {
                     put("artist", artist)
                     put("track", track)
-                    album?.let { put("album", it) }
-                    trackNumber?.let { put("trackNumber", it.toString()) }
-                    duration?.let { put("duration", it.toString()) }
+                    album?.takeIf { it.isNotBlank() }?.let { put("album", it) }
+                    albumArtist?.takeIf { it.isNotBlank() }?.let { put("albumArtist", it) }
+                    trackNumber?.takeIf { it > 0 }?.let { put("trackNumber", it.toString()) }
+                    duration?.takeIf { it > 0 }?.let { put("duration", it.toString()) }
                 },
         )
     }
@@ -182,20 +236,80 @@ object LastFM {
         album: String? = null,
         trackNumber: Int? = null,
         duration: Int? = null,
+    ) = scrobbleBatch(
+        listOf(
+            ScrobbleSubmission(
+                artist = artist,
+                track = track,
+                timestamp = timestamp,
+                album = album,
+                trackNumber = trackNumber,
+                duration = duration,
+            ),
+        ),
+    )
+
+    suspend fun scrobbleBatch(submissions: List<ScrobbleSubmission>) =
+        runCatching {
+            require(submissions.size in 1..MAX_SCROBBLES_PER_BATCH)
+            val responseText =
+                postAndRead(
+                    method = "track.scrobble",
+                    sessionKey = requireSessionKey(),
+                    extra =
+                        buildMap {
+                            submissions.forEachIndexed { index, item ->
+                                put("artist[$index]", item.artist)
+                                put("track[$index]", item.track)
+                                put("timestamp[$index]", item.timestamp.toString())
+                                item.album?.takeIf { it.isNotBlank() }?.let { put("album[$index]", it) }
+                                item.albumArtist?.takeIf { it.isNotBlank() }?.let { put("albumArtist[$index]", it) }
+                                item.trackNumber?.takeIf { it > 0 }?.let { put("trackNumber[$index]", it.toString()) }
+                                item.duration?.takeIf { it > 0 }?.let { put("duration[$index]", it.toString()) }
+                                if (item.chosenByUser) put("chosenByUser[$index]", "1")
+                            }
+                        },
+                )
+            parseScrobbleBatchResult(responseText, submissions.size)
+        }
+
+    suspend fun setLoveStatus(
+        artist: String,
+        track: String,
+        love: Boolean,
     ) = runCatching {
         postAndRead(
-            method = "track.scrobble",
+            method = if (love) "track.love" else "track.unlove",
             sessionKey = requireSessionKey(),
-            extra =
-                buildMap {
-                    put("artist[0]", artist)
-                    put("track[0]", track)
-                    put("timestamp[0]", timestamp.toString())
-                    album?.let { put("album[0]", it) }
-                    trackNumber?.let { put("trackNumber[0]", it.toString()) }
-                    duration?.let { put("duration[0]", it.toString()) }
-                },
+            extra = mapOf("artist" to artist, "track" to track),
         )
+        Unit
+    }
+
+    private fun parseScrobbleBatchResult(
+        responseText: String,
+        submitted: Int,
+    ): ScrobbleBatchResult {
+        val fallback = ScrobbleBatchResult(accepted = submitted, ignored = 0, ignoredCodes = emptyList())
+        return runCatching {
+            val scrobbles = json.parseToJsonElement(responseText).jsonObject["scrobbles"] as? JsonObject ?: return fallback
+            // One entry arrives as an object, several as an array.
+            val entries =
+                when (val entry = scrobbles["scrobble"]) {
+                    is JsonArray -> entry.mapNotNull { it as? JsonObject }
+                    is JsonObject -> listOf(entry)
+                    else -> emptyList()
+                }
+            val ignoredCodes =
+                entries.mapNotNull { entry ->
+                    val ignored = entry["ignoredMessage"] as? JsonObject ?: return@mapNotNull null
+                    ignored["code"]?.jsonPrimitive?.content?.toIntOrNull()?.takeIf { it != 0 }
+                }
+            val attr = scrobbles["@attr"] as? JsonObject
+            val ignored = attr?.get("ignored")?.jsonPrimitive?.content?.toIntOrNull() ?: ignoredCodes.size
+            val accepted = attr?.get("accepted")?.jsonPrimitive?.content?.toIntOrNull() ?: (submitted - ignored)
+            ScrobbleBatchResult(accepted = accepted, ignored = ignored, ignoredCodes = ignoredCodes)
+        }.getOrDefault(fallback)
     }
 
     // --- Dashboard data fetchers -------------------------------------------
@@ -359,7 +473,8 @@ object LastFM {
         ).toString()
     }
 
-    private fun requireSessionKey(): String = runtimeConfig.sessionKey ?: throw LastFmException(9, "Session key missing")
+    // isApiError = false: a locally missing key must not be mistaken for the server revoking one.
+    private fun requireSessionKey(): String = runtimeConfig.sessionKey ?: throw LastFmException(9, "Session key missing", isApiError = false)
 
     private suspend inline fun <reified T> postAndDecode(
         method: String,
@@ -392,14 +507,23 @@ object LastFM {
             }
 
         val responseText = response.bodyAsText()
-        if (!response.status.isSuccess()) {
-            throw LastFmException(response.status.value, response.status.description)
+        val httpStatus = response.status.value.takeUnless { response.status.isSuccess() }
+        // Last.fm sends API errors (invalid session, rate limit) with 4xx/5xx statuses, so the body
+        // has to be read before the status or code 9 would surface as a bare 403.
+        apiErrorOrNull(responseText)?.let { error ->
+            throw LastFmException(error.error, error.message, httpStatus)
         }
-        if (responseText.contains("\"error\"")) {
-            val error = json.decodeFromString<LastFmError>(responseText)
-            throw LastFmException(error.error, error.message)
+        if (httpStatus != null) {
+            throw LastFmException(httpStatus, response.status.description, httpStatus, isApiError = false)
         }
         return responseText
+    }
+
+    private fun apiErrorOrNull(responseText: String): LastFmError? {
+        val body = runCatching { json.parseToJsonElement(responseText) as? JsonObject }.getOrNull() ?: return null
+        val code = body["error"]?.let { runCatching { it.jsonPrimitive.content.toIntOrNull() }.getOrNull() } ?: return null
+        val message = body["message"]?.let { runCatching { it.jsonPrimitive.content }.getOrNull() }.orEmpty()
+        return LastFmError(code, message)
     }
 
     const val DEFAULT_SCROBBLE_DELAY_PERCENT = 0.5f

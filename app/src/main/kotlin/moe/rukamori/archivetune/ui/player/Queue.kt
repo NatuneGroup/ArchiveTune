@@ -701,6 +701,11 @@ fun Queue(
                     // SpatialFlow carries its own sliding queue drawer, so the shared sheet would
                     // be a second queue over the top of it.
                 }
+
+                PlayerDesignStyle.FLAMINGO -> {
+                    // Flamingo's queue is one of its own pages, reached from its transport, and
+                    // its collapsed peek height is 0dp.
+                }
             }
 
             if (showSleepTimerDialog) {

@@ -1242,6 +1242,14 @@ enum class PlayerDesignStyle(
      * own, so unlike the other self-contained styles it leaves the background choice to the reader.
      */
     LOOPER,
+
+    /**
+     * The Flamingo player (4nx3b/ArchiveTune dev, after Flamingo's NowPlaying) — album, lyrics and
+     * queue pages in one surface, with the artwork morphing between them. Its floating-light backdrop
+     * is a blurred sleeve drawn edge to edge, so it declares BLUR: that also zeroes the shared queue
+     * peek, which Flamingo does not need because its own queue page replaces the sheet.
+     */
+    FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
     ;
 
     /** What to actually render: the reader's pick where it is offered, the style's own otherwise. */

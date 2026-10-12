@@ -738,6 +738,7 @@ fun PlayerTopActions(
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
         PlayerDesignStyle.LOOPER,
+        PlayerDesignStyle.FLAMINGO,
         -> {
             Unit
         }
@@ -1760,6 +1761,7 @@ fun PlayerPlaybackControls(
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
         PlayerDesignStyle.LOOPER,
+        PlayerDesignStyle.FLAMINGO,
         -> {
             Unit
         }

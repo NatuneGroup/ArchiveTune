@@ -249,6 +249,7 @@ import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
+import moe.rukamori.archivetune.ui.player.flamingo.FlamingoPlayerContent
 
 private const val SeekbarSettleToleranceMs = 1_500L
 private const val V7BackdropMinArtworkSizePx = 1_024
@@ -352,8 +353,8 @@ internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController 
  *
  * Every other style owns its own gesture surface — V5 the little player's scrub overlay, V7 the
  * immersive screen, V10 and Apple Music their artwork, BitChord / SimpMusic / SpatialFlow / Looper
- * their artwork, TikTok its song page — so a second handler on the shared root would seek twice for
- * a single double-tap. V5 is excluded for that reason as much as for its own overlay gestures.
+ * their artwork, Flamingo its root surface, TikTok its song page — so a second handler on the
+ * shared root would seek twice for a single double-tap. V5 is excluded for that reason as much as for its own overlay gestures.
  */
 private val NumberedSeekDoubleTapStyles =
     setOf(
@@ -1465,7 +1466,7 @@ fun BottomSheetPlayer(
                 !aodModeEnabled
         val shouldUseArtworkCanvas =
             (archiveTuneCanvasEnabled || spotifyCanvasEnabled) &&
-                playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC &&
+                (playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC || playerDesignStyle == PlayerDesignStyle.FLAMINGO) &&
                 !aodModeEnabled
         val shouldFetchV7Canvas = shouldUseV7Canvas && !lowDataModeActive
         val shouldFetchArtworkCanvas = shouldUseArtworkCanvas && !lowDataModeActive
@@ -1659,7 +1660,8 @@ fun BottomSheetPlayer(
             playerDesignStyle != PlayerDesignStyle.BITCHORD &&
             playerDesignStyle != PlayerDesignStyle.TIKTOK &&
             playerDesignStyle != PlayerDesignStyle.SIMPMUSIC &&
-            playerDesignStyle != PlayerDesignStyle.SPATIALFLOW
+            playerDesignStyle != PlayerDesignStyle.SPATIALFLOW &&
+            playerDesignStyle != PlayerDesignStyle.FLAMINGO
         ) {
             PlayerBackground(
                 playerBackground = playerBackground,
@@ -2143,6 +2145,46 @@ fun BottomSheetPlayer(
                                     .windowInsetsPadding(
                                         WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
+                } else if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
+                    // Flamingo takes Apple Music's arguments (its signature is a superset), but its
+                    // lyrics and queue are pages of its own, so onLyricsVisibilityChange is what
+                    // reports them upward. In landscape it opens on its lyrics page.
+                    enrichedMetadata?.let { metadata ->
+                        FlamingoPlayerContent(
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            volume = deviceMusicVolumeController.volumeFraction,
+                            onVolumeChange = onPlayerVolumeChange,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            currentFormat = currentFormat,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
+                            lyricsSyncOffset = lyricsSyncOffset,
+                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
+                            landscape = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
@@ -2713,6 +2755,44 @@ fun BottomSheetPlayer(
                                     .windowInsetsPadding(
                                         WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
+                } else if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
+                    // Mirror of the landscape branch above. Full-bleed like Apple Music: Flamingo
+                    // insets its own content from the status bar.
+                    enrichedMetadata?.let { metadata ->
+                        FlamingoPlayerContent(
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            volume = deviceMusicVolumeController.volumeFraction,
+                            onVolumeChange = onPlayerVolumeChange,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            currentFormat = currentFormat,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
+                            lyricsSyncOffset = lyricsSyncOffset,
+                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {

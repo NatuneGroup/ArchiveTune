@@ -90,6 +90,8 @@ import moe.rukamori.archivetune.constants.DefaultOpenTabKey
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
+import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
+import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.GridItemSize
@@ -304,6 +306,18 @@ fun AppearanceSectionSettings(
         rememberPreference(
             TikTokMainLyricsEnabledKey,
             defaultValue = false,
+        )
+    // Defaults must match the reads in FlamingoPlayerContent, or the switch shows a state the
+    // player is not in.
+    val (flamingoBackgroundEffect, onFlamingoBackgroundEffectChange) =
+        rememberPreference(
+            FlamingoBackgroundEffectKey,
+            defaultValue = false,
+        )
+    val (flamingoShowVolumeBar, onFlamingoShowVolumeBarChange) =
+        rememberPreference(
+            FlamingoShowVolumeBarKey,
+            defaultValue = true,
         )
     val (showPlayerVolumeBar, onShowPlayerVolumeBarChange) =
         rememberPreference(
@@ -1136,6 +1150,8 @@ fun AppearanceSectionSettings(
                                             stringResource(R.string.player_design_spatialflow)
                                         PlayerDesignStyle.LOOPER ->
                                             stringResource(R.string.player_design_looper)
+                                        PlayerDesignStyle.FLAMINGO ->
+                                            stringResource(R.string.player_design_flamingo)
                                     }
                                 },
                             )
@@ -1210,6 +1226,30 @@ fun AppearanceSectionSettings(
                             icon = { Icon(painterResource(R.drawable.sliders), null) },
                             checked = appleMusicSeekGrow,
                             onCheckedChange = onAppleMusicSeekGrowChange,
+                        )
+                    }
+                }
+
+                // Flamingo reads its own keys, not the shared volume-bar switch below.
+                if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("flamingo_background_effect"),
+                            title = { Text(stringResource(R.string.flamingo_settings_background_effect)) },
+                            description = stringResource(R.string.flamingo_settings_background_effect_desc),
+                            icon = { Icon(painterResource(R.drawable.blur_on), null) },
+                            checked = flamingoBackgroundEffect,
+                            onCheckedChange = onFlamingoBackgroundEffectChange,
+                        )
+                    }
+                    item {
+                        SwitchPreference(
+                            modifier = positions.modifierFor("flamingo_volume_bar"),
+                            title = { Text(stringResource(R.string.flamingo_settings_volume_bar)) },
+                            description = stringResource(R.string.flamingo_settings_volume_bar_desc),
+                            icon = { Icon(painterResource(R.drawable.volume_up), null) },
+                            checked = flamingoShowVolumeBar,
+                            onCheckedChange = onFlamingoShowVolumeBarChange,
                         )
                     }
                 }

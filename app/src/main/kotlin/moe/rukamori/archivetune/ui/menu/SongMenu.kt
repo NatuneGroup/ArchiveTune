@@ -1432,6 +1432,16 @@ fun SongMenu(
                 }
             }
         }
+
+        item {
+            CustomArtworkMenuSection(
+                songId = song.id,
+                thumbnailUrl = song.song.thumbnailUrl,
+                title = song.song.title,
+                artistName = song.artists.firstOrNull()?.name.orEmpty(),
+                albumTitle = song.album?.title ?: song.song.albumName,
+            )
+        }
         } // end else (showSleepTimerSheet)
     }
 }

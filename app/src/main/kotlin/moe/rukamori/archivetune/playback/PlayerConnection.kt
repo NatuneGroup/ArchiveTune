@@ -423,6 +423,14 @@ class PlayerConnection(
         service.toggleLike()
     }
 
+    /** Pushes a canvas the user picked to the open player surfaces without waiting for a track change. */
+    internal suspend fun publishCanvasArtwork(
+        mediaId: String,
+        artwork: CanvasArtwork,
+    ) {
+        _canvasArtworkUpdates.emit(CanvasArtworkUpdate(mediaId = mediaId, artwork = artwork))
+    }
+
     internal suspend fun refetchCanvasArtwork(
         metadata: MediaMetadata,
         requireVertical: Boolean,

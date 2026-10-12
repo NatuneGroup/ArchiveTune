@@ -33,10 +33,16 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.aicontentfilter.AiContentFilterPolicy
+import moe.rukamori.archivetune.aicontentfilter.FilterAiContentByCreatorNameUseCase
+import moe.rukamori.archivetune.aicontentfilter.ObserveAiContentFilterPolicyUseCase
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.reportException
@@ -71,9 +77,21 @@ class QqHomeViewModel
     @Inject
     constructor(
         @ApplicationContext private val context: Context,
+        observeAiContentFilterPolicy: ObserveAiContentFilterPolicyUseCase,
+        private val filterAiContent: FilterAiContentByCreatorNameUseCase,
     ) : ViewModel() {
+        // The charts as QQ ranked them; the AI filter is applied on the way out so toggling it
+        // re-filters in place instead of fetching again.
         private val _screenState = MutableStateFlow<QqHomeScreenState>(QqHomeScreenState.Loading)
-        val screenState: StateFlow<QqHomeScreenState> = _screenState.asStateFlow()
+        val screenState: StateFlow<QqHomeScreenState> =
+            combine(_screenState, observeAiContentFilterPolicy()) { state, policy ->
+                state.withoutAiContent(policy)
+            }.flowOn(Dispatchers.Default)
+                .stateIn(
+                    scope = viewModelScope,
+                    started = SharingStarted.WhileSubscribed(5_000),
+                    initialValue = QqHomeScreenState.Loading,
+                )
 
         /** The account the sections on screen were fetched for; a different one invalidates them. */
         private var loadedUin: String? = null
@@ -136,6 +154,18 @@ class QqHomeViewModel
                             QqHomeScreenState.Success(sections)
                         }
                 }
+        }
+
+        private fun QqHomeScreenState.withoutAiContent(policy: AiContentFilterPolicy): QqHomeScreenState {
+            if (this !is QqHomeScreenState.Success || !policy.enabled) return this
+            val filtered =
+                sections.mapNotNull { section ->
+                    filterAiContent
+                        .mediaMetadata(section.tracks, policy)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { section.copy(tracks = it) }
+                }
+            return if (filtered.isEmpty()) QqHomeScreenState.Empty else QqHomeScreenState.Success(filtered)
         }
     }
 

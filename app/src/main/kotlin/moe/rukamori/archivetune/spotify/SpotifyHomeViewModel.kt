@@ -25,10 +25,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.aicontentfilter.AiContentFilterPolicy
+import moe.rukamori.archivetune.aicontentfilter.FilterAiContentByCreatorNameUseCase
+import moe.rukamori.archivetune.aicontentfilter.ObserveAiContentFilterPolicyUseCase
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.AlbumItem
 import moe.rukamori.archivetune.innertube.models.SongItem
@@ -107,10 +114,21 @@ sealed interface SpotifyHomeAction {
 class SpotifyHomeViewModel @Inject constructor(
     private val repository: SpotifyLibraryRepository,
     private val profileCache: SpotifyProfileCache,
+    observeAiContentFilterPolicy: ObserveAiContentFilterPolicyUseCase,
+    private val filterAiContent: FilterAiContentByCreatorNameUseCase,
 ) : ViewModel() {
 
+    // Holds the feed as Spotify sent it, so toggling the AI filter re-filters without a refetch.
     private val _screenState = MutableStateFlow<SpotifyHomeScreenState>(SpotifyHomeScreenState.Loading)
-    val screenState: StateFlow<SpotifyHomeScreenState> = _screenState.asStateFlow()
+    val screenState: StateFlow<SpotifyHomeScreenState> =
+        combine(_screenState, observeAiContentFilterPolicy()) { state, policy ->
+            state.withoutAiContent(policy)
+        }.flowOn(Dispatchers.Default)
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = SpotifyHomeScreenState.Loading,
+            )
 
     private val _isRefreshing = MutableStateFlow(false)
     val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -411,6 +429,31 @@ class SpotifyHomeViewModel @Inject constructor(
         val title = feedSection.title ?: return null
         if (feedSection.items.isEmpty()) return null
         return SpotifyHomeSection.Cards(title = title, items = feedSection.items)
+    }
+
+    /**
+     * Recents and frequent artists are left alone: they are the account's own listening, which the
+     * YouTube home does not filter either.
+     */
+    private fun SpotifyHomeScreenState.withoutAiContent(policy: AiContentFilterPolicy): SpotifyHomeScreenState {
+        if (this !is SpotifyHomeScreenState.Success || !policy.enabled) return this
+        val filtered = sections.mapNotNull { section ->
+            when (section) {
+                is SpotifyHomeSection.Tracks ->
+                    filterAiContent.spotifyTracks(section.tracks, policy)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { section.copy(tracks = it) }
+                is SpotifyHomeSection.Cards ->
+                    filterAiContent.spotifyFeedItems(section.items, policy)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { section.copy(items = it) }
+            }
+        }
+        return if (filtered.isEmpty() && recentItems.isEmpty() && frequentArtists.isEmpty()) {
+            SpotifyHomeScreenState.Empty
+        } else {
+            copy(sections = filtered)
+        }
     }
 }
 

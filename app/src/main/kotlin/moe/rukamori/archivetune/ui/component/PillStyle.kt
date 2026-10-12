@@ -181,9 +181,15 @@ class PillStyle(
 fun rememberNavigationBarCompactBehavior(): Pair<NavigationBarCompactBehavior, (NavigationBarCompactBehavior) -> Unit> {
     val (hideOnScroll) = rememberPreference(NavigationBarHideOnScrollKey, defaultValue = false)
     val (stored, setStored) = rememberPreference(NavigationBarCompactBehaviorKey, defaultValue = "")
+    // The Apple Music bar is the one-row layout (Library circle, mini player, Search circle), as
+    // in 4nx3b; a separate tab capsule above a separate mini player is not that style.
     val behavior =
-        NavigationBarCompactBehavior.entries.firstOrNull { it.name == stored }
-            ?: if (hideOnScroll) NavigationBarCompactBehavior.ADAPTIVE else NavigationBarCompactBehavior.ALWAYS_EXPANDED
+        if (rememberNavigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) {
+            NavigationBarCompactBehavior.ALWAYS_COMPACT
+        } else {
+            NavigationBarCompactBehavior.entries.firstOrNull { it.name == stored }
+                ?: if (hideOnScroll) NavigationBarCompactBehavior.ADAPTIVE else NavigationBarCompactBehavior.ALWAYS_EXPANDED
+        }
     return behavior to { selected: NavigationBarCompactBehavior -> setStored(selected.name) }
 }
 

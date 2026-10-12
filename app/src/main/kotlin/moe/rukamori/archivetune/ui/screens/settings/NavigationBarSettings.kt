@@ -283,6 +283,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         icon = { Icon(painterResource(R.drawable.nav_bar), null) },
                         selectedValue = navigationBarCompactBehavior,
                         onValueSelected = onNavigationBarCompactBehaviorChange,
+                        // The Apple Music bar is always the one-row layout; the stored choice is kept for other styles.
+                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
                         valueText = {
                             when (it) {
                                 NavigationBarCompactBehavior.ADAPTIVE ->

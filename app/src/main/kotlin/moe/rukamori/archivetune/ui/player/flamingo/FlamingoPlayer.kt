@@ -592,8 +592,13 @@ fun FlamingoPlayerContent(
             }
         }
 
-        BackHandler(enabled = nowPage != FlamingoPage.Album) {
-            nowPage = FlamingoPage.Album
+        // Composed only while a page is open, so it registers after the player sheet's own handler
+        // (added when the sheet expands) and wins; an always-present handler registered at first
+        // composition lost to it, and back collapsed the whole player instead of leaving the page.
+        if (nowPage != FlamingoPage.Album) {
+            BackHandler {
+                nowPage = FlamingoPage.Album
+            }
         }
 
         LaunchedEffect(nowPage, state.isExpandedOrExpanding) {
@@ -764,7 +769,9 @@ fun FlamingoPlayerContent(
                 lastClickTime.longValue,
                 translationPopupOpen,
             ) {
-                if (nowPageLambda.value == FlamingoPage.Album && !showControlLambda.value) {
+                // Only the lyrics page tucks the controls away; the queue keeps them, as Apple
+                // Music does, so they never flash over the list and then vanish.
+                if (nowPageLambda.value != FlamingoPage.Lyric && !showControlLambda.value) {
                     showControl.value = true
                 }
 
@@ -774,7 +781,7 @@ fun FlamingoPlayerContent(
                     delay(time)
                     withContext(Dispatchers.Main) {
                         if (System.currentTimeMillis() - lastClickTime.longValue >= time &&
-                            nowPageLambda.value != FlamingoPage.Album
+                            nowPageLambda.value == FlamingoPage.Lyric
                         ) {
                             showControl.value = false
                         }
@@ -1721,12 +1728,14 @@ fun FlamingoPlayerContent(
                                                 volume = volume,
                                                 onVolumeChange = onVolumeChange,
                                                 nowPage = { nowPageLambda.value },
+                                                // Portrait opens the shared lyrics screen every other style
+                                                // uses: source pill, drag down and back all return here.
                                                 onLyrics = {
                                                     translationPopupOpen = false
-                                                    nowPage = if (nowPageLambda.value == FlamingoPage.Lyric) {
-                                                        FlamingoPage.Album
+                                                    if (nowPageLambda.value == FlamingoPage.Lyric) {
+                                                        nowPage = FlamingoPage.Album
                                                     } else {
-                                                        FlamingoPage.Lyric
+                                                        onLyricsClick()
                                                     }
                                                 },
                                                 onPlaylist = {
@@ -2701,10 +2710,8 @@ private fun FlamingoPlayingList(
 
     val upNextCount = (queueWindows.size - currentWindowIndex - 1).coerceAtLeast(0)
 
-    // The queue fills the full screen below the playing bar; the bottom
-    // content padding tracks the controls block so rows scroll under the
-    // controls while they are shown and the list extends to the bottom of
-    // the screen once they collapse (the freed space used to stay empty).
+    // Tracks the controls block, so the list ends above the controls while they are shown and
+    // reaches the bottom of the screen once they collapse.
     val bottomContentPadding = with(density) { bottomOverlayPx().toDp() }
 
     Column(
@@ -3029,8 +3036,11 @@ private fun FlamingoPlayingList(
             FlamingoWrapper {
                 LazyColumn(
                     state = state,
-                    contentPadding = PaddingValues(bottom = bottomContentPadding),
+                    // The viewport stops at the controls' top edge instead of running underneath
+                    // them: the controls have no surface of their own, so rows drawn behind them
+                    // read as the two mixing together.
                     modifier = Modifier
+                        .padding(bottom = bottomContentPadding)
                         .fillMaxSize()
                         .nestedScroll(controlsPokeConnection)
                         .graphicsLayer {

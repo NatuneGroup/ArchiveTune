@@ -1770,7 +1770,6 @@ fun FlamingoPlayerContent(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showAnchoredLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
 

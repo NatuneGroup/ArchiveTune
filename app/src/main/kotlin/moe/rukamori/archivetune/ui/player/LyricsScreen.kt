@@ -155,10 +155,6 @@ import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
 import moe.rukamori.archivetune.ui.menu.LyricsMenu
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Rect
@@ -553,18 +549,10 @@ fun LyricsScreen(
         }
     }
 
-    // The lyric actions open as 4nx3b's Apple Music popup, anchored to whichever three-dot was
-    // tapped. It belongs to this screen's design, not to the Apple Music Experience switch.
     var showAnchoredLyricsMenu by remember { mutableStateOf(false) }
     var lyricsMenuAnchor by remember { mutableStateOf(Rect.Zero) }
     var headerMoreBounds by remember { mutableStateOf(Rect.Zero) }
     var controlsMoreBounds by remember { mutableStateOf(Rect.Zero) }
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
     val openLyricsMenu: (Rect) -> Unit = { anchor ->
         lyricsMenuAnchor = anchor
         showAnchoredLyricsMenu = true
@@ -645,7 +633,6 @@ fun LyricsScreen(
                 },
     ) {
         LyricsScreenBackground(
-            modifier = if (popupBackdrop != null) Modifier.layerBackdrop(popupBackdrop) else Modifier,
             style = lyricsBackground,
             mediaMetadata = mediaMetadata,
             gradientColors = gradientColors,
@@ -830,7 +817,6 @@ fun LyricsScreen(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showAnchoredLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }

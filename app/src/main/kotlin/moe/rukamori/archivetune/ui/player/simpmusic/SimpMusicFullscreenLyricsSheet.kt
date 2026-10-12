@@ -136,13 +136,8 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
-import android.os.Build
 import androidx.media3.common.Player
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
@@ -170,15 +165,6 @@ internal fun SimpMusicFullscreenLyricsSheet(
     var moreIconBounds by remember {
         mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
     }
-
-    // Gated on Liquid Glass like 4nx3b and every other style's popup, so the glass goes away with
-    // the toggle off instead of staying on in this one style.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
 
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val liked = currentSong?.song?.liked == true
@@ -363,14 +349,7 @@ internal fun SimpMusicFullscreenLyricsSheet(
         Box(modifier = Modifier.fillMaxSize()) {
 
             Box(
-                modifier =
-                    Modifier.fillMaxSize().let { base ->
-                        if (popupBackdrop != null && showAnchoredLyricsMenu) {
-                            base.layerBackdrop(popupBackdrop)
-                        } else {
-                            base
-                        }
-                    },
+                modifier = Modifier.fillMaxSize(),
             ) {
 
             Box(
@@ -789,7 +768,6 @@ internal fun SimpMusicFullscreenLyricsSheet(
                     lyricsSyncOffset = lyricsSyncOffset,
                     onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
                     onDismiss = { showAnchoredLyricsMenu = false },
-                    backdrop = popupBackdrop,
                 )
             }
         }

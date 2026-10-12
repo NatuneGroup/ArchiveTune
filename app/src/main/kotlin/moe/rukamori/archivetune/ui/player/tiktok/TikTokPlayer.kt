@@ -112,11 +112,7 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.ui.player.AppleMusicQueueSheet
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.LocalVideoFullscreenState
@@ -419,24 +415,6 @@ fun TikTokPlayerContent(
         label = "tiktokQueueFeedBlur",
     )
 
-    // ── The lyrics overflow popup's frosted backdrop ──
-    // The Apple Music style's lyrics overflow popup is real frosted glass:
-    // the player content records itself into a layer backdrop and the popup
-    // samples it (32dp blur + vibrancy). The feed gets the exact same
-    // treatment here — the popup IS the Apple Music popup, so it gets the
-    // Apple Music blur too (user report 2026-09-02: "the lyrics popup that
-    // opens doesn't have blur. I want the exact same popup for lyrics
-    // overflow menu from Apple music style"). Below Android S there is no
-    // RuntimeShader and the popup falls back to its plain dark-glass card —
-    // the same fallback the Apple Music style shows on those devices.
-    // Gated like the Apple Music player's own popup (4nx3b): only with Liquid Glass on.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
-
     // The feed root's bounds in root space, kept live — the popup anchor
     // below is converted into the popup's parent (root Box) space with them.
     var rootBounds by remember { mutableStateOf(Rect.Zero) }
@@ -504,15 +482,6 @@ fun TikTokPlayerContent(
                     .fillMaxSize()
                     .let { base ->
                         if (feedBlur > 0.dp) base.blur(feedBlur) else base
-                    }
-                    .let { base ->
-                        // Recording the backdrop layer costs a full-screen layer every frame, so
-                        // the pager only records it while the popup is on screen (4nx3b).
-                        if (popupBackdrop != null && lyricsOpen && showLyricsMenu) {
-                            base.layerBackdrop(popupBackdrop)
-                        } else {
-                            base
-                        }
                     },
             // One page either side is pre-composed so the incoming page is fully
             // rendered before it slides in; nothing beyond that is composed,
@@ -690,10 +659,7 @@ fun TikTokPlayerContent(
             }
         }
 
-        // ── Lyrics overflow (the anchored Apple Music popup) ── Rendered as a SIBLING of the pager
-        // (the backdrop-capturing layer) at the player's root.
-        // Canary had swapped this for the plain bottom sheet, believing AnchoredLyricsOverflowMenu
-        // was missing from this tree; it is in LyricsMenu.kt, so 4nx3b's popup is restored.
+        // ── Lyrics overflow ── A sibling of the pager so the anchored popup is not blurred with it.
         if (lyricsOpen && showLyricsMenu) {
             AnchoredLyricsOverflowMenu(
                 iconBoundsInRoot = lyricsPopupAnchor,
@@ -702,7 +668,6 @@ fun TikTokPlayerContent(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }

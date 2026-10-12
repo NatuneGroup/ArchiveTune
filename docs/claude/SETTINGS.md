@@ -38,9 +38,10 @@ Also shipped since this note was written:
   back row) instead of the fork's chip row.
 - **Tab bar** — the Apple Music style is a floating rounded bar, inset, with a solid accent pill
   behind the active tab, its glyph knocked out, and the label in the accent.
-  That bar is `NavigationBarStyle.YUMA_PLAYER`; `APPLE_MUSIC` is a separate, user-picked style (4nx3b's
-  bar geometry: a capsule at the user's width, 80% by default, with a neutral indicator) that the experience does not force. Either
-  Apple style, or the experience itself, draws the mini player in grayscale.
+  The experience forces `NavigationBarStyle.APPLE_MUSIC` (4nx3b's bar geometry: a capsule at the
+  user's width, 80% by default, with a neutral indicator) and locks the style row while it is on;
+  `YUMA_PLAYER` stays a separate, user-picked style. Either Apple style, or the experience itself,
+  draws the mini player in grayscale.
 - **One-row bottom bar** — `NavigationBarCompactBehaviorKey` (Navigation bar → behaviour) folds the
   tab bar into round Library/Home and Search buttons with a slim mini player between them, the
   4nx3b layout. Unset, it follows `NavigationBarHideOnScrollKey`: adaptive (fold while scrolling
@@ -51,7 +52,15 @@ Also shipped since this note was written:
   single-choice switcher sheet in the top bar when more than one is active; YouTube and Spotify
   today, and the enum/selector take more.
 - **Player and lyrics overflow** — the player's more button opens the shared menus, which carry the
-  Apple Music sleep-timer sheet and the lyrics menu.
+  Apple Music sleep-timer sheet and the lyrics menu. The lyrics three-dot (`AnchoredLyricsOverflowMenu`)
+  opens the ordinary lyrics sheet unless the experience is on; then it is Apple Music's anchored
+  action list on a flat charcoal card. No live backdrop blur: recording one cost a full-screen layer
+  every frame on every lyrics surface.
+- **Additional downloads** (`settings/language_packs`, reached from Lyrics settings and search) —
+  the Japanese dictionary plus files kept out of the APK in `addons/` (today the SpatialFlow
+  typeface). `AddonPack` fetches them from the last commit that touched `addons/` and checks the
+  SHA-256 baked in at build time, so each release keeps getting its own bytes; anything that reads
+  an addon must work without it.
 
 Not complete, and must not be described as shipped: a non-locking preset that writes those
 sub-controls independently, YouTube/Spotify Apple-style *Home variants* (the Home selector switches

@@ -5,19 +5,21 @@
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
- * Amazon Music source via a user-configured instance. This mirrors the monochrome.tf web player
- * exactly: a metadata lookup against an instance's Amazon track endpoint returns a `stream_url`
- * (a CENC-encrypted fragmented MP4) plus a raw content key. The stream is downloaded and decrypted
- * on-device by [AmazonCencDecryptor] (the web player offloads decryption to the browser's
- * ClearKey/EME stack, which this app lacks).
+ * Amazon Music source via a user-configured instance, following the monochrome.tf web player (its
+ * Amazon support was removed in September 2026): a metadata lookup against an instance's track
+ * endpoint returns a `stream_url` (a CENC-encrypted fragmented MP4) plus a raw content key. The
+ * stream is downloaded and decrypted on-device by [AmazonCencDecryptor] (the web player offloads
+ * decryption to the browser's ClearKey/EME stack, which this app lacks).
  * Two protocol generations are supported because hosts in this ecosystem vary:
- * - gen-2   `GET {base}/api/v2/track/?...&intent=stream&quality=...` (`unified` shape)
- * - gen-1.5 `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`
- * The gen-2 route is tried first; a 404 means the route is absent on that host, so we fall back to
- * the gen-1.5 route.
+ * - gen-2   `GET {base}/api/v2/track/?...&intent=stream&quality=...` (`unified` shape), which
+ *   requires the operator API key as `Authorization: Bearer`
+ * - gen-1.5 `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`, which takes the same
+ *   operator token as `bypass_token`, or a Turnstile JWT alone
+ * Gen-2 is tried first when there is an API key; a route-level 404 or an authorization refusal
+ * falls back to gen-1.5.
  * IMPORTANT — instances are commonly gated behind Cloudflare Turnstile. Requests require either a
- * configured `bypass_token` (set by the instance operator) or a Turnstile JWT obtained interactively
- * via [moe.rukamori.archivetune.ui.screens.settings.AmazonTurnstileActivity]. Without one, the
+ * configured operator token or a Turnstile JWT obtained interactively via
+ * [moe.rukamori.archivetune.ui.screens.settings.AmazonTurnstileActivity]. Without one, the
  * instance rejects the request (HTTP 401/428) and the caller falls through to the next source.
  * No default instance ships: the list starts empty and the user adds their own, exactly like Tidal.
  */
@@ -29,25 +31,33 @@ package moe.rukamori.archivetune.audiosource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.AudioSourceType
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import timber.log.Timber
+import java.io.File
+import java.io.RandomAccessFile
+import java.nio.channels.FileChannel
+import java.util.Base64
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 object AmazonAudioProvider {
-    // Historical reference only — the ecosystem has no reliable public default (amz.geeked.wtf is
-    // DNS-dead, amz.binimum.org's data routes demand an operator secret the app cannot obtain), so
-    // the app ships with an EMPTY instance list and the user supplies their own, like Tidal.
-    // const val DEFAULT_INSTANCE = "https://amz.geeked.wtf"
+    // No public default ships. The web player's gateway (music-api.geeked.wtf, also answering as
+    // amz.geeked.wtf) no longer lists Amazon among its gen-2 sources, and its gen-1.5 routes proxy an
+    // upstream (amz.binimum.org) that has been unreachable for months, so the instance list starts
+    // EMPTY and the user supplies their own, like Tidal.
 
     // Cloudflare Turnstile config used by the official monochrome.tf web player. The sitekey is
     // domain-locked to monochrome.tf, so the challenge must be solved from that origin (see
-    // AmazonTurnstileActivity, which renders the widget via loadDataWithBaseURL on that host).
+    // AmazonTurnstileActivity, which renders the widget via loadDataWithBaseURL on that host). A
+    // token solved for this sitekey only verifies against the secret paired with it, so only hosts
+    // that share the web player's Turnstile setup can exchange it; a self-hosted instance with its
+    // own Turnstile widget needs its operator token instead.
     const val TURNSTILE_SITEKEY = "0x4AAAAAADgxqF6QVMm0GLHH"
     const val TURNSTILE_ORIGIN = "https://monochrome.tf/"
 
@@ -56,8 +66,35 @@ object AmazonAudioProvider {
     const val TURNSTILE_JWT_TTL_MS = 60L * 60L * 1000L
     const val TURNSTILE_JWT_SAFETY_MS = 5L * 60L * 1000L
 
-    /** Playback kind the resolved payload pointed at — used only for logging/labels. */
     private const val TAG = "AmazonAudio"
+
+    private const val USER_AGENT = "Mozilla/5.0 (ArchiveTune)"
+
+    /** An Origin header is scheme://host with no path, so the base URL's slash has to go. */
+    private val ORIGIN_HEADER = TURNSTILE_ORIGIN.trimEnd('/')
+
+    /**
+     * Budget for the metadata lookup, both route generations together. The instance answers only
+     * once it has the stream ready, which the web player allowed 15-20 s for; whatever is left of the
+     * source attempt goes to the download.
+     */
+    private const val LOOKUP_TIMEOUT_MS = 15_000L
+
+    /**
+     * Decrypted tracks are pruned oldest-first past this much, the way the QQ Music source prunes
+     * its own. Stream URLs are single-use, so every resolve writes a new file and an unbounded
+     * directory would only grow.
+     */
+    private const val CACHE_LIMIT_BYTES = 300L * 1024 * 1024
+
+    /** The newest files are what is playing and what was preloaded; pruning never takes them. */
+    private const val CACHE_KEEP_NEWEST = 3
+
+    /** A `.part` younger than this may still be downloading for another resolve. */
+    private const val PART_FILE_STALE_MS = 10L * 60L * 1000L
+
+    private const val RATE_LIMIT_DEFAULT_MS = 60_000L
+    private const val RATE_LIMIT_MAX_MS = 15L * 60L * 1000L
 
     // The instance prepares the CENC stream server-side (fetching + packaging from Amazon) before
     // the track endpoint responds, and the subsequent full-file download can be tens of MB. So we
@@ -74,50 +111,66 @@ object AmazonAudioProvider {
 
     /**
      * "Needs (re)authorization" signal for the settings UI. Set to a timestamp the moment an
-     * instance answers a track request with HTTP 401/428 (bad/expired JWT, or Turnstile
-     * (re)verification required); cleared is not attempted here — the settings screen just reads it
-     * to decide whether to nag the user. One-shot status only, deliberately not a StateFlow: nothing
-     * else consumes it and PreferenceStore is the config surface.
+     * instance answers a track request with HTTP 401/403/428 (bad/expired JWT or API key, or
+     * Turnstile (re)verification required); cleared is not attempted here — the settings screen just
+     * reads it to decide whether to nag the user. One-shot status only, deliberately not a
+     * StateFlow: nothing else consumes it and PreferenceStore is the config surface.
      */
     @Volatile
     var lastAuthFailureAt: Long = 0L
         private set
 
+    /** Instance base URL -> epoch ms until which it asked (HTTP 429) not to be called. */
+    private val rateLimitedUntil = ConcurrentHashMap<String, Long>()
+
     /**
-     * Exchanges a solved Cloudflare Turnstile response token for the instance's access JWT, exactly
-     * as the web player does: `POST {instance}/api/auth/turnstile` with `{cf_turnstile_response}`,
-     * returning the `access_token` field. The returned JWT is sent as the `X-Turnstile-JWT` header
-     * on subsequent track/stream requests. Returns null on failure.
+     * Exchanges a solved Cloudflare Turnstile response token for the instance's access JWT:
+     * `POST {instance}/api/auth/turnstile`, answered with `access_token`. The token travels under
+     * both names the web player has used, `cf_turnstile_response` (gen-1.5, and what the live
+     * gateway still requires) and `turnstile_token` (the gen-2 client), and the operator API key, when
+     * there is one, goes along as `Authorization: Bearer`, which gen-2 demands on every call. The
+     * returned JWT is sent as the `X-Turnstile-JWT` header on track requests. Returns null on failure.
      */
     suspend fun exchangeTurnstileToken(
         cfTurnstileResponse: String,
         instanceBaseUrl: String,
+        apiToken: String? = null,
     ): String? =
         withContext(Dispatchers.IO) {
             runCatching {
                 val url =
-                    instanceBaseUrl.trimEnd('/').toHttpUrl()
-                        .newBuilder()
-                        .addPathSegment("api")
-                        .addPathSegment("auth")
-                        .addPathSegment("turnstile")
-                        .build()
-                val bodyJson = JSONObject().put("cf_turnstile_response", cfTurnstileResponse).toString()
+                    instanceBaseUrl.trim().trimEnd('/').toHttpUrlOrNull()
+                        ?.newBuilder()
+                        ?.addPathSegment("api")
+                        ?.addPathSegment("auth")
+                        ?.addPathSegment("turnstile")
+                        ?.build()
+                        ?: return@runCatching null
+                val bodyJson =
+                    JSONObject()
+                        .put("cf_turnstile_response", cfTurnstileResponse)
+                        .put("turnstile_token", cfTurnstileResponse)
+                        .toString()
                 val request =
                     Request
                         .Builder()
                         .url(url)
-                        .header("User-Agent", "Mozilla/5.0 (ArchiveTune)")
-                        .header("Origin", TURNSTILE_ORIGIN)
+                        .header("User-Agent", USER_AGENT)
+                        .header("Origin", ORIGIN_HEADER)
+                        .header("Accept", "application/json")
+                        .apply { if (!apiToken.isNullOrBlank()) header("Authorization", "Bearer $apiToken") }
                         .post(bodyJson.toRequestBody("application/json".toMediaType()))
                         .build()
                 client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    val body = response.body?.string().orEmpty()
+                    val body = response.body.string()
                     if (!response.isSuccessful || body.isBlank()) {
                         Timber.tag(TAG).w("Turnstile exchange failed: HTTP %d", response.code)
                         return@use null
                     }
-                    JSONObject(body).optString("access_token").ifBlank { null }
+                    val json = JSONObject(body)
+                    listOf("access_token", "jwt", "token").firstNotNullOfOrNull { field ->
+                        (json.opt(field) as? String)?.trim()?.ifBlank { null }
+                    }
                 }
             }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
                 Timber.tag(TAG).w(it, "Turnstile exchange error")
@@ -125,13 +178,24 @@ object AmazonAudioProvider {
             }
         }
 
+    /** The `exp` claim of [jwt] in epoch ms, or null when it is not a JWT or carries no expiry. */
+    fun jwtExpiresAtMs(jwt: String): Long? {
+        val payload = jwt.split('.').getOrNull(1) ?: return null
+        return runCatching {
+            val claims = String(Base64.getUrlDecoder().decode(payload.trimEnd('=')), Charsets.UTF_8)
+            JSONObject(claims).optLong("exp", 0L).takeIf { it > 0L }?.times(1000L)
+        }.getOrNull()
+    }
+
     /**
-     * Resolves a fully-playable local stream from track metadata, matching exactly what the
-     * monochrome.tf web player does for Amazon Music:
-     *   1. Try `GET {instance}/api/v2/track/?...&intent=stream&quality=` (gen-2). If it 404s the
-     *      route is absent on this host, so fall back to `GET {instance}/api/track/?...` (gen-1.5),
-     *      which returns a `stream_url` plus a `decryption_key`.
-     *   2. Download the encrypted stream and decrypt it on-device via [AmazonCencDecryptor] (the web
+     * Resolves a fully-playable local stream from track metadata, matching what the monochrome.tf
+     * web player did for Amazon Music:
+     *   1. With an operator API key, try `GET {instance}/api/v2/track/?...&intent=stream&quality=`
+     *      (gen-2). A route-level 404 or an authorization refusal moves on to
+     *      `GET {instance}/api/track/?...` (gen-1.5), which returns a `stream_url` plus a
+     *      `decryption_key`. Without an API key gen-2 cannot answer, so gen-1.5 is asked directly.
+     *   2. Gate the returned metadata with [TitleMatch] before downloading anything.
+     *   3. Download the encrypted stream and decrypt it on-device via [AmazonCencDecryptor] (the web
      *      player offloads this to the browser's ClearKey/EME stack; we have no EME so we do it
      *      ourselves), writing a plain FLAC/Opus-in-MP4 to [cacheDir].
      *
@@ -144,7 +208,7 @@ object AmazonAudioProvider {
         artists: List<String>,
         album: String?,
         durationMs: Long?,
-        cacheDir: java.io.File,
+        cacheDir: File,
         instanceBaseUrl: String,
         bypassToken: String? = null,
         quality: String = "HD",
@@ -152,7 +216,8 @@ object AmazonAudioProvider {
     ): DirectStream? =
         AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS) {
             withContext(Dispatchers.IO) {
-            val artist = artists.firstOrNull().orEmpty()
+            // The web player sent every credited artist, and the instance matches against all of them.
+            val artist = artists.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
             if (title.isBlank() || artist.isBlank()) {
                 Timber.tag(TAG).d("Missing title/artist; skipping Amazon.")
                 return@withContext null
@@ -162,36 +227,52 @@ object AmazonAudioProvider {
                 return@withContext null
             }
             val base = instanceBaseUrl.trim().trimEnd('/')
-            if (base.isBlank()) return@withContext null
+            if (base.toHttpUrlOrNull() == null) {
+                Timber.tag(TAG).w("Not an http(s) instance URL: %s", base)
+                return@withContext null
+            }
+            val limitedUntil = rateLimitedUntil[base] ?: 0L
+            if (limitedUntil > System.currentTimeMillis()) {
+                Timber.tag(TAG).d("%s asked to back off; skipping it for now", base)
+                return@withContext null
+            }
 
-            // Gen-2 first, gen-1.5 on 404.
             val resolved =
-                AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-                    fetchGen2(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
-                        ?: fetchGen1(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
+                AudioSourceAttemptScope.within(LOOKUP_TIMEOUT_MS) {
+                    val gen2 =
+                        if (bypassToken.isNullOrBlank()) {
+                            Lookup.TryOlderRoute
+                        } else {
+                            fetchGen2(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
+                        }
+                    when (gen2) {
+                        is Lookup.Found -> gen2.stream
+                        Lookup.TryOlderRoute ->
+                            fetchGen1(base, title, artist, album, durationMs, quality, bypassToken, turnstileJwt)
+                        Lookup.Declined -> null
+                    }
                 } ?: return@withContext null
 
-            val streamUrl = resolved.streamUrl
-            val keyHex = resolved.keyHex
-            val codec = resolved.codec
-            val bitDepth = resolved.bitDepth
-            val sampleRate = resolved.sampleRate
-
-            return@withContext downloadAndPrepare(
-                streamUrl = streamUrl,
-                keyHex = keyHex,
-                codecHint = codec,
-                qualityLabel = resolved.qualityLabel,
-                bitDepth = bitDepth,
-                sampleRate = sampleRate,
-                matchedTitle = resolved.matchedTitle ?: title,
-                matchedArtist = resolved.matchedArtist ?: artist,
-                matchedAlbum = resolved.matchedAlbum ?: album,
-                matchedDurationMs = resolved.matchedDurationMs ?: durationMs,
-                cacheDir = cacheDir,
-            )
+            // A lossless file is tens of megabytes, and the playback layer's gate would only reject a
+            // wrong recording after all of it had arrived. The metadata is the instance's own; the
+            // query's values are never substituted for missing ones, or the gate would compare the
+            // query with itself.
+            val match =
+                TitleMatch.evaluate(
+                    wantedTitle = title,
+                    wantedArtists = artists,
+                    wantedAlbum = album,
+                    wantedDurationMs = durationMs,
+                    stream = resolved.toDirectStream(uri = resolved.streamUrl, codec = resolved.codec.orEmpty(), contentLength = null),
+                )
+            if (!match.accepted) {
+                Timber.tag(TAG).i("Amazon match for \"%s\" rejected before download: %s", title, match.reason)
+                return@withContext null
             }
-        } ?: null
+
+            return@withContext downloadAndPrepare(resolved, cacheDir)
+            }
+        }
 
     /** A normalized instance response across both protocol generations. */
     private data class ResolvedStream(
@@ -205,12 +286,44 @@ object AmazonAudioProvider {
         val matchedArtist: String?,
         val matchedAlbum: String?,
         val matchedDurationMs: Long?,
-    )
+    ) {
+        fun toDirectStream(
+            uri: String,
+            codec: String,
+            contentLength: Long?,
+        ): DirectStream =
+            DirectStream(
+                uri = uri,
+                mimeType = "audio/mp4",
+                codecs = codec,
+                contentLength = contentLength,
+                label = buildLabel(qualityLabel, codec, bitDepth, sampleRate),
+                source = AudioSourceType.AMAZON,
+                matchedTitle = matchedTitle,
+                matchedArtist = matchedArtist,
+                matchedAlbum = matchedAlbum,
+                matchedDurationMs = matchedDurationMs,
+                bitDepth = bitDepth,
+                sampleRate = sampleRate,
+            )
+    }
+
+    private sealed interface Lookup {
+        data class Found(
+            val stream: ResolvedStream,
+        ) : Lookup
+
+        /** Gen-2 is absent on the host, or refused credentials that gen-1.5 accepts differently. */
+        data object TryOlderRoute : Lookup
+
+        data object Declined : Lookup
+    }
 
     /**
-     * Gen-2 request: `GET {base}/api/v2/track/?...&intent=stream&quality=`.
-     * Returns null when the route is absent (404) or a non-auth failure occurs, and null on an
-     * auth failure so the caller falls through. Auth headers/params are set by [attachAuth].
+     * Gen-2 request: `GET {base}/api/v2/track/?...&intent=stream&quality=`, authorized by the
+     * operator API key as `Authorization: Bearer` (the only credential gen-2 accepts; the Turnstile
+     * JWT rides along when there is one). A 404/502 that still carries the gen-2 envelope means the
+     * track was not found, not that the route is missing.
      */
     private fun fetchGen2(
         base: String,
@@ -219,61 +332,69 @@ object AmazonAudioProvider {
         album: String?,
         durationMs: Long?,
         quality: String,
-        bypassToken: String?,
+        apiToken: String,
         turnstileJwt: String?,
-    ): ResolvedStream? {
+    ): Lookup {
         val mapped = mapQualityGen2(quality)
-        val urlBuilder =
-            "$base/api/v2/track/".toHttpUrl()
-                .newBuilder()
-                .addQueryParameter("track", title)
-                .addQueryParameter("artist", artist)
-                .addQueryParameter("album", album.orEmpty())
-                .addQueryParameter("duration", durationMs?.let { (it / 1000).toString() } ?: "")
-                .addQueryParameter("intent", "stream")
-                .addQueryParameter("quality", mapped)
-        if (!bypassToken.isNullOrBlank()) urlBuilder.addQueryParameter("bypass_token", bypassToken)
+        val urlBuilder = "$base/api/v2/track/".toHttpUrlOrNull()?.newBuilder() ?: return Lookup.Declined
+        urlBuilder.addQueryParameter("track", title).addQueryParameter("artist", artist)
+        // Unlike gen-1.5, absent fields are left out rather than sent empty, as the web player did.
+        album?.trim()?.takeIf { it.isNotEmpty() }?.let { urlBuilder.addQueryParameter("album", it) }
+        durationSeconds(durationMs)?.let { urlBuilder.addQueryParameter("duration", it.toString()) }
+        urlBuilder.addQueryParameter("intent", "stream").addQueryParameter("quality", mapped)
         val request =
             Request
                 .Builder()
                 .url(urlBuilder.build())
-                .header("User-Agent", "Mozilla/5.0 (ArchiveTune)")
-                .header("Origin", TURNSTILE_ORIGIN)
+                .header("User-Agent", USER_AGENT)
+                .header("Origin", ORIGIN_HEADER)
+                .header("Accept", "application/json")
+                .header("Authorization", "Bearer $apiToken")
                 .apply { if (!turnstileJwt.isNullOrBlank()) header("X-Turnstile-JWT", turnstileJwt) }
                 .get()
                 .build()
         return runCatching {
             client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                when {
-                    response.code == 404 -> {
-                        Timber.tag(TAG).d("gen-2 route absent (404); falling back to gen-1.5")
-                        null
+                val body = response.body.string()
+                when (response.code) {
+                    429 -> {
+                        noteRateLimited(base, response.header("Retry-After"))
+                        Lookup.Declined
                     }
 
-                    response.code == 401 || response.code == 428 -> {
-                        noteAuthFailure(response.code)
-                        null
+                    401, 403, 428 -> {
+                        Timber.tag(TAG).d("gen-2 refused authorization (HTTP %d); trying gen-1.5", response.code)
+                        Lookup.TryOlderRoute
                     }
 
-                    !response.isSuccessful || body.isBlank() -> {
-                        Timber.tag(TAG).w("gen-2 track lookup failed: HTTP %d", response.code)
-                        null
-                    }
+                    404, 502 ->
+                        if (isGen2Envelope(body)) {
+                            Timber.tag(TAG).d("gen-2 could not resolve the track (HTTP %d)", response.code)
+                            Lookup.Declined
+                        } else {
+                            Timber.tag(TAG).d("gen-2 route absent (HTTP %d); falling back to gen-1.5", response.code)
+                            Lookup.TryOlderRoute
+                        }
 
-                    else -> parseGen2(body, mapped)
+                    else ->
+                        if (!response.isSuccessful || body.isBlank()) {
+                            Timber.tag(TAG).w("gen-2 track lookup failed: HTTP %d", response.code)
+                            Lookup.Declined
+                        } else {
+                            parseGen2(body, mapped)?.let { Lookup.Found(it) } ?: Lookup.Declined
+                        }
                 }
             }
         }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
             Timber.tag(TAG).w(it, "gen-2 track lookup error for \"%s\"", title)
-            null
+            Lookup.Declined
         }
     }
 
     /**
-     * Gen-1.5 request: `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`.
-     * Returns null on any failure (including auth) — it never throws — so the caller can
-     * treat it as an absent result and fall through.
+     * Gen-1.5 request: `GET {base}/api/track/?track=&artist=&album=&duration=&quality=`, authorized
+     * by `bypass_token` or the `X-Turnstile-JWT` header. Returns null on any failure (including
+     * auth) — it never throws — so the caller can treat it as an absent result and fall through.
      */
     private fun fetchGen1(
         base: String,
@@ -287,28 +408,35 @@ object AmazonAudioProvider {
     ): ResolvedStream? {
         val mapped = mapQualityGen1(quality)
         val urlBuilder =
-            "$base/api/track/".toHttpUrl()
-                .newBuilder()
-                .addQueryParameter("track", title)
-                .addQueryParameter("artist", artist)
-                .addQueryParameter("album", album.orEmpty())
-                .addQueryParameter("duration", durationMs?.let { (it / 1000).toString() } ?: "")
-                .addQueryParameter("quality", mapped)
+            "$base/api/track/".toHttpUrlOrNull()
+                ?.newBuilder()
+                ?.addQueryParameter("track", title)
+                ?.addQueryParameter("artist", artist)
+                ?.addQueryParameter("album", album.orEmpty())
+                ?.addQueryParameter("duration", durationSeconds(durationMs)?.toString().orEmpty())
+                ?.addQueryParameter("quality", mapped)
+                ?: return null
         if (!bypassToken.isNullOrBlank()) urlBuilder.addQueryParameter("bypass_token", bypassToken)
         val request =
             Request
                 .Builder()
                 .url(urlBuilder.build())
-                .header("User-Agent", "Mozilla/5.0 (ArchiveTune)")
-                .header("Origin", TURNSTILE_ORIGIN)
+                .header("User-Agent", USER_AGENT)
+                .header("Origin", ORIGIN_HEADER)
+                .header("Accept", "application/json")
                 .apply { if (!turnstileJwt.isNullOrBlank()) header("X-Turnstile-JWT", turnstileJwt) }
                 .get()
                 .build()
         return runCatching {
             client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                val body = response.body?.string().orEmpty()
+                val body = response.body.string()
                 when {
-                    response.code == 401 || response.code == 428 -> {
+                    response.code == 429 -> {
+                        noteRateLimited(base, response.header("Retry-After"))
+                        null
+                    }
+
+                    response.code == 401 || response.code == 403 || response.code == 428 -> {
                         noteAuthFailure(response.code)
                         null
                     }
@@ -327,44 +455,47 @@ object AmazonAudioProvider {
         }
     }
 
-    /** Parses the gen-2 `playback[]` envelope, picking the first audio/direct-style entry. */
+    private fun isGen2Envelope(body: String): Boolean {
+        val root = runCatching { JSONObject(body) }.getOrNull() ?: return false
+        return root.has("schema_version") || root.has("playback") || root.has("sources")
+    }
+
+    /** Parses the gen-2 `playback[]` envelope, picking the first directly downloadable Amazon entry. */
     private fun parseGen2(
         body: String,
         requestedQuality: String,
     ): ResolvedStream? {
         val root = runCatching { JSONObject(body) }.getOrNull() ?: return null
+        val schemaVersion = root.optString("schema_version")
+        val schemaMajor = schemaVersion.substringBefore('.')
+        if (schemaMajor.isNotEmpty() && schemaMajor != "1" && schemaMajor != "2") {
+            Timber.tag(TAG).w("Unsupported gen-2 schema version %s", schemaVersion)
+            return null
+        }
         val playback = root.optJSONArray("playback") ?: return null
+        val track = root.optJSONObject("track")
         for (i in 0 until playback.length()) {
             val entry = playback.optJSONObject(i) ?: continue
             if (!entry.optString("kind").equals("audio", ignoreCase = true)) continue
-            val delivery = entry.optString("delivery").lowercase()
-            if (delivery !in setOf("direct", "dash", "hls")) continue
-            val url = entry.optString("url").ifBlank { null } ?: continue
-            val codec = entry.optString("codec").ifBlank { null }?.lowercase()
-            val bitDepth = entry.optInt("bit_depth", 0).takeIf { it > 0 }
-            val sampleRate = entry.optInt("sample_rate_hz", 0).takeIf { it > 0 }
-            val qualityLabel =
-                entry.optString("quality").ifBlank { requestedQuality }
-            val keyHex =
-                entry.optJSONObject("encryption")
-                    ?.optJSONObject("key")
-                    ?.optString("value")
-                    ?.ifBlank { null }
-            val track = root.optJSONObject("track")
+            // Only a whole file can be downloaded and decrypted here; dash/hls entries are manifests.
+            if (!entry.optString("delivery").equals("direct", ignoreCase = true)) continue
+            // The unified API also serves other catalogues (`mono`, `tidal`); that audio is not
+            // Amazon's and must not be played or labelled as such.
+            val source = entry.optString("source").ifBlank { root.optString("selected_source") }
+            if (source.isNotBlank() && !source.equals("amazon", ignoreCase = true)) continue
+            val url = entry.optString("url").takeIf { it.startsWith("https://", true) || it.startsWith("http://", true) } ?: continue
+            val quality = entry.optString("quality").ifBlank { requestedQuality }
             return ResolvedStream(
                 streamUrl = url,
-                keyHex = keyHex,
-                codec = codec,
-                qualityLabel = qualityLabel,
-                bitDepth = bitDepth,
-                sampleRate = sampleRate,
-                matchedTitle = track?.optString("title")?.ifBlank { null },
-                matchedArtist =
-                    track
-                        ?.optJSONArray("artists")
-                        ?.let { arr -> if (arr.length() > 0) arr.optString(0).ifBlank { null } else null },
-                matchedAlbum = track?.optString("album")?.ifBlank { null },
-                matchedDurationMs = null,
+                keyHex = extractDecryptionKey(entry),
+                codec = gen2Codec(entry, quality),
+                qualityLabel = quality,
+                bitDepth = firstPositiveInt(entry, "bit_depth", "bitDepth"),
+                sampleRate = firstPositiveInt(entry, "sample_rate_hz", "sampleRateHz", "sample_rate", "sampleRate"),
+                matchedTitle = track?.let(::titleOf),
+                matchedArtist = track?.let(::artistNames),
+                matchedAlbum = track?.let(::albumName),
+                matchedDurationMs = track?.optLong("duration_ms", 0L)?.takeIf { it > 0L },
             )
         }
         return null
@@ -393,8 +524,8 @@ object AmazonAudioProvider {
             for (i in 0 until arr.length()) {
                 val q = arr.optJSONObject(i) ?: continue
                 if (q.optString("quality") == selectedQuality) {
-                    bitDepth = q.optInt("bitDepth", 0).takeIf { it > 0 }
-                    sampleRate = q.optInt("sampleRate", 0).takeIf { it > 0 }
+                    bitDepth = firstPositiveInt(q, "bitDepth", "bit_depth")
+                    sampleRate = firstPositiveInt(q, "sampleRate", "sample_rate", "sample_rate_hz")
                     break
                 }
             }
@@ -406,89 +537,179 @@ object AmazonAudioProvider {
             qualityLabel = selectedQuality,
             bitDepth = bitDepth,
             sampleRate = sampleRate,
-            matchedTitle = payload.optString("title").ifBlank { null },
-            matchedArtist = payload.optString("artist").ifBlank { null },
-            matchedAlbum = payload.optString("album").ifBlank { null },
-            matchedDurationMs = payload.optLong("duration", 0L).let { if (it > 0) it * 1000 else null },
+            matchedTitle = titleOf(payload),
+            matchedArtist = artistNames(payload),
+            matchedAlbum = albumName(payload),
+            matchedDurationMs = durationMsOf(payload.optDouble("duration", 0.0)),
         )
     }
 
-    /** Records a 401/428 as "needs authorization" for the settings UI, and logs it. */
+    private fun titleOf(obj: JSONObject): String? =
+        ((obj.opt("title") as? String) ?: (obj.opt("name") as? String))?.trim()?.ifBlank { null }
+
+    /** `artists` as strings or `{name}` objects (both shapes are served), else a plain `artist`. */
+    private fun artistNames(obj: JSONObject): String? {
+        obj.optJSONArray("artists")?.let { arr ->
+            val names =
+                (0 until arr.length()).mapNotNull { i -> nameOf(arr.opt(i), "name", "title") }
+            if (names.isNotEmpty()) return names.joinToString(", ")
+        }
+        return nameOf(obj.opt("artist"), "name")
+    }
+
+    private fun albumName(obj: JSONObject): String? = nameOf(obj.opt("album"), "title", "name")
+
+    /** A plain string, or the first non-blank of [keys] when the value is an object. */
+    private fun nameOf(
+        value: Any?,
+        vararg keys: String,
+    ): String? {
+        val name =
+            if (value is JSONObject) {
+                keys.firstNotNullOfOrNull { key -> value.optString(key).ifBlank { null } }
+            } else {
+                value as? String
+            }
+        return name?.trim()?.ifBlank { null }
+    }
+
+    /** Durations arrive in seconds or milliseconds depending on the host; anything past ~2.8 h is ms. */
+    private fun durationMsOf(value: Double): Long? =
+        when {
+            value.isNaN() || value <= 0.0 -> null
+            value > 10_000.0 -> value.toLong()
+            else -> (value * 1000.0).toLong()
+        }
+
+    private fun durationSeconds(durationMs: Long?): Long? = durationMs?.takeIf { it > 0L }?.let { (it + 500L) / 1000L }
+
+    private fun firstPositiveInt(
+        obj: JSONObject,
+        vararg keys: String,
+    ): Int? = keys.firstNotNullOfOrNull { key -> obj.optInt(key, 0).takeIf { it > 0 } }
+
+    /** Records a 401/403/428 as "needs authorization" for the settings UI, and logs it. */
     private fun noteAuthFailure(code: Int) {
         lastAuthFailureAt = System.currentTimeMillis()
         Timber.tag(TAG).w("Amazon requires (re)authorization: HTTP %d", code)
     }
 
-    /** Downloads the (possibly encrypted) stream and, if a key is present, decrypts it to a local file. */
-    private fun downloadAndPrepare(
-        streamUrl: String,
-        keyHex: String?,
-        codecHint: String?,
-        qualityLabel: String,
-        bitDepth: Int?,
-        sampleRate: Int?,
-        matchedTitle: String,
-        matchedArtist: String,
-        matchedAlbum: String?,
-        matchedDurationMs: Long?,
-        cacheDir: java.io.File,
-    ): DirectStream? {
-        val bytes =
-            runCatching {
-                val request =
-                    Request
-                        .Builder()
-                        .url(streamUrl)
-                        .header("User-Agent", "Mozilla/5.0 (ArchiveTune)")
-                        .get()
-                        .build()
-                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Timber.tag(TAG).w("Amazon stream download failed: HTTP %d", response.code)
-                        return null
-                    }
-                    response.body?.bytes()
-                }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
-                Timber.tag(TAG).w(it, "Amazon stream download error")
-                null
-            } ?: return null
+    /** Honours a 429's Retry-After (seconds; a date or nothing falls back to a minute), capped. */
+    private fun noteRateLimited(
+        base: String,
+        retryAfter: String?,
+    ) {
+        val waitMs =
+            (retryAfter?.trim()?.toLongOrNull()?.takeIf { it > 0L }?.times(1000L) ?: RATE_LIMIT_DEFAULT_MS)
+                .coerceAtMost(RATE_LIMIT_MAX_MS)
+        rateLimitedUntil[base] = System.currentTimeMillis() + waitMs
+        Timber.tag(TAG).w("%s is rate limiting; backing off for %d s", base, waitMs / 1000L)
+    }
 
-        val outCodec: String
-        if (keyHex.isNullOrBlank()) {
-            // Unencrypted (rare): play as-is.
-            outCodec = codecHint ?: "flac"
-        } else {
-            val decoded = AmazonCencDecryptor.decryptInPlace(bytes, keyHex)
-            if (decoded == null) {
-                Timber.tag(TAG).w("Amazon CENC decryption failed; skipping.")
-                return null
-            }
-            outCodec = decoded
+    /** Downloads the (possibly encrypted) stream to a file and, if a key is present, decrypts it there. */
+    private fun downloadAndPrepare(
+        resolved: ResolvedStream,
+        cacheDir: File,
+    ): DirectStream? {
+        val cacheRoot = File(cacheDir, "amazon").apply { mkdirs() }
+        pruneCache(cacheRoot)
+        val safeQuality = resolved.qualityLabel.replace(Regex("[^A-Za-z0-9_-]"), "_").take(32)
+        val name = "amz_${System.currentTimeMillis()}_${abs(resolved.streamUrl.hashCode())}_$safeQuality.mp4"
+        val file = File(cacheRoot, name)
+        val part = File(cacheRoot, "$name.part")
+        if (!download(resolved.streamUrl, part)) {
+            part.delete()
+            return null
         }
 
-        val cacheRoot = java.io.File(cacheDir, "amazon").apply { mkdirs() }
-        val file = java.io.File(cacheRoot, "amz_${abs(streamUrl.hashCode())}_$qualityLabel.mp4")
-        runCatching { file.writeBytes(bytes) }.getOrElse {
-            Timber.tag(TAG).w(it, "Failed writing decrypted Amazon file")
+        val keyHex = resolved.keyHex
+        val outCodec =
+            if (keyHex.isNullOrBlank()) {
+                // Unencrypted (rare): play as-is.
+                resolved.codec ?: "flac"
+            } else {
+                decryptFile(part, keyHex)
+            }
+        if (outCodec == null) {
+            Timber.tag(TAG).w("Amazon CENC decryption failed; skipping.")
+            part.delete()
+            return null
+        }
+        if (!part.renameTo(file)) {
+            Timber.tag(TAG).w("Could not move the decrypted Amazon file into place")
+            part.delete()
             return null
         }
         Timber.tag(TAG).d("Amazon stream ready (%s, %d bytes) -> %s", outCodec, file.length(), file.name)
-        val label = buildLabel(qualityLabel, outCodec, bitDepth, sampleRate)
-        return DirectStream(
+        return resolved.toDirectStream(
             uri = android.net.Uri.fromFile(file).toString(),
-            mimeType = "audio/mp4",
-            codecs = outCodec,
+            codec = outCodec,
             contentLength = file.length(),
-            label = label,
-            source = AudioSourceType.AMAZON,
-            matchedTitle = matchedTitle,
-            matchedArtist = matchedArtist,
-            matchedAlbum = matchedAlbum,
-            matchedDurationMs = matchedDurationMs,
-            bitDepth = bitDepth,
-            sampleRate = sampleRate,
         )
+    }
+
+    /**
+     * Streams the body to [target] rather than into memory: a hi-res track runs to a couple of
+     * hundred megabytes, more than the default heap of many phones.
+     */
+    private fun download(
+        url: String,
+        target: File,
+    ): Boolean =
+        runCatching {
+            val request =
+                Request
+                    .Builder()
+                    .url(url)
+                    .header("User-Agent", USER_AGENT)
+                    .get()
+                    .build()
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                if (!response.isSuccessful) {
+                    Timber.tag(TAG).w("Amazon stream download failed: HTTP %d", response.code)
+                    return@use false
+                }
+                response.body.byteStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+                true
+            }
+        }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse {
+            Timber.tag(TAG).w(it, "Amazon stream download error")
+            false
+        }
+
+    /** Decrypts [file] through a read-write mapping, so the track never has to fit on the heap. */
+    private fun decryptFile(
+        file: File,
+        keyHex: String,
+    ): String? =
+        runCatching {
+            RandomAccessFile(file, "rw").use { raf ->
+                val channel = raf.channel
+                val mapped = channel.map(FileChannel.MapMode.READ_WRITE, 0L, channel.size())
+                AmazonCencDecryptor.decryptInPlace(mapped, keyHex)?.also { mapped.force() }
+            }
+        }.getOrElse {
+            Timber.tag(TAG).w(it, "Could not open the downloaded Amazon stream for decryption")
+            null
+        }
+
+    /**
+     * Keeps the directory under [CACHE_LIMIT_BYTES], oldest first, never touching the newest
+     * [CACHE_KEEP_NEWEST] tracks or a `.part` that another resolve may still be writing.
+     */
+    private fun pruneCache(directory: File) {
+        val now = System.currentTimeMillis()
+        val files = directory.listFiles()?.filter { it.isFile }.orEmpty()
+        files
+            .filter { it.name.endsWith(".part") && now - it.lastModified() > PART_FILE_STALE_MS }
+            .forEach { it.delete() }
+        val tracks = files.filterNot { it.name.endsWith(".part") }.sortedBy { it.lastModified() }
+        var total = tracks.sumOf { it.length() }
+        for (stale in tracks.dropLast(CACHE_KEEP_NEWEST)) {
+            if (total <= CACHE_LIMIT_BYTES) break
+            total -= stale.length()
+            stale.delete()
+        }
     }
 
     /** e.g. "Amazon Music UHD (flac 24/48)"; drops missing pieces rather than guessing. */
@@ -512,7 +733,10 @@ object AmazonAudioProvider {
         }
     }
 
-    /** Maps the app's Amazon quality tier to gen-2 codes (HI_RES_LOSSLESS / LOSSLESS / ...). */
+    /**
+     * Maps the app's Amazon quality tier to the gen-2 request tokens, which are the web player's
+     * shared (Tidal-style) tier names; the instance translates them to Amazon's UHD/HD/SD tiers.
+     */
     private fun mapQualityGen2(quality: String): String =
         when (quality.trim().uppercase()) {
             "ULTRA_HD", "HI_RES_LOSSLESS", "AUTO", "ADAPTIVE", "DOLBY_ATMOS" -> "HI_RES_LOSSLESS"
@@ -523,7 +747,7 @@ object AmazonAudioProvider {
             else -> "LOSSLESS"
         }
 
-    /** Maps the app's Amazon quality tier to gen-1.5 codes (UHD / HD / SD_*; see FACTSHEET). */
+    /** Maps the app's Amazon quality tier to Amazon's own tier names (UHD / HD / SD_*), as gen-1.5 takes them. */
     private fun mapQualityGen1(quality: String): String =
         when (quality.trim().uppercase()) {
             "ULTRA_HD", "HI_RES_LOSSLESS", "AUTO", "ADAPTIVE", "DOLBY_ATMOS" -> "UHD"
@@ -534,13 +758,36 @@ object AmazonAudioProvider {
             else -> "HD"
         }
 
-    /** Extracts the raw CENC content key from a gen-1.5 payload, checking all known field names. */
-    private fun extractDecryptionKey(payload: JSONObject): String? =
-        payload.optString("decryption_key").ifBlank { null }
-            ?: payload.optString("decryptionKey").ifBlank { null }
-            ?: payload.optJSONObject("decryption")?.optString("key")?.ifBlank { null }
-            ?: payload.optJSONObject("drm")?.optString("decryption_key")?.ifBlank { null }
-            ?: payload.optJSONObject("drm")?.optString("decryptionKey")?.ifBlank { null }
+    /** The raw CENC content key, under any of the field names either generation has used. */
+    private fun extractDecryptionKey(payload: JSONObject): String? {
+        val decryption = payload.optJSONObject("decryption")
+        val drm = payload.optJSONObject("drm")
+        return sequenceOf(
+            payload.opt("decryption_key"),
+            payload.opt("decryptionKey"),
+            payload.optJSONObject("encryption")?.optJSONObject("key")?.opt("value"),
+            decryption?.optJSONObject("key")?.opt("value"),
+            decryption?.opt("key"),
+            drm?.opt("decryption_key"),
+            drm?.opt("decryptionKey"),
+        ).mapNotNull { (it as? String)?.trim()?.ifBlank { null } }.firstOrNull()
+    }
+
+    /**
+     * The gen-2 instance has been seen labelling UHD FLAC as `aac`, so the tier decides first, as in
+     * the web player. Only the unencrypted path uses this; a decrypted file reports its own `frma`.
+     */
+    private fun gen2Codec(
+        entry: JSONObject,
+        quality: String,
+    ): String? {
+        val tier = quality.trim().uppercase()
+        return when {
+            Regex("^(UHD|HD|HI_RES_LOSSLESS|LOSSLESS)(_|$)").containsMatchIn(tier) -> "flac"
+            Regex("^(SD|HIGH|LOW)(_|$)").containsMatchIn(tier) -> "opus"
+            else -> entry.optString("codec").ifBlank { null }?.lowercase()
+        }
+    }
 
     /** Reads the codec (flac/opus) for the selected quality, falling back to the top-level codec. */
     private fun extractCodec(payload: JSONObject): String? {

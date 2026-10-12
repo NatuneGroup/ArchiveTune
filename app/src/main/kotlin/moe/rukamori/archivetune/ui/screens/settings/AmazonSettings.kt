@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.constants.AmazonAudioQuality
 import moe.rukamori.archivetune.constants.AmazonAudioQualityKey
@@ -102,7 +103,7 @@ fun AmazonSettings(
 
     val instanceCount =
         remember(storedInstances) {
-            storedInstances.split('\n').map { it.trim() }.count { it.isNotEmpty() }
+            AmazonInstances.parseBaseUrls(storedInstances).size
         }
 
     var showInstancesDialog by remember { mutableStateOf(false) }
@@ -118,14 +119,7 @@ fun AmazonSettings(
             singleLine = false,
             isInputValid = { true },
             onDone = { raw ->
-                onStoredInstancesChange(
-                    raw
-                        .split('\n')
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .distinct()
-                        .joinToString("\n"),
-                )
+                onStoredInstancesChange(AmazonInstances.parseBaseUrls(raw).joinToString("\n"))
             },
             onDismiss = { showInstancesDialog = false },
         )

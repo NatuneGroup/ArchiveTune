@@ -67,10 +67,22 @@ internal object LyricsProviderHttp {
         }
     }
 
+    /** An answered request: [body] is only read for a 2xx [status]. */
+    class Response(
+        val status: Int,
+        val body: String?,
+    )
+
     suspend fun get(
         url: String,
         headers: Map<String, String> = emptyMap(),
-    ): String? =
+    ): String? = getWithStatus(url, headers)?.body
+
+    /** Like [get], but keeps the status of a non-2xx answer; null only when nothing came back. */
+    suspend fun getWithStatus(
+        url: String,
+        headers: Map<String, String> = emptyMap(),
+    ): Response? =
         try {
             val response =
                 client.get(url) {
@@ -81,7 +93,10 @@ internal object LyricsProviderHttp {
                     }
                     if (!sentAgent) header("User-Agent", USER_AGENT)
                 }
-            if (response.status.isSuccess()) response.bodyAsText() else null
+            Response(
+                status = response.status.value,
+                body = if (response.status.isSuccess()) response.bodyAsText() else null,
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

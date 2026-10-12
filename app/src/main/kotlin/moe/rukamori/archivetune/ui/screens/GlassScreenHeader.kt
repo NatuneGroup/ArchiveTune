@@ -30,7 +30,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.chrisbanes.haze.HazeState
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
@@ -56,7 +55,6 @@ import moe.rukamori.archivetune.utils.rememberPreference
 class GlassScreenHeader(
     val liquidGlassActive: Boolean,
     val backdrop: PlatformBackdrop?,
-    val haze: HazeState,
 )
 
 @Composable
@@ -66,7 +64,6 @@ fun rememberGlassScreenHeader(): GlassScreenHeader {
     val surfaceColor = MaterialTheme.colorScheme.surface
 
     val backdrop = rememberBackdrop(surfaceColor)
-    val haze = rememberScreenHeaderHaze()
     val active =
         liquidGlassEnabled &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -74,7 +71,6 @@ fun rememberGlassScreenHeader(): GlassScreenHeader {
     return GlassScreenHeader(
         liquidGlassActive = active,
         backdrop = if (active) backdrop else null,
-        haze = haze,
     )
 }
 
@@ -99,7 +95,6 @@ fun BoxScope.GlassScreenHeaderOverlay(
     val systemBarsTopPadding = LocalStableSystemBarsTopPadding.current
 
     ScreenHeaderHaze(
-        hazeState = header.haze,
         systemBarsTopPadding = systemBarsTopPadding,
     )
 

@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -185,6 +186,16 @@ private const val MIN_SWEEP_MS = 180L
  * playback jitter or an ExoPlayer position correction.
  */
 private const val V2_POSITION_RESET_BACKWARD_THRESHOLD_MS = 1_000L
+
+/**
+ * How far the player's clock may stray from where steady playback would have
+ * put it before the move counts as a seek. Media3 position corrections and
+ * poll jitter stay well under this.
+ */
+private const val V2_SEEK_JUMP_THRESHOLD_MS = 1_000L
+
+/** How long after a seek (or while scrubbing) auto-scroll uses the seek spring. */
+private const val V2_SEEK_SPRING_WINDOW_MS = 1_000L
 
 /** Seconds to wait before auto-scroll resumes after manual scroll. */
 private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
@@ -455,6 +466,8 @@ fun LyricsV2(
 
     var lastRawPositionMs by remember(lyrics) { mutableLongStateOf(0L) }
     var playbackResetTick by remember(lyrics) { mutableIntStateOf(0) }
+    // Read only from the auto-scroll coroutine, never in composition.
+    var lastSeekUptimeMs by remember { mutableLongStateOf(Long.MIN_VALUE / 2) }
 
     LaunchedEffect(entriesWithWords, isSynced, leadMs, lyricsSyncOffset) {
         if (!isSynced || entriesWithWords.isEmpty()) return@LaunchedEffect
@@ -474,6 +487,8 @@ fun LyricsV2(
         // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
         // the actual frame rate so the two stay in lock-step.
         val useFrameClock = !v2AnimationsDisabled && isTtmlFormat
+        var seekCheckPositionMs = -1L
+        var seekCheckUptimeMs = 0L
         while (isActive) {
             val sliderPos = latestSliderPositionProvider.value()
             val pos = sliderPos ?: player.currentPosition
@@ -485,6 +500,26 @@ fun LyricsV2(
                 playbackResetTick++
             }
             lastRawPositionMs = rawPlayerPositionMs
+
+            // The player exposes no seek event to the UI, so a seek is inferred from the clock
+            // landing somewhere steady playback could not have taken it since the last poll.
+            val nowUptimeMs = SystemClock.uptimeMillis()
+            if (sliderPos != null) {
+                lastSeekUptimeMs = nowUptimeMs
+            } else if (seekCheckPositionMs >= 0L) {
+                val expectedAdvanceMs =
+                    if (player.isPlaying) {
+                        ((nowUptimeMs - seekCheckUptimeMs) * player.playbackParameters.speed).toLong()
+                    } else {
+                        0L
+                    }
+                val driftMs = rawPlayerPositionMs - seekCheckPositionMs - expectedAdvanceMs
+                if (abs(driftMs) > V2_SEEK_JUMP_THRESHOLD_MS) {
+                    lastSeekUptimeMs = nowUptimeMs
+                }
+            }
+            seekCheckPositionMs = rawPlayerPositionMs
+            seekCheckUptimeMs = nowUptimeMs
 
             playbackPositionMs = (pos + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
             currentPositionMs = (playbackPositionMs + leadMs + LYRIC_VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
@@ -617,7 +652,7 @@ fun LyricsV2(
                 index = currentLineIndex,
                 scrollOffset = -targetOffset,
                 intervalMs = lineIntervalMs(entriesWithWords, currentLineIndex),
-                isSeeking = false,
+                isSeeking = SystemClock.uptimeMillis() - lastSeekUptimeMs < V2_SEEK_SPRING_WINDOW_MS,
                 isInterludeActive = entriesWithWords.getOrNull(currentLineIndex)?.isInstrumental == true,
             )
         } else {
@@ -1631,12 +1666,15 @@ private fun AnimatedWordV2(
                 } else {
                     baseTextStyle
                 }
-            if (emphasizeLastWord && (isWordActive || isWordComplete) && !isLinePast) {
-                // Per-character emphasize overlay (see LyricsEmphasize.kt): same
-                // dim base + lit overlay structure and the same sliding reveal
-                // mask, but the sung overlay is split char-by-char with a
-                // staggered glow+float bump. OFF (default) renders today's
-                // single whole-word overlay below, untouched.
+            val canEmphasize =
+                remember(word.text, emphasizeLastWord) {
+                    emphasizeLastWord && supportsGraphemeEmphasis(word.text)
+                }
+            if (canEmphasize && (isWordActive || isWordComplete) && !isLinePast) {
+                // Per-grapheme emphasize overlay (see LyricsEmphasize.kt): same
+                // dim base + lit overlay structure and the same reveal mask, but
+                // the sung overlay bumps grapheme by grapheme. RTL and
+                // complex-shaping words take the whole-word overlay below.
                 EmphasizedWordOverlay(
                     word = word,
                     baseTextStyle = baseTextStyle,
@@ -1652,14 +1690,23 @@ private fun AnimatedWordV2(
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
                             .then(
-                                if (softReveal && isWordActive && !isWordComplete) {
+                                if (isWordActive && !isWordComplete) {
                                     val sweepProgress = progress
-                                    Modifier.slidingSoftReveal(
-                                        progressProvider = { sweepProgress },
-                                        edgeWidth = fillTransitionWidth.dp,
-                                        isRtl = isRtl,
-                                        enabled = true,
-                                    )
+                                    if (softReveal) {
+                                        Modifier.slidingSoftReveal(
+                                            progressProvider = { sweepProgress },
+                                            edgeWidth = fillTransitionWidth.dp,
+                                            isRtl = isRtl,
+                                            enabled = true,
+                                        )
+                                    } else {
+                                        Modifier.hardEdgeSweepMask(
+                                            progress = sweepProgress,
+                                            fillTransitionWidth = fillTransitionWidth,
+                                            isRtl = isRtl,
+                                            sweepColors = sweepColors,
+                                        )
+                                    }
                                 } else {
                                     Modifier
                                 },
@@ -1689,25 +1736,12 @@ private fun AnimatedWordV2(
                                         enabled = true,
                                     )
                                 } else {
-                                    Modifier.drawWithContent {
-                                        drawContent()
-                                        val edgeWidth = fillTransitionWidth.dp.toPx()
-                                        val center =
-                                            if (isRtl) {
-                                                size.width - ((size.width + edgeWidth * 2) * sweepProgress - edgeWidth)
-                                            } else {
-                                                (size.width + edgeWidth * 2) * sweepProgress - edgeWidth
-                                            }
-                                        drawRect(
-                                            brush =
-                                                androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                                    colors = sweepColors,
-                                                    startX = center - edgeWidth,
-                                                    endX = center + edgeWidth,
-                                                ),
-                                            blendMode = BlendMode.DstIn,
-                                        )
-                                    }
+                                    Modifier.hardEdgeSweepMask(
+                                        progress = sweepProgress,
+                                        fillTransitionWidth = fillTransitionWidth,
+                                        isRtl = isRtl,
+                                        sweepColors = sweepColors,
+                                    )
                                 },
                             ).padding(glowPadding)
                     } else {
@@ -1718,6 +1752,32 @@ private fun AnimatedWordV2(
         }
     }
 }
+
+private fun Modifier.hardEdgeSweepMask(
+    progress: Float,
+    fillTransitionWidth: Float,
+    isRtl: Boolean,
+    sweepColors: List<Color>,
+): Modifier =
+    drawWithContent {
+        drawContent()
+        val edgeWidth = fillTransitionWidth.dp.toPx()
+        val center =
+            if (isRtl) {
+                size.width - ((size.width + edgeWidth * 2) * progress - edgeWidth)
+            } else {
+                (size.width + edgeWidth * 2) * progress - edgeWidth
+            }
+        drawRect(
+            brush =
+                Brush.horizontalGradient(
+                    colors = sweepColors,
+                    startX = center - edgeWidth,
+                    endX = center + edgeWidth,
+                ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 // Spotify style: no glow/bounce — motion lives in the pill fill sweep and the
 // line rise/fade transitions instead.

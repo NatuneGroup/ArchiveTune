@@ -1648,11 +1648,12 @@ class ListenTogetherManager @Inject constructor(
     }
 
     /**
-     * Join an existing room
+     * Join an existing room. False when the request was not sent because another room request is
+     * still pending.
      */
-    fun joinRoom(roomCode: String, username: String) {
+    fun joinRoom(roomCode: String, username: String): Boolean {
         Timber.tag(TAG).d("Joining room $roomCode as $username")
-        client.joinRoom(roomCode, username)
+        return client.joinRoom(roomCode, username)
     }
 
     /**

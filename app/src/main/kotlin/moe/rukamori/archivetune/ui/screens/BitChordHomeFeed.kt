@@ -58,10 +58,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawOutline
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -424,11 +426,15 @@ private fun BitChordShimmerBox(
             .clip(shape)
             .drawWithCache {
                 val band = size.width * 0.5f
-                val colors = listOf(base, highlight, base)
+                // Built once at the origin and moved with translate, so a frame allocates nothing;
+                // outside the band the clamped gradient was plain `base` anyway.
+                val bandBrush = Brush.horizontalGradient(listOf(base, highlight, base), 0f, band)
+                val bandSize = Size(band, size.height)
                 // sweep is read only in the draw block so the animation does not rebuild this cache every frame.
                 onDrawBehind {
                     val startX = -band + sweep * (size.width + band * 2f)
-                    drawRect(Brush.horizontalGradient(colors, startX, startX + band))
+                    drawRect(base)
+                    translate(left = startX) { drawRect(bandBrush, size = bandSize) }
                 }
             },
     )

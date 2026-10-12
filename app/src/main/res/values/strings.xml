@@ -1762,6 +1762,7 @@
     <string name="listen_together_create_room">Create room</string>
     <string name="listen_together_create_room_desc">Create a room and share the code with friends</string>
     <string name="listen_together_join_room">Join room</string>
+    <string name="listen_together_request_in_progress">Another room request is still in progress. Open the invite again in a moment.</string>
     <string name="listen_together_room_code">Room code</string>
     <string name="listen_together_leave_room">Leave room</string>
     <string name="listen_together_you_are_host">You are the host</string>

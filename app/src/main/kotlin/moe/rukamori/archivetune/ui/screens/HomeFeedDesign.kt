@@ -99,10 +99,6 @@ import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
 import moe.rukamori.archivetune.utils.rememberPreference
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeProgressive
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import dev.chrisbanes.haze.materials.HazeMaterials
 
 // ============================================================================
 // BitChord home-feed design system (ported from kushagrasinghx/BitChord).
@@ -863,17 +859,14 @@ private const val HomeTopScrimPeak = 0.42f
 private const val HomeTopScrimStops = 12
 
 /**
- * The progressive top-fade blur behind the home top bar. Keyed to the colour
- * of the page underneath rather than the theme's background: both halves of
- * the material are flat colour, and wherever the blur has least to say, that
- * flat colour is most of what is left. The scrim is laid *over* the blur
- * (the only order that works: haze samples the content tagged as its source,
- * so a scrim underneath would be painted over by the blurred content).
+ * The top-fade scrim behind the home top bar, keyed to the colour of the page
+ * underneath rather than the theme's background so it dissolves into whatever
+ * the page actually is. It is a plain gradient, not a blur, so nothing has to
+ * tag the list as a haze source (a source records its content into a layer
+ * every frame whether or not anything samples it).
  */
-@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun HomeTopFadeBlur(
-    hazeState: HazeState,
     pageColor: Color,
     barHeight: Dp,
     modifier: Modifier = Modifier,
@@ -982,22 +975,17 @@ fun HomeAtmosphereBackground(modifier: Modifier = Modifier) {
 }
 
 // ============================================================================
-// Shared glass screen-header haze (used by GlassScreenHeader.kt). Delegates to
-// HomeTopFadeBlur: ultraThin material keyed to the page colour, progressive
-// fade plus readability scrim. Early-returns unless liquid glass is on and
-// the RuntimeShader stack exists (Android 12+), so with glass OFF nothing is
-// composed and rendering is unchanged.
+// Shared glass screen-header scrim (used by GlassScreenHeader.kt). Delegates to
+// HomeTopFadeBlur: the page-coloured top fade. Early-returns unless liquid
+// glass is on and the RuntimeShader stack exists (Android 12+), so with glass
+// OFF nothing is composed and rendering is unchanged.
 // ============================================================================
 
-/** Header bar height the haze fades below (status-bar inset sits above it). */
+/** Header bar height the scrim fades below (status-bar inset sits above it). */
 val ScreenHeaderHazeBarZone = 64.dp
 
 @Composable
-fun rememberScreenHeaderHaze(): HazeState = remember { HazeState() }
-
-@Composable
 fun ScreenHeaderHaze(
-    hazeState: HazeState,
     systemBarsTopPadding: Dp,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
@@ -1007,7 +995,6 @@ fun ScreenHeaderHaze(
     val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
     if (!liquidGlassEnabled) return
     HomeTopFadeBlur(
-        hazeState = hazeState,
         pageColor = MaterialTheme.colorScheme.surface,
         barHeight = systemBarsTopPadding + ScreenHeaderHazeBarZone,
         modifier = modifier,

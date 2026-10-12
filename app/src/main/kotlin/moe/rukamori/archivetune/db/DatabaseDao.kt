@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.db.entities.ArtistEntity
 import moe.rukamori.archivetune.db.entities.Event
 import moe.rukamori.archivetune.db.entities.EventWithSong
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.db.entities.LibraryCoverCandidate
 import moe.rukamori.archivetune.db.entities.LibraryTopMixEntity
 import moe.rukamori.archivetune.db.entities.LibraryTopMixSongMap
 import moe.rukamori.archivetune.db.entities.ListeningBySlot
@@ -607,28 +608,25 @@ interface DatabaseDao {
     suspend fun getSongById(songId: String): Song?
 
     /**
-     * The cover of a stored song named [title], preferring one whose artist appears in [artist].
+     * Covers of every stored song whose title matches one of [titles] (ASCII case-insensitively),
+     * one row per credited artist, for the caller to pick the scrobble's own artist from.
      *
-     * [artist] is a scrobble's artist string, which joins every credited artist, so it is matched by
-     * containment rather than equality. A title alone can be shared by unrelated songs; the ordering
-     * only makes the right one win when both exist, it does not require the artist to match.
+     * song.title has no index, and a NOCASE comparison could not use a plain one, so this scans the
+     * song table. It takes a whole batch of titles so a screen of rows costs one scan, not one per
+     * row; keep each batch under SQLite's 999 bound-variable limit.
      */
     @Query(
         """
-        SELECT song.thumbnailUrl FROM song
+        SELECT song.title AS title, song.thumbnailUrl AS thumbnailUrl,
+            artist.name AS artistName, song.inLibrary AS inLibrary
+        FROM song
         LEFT JOIN song_artist_map ON song_artist_map.songId = song.id
         LEFT JOIN artist ON artist.id = song_artist_map.artistId
-        WHERE song.title = :title COLLATE NOCASE
+        WHERE song.title COLLATE NOCASE IN (:titles)
             AND song.thumbnailUrl IS NOT NULL AND song.thumbnailUrl != ''
-        ORDER BY CASE WHEN artist.name IS NOT NULL AND instr(lower(:artist), lower(artist.name)) > 0 THEN 0 ELSE 1 END,
-            song.inLibrary DESC
-        LIMIT 1
         """,
     )
-    suspend fun libraryCoverForTrack(
-        title: String,
-        artist: String,
-    ): String?
+    suspend fun libraryCoverCandidates(titles: List<String>): List<LibraryCoverCandidate>
 
     /** The stored portrait of the artist called [name], if one has been fetched. */
     @Query("SELECT thumbnailUrl FROM artist WHERE name = :name COLLATE NOCASE AND thumbnailUrl IS NOT NULL AND thumbnailUrl != '' LIMIT 1")

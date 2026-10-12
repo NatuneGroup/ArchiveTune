@@ -99,15 +99,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.db.MusicDatabase
+import moe.rukamori.archivetune.db.entities.LibraryCoverCandidate
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.DarkModeKey
@@ -2287,6 +2291,79 @@ private object CachedArtworkStore {
 }
 
 /**
+ * Library covers for dashboard rows. A title lookup scans the song table (see
+ * [MusicDatabase.libraryCoverCandidates]), so the titles of rows that resolve together are folded
+ * into one query, and every answer, misses included, is kept for the process: scrolling back,
+ * switching tabs or reopening the dashboard never scans for the same title again.
+ */
+private object LibraryCoverCache {
+    private const val MAX_TITLES = 512
+    private const val MAX_BATCH = 500
+
+    private val lock = Mutex()
+    private val pending = LinkedHashSet<String>()
+    private val byTitle =
+        object : LinkedHashMap<String, List<LibraryCoverCandidate>>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<LibraryCoverCandidate>>?): Boolean =
+                size > MAX_TITLES
+        }
+
+    suspend fun coverFor(
+        database: MusicDatabase,
+        title: String,
+        artist: String?,
+    ): String? {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return null
+        val key = trimmed.lowercase()
+        // Registered before waiting on the lock, so whichever row holds it next queries this
+        // title along with its own.
+        synchronized(pending) { pending.add(trimmed) }
+        val candidates =
+            lock.withLock {
+                byTitle[key] ?: run {
+                    val drained = synchronized(pending) { pending.toList().also { pending.clear() } }
+                    val batch =
+                        (drained + trimmed)
+                            .distinctBy { it.lowercase() }
+                            .filterNot { byTitle.containsKey(it.lowercase()) }
+                    val found = HashMap<String, MutableList<LibraryCoverCandidate>>()
+                    try {
+                        for (chunk in batch.chunked(MAX_BATCH)) {
+                            for (row in database.libraryCoverCandidates(chunk)) {
+                                val rowTitle = row.title ?: continue
+                                found.getOrPut(rowTitle.lowercase()) { ArrayList() }.add(row)
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Library cover lookup failed")
+                        return null
+                    }
+                    for (requested in batch) {
+                        val requestedKey = requested.lowercase()
+                        byTitle[requestedKey] = found[requestedKey].orEmpty()
+                    }
+                    found[key].orEmpty()
+                }
+            }
+        // A scrobble's artist string joins every credited artist, so a stored artist is matched by
+        // containment. The title alone can be shared by unrelated songs; the artist only decides
+        // between them, it is not required to match.
+        val scrobbleArtist = artist.orEmpty().lowercase()
+        return candidates
+            .filter { !it.thumbnailUrl.isNullOrBlank() }
+            .minWithOrNull(
+                compareBy<LibraryCoverCandidate> { candidate ->
+                    val name = candidate.artistName
+                    if (name != null && scrobbleArtist.contains(name.lowercase())) 0 else 1
+                }.thenByDescending { it.inLibrary ?: Long.MIN_VALUE },
+            )?.thumbnailUrl
+    }
+}
+
+/**
  * Last.fm answers most of what ArchiveTune scrobbles with its grey placeholder, since it has no
  * catalogue entry for a YouTube upload. But the app scrobbled those plays itself, so the song —
  * and the cover it already shows everywhere else — is in the library: asking the database first
@@ -2300,8 +2377,7 @@ private suspend fun resolveCatalogueCover(
     val title = lookup.title
     val artist = lookup.artist
     database
-        ?.let { db -> runCatching { db.libraryCoverForTrack(title.trim(), artist.orEmpty()) }.getOrNull() }
-        ?.takeIf(String::isNotBlank)
+        ?.let { db -> LibraryCoverCache.coverFor(db, title, artist) }
         ?.let { return it }
     return resolveYtThumbnail(title, artist)
         ?: TelegramCoverProvider.coverUrl(title, artist)

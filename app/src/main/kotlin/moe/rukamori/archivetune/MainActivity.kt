@@ -388,6 +388,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.LocalListenTogetherManager
 import moe.rukamori.archivetune.listentogether.ListenTogetherManager
+import moe.rukamori.archivetune.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.isLowRamDevice
@@ -1552,9 +1553,13 @@ class MainActivity : ComponentActivity() {
                         scrolledDown = false
                     }
                     // The one-row layout: the tab bar folds into round Library/Home and Search buttons
-                    // with the mini player between them.
+                    // with the mini player between them. It steps aside while the top search is open,
+                    // exactly as the tab bar does (shouldShowNavigationBar is false then); it is not
+                    // tied to shouldShowNavigationBar as a whole because the row deliberately stays
+                    // on pages below the tabs.
                     val isBottomUiCompact =
                         !useRail &&
+                            !active &&
                             when (navigationBarCompactBehavior) {
                                 NavigationBarCompactBehavior.ALWAYS_COMPACT -> true
                                 NavigationBarCompactBehavior.ADAPTIVE -> scrolledDown
@@ -3378,7 +3383,10 @@ class MainActivity : ComponentActivity() {
                                         )
                                         // Boolean gate only: the fraction itself is read in graphicsLayer, so the
                                         // spring does not recompose this scope every frame.
-                                        val compactRowVisible by remember {
+                                        // Keyed: rememberBottomSheetState hands out a new state when
+                                        // its collapsed bound changes, and an unkeyed derivedStateOf
+                                        // would keep reading the old one.
+                                        val compactRowVisible by remember(playerBottomSheetState) {
                                             derivedStateOf {
                                                 bottomUiCompactFractionState.value *
                                                     (1f - playerBottomSheetState.progress.coerceIn(0f, 1f)) > 0.01f
@@ -3829,7 +3837,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Listen Together invite links: the share URL from the room screen
-        // (https://vivimusic-listen-together.onrender.com/listen?code=X) and
+        // (https://<server host>/listen?code=X, see ListenTogetherServers.inviteHosts) and
         // the direct custom scheme (archivetune://listen?code=X) — joins the
         // room with the stored username.
         val listenCode =
@@ -3839,12 +3847,16 @@ class MainActivity : ComponentActivity() {
         val isListenLink =
             uri.pathSegments.firstOrNull() == "listen" ||
                 uri.host?.equals("listen", ignoreCase = true) == true ||
-                uri.host?.equals("vivimusic-listen-together.onrender.com", ignoreCase = true) == true
+                ListenTogetherServers.isInviteHost(uri.host)
         if (!listenCode.isNullOrBlank() && isListenLink) {
             val username =
                 dataStore.get(moe.rukamori.archivetune.constants.ListenTogetherUsernameKey, "")
                     .ifBlank { "Guest" }
-            listenTogetherManager.joinRoom(listenCode, username)
+            if (!listenTogetherManager.joinRoom(listenCode, username)) {
+                Toast
+                    .makeText(this, R.string.listen_together_request_in_progress, Toast.LENGTH_LONG)
+                    .show()
+            }
             return
         }
 

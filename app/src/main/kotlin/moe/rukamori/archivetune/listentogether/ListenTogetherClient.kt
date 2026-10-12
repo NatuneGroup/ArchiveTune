@@ -1698,11 +1698,16 @@ class ListenTogetherClient @Inject constructor(
     /**
      * Join an existing room.
      * If not connected, will queue the action and connect first.
+     * Returns false, without touching the current session, while another room request is still
+     * waiting for its answer.
      */
-    fun joinRoom(roomCode: String, username: String) {
+    fun joinRoom(roomCode: String, username: String): Boolean {
         roomActionDeadline.startIfIdle(ROOM_ACTION_DEADLINE_MS) {
             failPendingConnection(context.getString(R.string.listen_together_room_request_timeout))
-        } ?: return
+        } ?: run {
+            log(LogLevel.WARNING, "Join for room $roomCode ignored: another room request is in progress")
+            return false
+        }
         // Clear any existing session to ensure we join the new room instead of reconnecting
         clearPersistedSession()
         sessionToken = null
@@ -1722,6 +1727,7 @@ class ListenTogetherClient @Inject constructor(
             }
             // If CONNECTING or RECONNECTING, the action will be executed when connected
         }
+        return true
     }
 
     /**

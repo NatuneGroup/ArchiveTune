@@ -769,12 +769,7 @@ private fun RoomStatusCard(
                 }
             val inviteLink =
                 remember(roomCode, serverUrl) {
-                    val host = ListenTogetherServers.findByUrl(serverUrl)?.url
-                        ?.removePrefix("wss://")
-                        ?.removePrefix("ws://")
-                        ?.substringBefore('/')
-                        ?: "vivimusic-listen-together.onrender.com"
-                    "https://$host/listen?code=$roomCode"
+                    "https://${ListenTogetherServers.inviteHost(serverUrl)}/listen?code=$roomCode"
                 }
             val modifier = Modifier.weight(1f)
 

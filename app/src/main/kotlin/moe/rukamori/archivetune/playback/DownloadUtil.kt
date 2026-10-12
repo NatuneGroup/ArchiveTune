@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.deezer.DeezerCrypto
 import moe.rukamori.archivetune.deezer.DeezerDecryptingDataSource
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
+import moe.rukamori.archivetune.echo.EchoStreamResolver
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.utils.AuthScopedCacheValue
@@ -325,14 +326,7 @@ class DownloadUtil
                     }
                 val playbackData =
                     runBlocking(Dispatchers.IO) {
-                        context.retryWithoutPlaybackLoginContext {
-                            YTPlayerUtils.playerResponseForDownload(
-                                mediaId,
-                                audioQuality = requestedAudioQuality,
-                                connectivityManager = connectivityManager,
-                                networkMetered = lowDataModeActive,
-                            )
-                        }
+                        resolveYouTubeDownload(mediaId, requestedAudioQuality, lowDataModeActive)
                     }.getOrThrow()
                 persistPlaybackMetadata(mediaId, playbackData)
 
@@ -527,16 +521,9 @@ class DownloadUtil
             // resulting file is .m4a (jaudiotagger-readable) rather than .webm
             // (jaudiotagger-unreadable).
             val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
-            val playbackData = runCatching {
-                appContext.retryWithoutPlaybackLoginContext {
-                    YTPlayerUtils.playerResponseForDownload(
-                        mediaId,
-                        audioQuality = requestedAudioQuality,
-                        connectivityManager = connectivityManager,
-                        networkMetered = lowDataModeActive,
-                    )
-                }.getOrThrow()
-            }.getOrNull() ?: return null
+            val playbackData =
+                resolveYouTubeDownload(mediaId, requestedAudioQuality, lowDataModeActive).getOrNull()
+                    ?: return null
             persistPlaybackMetadata(mediaId, playbackData)
             val fetched = runCatching {
                 fetchStreamIntoPlayerCache(
@@ -550,6 +537,43 @@ class DownloadUtil
             }.isSuccess
             return if (fetched) mediaId else null
         }
+
+        /**
+         * The shipped resolver, then the echo resolver as the last resort — the same order
+         * playback uses. Without the echo step a "Video unavailable" from the shipped client
+         * order failed the download even when the same track still played.
+         */
+        private suspend fun resolveYouTubeDownload(
+            mediaId: String,
+            requestedAudioQuality: AudioQuality,
+            lowDataModeActive: Boolean,
+        ): Result<YTPlayerUtils.PlaybackData> =
+            appContext
+                .retryWithoutPlaybackLoginContext {
+                    YTPlayerUtils.playerResponseForDownload(
+                        mediaId,
+                        audioQuality = requestedAudioQuality,
+                        connectivityManager = connectivityManager,
+                        networkMetered = lowDataModeActive,
+                    )
+                }.recoverCatching { primaryFailure ->
+                    if (primaryFailure is YTPlayerUtils.InvalidPlaybackLoginContextException ||
+                        primaryFailure is YTPlayerUtils.LoginRequiredForPlaybackException
+                    ) {
+                        throw primaryFailure
+                    }
+                    Timber.tag("DownloadUtil").w(primaryFailure, "Shipped resolver failed for %s; trying echo", mediaId)
+                    runCatching {
+                        EchoStreamResolver.playerResponseForPlayback(
+                            videoId = mediaId,
+                            audioQuality = requestedAudioQuality,
+                            connectivityManager = connectivityManager,
+                        )
+                    }.getOrElse { echoFailure ->
+                        Timber.tag("DownloadUtil").w(echoFailure, "Echo resolver also failed for %s", mediaId)
+                        throw primaryFailure
+                    }
+                }
 
         /**
          * Streams [url] into [playerCache] under [cacheKey] using a single OkHttp GET, writing

@@ -54,13 +54,27 @@ object MegalobizLyricsProvider : LyricsProvider {
 
             val key = appKey()
             if (key != null) {
-                searchAndConvert(query, title, artist, duration, key)?.let { return@withContext it }
+                when (val outcome = searchAndConvert(query, title, artist, duration, key)) {
+                    is SearchOutcome.Found -> return@withContext outcome.lrc
+                    SearchOutcome.Miss -> return@withContext null
+                    // Only a rejected key is worth the scrape: it downloads the /lrc page and up
+                    // to MAX_SCRAPED_CHUNKS scripts, which an ordinary no-match must not trigger.
+                    SearchOutcome.Unauthorized -> Unit
+                }
             }
 
             val fresh = refreshAppKey() ?: return@withContext null
             if (fresh == key) return@withContext null
-            searchAndConvert(query, title, artist, duration, fresh)
+            (searchAndConvert(query, title, artist, duration, fresh) as? SearchOutcome.Found)?.lrc
         }
+
+    private sealed interface SearchOutcome {
+        data class Found(val lrc: String) : SearchOutcome
+
+        data object Miss : SearchOutcome
+
+        data object Unauthorized : SearchOutcome
+    }
 
     private suspend fun searchAndConvert(
         query: String,
@@ -68,18 +82,20 @@ object MegalobizLyricsProvider : LyricsProvider {
         artist: String,
         duration: Int,
         key: String,
-    ): String? {
+    ): SearchOutcome {
         val url =
             "$API_BASE/lrcs?search=${LyricsProviderHttp.encode(query)}" +
                 "&pageSize=$PAGE_SIZE"
-        val body =
-            LyricsProviderHttp.get(
+        val response =
+            LyricsProviderHttp.getWithStatus(
                 url,
                 mapOf("Authorization" to "Bearer $key", "Accept" to "application/json"),
-            ) ?: return null
-        val root = LyricsProviderHttp.parseJson(body).asObject() ?: return null
-        val models = root.array("models") ?: return null
-        if (models.isEmpty()) return null
+            ) ?: return SearchOutcome.Miss
+        if (response.status == 401 || response.status == 403) return SearchOutcome.Unauthorized
+        val body = response.body ?: return SearchOutcome.Miss
+        val root = LyricsProviderHttp.parseJson(body).asObject() ?: return SearchOutcome.Miss
+        val models = root.array("models") ?: return SearchOutcome.Miss
+        if (models.isEmpty()) return SearchOutcome.Miss
 
         val sheets =
             models.mapNotNull { element ->
@@ -92,8 +108,8 @@ object MegalobizLyricsProvider : LyricsProvider {
                     lines = lines,
                 )
             }
-        val best = best(sheets, title, artist, duration) ?: return null
-        return toLrc(best.lines)
+        val best = best(sheets, title, artist, duration) ?: return SearchOutcome.Miss
+        return toLrc(best.lines)?.let { SearchOutcome.Found(it) } ?: SearchOutcome.Miss
     }
 
     private fun best(

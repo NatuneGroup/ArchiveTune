@@ -450,9 +450,9 @@ object DownloadSourceConfig {
 
     /**
      * Maps a playback source to the download source serving the same catalogue. Returns null for
-     * the playback-only sources this path has no resolver for (Apple, Amazon, QQ) so a pin to one
-     * of them falls back to the order rather than pinning the download to a source it can never
-     * resolve.
+     * the playback-only sources this path has no resolver for (Apple, Amazon, QQ, Spotify) so a pin
+     * to one of them falls back to the order rather than pinning the download to a source it can
+     * never resolve.
      */
     fun fromAudioSource(source: AudioSourceType): DownloadSource? =
         when (source) {
@@ -462,7 +462,7 @@ object DownloadSourceConfig {
             AudioSourceType.DEEZER -> DownloadSource.DEEZER
             AudioSourceType.JIOSAAVN -> DownloadSource.JIOSAAVN
             AudioSourceType.YOUTUBE -> DownloadSource.YOUTUBE_MUSIC
-            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ -> null
+            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
         }
 
     /**
@@ -1763,6 +1763,7 @@ enum class AudioSourceType {
     APPLE,
     AMAZON,
     QQ,
+    SPOTIFY,
     JIOSAAVN,
     YOUTUBE,
 }
@@ -1803,6 +1804,48 @@ val QqMusicMusickeyKey = stringPreferencesKey("qqMusicMusickey")
 // Display-only nickname from the login reply, so the settings row can say who is signed in without
 // keeping anything else about the account.
 val QqMusicNicknameKey = stringPreferencesKey("qqMusicNickname")
+
+// ---------------------------------------------------------------------------
+// Spotify streaming source (experimental)
+// ---------------------------------------------------------------------------
+// Audio from Spotify itself, on a second account that exists only for streaming. The catalog
+// integration above (SpotifySpDcKey and friends) is never read here and never written from here:
+// the streaming source signs in through its own WebView profile, keeps its own cookie and token,
+// and refuses the account the catalog is signed in with, so playback reporting and any action
+// Spotify takes against a streaming session land on the throwaway account and not on the library.
+// Not in AudioSourceConfig.DEFAULT_ORDER; it joins the order through withSourceAdded once the user
+// has signed in and turned it on.
+val SpotifyStreamEnabledKey = booleanPreferencesKey("spotifyStreamEnabled")
+
+val SpotifyStreamSpDcKey = stringPreferencesKey("spotifyStreamSpDc")
+val SpotifyStreamSpKeyKey = stringPreferencesKey("spotifyStreamSpKey")
+val SpotifyStreamAccessTokenKey = stringPreferencesKey("spotifyStreamAccessToken")
+val SpotifyStreamAccessTokenExpiresAtKey = longPreferencesKey("spotifyStreamAccessTokenExpiresAt")
+
+// The streaming account's user id, kept so a later catalog sign-in with the same account can be
+// noticed and the streaming source stood down instead of reporting plays into the library.
+val SpotifyStreamUserIdKey = stringPreferencesKey("spotifyStreamUserId")
+val SpotifyStreamAccountNameKey = stringPreferencesKey("spotifyStreamAccountName")
+
+val SpotifyStreamResolveMethodKey = stringPreferencesKey("spotifyStreamResolveMethod")
+
+// The 40-hex virtual Connect device the web-player method registers. Stable per install so the
+// streaming account does not collect a new device on every play.
+val SpotifyStreamDeviceIdKey = stringPreferencesKey("spotifyStreamDeviceId")
+
+enum class SpotifyStreamResolveMethod {
+    // Web-player pipeline: Connect device + manifest + Widevine-protected AAC 128.
+    STOPIFY,
+
+    // Desktop pipeline: PlayPlay audio key + AES-CTR decrypted Ogg Vorbis/FLAC; falls back to
+    // STOPIFY when it cannot resolve.
+    ECHO,
+    ;
+
+    companion object {
+        val Default = STOPIFY
+    }
+}
 
 // ---------------------------------------------------------------------------
 // YouTube source

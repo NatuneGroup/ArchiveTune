@@ -972,9 +972,11 @@
     <string name="amazon_jwt_status_expired">Expired — authorize again</string>
     <string name="amazon_jwt_status_never">Never authorized</string>
     <string name="amazon_bypass_token">Bypass token</string>
-    <string name="amazon_bypass_token_description">Operator-provided bypass_token, sent as a query parameter. Alternative to Turnstile.</string>
+    <string name="amazon_bypass_token_description">Operator-issued API key or bypass token. Sent as a Bearer API key to newer instances and as bypass_token to older ones. Alternative to Turnstile.</string>
     <string name="amazon_bypass_token_set">Set · ****%1$s — tap to replace</string>
     <string name="amazon_bypass_token_hint">Paste bypass token</string>
+    <string name="amazon_turnstile_verifying">Verifying with Cloudflare…</string>
+    <string name="amazon_turnstile_signing_in">Signing in…</string>
     <string name="your_spotify_playlists">Your Spotify playlists</string>
     <string name="your_spotify_artists">Your Spotify artists</string>
     <string name="your_youtube_artists">Your YouTube artists</string>
@@ -1178,4 +1180,30 @@
     <string name="home_welcome_line_anonymous">Hi, Welcome Back 🔥</string>
     <string name="home_headline_line1">Listen to Your</string>
     <string name="home_headline_line2">Favourite Music</string>
+    <!-- Spotify streaming source (experimental, separate account) -->
+    <string name="source_spotify_stream">Spotify streaming</string>
+    <string name="spotify_stream_settings">Spotify streaming settings</string>
+    <string name="spotify_stream_settings_desc">Experimental. Plays audio from Spotify through a second account that is used only for streaming.</string>
+    <string name="spotify_stream_enabled">Use Spotify streaming</string>
+    <string name="spotify_stream_enabled_desc">Try Spotify for a track before falling through to the sources below it.</string>
+    <string name="spotify_stream_needs_account">Sign in with a separate streaming account first.</string>
+    <string name="spotify_stream_warning_title">Experimental, and against Spotify\'s terms</string>
+    <string name="spotify_stream_warning_body">This source plays Spotify audio outside Spotify\'s own apps. Spotify can suspend an account used this way. Use a separate, throwaway account here, never the one your library and playlists live on. The streaming account registers a device called ArchiveTune Player and reports what it plays.</string>
+    <string name="spotify_stream_account">Streaming account</string>
+    <string name="spotify_stream_sign_in">Sign in with a separate account</string>
+    <string name="spotify_stream_sign_in_desc">Opens a private sign-in that does not share cookies with the Spotify catalog account.</string>
+    <string name="spotify_stream_login_title">Sign in to the streaming account</string>
+    <string name="spotify_stream_signed_in">Streaming as %1$s</string>
+    <string name="spotify_stream_signed_in_desc">Only this account is used for streaming. The catalog account is never used for audio.</string>
+    <string name="spotify_stream_sign_out">Sign out of the streaming account</string>
+    <string name="spotify_stream_sign_in_failed">Streaming sign-in failed</string>
+    <string name="spotify_stream_error_same_account">This is the account the Spotify catalog is signed in with. Sign in with a different account for streaming.</string>
+    <string name="spotify_stream_error_catalog_unverifiable">The catalog account could not be checked, so it is not possible to confirm the two accounts are different. Try again when online.</string>
+    <string name="spotify_stream_error_session">Spotify did not accept this sign-in. Try signing in again.</string>
+    <string name="spotify_stream_error_profile">Spotify did not return the account profile. Try again later.</string>
+    <string name="spotify_stream_method">Resolve method</string>
+    <string name="spotify_stream_method_stopify">Web player (AAC 128, Widevine)</string>
+    <string name="spotify_stream_method_echo">Desktop (Ogg Vorbis or FLAC)</string>
+    <string name="spotify_stream_method_note_title">About the methods</string>
+    <string name="spotify_stream_method_note">The web player method needs Widevine on this device. The desktop method decrypts on the device and falls back to the web player method when it cannot resolve a track.</string>
 </resources>

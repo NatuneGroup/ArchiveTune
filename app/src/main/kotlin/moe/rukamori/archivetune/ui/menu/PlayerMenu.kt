@@ -1852,6 +1852,7 @@ private fun AudioSourceType.sourceLabelRes(): Int =
         AudioSourceType.APPLE -> R.string.source_apple_music
         AudioSourceType.AMAZON -> R.string.source_amazon
         AudioSourceType.QQ -> R.string.source_qq_music
+        AudioSourceType.SPOTIFY -> R.string.source_spotify_stream
         AudioSourceType.JIOSAAVN -> R.string.source_jiosaavn
         AudioSourceType.YOUTUBE -> R.string.source_youtube
     }
@@ -1867,6 +1868,7 @@ private fun AudioSourceType.sourceIconRes(): Int =
         // stand-in APPLE uses above for the same reason.
         AudioSourceType.AMAZON -> R.drawable.ic_music
         AudioSourceType.QQ -> R.drawable.ic_music
+        AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn
         AudioSourceType.YOUTUBE -> R.drawable.play
     }
@@ -2200,6 +2202,7 @@ private fun SongSourceDialog(
                             AudioSourceType.APPLE to stringResource(R.string.source_apple_music),
                             AudioSourceType.AMAZON to stringResource(R.string.source_amazon),
                             AudioSourceType.QQ to stringResource(R.string.source_qq_music),
+                            AudioSourceType.SPOTIFY to stringResource(R.string.source_spotify_stream),
                             AudioSourceType.JIOSAAVN to stringResource(R.string.source_jiosaavn),
                             AudioSourceType.YOUTUBE to stringResource(R.string.source_youtube),
                         ),
@@ -2215,6 +2218,7 @@ private fun SongSourceDialog(
                             AudioSourceType.APPLE to R.drawable.ic_music,
                             AudioSourceType.AMAZON to R.drawable.ic_music,
                             AudioSourceType.QQ to R.drawable.ic_music,
+                            AudioSourceType.SPOTIFY to R.drawable.spotify_icon,
                             AudioSourceType.JIOSAAVN to R.drawable.provider_jiosaavn,
                             AudioSourceType.YOUTUBE to R.drawable.play,
                         ),

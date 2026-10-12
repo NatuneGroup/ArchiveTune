@@ -1,8 +1,8 @@
 # CLAUDE.md
 
 ArchiveTune — a Kotlin/Compose Android music player. Multi-source: Tidal, Deezer,
-Qobuz and Telegram serve audio, Spotify serves catalog metadata only, YouTube is
-the final fallback.
+Qobuz and Telegram serve audio, Spotify serves catalog metadata (plus an opt-in,
+experimental streaming source on a separate account), YouTube is the final fallback.
 
 **Read [AGENTS.md](AGENTS.md) first.** It carries the fork invariants — protected
 files, the removed phone-home surface, signing rules, submodule handling. Nothing
@@ -48,6 +48,7 @@ into `dev` only after the device QA in [docs/claude/RELEASES.md](docs/claude/REL
 | [docs/instance-racing.md](docs/instance-racing.md) | Tidal public instances: where they come from, how the resolver races them, health and cooldowns |
 | [docs/telegram-native.md](docs/telegram-native.md) | The TDLight engine: why the native library is downloaded, the digest pinning, schema drift from 1.8.56 |
 | [docs/spotify-native-playback.md](docs/spotify-native-playback.md) | Playing Spotify tracks with no YouTube release: shipped ISRC resolution, and the unshipped native-id design |
+| [docs/spotify-streaming.md](docs/spotify-streaming.md) | The experimental Spotify audio source: the separate streaming account, the two resolve methods, DRM and cache routing |
 | [docs/REMOVED_RUKAMORI_COMPONENTS.md](docs/REMOVED_RUKAMORI_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
 
 ## Task state

@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -93,6 +94,18 @@ class SourceOrderTest {
         assertTrue(order.indexOf(AudioSourceType.QQ) < order.indexOf(AudioSourceType.YOUTUBE))
         assertEquals(withQq, AudioSourceConfig.withSourceAdded(withQq, AudioSourceType.AMAZON))
         assertEquals(withQq, AudioSourceConfig.withSourceAdded(withQq, AudioSourceType.QQ))
+    }
+
+    @Test
+    fun spotifyStreamingIsOptInAndJoinsAboveYouTube() {
+        assertFalse(AudioSourceType.SPOTIFY in AudioSourceConfig.DEFAULT_ORDER)
+        assertFalse(AudioSourceType.SPOTIFY in AudioSourceConfig.parseOrder(null))
+
+        val withSpotify = AudioSourceConfig.withSourceAdded(null, AudioSourceType.SPOTIFY)
+        val order = AudioSourceConfig.parseOrder(withSpotify)
+
+        assertTrue(order.indexOf(AudioSourceType.SPOTIFY) < order.indexOf(AudioSourceType.YOUTUBE))
+        assertEquals(withSpotify, AudioSourceConfig.withSourceAdded(withSpotify, AudioSourceType.SPOTIFY))
     }
 
     @Test

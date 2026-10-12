@@ -405,8 +405,8 @@ object AudioSourceConfig {
     /**
      * The stored order with [source] present, sitting just above YouTube.
      *
-     * Sources outside [DEFAULT_ORDER] — Amazon and QQ, which join the chain only after the user asks
-     * for them — can never enter the order any other way: the picked order is authoritative, and the
+     * Sources outside [DEFAULT_ORDER] — Amazon, QQ and Spotify streaming, which join the chain only
+     * after the user asks for them — can never enter the order any other way: the picked order is authoritative, and the
      * picker can only reorder what it was given. Without this, switching such a source on would
      * change a preference the resolver never consults, and the source would stay unreachable while
      * its toggle claimed otherwise.

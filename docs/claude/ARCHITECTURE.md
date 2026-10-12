@@ -15,7 +15,9 @@ Stream errors are handled through bounded URL/cache invalidation, source re-reso
 The shared `audiosource` contract resolves Tidal, Qobuz (plus its backup), Deezer, Apple Music,
 Amazon, QQ Music, JioSaavn and YouTube streams. Amazon plays through a self-hosted instance — the
 user's own, then any the pool serves, each host carrying only its own authorization material — and
-QQ plays from the user's own signed-in account. Spotify remains catalog-only. Telegram uses
+QQ plays from the user's own signed-in account. Spotify's catalog integration stays metadata-only;
+the opt-in, experimental Spotify streaming source plays on a second, streaming-only account and
+never on the catalog account (`docs/spotify-streaming.md`). Telegram uses
 independent `telegram://` routing. Tidal progressive DASH uses `tidal-dash://`. YouTube is the final
 fallback and is itself a toggle: turning it off leaves the resolver with no terminal fallback beyond
 the standard no-stream error.

@@ -64,6 +64,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.webkit.ProfileStore
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import moe.rukamori.archivetune.R
@@ -237,6 +240,8 @@ private fun SpotifyAccountIcon(avatarUrl: String?) {
 internal fun SpotifyLoginSheet(
     onDismiss: () -> Unit,
     onCookiesCaptured: (spDc: String, spKey: String) -> Unit,
+    isolatedProfile: String? = null,
+    title: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var webView by remember { mutableStateOf<WebView?>(null) }
@@ -288,7 +293,7 @@ internal fun SpotifyLoginSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = stringResource(R.string.spotify_login_title),
+                text = title ?: stringResource(R.string.spotify_login_title),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
             )
@@ -307,7 +312,11 @@ internal fun SpotifyLoginSheet(
                     val container = FrameLayout(context)
                     val spotifyWebView =
                         WebView(context).apply {
-                            val cookieManager = CookieManager.getInstance()
+                            val profileCookieManager = isolatedProfile?.let { useIsolatedSpotifyProfile(this, it) }
+                            // A second account must never meet the first one's cookies, and its own
+                            // cookies must not be left behind for the next sign-in to pick up.
+                            val forgetAfterCapture = isolatedProfile != null
+                            val cookieManager = profileCookieManager ?: CookieManager.getInstance()
                             cookieManager.setAcceptCookie(true)
                             cookieManager.setAcceptThirdPartyCookies(this, true)
                             configureSpotifyLoginWebView()
@@ -318,7 +327,11 @@ internal fun SpotifyLoginSheet(
                                 val spDc = cookies["sp_dc"].orEmpty()
                                 if (spDc.isBlank()) return false
                                 captured = true
-                                cookieManager.flush()
+                                if (forgetAfterCapture) {
+                                    cookieManager.removeAllCookies { cookieManager.flush() }
+                                } else {
+                                    cookieManager.flush()
+                                }
                                 onCookiesCaptured(spDc, cookies["sp_key"].orEmpty())
                                 return true
                             }
@@ -367,11 +380,22 @@ internal fun SpotifyLoginSheet(
                                     parentWebView = this,
                                     captureCookies = { url -> captureCookies(url) },
                                     onActiveWebViewChanged = { activeWebView -> webView = activeWebView },
+                                    isolatedProfile = isolatedProfile.takeIf { profileCookieManager != null },
                                 )
                             webView = this
                             mainWebView = this
-                            resetAuthWebViewSession(context, this) {
-                                loadUrl(SpotifyAuth.LOGIN_URL)
+                            if (profileCookieManager != null) {
+                                // The profile has its own jar and storage; the default profile, and
+                                // with it every other provider's sign-in, is left untouched.
+                                resetAuthWebViewSession(context, this, clearCookies = false) {
+                                    profileCookieManager.removeAllCookies {
+                                        loadUrl(SpotifyAuth.LOGIN_URL)
+                                    }
+                                }
+                            } else {
+                                resetAuthWebViewSession(context, this) {
+                                    loadUrl(SpotifyAuth.LOGIN_URL)
+                                }
                             }
                         }
                     container.addView(
@@ -389,6 +413,25 @@ internal fun SpotifyLoginSheet(
             )
         }
     }
+}
+
+/**
+ * Moves [webView] into its own WebView profile, with a cookie jar and storage separate from the
+ * default profile's, and returns that profile's cookie manager. Null when the installed WebView
+ * has no multi-profile support; callers then fall back to wiping the shared jar, which is what the
+ * catalog sign-in does on every open anyway. Must run before the WebView loads anything.
+ */
+private fun useIsolatedSpotifyProfile(
+    webView: WebView,
+    profileName: String,
+): CookieManager? {
+    if (!WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) return null
+    return runCatching {
+        val profile = ProfileStore.getInstance().getOrCreateProfile(profileName)
+        WebViewCompat.setProfile(webView, profileName)
+        profile.webStorage.deleteAllData()
+        profile.cookieManager
+    }.getOrNull()
 }
 
 private fun WebView.destroySpotifyLoginWebView() {
@@ -418,6 +461,7 @@ private class SpotifyLoginWebChromeClient(
     private val parentWebView: WebView,
     private val captureCookies: (String?) -> Boolean,
     private val onActiveWebViewChanged: (WebView) -> Unit,
+    private val isolatedProfile: String? = null,
 ) : WebChromeClient() {
     override fun onCreateWindow(
         view: WebView,
@@ -429,7 +473,9 @@ private class SpotifyLoginWebChromeClient(
 
         val popupWebView =
             WebView(view.context).apply {
-                val cookieManager = CookieManager.getInstance()
+                // A popup outside the parent's profile would sign in against the shared jar.
+                val cookieManager =
+                    isolatedProfile?.let { useIsolatedSpotifyProfile(this, it) } ?: CookieManager.getInstance()
                 cookieManager.setAcceptCookie(true)
                 cookieManager.setAcceptThirdPartyCookies(this, true)
                 configureSpotifyLoginWebView()

@@ -65,6 +65,7 @@ object AudioSourceAttemptTimeouts {
     const val PROVIDER_ATTEMPT_MS = 8_000L
     const val FALLBACK_CHAIN_MS = 30_000L
     const val AMAZON_STREAM_TRANSFER_MS = 120_000L
+    const val SPOTIFY_RESOLVE_MS = 20_000L
 }
 
 object AudioSourceAttemptScope {

@@ -255,6 +255,21 @@ fun IntegrationScreen(
                     )
                 }
 
+                // Listed with the playback sources rather than under External Sources: this is a
+                // second Spotify account that only streams, independent of the catalog sign-in
+                // further down.
+                item {
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("spotify_streaming"),
+                        title = { Text(stringResource(R.string.source_spotify_stream)) },
+                        description = stringResource(R.string.spotify_stream_settings_desc),
+                        icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
+                        onClick = {
+                            navController.navigate("settings/spotify_streaming")
+                        },
+                    )
+                }
+
                 item {
                     PreferenceEntry(
                         modifier = positions.modifierFor("telegram"),

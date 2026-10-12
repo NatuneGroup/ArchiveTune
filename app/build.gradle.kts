@@ -626,6 +626,8 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
+    implementation(libs.androidx.webkit)
+
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
     // LastWave audio engine output backend (Oboe/AAudio, prefab)

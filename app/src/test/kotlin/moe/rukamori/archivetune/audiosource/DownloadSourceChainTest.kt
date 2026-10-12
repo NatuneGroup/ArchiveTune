@@ -90,7 +90,7 @@ class DownloadSourceChainTest {
 
     @Test
     fun playbackOnlyPinFallsBackToTheOrder() {
-        // Apple, Amazon and QQ have no download resolver; pinning one must not pin the download to
+        // Apple, Amazon, QQ and Spotify have no download resolver; pinning one must not pin the download to
         // a source it can never resolve.
         assertEquals(
             DownloadSourceConfig.fetchChain("QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC"),
@@ -102,5 +102,6 @@ class DownloadSourceChainTest {
         assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.APPLE))
         assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.AMAZON))
         assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.QQ))
+        assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.SPOTIFY))
     }
 }

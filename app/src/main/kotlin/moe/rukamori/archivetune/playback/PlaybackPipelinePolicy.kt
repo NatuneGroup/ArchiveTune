@@ -53,10 +53,12 @@ internal fun resolveAudioOffloadEnabled(
     requested && !crossfadeEnabled && !automixEnabled && !authenticityRejectionEnabled
 
 internal fun resolveAudioSourceAttemptTimeoutMs(source: AudioSourceType): Long =
-    if (source == AudioSourceType.AMAZON) {
-        AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS
-    } else {
-        AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS
+    when (source) {
+        // Both download and decrypt the whole protected file before playback can start.
+        AudioSourceType.AMAZON, AudioSourceType.QQ -> AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS
+        // A cold resolve chains a token, device registration, file lookup and key request.
+        AudioSourceType.SPOTIFY -> AudioSourceAttemptTimeouts.SPOTIFY_RESOLVE_MS
+        else -> AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS
     }
 
 internal fun resolveAudioAuthenticityRetryPositionMs(currentPositionMs: Long): Long =

@@ -43,12 +43,26 @@ class PlaybackSourceSelectionTest {
     }
 
     @Test
-    fun duplicateCandidatesAreRemovedAndSpotifyIsNotAnAudioSource() {
+    fun duplicateCandidatesAreRemoved() {
         assertEquals(
             listOf(AudioSourceType.TIDAL),
             enabledPlaybackSources(listOf(AudioSourceType.TIDAL, AudioSourceType.TIDAL), setOf(AudioSourceType.TIDAL)),
         )
-        assertFalse(AudioSourceType.entries.any { it.name == "SPOTIFY" })
+    }
+
+    @Test
+    fun spotifyStreamingIsOfferedOnlyWhileEnabled() {
+        val candidates = listOf(AudioSourceType.SPOTIFY, AudioSourceType.YOUTUBE)
+
+        assertEquals(
+            listOf(AudioSourceType.YOUTUBE),
+            enabledPlaybackSources(candidates, setOf(AudioSourceType.YOUTUBE)),
+        )
+        assertEquals(
+            candidates,
+            enabledPlaybackSources(candidates, setOf(AudioSourceType.SPOTIFY, AudioSourceType.YOUTUBE)),
+        )
+        assertFalse(canUseCachedPlaybackSource(AudioSourceType.SPOTIFY, enabled = false, rejectedSources = emptySet()))
     }
 
     @Test

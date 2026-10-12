@@ -447,6 +447,25 @@ fun buildSettingsGroups(
                 SettingsChild("QQ Music quality", "qq_music_quality", listOf("qq quality", "qq lossless", "qq flac")),
             ),
         )
+    // Sources → Spotify streaming sub-page. A second, streaming-only Spotify account; the catalog
+    // sign-in lives under Integration and is indexed separately.
+    val spotifyStreaming =
+        SettingsItem(
+            key = "spotify_streaming",
+            icon = painterResource(R.drawable.spotify_icon),
+            title = "Spotify streaming",
+            subtitle = "Experimental audio source on a separate Spotify account",
+            accentColor = MaterialTheme.colorScheme.tertiary,
+            keywords = listOf("spotify", "spotify streaming", "spotify audio", "stopify", "echo", "streaming account", "sign in"),
+            onClick = { navController.navigate("settings/spotify_streaming") },
+            hidden = true,
+            children = listOf(
+                SettingsChild("Spotify streaming risks", "spotify_stream_warning", listOf("spotify warning", "spotify ban", "spotify terms")),
+                SettingsChild("Spotify streaming account", "spotify_stream_account", listOf("spotify streaming login", "spotify second account", "spotify sign out")),
+                SettingsChild("Enable Spotify streaming", "spotify_stream_enabled", listOf("spotify streaming enable", "play from spotify")),
+                SettingsChild("Spotify resolve method", "spotify_stream_method", listOf("spotify method", "stopify", "echo", "spotify flac", "spotify vorbis")),
+            ),
+        )
     // Sources → Deezer sub-page.
     val deezer =
         SettingsItem(
@@ -1108,6 +1127,7 @@ fun buildSettingsGroups(
                     jioSaavn,
                     amazon,
                     qqMusic,
+                    spotifyStreaming,
                     deezer,
                     lyrics,
                     lyricsProviders,

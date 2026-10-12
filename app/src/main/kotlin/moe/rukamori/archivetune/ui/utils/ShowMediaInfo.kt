@@ -1651,6 +1651,7 @@ internal fun providerDisplayName(source: AudioSourceType): String =
         AudioSourceType.APPLE -> "Apple Music (Catalogue)"
         AudioSourceType.AMAZON -> "Amazon Music (Streaming)"
         AudioSourceType.QQ -> "QQ Music (Streaming)"
+        AudioSourceType.SPOTIFY -> "Spotify (Streaming account)"
         AudioSourceType.JIOSAAVN -> "JioSaavn (AAC)"
         AudioSourceType.YOUTUBE -> "YouTube Music (Standard)"
     }
@@ -1664,6 +1665,7 @@ internal fun providerNote(source: AudioSourceType): String =
         AudioSourceType.APPLE -> "Metadata & lyrics tier"
         AudioSourceType.AMAZON -> "Amazon Music Stream API"
         AudioSourceType.QQ -> "QQ Music resolver"
+        AudioSourceType.SPOTIFY -> "Experimental • separate streaming account"
         AudioSourceType.JIOSAAVN -> "AAC resolver"
         AudioSourceType.YOUTUBE -> "Ultimate zero-skip fallback"
     }

@@ -27,6 +27,9 @@ activity = "1.13.0"
 # Same artifact and version YumaPlayer's launch hand-off uses. Nothing else wraps the
 # pre-draw hook that lets the system splash stay up past the first frame.
 coreSplashscreen = "1.0.1"
+# WebView profiles (MULTI_PROFILE): the Spotify streaming sign-in gets a cookie jar of its own,
+# separate from the catalog account and every other provider's web sign-in.
+webkit = "1.17.1"
 navigation = "2.9.8"
 hiltNavigation = "1.4.0"
 datastore = "1.2.1"
@@ -119,6 +122,7 @@ concurrent-futures = { module = "androidx.concurrent:concurrent-futures-ktx", ve
 gradle = { module = "com.android.tools.build:gradle", version.ref = "agp" }
 activity = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "coreSplashscreen" }
+androidx-webkit = { module = "androidx.webkit:webkit", version.ref = "webkit" }
 car-app = { module = "androidx.car.app:app", version.ref = "carApp" }
 navigation = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
 hilt-navigation = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigation" }

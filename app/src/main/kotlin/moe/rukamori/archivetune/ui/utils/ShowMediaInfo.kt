@@ -765,8 +765,8 @@ fun ShowMediaInfo(videoId: String) {
                                                         ),
                                                     )
                                                 }
-                                                // Nothing publishes BitPerfectRuntime on the stock output path,
-                                                // and its defaults would label a 24-bit FLAC "16-bit".
+                                                // Only the USB exclusive output publishes BitPerfectRuntime; on
+                                                // the stock path its defaults would label a 24-bit FLAC "16-bit".
                                                 val pipelineStateValue: String? = run {
                                                     val bp = BitPerfectRuntime.status
                                                     if (bp.sourceSampleRate <= 0) return@run null
@@ -782,6 +782,7 @@ fun ShowMediaInfo(videoId: String) {
                                                             val wireBits =
                                                                 EngineRuntime.lastwaveUsbBitsPerSample.takeIf { it > 0 }
                                                                     ?: EngineRuntime.tryptifyUsbStream?.bitsPerSample?.takeIf { it > 0 }
+                                                                    ?: EngineRuntime.usbExclusiveBits.takeIf { it > 0 }
                                                                     ?: bp.outputBitDepth
                                                             if (bp.outputEncoding == C.ENCODING_PCM_FLOAT) {
                                                                 "Float · ${wireBits}-bit USB out"
@@ -1473,7 +1474,11 @@ class TrackInfoViewModel @Inject constructor(
     private val usbRuntime = snapshotFlow {
         EngineRuntime.revision
         val stream = EngineRuntime.tryptifyUsbStream
-        UsbRuntime(EngineRuntime.usbExclusiveActive, stream?.sampleRateHz ?: 0, stream?.bitsPerSample ?: 0)
+        UsbRuntime(
+            EngineRuntime.usbExclusiveActive,
+            stream?.sampleRateHz ?: EngineRuntime.usbExclusiveRateHz,
+            stream?.bitsPerSample ?: EngineRuntime.usbExclusiveBits,
+        )
     }
 
     // Device and USB listeners are registered only while the sheet collects [facts].

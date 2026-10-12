@@ -685,10 +685,14 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
-    // InnerTubeX — first extractor tier behind playback/stream/AudioStreamRepository. Its own
+    // InnerTubeX — first extractor tier behind the shipped YouTube resolver. Its own
     // InnerTube client and cipher stack sit beside :core's; they share no package namespace, so
     // the NewPipe extractor classes are unaffected.
     implementation(libs.innertubex)
+    // The same MetrolistExtractor artifact :core already ships (core declares it `implementation`,
+    // so it is not on :app's compile classpath). Declared here only so the NewPipe tier can drive
+    // NewPipe's stream extractor directly; Gradle resolves one copy, so the APK does not grow.
+    implementation(libs.metrolist.extractor)
     implementation(libs.kotlinx.serialization.protobuf)
     implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.server.core)

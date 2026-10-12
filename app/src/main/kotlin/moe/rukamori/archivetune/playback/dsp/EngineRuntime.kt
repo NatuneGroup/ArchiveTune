@@ -25,6 +25,13 @@ object EngineRuntime {
     @Volatile
     var usbExclusiveActive: Boolean = false
 
+    /** Rate and sample width of the exclusive AAudio stream (the HAL's input, not the USB wire). */
+    @Volatile
+    var usbExclusiveRateHz: Int = 0
+
+    @Volatile
+    var usbExclusiveBits: Int = 0
+
     @Volatile
     var tryptifyUsbStream: BypassDiagnostics? = null
 
@@ -91,8 +98,10 @@ object EngineRuntime {
         revision++
     }
 
-    fun publishUsbExclusive(active: Boolean) {
+    fun publishUsbExclusive(active: Boolean, rateHz: Int = 0, bits: Int = 0) {
         usbExclusiveActive = active
+        usbExclusiveRateHz = if (active) rateHz else 0
+        usbExclusiveBits = if (active) bits else 0
         revision++
     }
 

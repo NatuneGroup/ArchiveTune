@@ -1052,6 +1052,11 @@
     <string name="float_dsp_title">Float DSP stage</string>
     <string name="float_dsp_desc">Experimental. Processes the decoded audio in 32-bit float and dithers it back. Used only when no engine is on. Starts on the next song.</string>
     <string name="audio_engines_unavailable_bit_perfect">Off while bit-perfect USB output is on</string>
+    <string name="usb_exclusive_audio_title">USB exclusive output</string>
+    <string name="usb_exclusive_audio_desc">Experimental. Plays to a connected USB DAC through an exclusive AAudio stream, past the Android mixer. Engines and the float DSP still apply, and the audio stays at the normal path\'s 16-bit depth (bit-perfect USB output keeps hi-res depth). Falls back to the normal output whenever the DAC refuses. Turns off crossfade, automix, offload and bit-perfect USB output.</string>
+    <string name="usb_exclusive_audio_unsupported">Unavailable: the native audio library did not load</string>
+    <string name="usb_exclusive_audio_waiting">On · engages on the next song when a USB DAC is the active output</string>
+    <string name="usb_exclusive_audio_active">Exclusive to the USB DAC · %1$d Hz</string>
     <string name="deezer_arl_login">Sign in with ARL</string>
     <string name="deezer_arl_login_description">Paste the arl cookie from a signed-in deezer.com browser session</string>
     <string name="deezer_arl_placeholder">arl cookie value</string>

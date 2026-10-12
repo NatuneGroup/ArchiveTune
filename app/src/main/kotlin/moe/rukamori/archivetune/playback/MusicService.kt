@@ -88,6 +88,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
+import androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
@@ -203,6 +204,7 @@ import moe.rukamori.archivetune.constants.AppleMusicQualityKey
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.TidalInstancesKey
 import moe.rukamori.archivetune.applemusic.AppleMusicCatalog
@@ -286,6 +288,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
 import moe.rukamori.archivetune.constants.RepeatModeKey
@@ -308,7 +311,6 @@ import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongEntity
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
-import moe.rukamori.archivetune.echo.EchoStreamResolver
 import moe.rukamori.archivetune.extensions.SilentHandler
 import moe.rukamori.archivetune.extensions.collect
 import moe.rukamori.archivetune.extensions.collectLatest
@@ -330,6 +332,8 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.playback.artwork.ArtworkProvider
+import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
+import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
 import moe.rukamori.archivetune.playback.artwork.ArtworkRequest
 import moe.rukamori.archivetune.playback.artwork.ArtworkResolver
 import moe.rukamori.archivetune.playback.artwork.ArtworkSettings
@@ -1002,6 +1006,13 @@ class MusicService :
      */
     private var bitPerfectOutputActive: Boolean = false
     private var bitPerfectDeviceCallback: android.media.AudioDeviceCallback? = null
+
+    /**
+     * Whether the standard sinks carry [UsbExclusiveAudioOutputProvider]. Sampled once in
+     * [onCreate] like [bitPerfectOutputActive]; with the switch off at that point the sink is
+     * built exactly as without the feature.
+     */
+    private var usbExclusiveSinkInstalled: Boolean = false
     private val audioEffectPlayerListener =
         object : Player.Listener {
             override fun onEvents(
@@ -1170,10 +1181,8 @@ class MusicService :
 
         // The sink is fixed for the life of this player, so a default read before the first
         // settings snapshot lands would silently ignore the switch until the next restart.
-        // Bounded (1.5 s) and only where the feature exists.
-        if (BitPerfectUsbOutput.isPlatformSupported) {
-            moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
-        }
+        // Bounded (1.5 s), and on every API level because the USB exclusive switch exists on all.
+        moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
         bitPerfectOutputActive =
             BitPerfectUsbOutput.isPlatformSupported &&
             dataStore.get(BitPerfectUsbOutputKey, false) &&
@@ -1182,6 +1191,11 @@ class MusicService :
         BitPerfectUsbOutput.sinkActive = bitPerfectOutputActive
         BitPerfectUsbOutput.setEnabled(this, bitPerfectOutputActive)
         if (bitPerfectOutputActive) registerBitPerfectDeviceCallback()
+        // The bit-perfect sink owns the DAC when it is on; the exclusive route lives in the
+        // standard sink only.
+        usbExclusiveSinkInstalled =
+            !bitPerfectOutputActive && dataStore.get(UsbExclusiveAudioKey, false)
+        UsbExclusiveAudioOutputProvider.installed = usbExclusiveSinkInstalled
 
         localPlayer =
             ExoPlayer
@@ -1716,6 +1730,7 @@ class MusicService :
                             minSongDuration = minSongDuration,
                             scrobbleDelayPercent = delayPercent,
                             scrobbleDelaySeconds = delaySeconds,
+                            context = this@MusicService,
                         )
                     scrobbleManager?.useNowPlaying = dataStore.get(LastFMUseNowPlaying, false)
                 } else if (!shouldEnable && scrobbleManager != null) {
@@ -6771,6 +6786,11 @@ class MusicService :
         updateInitialBufferRecovery(playbackState)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
             enqueueCurrentHistorySessionForFinalization()
+            // IDLE also follows a playback error that the source chain retries in place; resetting
+            // there would restart the listen count and could scrobble the same play twice.
+            if (playbackState == Player.STATE_ENDED || player.currentMediaItem == null) {
+                scrobbleManager?.onSongStop()
+            }
             val playbackWasRequested = player.playWhenReady || crossfadePlaybackRequested
             if (!isCrossfading || playbackState == Player.STATE_IDLE) {
                 cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
@@ -8055,7 +8075,7 @@ class MusicService :
         mediaId: String,
         source: AudioSourceType?,
     ) {
-        clearAudioAuthenticitySourceFailures(mediaId)
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = null)
     }
 
@@ -8065,7 +8085,7 @@ class MusicService :
         source: AudioSourceType?,
         qobuzTrackId: String?,
     ) {
-        clearAudioAuthenticitySourceFailures(mediaId)
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId, qobuzBackupVideoId = null)
     }
 
@@ -8079,7 +8099,7 @@ class MusicService :
         source: AudioSourceType?,
         qobuzBackupVideoId: String?,
     ) {
-        clearAudioAuthenticitySourceFailures(mediaId)
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = qobuzBackupVideoId)
     }
 
@@ -8091,7 +8111,7 @@ class MusicService :
         mediaId: String,
         amazonPick: AmazonTrackPick,
     ) {
-        clearAudioAuthenticitySourceFailures(mediaId)
+        clearAudioAuthenticitySourceFailures(mediaId, AudioSourceType.AMAZON)
         setSongSourceOverrideInternal(
             mediaId,
             AudioSourceType.AMAZON,
@@ -8101,12 +8121,70 @@ class MusicService :
         )
     }
 
-    private fun clearAudioAuthenticitySourceFailures(mediaId: String) {
+    private fun clearAudioAuthenticitySourceFailures(
+        mediaId: String,
+        newSource: AudioSourceType? = null,
+    ) {
+        rememberSourceSwitchFallback(mediaId, newSource)
         authenticityRejectedSourcesByMediaId.remove(mediaId)
         selectedPlaybackSourceByMediaId.remove(mediaId)
         authenticitySampleRateByMediaId.remove(mediaId)
         authenticityClaimedLosslessByMediaId.remove(mediaId)
         refreshAudioAuthenticityContexts(mediaId)
+    }
+
+    /**
+     * What was actually playing [mediaId] before the user picked another source in "Play from",
+     * and the pin that was stored then. If the pick then fails to resolve, the resolver tries this
+     * source before the YouTube terminal fallback and the pin is put back, so a failed switch keeps
+     * the stream that was working instead of erroring out and skipping the track.
+     */
+    private data class SourceSwitchFallback(
+        val source: AudioSourceType,
+        val previousOverride: AudioSourceType?,
+    )
+
+    private val sourceSwitchFallbackByMediaId = ConcurrentHashMap<String, SourceSwitchFallback>()
+
+    private fun rememberSourceSwitchFallback(
+        mediaId: String,
+        newSource: AudioSourceType?,
+    ) {
+        val working = selectedPlaybackSourceByMediaId[mediaId]
+        if (working == null || working == newSource || working == AudioSourceType.YOUTUBE) {
+            sourceSwitchFallbackByMediaId.remove(mediaId)
+            return
+        }
+        val previousOverride =
+            SongSourceOverride.get(
+                runCatching { runBlocking { dataStore.data.first()[SongSourceOverrideKey] } }.getOrNull(),
+                mediaId,
+            )
+        sourceSwitchFallbackByMediaId[mediaId] = SourceSwitchFallback(working, previousOverride)
+    }
+
+    private fun restoreSourceAfterFailedSwitch(
+        mediaId: String,
+        fallback: SourceSwitchFallback,
+    ) {
+        sourceSwitchFallbackByMediaId.remove(mediaId)
+        runCatching {
+            runBlocking {
+                dataStore.edit { prefs ->
+                    prefs[SongSourceOverrideKey] =
+                        SongSourceOverride.withOverride(prefs[SongSourceOverrideKey], mediaId, fallback.previousOverride)
+                    prefs[SongSourceQobuzTrackIdKey] =
+                        SongSourceQobuzTrackId.withOverride(prefs[SongSourceQobuzTrackIdKey], mediaId, null)
+                    prefs[SongSourceQobuzBackupVideoIdKey] =
+                        SongSourceQobuzBackupVideoId.withOverride(prefs[SongSourceQobuzBackupVideoIdKey], mediaId, null)
+                    prefs[SongSourceAmazonPickKey] =
+                        SongSourceAmazonPick.withOverride(prefs[SongSourceAmazonPickKey], mediaId, null)
+                }
+            }
+        }
+        scope.launch(Dispatchers.Main) {
+            Toast.makeText(this@MusicService, R.string.play_from_failed_kept_previous, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setSongSourceOverrideInternal(
@@ -8461,12 +8539,24 @@ class MusicService :
                     sourceResolutionChain()
                 }
             }
-        val chain =
+        val switchFallback =
+            sourceSwitchFallbackByMediaId[mediaId]?.takeIf { fallback ->
+                isSourceEnabled(fallback.source) && fallback.source !in authenticityRejectedSources
+            }
+        val baseChain =
             AudioAuthenticitySourceRetryPolicy.nextChain(
                 configuredChain = configuredChain,
                 fallbackChain = sourceResolutionChain(),
                 rejectedSources = authenticityRejectedSources,
             )
+        // Only a pin to a non-YouTube source gets the fallback: a YouTube pin resolves outside this
+        // chain, so appending the old source would win before YouTube was even tried.
+        val switchFallbackAppended =
+            switchFallback != null &&
+                override != null &&
+                override != AudioSourceType.YOUTUBE &&
+                switchFallback.source !in baseChain
+        val chain = if (switchFallbackAppended) baseChain + switchFallback!!.source else baseChain
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -8620,6 +8710,18 @@ class MusicService :
                 "Source WIN: %s resolved \"%s\" [%s] metadata match %.1f%% (%s)",
                 winningSource.name, query.title, winningStream.label, bestScore * 100, winningStream.uri.take(80),
             )
+            if (switchFallback != null && !isPrefetch) {
+                if (switchFallbackAppended && winningSource == switchFallback.source) {
+                    Timber.tag("PlaybackDiagnostics").w(
+                        "Source switch to %s failed; kept %s",
+                        override?.name ?: "automatic",
+                        winningSource.name,
+                    )
+                    restoreSourceAfterFailedSwitch(mediaId, switchFallback)
+                } else {
+                    sourceSwitchFallbackByMediaId.remove(mediaId)
+                }
+            }
             // Persist the winning source's track id as a future health-probe track.
             if (winningSource == AudioSourceType.TIDAL) {
                 TidalAudioProvider.lastResolvedTrackId?.takeIf { it.isNotBlank() }?.let { probe ->
@@ -9812,6 +9914,7 @@ class MusicService :
                 } ?: resolvedDataSpec
             }
 
+        val youtubeResolveStartedAt = android.os.SystemClock.elapsedRealtime()
         val playbackData =
             runBlocking(Dispatchers.IO) {
                 retryWithoutPlaybackLoginContext {
@@ -9832,35 +9935,22 @@ class MusicService :
                     )
                     throw youtubeFailure
                 }.recoverCatching { primaryFailure ->
-                    // Last resort: the echo resolver. It parses the player script with a real
-                    // JavaScript parser and regenerates the n-parameter transform, so it can still
-                    // produce a URL after a player change the shipped path was not written for.
-                    //
-                    // Only reached once the shipped path has already failed, so the worst case is
-                    // the same failure a moment later. A login or confirmation failure is skipped
-                    // outright: those are actionable, echo cannot fix them, and it would only
-                    // replace a message the reader can act on with one they cannot.
-                    if (primaryFailure is YTPlayerUtils.InvalidPlaybackLoginContextException ||
-                        primaryFailure is YTPlayerUtils.LoginRequiredForPlaybackException
-                    ) {
-                        throw primaryFailure
-                    }
-                    Timber.tag("MusicService").w(
-                        primaryFailure,
-                        "Shipped resolver produced no stream for %s; trying the echo resolver",
-                        mediaId,
+                    // Shipped resolver produced no stream: InnerTubeX, then NewPipe, then the echo
+                    // resolver as the last resort, each bounded. Only reached once the shipped path
+                    // has failed, so the worst case is the same failure a few seconds later. Login
+                    // and confirmation failures skip the chain: they are actionable and no other
+                    // extractor can fix them. On total failure the original throwable comes back,
+                    // since it carries the message worth showing.
+                    moe.rukamori.archivetune.playback.stream.YouTubeFailsafeChain.recover(
+                        context = this@MusicService,
+                        mediaId = mediaId,
+                        primaryFailure = primaryFailure,
+                        shippedStartedAtMs = youtubeResolveStartedAt,
+                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        networkMetered = lowDataModeActive,
+                        purpose = moe.rukamori.archivetune.playback.stream.StreamPurpose.PLAYBACK,
+                        connectivityManager = connectivityManager,
                     )
-                    runCatching {
-                        EchoStreamResolver.playerResponseForPlayback(
-                            videoId = mediaId,
-                            audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
-                            connectivityManager = connectivityManager,
-                        )
-                    }.getOrElse { echoFailure ->
-                        Timber.tag("MusicService").w(echoFailure, "Echo resolver also failed for %s", mediaId)
-                        // The original failure carries the message worth showing.
-                        throw primaryFailure
-                    }
                 }
             }.getOrElse { throwable ->
                 when {
@@ -10812,8 +10902,47 @@ class MusicService :
                         // BitChord. Wide open (a pass-through) whenever no smart blend runs.
                         transitionFilter,
                     ),
-                ).build()
+                ).apply {
+                    if (usbExclusiveSinkInstalled) {
+                        setAudioOutputProvider(newUsbExclusiveOutputProvider(context, authenticityContext))
+                    }
+                }.build()
         }
+
+    /**
+     * The exclusive route around the stock output. The inner provider is built the way
+     * DefaultAudioSink builds its own default, so everything that is not routed exclusively
+     * plays exactly as without the feature.
+     */
+    private fun newUsbExclusiveOutputProvider(
+        context: Context,
+        authenticityContext: AtomicReference<AudioAuthenticityPlaybackContext?>,
+    ) = UsbExclusiveAudioOutputProvider(
+        context = context,
+        inner =
+            AudioTrackAudioOutputProvider
+                .Builder(context)
+                .setAudioOffloadSupportProvider(DefaultAudioOffloadSupportProvider(context))
+                .setAudioTrackBufferSizeProvider(DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT)
+                .build(),
+        exclusiveWanted = ::usbExclusiveRouteAllowed,
+        chainProcessing = {
+            audioEngineHost.wantedEngine() != AudioEngineRouterProcessor.Engine.NONE ||
+                audioEngineHost.floatDspWanted()
+        },
+        decodedFormat = { decodedPcmFormatsByContext[authenticityContext] },
+    )
+
+    // Live, from the in-memory snapshot (read on the playback thread). A second player, an
+    // offloaded track or the bit-perfect sink would each contend for the DAC or bypass the
+    // output, so any of them keeps playback on the standard route.
+    private fun usbExclusiveRouteAllowed(): Boolean =
+        usbExclusiveSinkInstalled &&
+            PreferenceStore.get(UsbExclusiveAudioKey) == true &&
+            PreferenceStore.get(AudioOffload) != true &&
+            PreferenceStore.get(CrossfadeEnabledKey) != true &&
+            PreferenceStore.get(AutomixEnabledKey) != true &&
+            PreferenceStore.get(BitPerfectUsbOutputKey) != true
 
     override fun onPlaybackStatsReady(
         eventTime: AnalyticsListener.EventTime,
@@ -11304,6 +11433,7 @@ class MusicService :
         // Hands the DAC back to the shared mixer; the preference would otherwise outlive the app.
         BitPerfectUsbOutput.clear(this)
         BitPerfectUsbOutput.sinkActive = false
+        UsbExclusiveAudioOutputProvider.installed = false
         unregisterBluetoothReceiver()
         unregisterMuteRecoveryObserver()
         try {

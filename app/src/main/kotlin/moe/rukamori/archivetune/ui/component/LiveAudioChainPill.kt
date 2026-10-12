@@ -115,10 +115,12 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     val usbRateHz = remember(revision) {
         runtime.lastwaveUsbRateHz.takeIf { it > 0 }
             ?: runtime.tryptifyUsbStream?.sampleRateHz?.takeIf { it > 0 }
+            ?: runtime.usbExclusiveRateHz.takeIf { it > 0 }
     }
     val usbBits = remember(revision) {
         runtime.lastwaveUsbBitsPerSample.takeIf { it > 0 }
             ?: runtime.tryptifyUsbStream?.bitsPerSample?.takeIf { it > 0 }
+            ?: runtime.usbExclusiveBits.takeIf { it > 0 }
     }
     val floatRouteActive = remember(revision) { runtime.bitPerfectSinkRouteActive }
     val sinkDecodedEncoding = remember(revision) { runtime.sinkDecodedEncoding }
@@ -164,7 +166,8 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     var outputIsBitPerfect = false
     when {
         usbExclusive && usbBits != null && usbRateHz != null -> {
-            outputBits = "$usbBits-bit"
+            outputBits =
+                if (status.outputEncoding == C.ENCODING_PCM_FLOAT) floatPcmLabel else "$usbBits-bit"
             outputRate = rateKhz(usbRateHz)
             outputIsBitPerfect = status.verifiedBitPerfect
         }

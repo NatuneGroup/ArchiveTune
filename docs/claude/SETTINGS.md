@@ -8,6 +8,8 @@ Important Integration anchors include `external_sources`, `spotify`, `music_sour
 
 The Player page carries three experimental audio-engine switches after `bit_perfect_usb`: `tryptify_engine` (`TryptifyAudioProcessingKey`), `lastwave_engine` (`LastwaveAudioProcessingKey`) and `float_dsp` (`FloatDspEnabledKey`), all off by default. Tryptify and LastWave exclude each other, turning any of them on turns audio offload off, and all three are disabled while bit-perfect USB output is on (that sink skips every processor). Their search entries navigate only and carry no inline switch, so the exclusivity stays on the settings page. `playback/dsp/AudioEngineHost` reads them; with all three off the per-sink router is inactive and Media3 skips it.
 
+Between `bit_perfect_usb` and the engines sits `usb_exclusive_audio` (`UsbExclusiveAudioKey`, off by default, search entry navigates only). It is sampled when the service starts: with it on, the standard sink gets `playback/dsp/UsbExclusiveAudioOutputProvider`, which opens an exclusive AAudio stream on the routed USB DAC and otherwise defers to a stock `AudioTrackAudioOutputProvider`; with it off the sink is built exactly as before. It and bit-perfect USB output, crossfade, automix and audio offload turn each other off (the provider re-checks the same switches live, so a stale combination still plays normally). The engines and float DSP stay usable: they run in the chain ahead of the output. The switch is disabled when `libarchivetune_dsp` fails to load. While engaged it publishes to `EngineRuntime`/`BitPerfectRuntime`, which shows the media-info pipeline row and the live chain pill's USB route; it never claims verified bit-perfect.
+
 ## Spotify integration
 
 The Spotify group contains account login/logout, playlist visibility, playlist reload, and the opt-in `Sync Spotify listening history` switch. The switch exposes Spotify Recently Played in the History screen; it is intentionally passive and does not emulate Spotify playback.
@@ -47,7 +49,8 @@ Also shipped since this note was written:
 - **One-row bottom bar** — `NavigationBarCompactBehaviorKey` (Navigation bar → behaviour) folds the
   tab bar into round Library/Home and Search buttons with a slim mini player between them, the
   4nx3b layout. Unset, it follows `NavigationBarHideOnScrollKey`: adaptive (fold while scrolling
-  down) when that is on, always expanded otherwise. The fold is a sheet-bound change of
+  down) when that is on, always expanded otherwise. The Apple Music bar (style or experience) is
+  always the one-row layout, so the behaviour row is locked while it is active. The fold is a sheet-bound change of
   `collapsedBound`, not a translation. On History and Local songs the Search button opens the
   page's own search field (`openInPageSearch` on the entry's saved state).
 - **Home pages** — the Home tab's pages are a multi-select set (`ActiveHomeSourcesKey`) with a

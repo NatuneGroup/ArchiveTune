@@ -12,6 +12,8 @@ import moe.rukamori.archivetune.innertube.PlaybackAuthState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.YouTubeClient
 import moe.rukamori.archivetune.innertube.models.response.PlayerResponse
+import org.schabi.newpipe.extractor.NewPipe
+import org.schabi.newpipe.extractor.ServiceList
 
 /**
  * [StreamUrlExtractor] backed by MetrolistExtractor's NewPipe extractor, reached through core's
@@ -38,4 +40,24 @@ object NewPipeStreamUrlExtractor : StreamUrlExtractor {
         format: PlayerResponse.StreamingData.Format,
         videoId: String,
     ): Result<String> = streamUrl(format, videoId, null, YouTube.currentPlaybackAuthState())
+
+    @Volatile
+    private var streamExtractorReady = false
+
+    /**
+     * Readies NewPipe for a caller that drives its stream extractor directly. NewPipe holds a single
+     * process-wide downloader, and [NewPipeUtils]'s initializer is what installs core's (with the
+     * stream proxy), so touching it here reuses that one rather than initialising NewPipe twice.
+     */
+    fun ensureStreamExtractorReady() {
+        if (streamExtractorReady) return
+        synchronized(this) {
+            if (streamExtractorReady) return
+            if (NewPipe.getDownloader() == null) NewPipeUtils.hashCode()
+            // The stream extractor otherwise asks returnyoutubedislikeapi.com for every track, a
+            // third-party request with nothing to do with audio. Nothing else in the app reads it.
+            ServiceList.YouTube.setFetchDislike(false)
+            streamExtractorReady = true
+        }
+    }
 }

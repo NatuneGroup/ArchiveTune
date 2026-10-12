@@ -338,6 +338,7 @@ fun buildSettingsGroups(
                 SettingsChild("Skip silence", "skip_silence", listOf("silence", "skip silence", "blank", "quiet")) { SearchResultSwitch(SkipSilenceKey, false) },
                 SettingsChild("Audio normalization", "audio_normalization", listOf("normalization", "loudness", "normalize", "volume level")) { SearchResultSwitch(AudioNormalizationKey, true) },
                 SettingsChild("Audio offload", "audio_offload", listOf("offload", "audio offload", "hardware decoder")) { SearchResultSwitch(AudioOffload, false) },
+                SettingsChild("USB exclusive output", "usb_exclusive_audio", listOf("usb", "exclusive", "usb exclusive", "dac", "usb dac", "aaudio", "direct", "bypass mixer", "experimental audio")),
                 SettingsChild("Tryptify DSP engine", "tryptify_engine", listOf("tryptify", "dsp", "dsp engine", "audio engine", "mix bus", "autoeq", "parametric eq", "experimental audio")),
                 SettingsChild("LastWave DSP engine", "lastwave_engine", listOf("lastwave", "last wave", "dsp", "dsp engine", "audio engine", "clarity", "experimental audio")),
                 SettingsChild("Float DSP stage", "float_dsp", listOf("float dsp", "32-bit float", "dither", "dsp", "experimental audio")),

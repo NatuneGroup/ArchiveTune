@@ -104,9 +104,13 @@ import moe.rukamori.archivetune.constants.BitPerfectUsbOutputKey
 import moe.rukamori.archivetune.constants.FloatDspEnabledKey
 import moe.rukamori.archivetune.constants.LastwaveAudioProcessingKey
 import moe.rukamori.archivetune.constants.TryptifyAudioProcessingKey
+import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.constants.QueueAddAfterManualKey
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
+import moe.rukamori.archivetune.playback.dsp.EngineRuntime
+import moe.rukamori.archivetune.playback.dsp.FloatDsp
+import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.NumberPickerPreference
@@ -195,6 +199,10 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         rememberPreference(FloatDspEnabledKey, defaultValue = false)
     // The engines ride the standard sink only; the bit-perfect sink skips every processor.
     val audioEnginesBlocked = bitPerfectUsb || BitPerfectUsbOutput.sinkActive
+    val (usbExclusive, onUsbExclusiveChange) =
+        rememberPreference(UsbExclusiveAudioKey, defaultValue = false)
+    // Loads libarchivetune_dsp, which the exclusive stream needs anyway.
+    val usbExclusiveSupported = remember { FloatDsp.available }
 
     val (seekExtraSeconds, onSeekExtraSeconds) =
         rememberPreference(
@@ -494,6 +502,8 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                     // A fade needs a second player and gain changes, neither of
                                     // which a bit-perfect path allows.
                                     releaseBitPerfectUsb()
+                                    // The second player would contend for the exclusive stream.
+                                    onUsbExclusiveChange(false)
                                 }
                                 onCrossfadeEnabledChange(enabled)
                             },
@@ -518,6 +528,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                     // manual crossfade slider stops applying.
                                     onCrossfadeEnabledChange(false)
                                     releaseBitPerfectUsb()
+                                    onUsbExclusiveChange(false)
                                 }
                                 onAutomixEnabledChange(enabled)
                             },
@@ -668,6 +679,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                 onCrossfadeEnabledChange(false)
                                 onAutomixEnabledChange(false)
                                 releaseBitPerfectUsb()
+                                onUsbExclusiveChange(false)
                                 onTryptifyEngineChange(false)
                                 onLastwaveEngineChange(false)
                                 onFloatDspChange(false)
@@ -717,10 +729,46 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                                     onAudioOffloadChange(false)
                                     onCrossfadeEnabledChange(false)
                                     onAutomixEnabledChange(false)
+                                    onUsbExclusiveChange(false)
                                 } else if (BitPerfectUsbOutput.sinkActive) {
                                     // Release the DAC now; the players keep their float sink until
                                     // the service restarts, which plays normally without a preference.
                                     BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
+                                }
+                            },
+                        )
+                    }
+                }
+
+                item {
+                    Column(modifier = positions.modifierFor("usb_exclusive_audio")) {
+                        // Every EngineRuntime publisher bumps the revision, so it is the only key needed.
+                        val exclusiveRateHz =
+                            remember(EngineRuntime.revision) {
+                                if (EngineRuntime.usbExclusiveActive) EngineRuntime.usbExclusiveRateHz else 0
+                            }
+                        val usbExclusiveDescription =
+                            when {
+                                !usbExclusiveSupported -> stringResource(R.string.usb_exclusive_audio_unsupported)
+                                !usbExclusive -> stringResource(R.string.usb_exclusive_audio_desc)
+                                !UsbExclusiveAudioOutputProvider.installed ->
+                                    stringResource(R.string.bit_perfect_usb_restart)
+                                exclusiveRateHz > 0 -> stringResource(R.string.usb_exclusive_audio_active, exclusiveRateHz)
+                                else -> stringResource(R.string.usb_exclusive_audio_waiting)
+                            }
+                        SwitchPreference(
+                            title = { Text(stringResource(R.string.usb_exclusive_audio_title)) },
+                            description = usbExclusiveDescription,
+                            icon = { Icon(painterResource(R.drawable.graphic_eq), null) },
+                            checked = usbExclusive && usbExclusiveSupported,
+                            isEnabled = usbExclusiveSupported,
+                            onCheckedChange = { enabled ->
+                                onUsbExclusiveChange(enabled)
+                                if (enabled) {
+                                    onAudioOffloadChange(false)
+                                    onCrossfadeEnabledChange(false)
+                                    onAutomixEnabledChange(false)
+                                    releaseBitPerfectUsb()
                                 }
                             },
                         )

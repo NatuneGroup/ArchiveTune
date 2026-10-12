@@ -74,16 +74,18 @@ metrolistExtractor = "08a64867704c"
 graphicsShapes = "1.0.1"
 quickjsKt = "1.0.10"
 
-# InnerTubeX — MetrolistGroup's Kotlin Multiplatform InnerTube client, used as the first extractor
-# tier behind AudioStreamRepository. Published on JitPack only (no git tags; JitPack resolves the
-# release tag 0.7.0). Verified against this build before adopting:
-#   - Kotlin metadata is 2.4.0, the version our Kotlin 2.4.0 compiler reads; the stdlib it asks for
-#     (2.4.10) resolves above our declared one, which is fine on a patch difference.
-#   - The AAR declares minCompileSdk 37 and minSdk 23 — :app is compileSdk 37 / minSdk 26.
+# InnerTubeX — MetrolistGroup's Kotlin Multiplatform InnerTube client, the first extractor tier
+# behind the shipped YouTube resolver (playback/stream/YouTubeFailsafeChain). Published on JitPack
+# only; the git tag is v0.8.4 and JitPack serves it under both "v0.8.4" and "0.8.4".
+#   - Built with Kotlin 2.4.20 (stdlib 2.4.20 resolves above our declared one; same minor, so our
+#     2.4.0 compiler reads its metadata).
+#   - The AAR declares minCompileSdk 37, minSdk 23 and minAndroidGradlePluginVersion 1.0.0 —
+#     :app is compileSdk 37 / minSdk 26 on AGP 9.2.1.
 #   - Its classes are Java 21 bytecode, matching :app's jvmTarget 21.
-# It also pulls ktor 3.5.2 (ours 3.5.1) and quickjs-kt 1.0.14 (ours 1.0.10); Gradle resolves the
-# higher of each, so the yt-dlp QuickJS path moves to 1.0.14 as a side effect.
-innertubexVersion = "0.7.0"
+# It also pulls ktor 3.6.0 (ours 3.5.1) and quickjs-kt 1.0.15 (ours 1.0.10); Gradle resolves the
+# higher of each, so the app's ktor and its single QuickJS native library move up as a side effect.
+# 0.8.x over 0.7.0: prefers the original audio track over dubs and fixes the embed-page visitor.
+innertubexVersion = "0.8.4"
 bouncyCastle = "1.85"
 translator = "1.1.1"
 rhino = "1.9.1"

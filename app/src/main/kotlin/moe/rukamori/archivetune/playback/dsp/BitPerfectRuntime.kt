@@ -324,6 +324,7 @@ object BitPerfectRuntime {
         rate: Int,
         bits: Int,
         engineTransport: Boolean = false,
+        outputEncoding: Int? = null,
     ) {
         usbRouteActive = active
         status = status.copy(usbExclusiveActive = active)
@@ -331,6 +332,7 @@ object BitPerfectRuntime {
             latchedUsbRateHz = rate
             latchedUsbBits = bits
             status = status.copy(
+                outputEncoding = outputEncoding ?: status.outputEncoding,
                 outputSampleRate = rate,
                 outputBitDepth = bits,
                 directPlaybackSupported = true,

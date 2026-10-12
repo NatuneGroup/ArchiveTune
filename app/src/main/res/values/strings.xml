@@ -888,6 +888,7 @@
     <string name="source_youtube">YouTube</string>
     <string name="play_from">Play from</string>
     <string name="play_from_automatic">Automatic (preferred order)</string>
+    <string name="play_from_failed_kept_previous">That source couldn\'t play this song, so it kept the one that was working</string>
     <string name="playback_sources">Sources</string>
     <string name="download_source_requires_pool">Requires Source Pool — configure in Integrations to enable</string>
     <string name="download_source_search">Search songs</string>

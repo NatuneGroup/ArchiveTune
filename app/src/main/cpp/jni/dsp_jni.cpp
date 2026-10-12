@@ -18,6 +18,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <ctime>
 #include <memory>
 #include <vector>
 
@@ -185,9 +186,17 @@ extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToShort)(
 // AaudioNativeStream (Kotlin class — instance natives with a long handle)
 // ---------------------------------------------------------------------------
 
+namespace {
+thread_local jint gLastOpenError = 0;
+}  // namespace
+
+// Returns the stream handle, or 0 on failure with the AAudio code kept for
+// nativeLastOpenError. The handle's sign carries no meaning: arm64 heap
+// pointers are tagged in the top byte, so a valid handle is often negative.
 extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativeOpen)(
     JNIEnv*, jobject, jint sampleRate, jint channels, jint deviceId,
     jboolean exclusive, jint usage, jint contentType, jint bufferCapacityFrames) {
+    gLastOpenError = 0;
     try {
         auto* stream = new AaudioExclusiveStream();
         const int32_t result = stream->open(
@@ -195,12 +204,19 @@ extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativeOpen)(
             usage, contentType, bufferCapacityFrames);
         if (result != 0 /* AAUDIO_OK */) {
             delete stream;
-            return -(static_cast<jlong>(result));
+            gLastOpenError = result;
+            return 0;
         }
         return reinterpret_cast<jlong>(stream);
     } catch (...) {
+        gLastOpenError = -896 /* AAUDIO_ERROR_INTERNAL */;
         return 0;
     }
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeLastOpenError)(
+    JNIEnv*, jobject) {
+    return gLastOpenError;
 }
 
 extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeClose)(
@@ -293,16 +309,31 @@ extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeWrite)(
     }
 }
 
+// Presented frame position, or -1 while the stream has no valid timestamp
+// (not started yet, paused, or stopped). Reporting framesWritten in that case
+// would run the clock ahead by the whole buffer and then jump back. With
+// `extrapolate` the position is advanced from the timestamp's capture time,
+// since AAudio refreshes timestamps only once per burst.
 extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativePositionFrames)(
-    JNIEnv*, jobject, jlong handle) {
-    if (AaudioExclusiveStream* stream = streamOf(handle)) {
-        AaudioExclusiveStream::Timestamp ts = stream->timestamp();
-        if (ts.valid) {
-            return ts.framePosition;
+    JNIEnv*, jobject, jlong handle, jboolean extrapolate) {
+    AaudioExclusiveStream* stream = streamOf(handle);
+    if (stream == nullptr) return -1;
+    const AaudioExclusiveStream::Timestamp ts = stream->timestamp();
+    if (!ts.valid) return -1;
+    int64_t position = ts.framePosition;
+    const int32_t rate = stream->sampleRate();
+    if (extrapolate != JNI_FALSE && rate > 0) {
+        timespec now{};
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        const int64_t nowNanos =
+            static_cast<int64_t>(now.tv_sec) * 1000000000LL + now.tv_nsec;
+        const int64_t elapsed = nowNanos - ts.timeNanos;
+        if (elapsed > 0) {
+            position += elapsed * rate / 1000000000LL;
         }
-        return stream->framesWritten();
     }
-    return 0;
+    const int64_t written = stream->framesWritten();
+    return position < written ? position : written;
 }
 
 extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeSessionId)(

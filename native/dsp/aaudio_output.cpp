@@ -68,6 +68,14 @@ int32_t AaudioExclusiveStream::open(int32_t sampleRate,
         return result;
     }
 
+    // Low-latency streams open with a buffer of a burst or two, but Media3 feeds
+    // the output from its playback loop roughly every 10 ms. Latency does not
+    // matter for music playback, so use the whole capacity to ride out the gaps.
+    const int32_t capacity = AAudioStream_getBufferCapacityInFrames(stream);
+    if (capacity > 0) {
+        AAudioStream_setBufferSizeInFrames(stream, capacity);
+    }
+
     stream_ = stream;
     sampleRate_ = AAudioStream_getSampleRate(stream);
     channels_ = AAudioStream_getChannelCount(stream);

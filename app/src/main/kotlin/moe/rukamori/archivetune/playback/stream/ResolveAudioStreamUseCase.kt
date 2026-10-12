@@ -19,7 +19,10 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.guava.future
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
@@ -39,8 +42,19 @@ class ResolveAudioStreamUseCase
         private val newPipeRepository: NewPipeStreamRepository,
         private val ytdlnisRepository: YtdlnisStreamRepository,
     ) {
+    /**
+     * The tiers live behind the shipped resolver, in order: `MusicService` and `DownloadUtil` walk
+     * these through [resolveShippedFallback] after `YTPlayerUtils` fails and before echo.
+     */
+    private val shippedFallbackTiers: List<Pair<String, AudioStreamRepository>> =
+        listOf("innertubex" to innerTuneXRepository, "newpipe" to newPipeRepository)
+
+    /**
+     * [shippedFallbackTiers] plus the external yt-dlp plugin, which only this class's own [invoke]
+     * reaches: the plugin is an optional APK, so it stays out of the live chain.
+     */
     private val fallbackTiers: List<AudioStreamRepository> =
-        listOf(innerTuneXRepository, newPipeRepository, ytdlnisRepository)
+        shippedFallbackTiers.map { it.second } + ytdlnisRepository
 
     private data class CacheKey(
         val mediaId: String,
@@ -185,6 +199,52 @@ class ResolveAudioStreamUseCase
             }
         }
 
+        /**
+         * Walks [shippedFallbackTiers] for a request the shipped resolver already failed, each tier
+         * bounded by [tierTimeoutMs]. Returns null when every tier failed; the caller then tries echo
+         * and reports its own original failure. Bypasses this class's cache on purpose: the callers
+         * keep their own URL caches, keyed the way the shipped path keys them.
+         */
+        suspend fun resolveShippedFallback(
+            request: AudioStreamRequest,
+            tierTimeoutMs: Long,
+        ): ResolvedAudioStream? {
+            for ((name, tier) in shippedFallbackTiers) {
+                val startedAt = SystemClock.elapsedRealtime()
+                val outcome =
+                    try {
+                        withTimeoutOrNull(tierTimeoutMs) { tier.resolve(request) }
+                    } catch (e: CancellationException) {
+                        // A timeout raised inside the tier's own code is that tier failing; only the
+                        // caller's cancellation may stop the chain.
+                        currentCoroutineContext().ensureActive()
+                        logTierOutcome(name, null, startedAt, e.javaClass.simpleName)
+                        continue
+                    } catch (t: Throwable) {
+                        logTierOutcome(name, null, startedAt, t.javaClass.simpleName)
+                        continue
+                    }
+                logTierOutcome(name, outcome, startedAt, if (outcome == null) "timeout" else null)
+                if (outcome != null) return outcome
+            }
+            return null
+        }
+
+        private fun logTierOutcome(
+            name: String,
+            outcome: ResolvedAudioStream?,
+            startedAt: Long,
+            reason: String?,
+        ) {
+            Timber.tag(DIAGNOSTICS_TAG).i(
+                "YouTube tier=%s resolved=%s elapsedMs=%d%s",
+                name,
+                outcome != null,
+                SystemClock.elapsedRealtime() - startedAt,
+                reason?.let { " reason=$it" }.orEmpty(),
+            )
+        }
+
     // Hybrid resolver: InnerTube (native, BotGuard/QuickJS) first — fast, ~30 MB, no Python — then
     // the tiers in [fallbackTiers]. History can be returned by both native and yt-dlp: InnerTube via
     // YouTube.history() (browse), YTDLnis via yt-dlp watch history with cookies
@@ -249,6 +309,7 @@ class ResolveAudioStreamUseCase
 
         private companion object {
             const val TAG = "AudioStreamResolver"
+            const val DIAGNOSTICS_TAG = "PlaybackDiagnostics"
             const val STREAM_EXPIRY_SAFETY_MS = 60_000L
             const val MAX_CACHE_ENTRIES = 256
             const val PLAYBACK_RESOLUTION_TIMEOUT_SECONDS = 120L

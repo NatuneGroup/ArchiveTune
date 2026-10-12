@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.playback
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.SystemClock
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import android.net.Uri
@@ -72,8 +73,9 @@ import moe.rukamori.archivetune.deezer.DeezerCrypto
 import moe.rukamori.archivetune.deezer.DeezerDecryptingDataSource
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
-import moe.rukamori.archivetune.echo.EchoStreamResolver
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.playback.stream.StreamPurpose
+import moe.rukamori.archivetune.playback.stream.YouTubeFailsafeChain
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.utils.AuthScopedCacheValue
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -539,16 +541,17 @@ class DownloadUtil
         }
 
         /**
-         * The shipped resolver, then the echo resolver as the last resort — the same order
-         * playback uses. Without the echo step a "Video unavailable" from the shipped client
-         * order failed the download even when the same track still played.
+         * The shipped resolver, then InnerTubeX, NewPipe and finally echo — the same chain
+         * playback uses ([YouTubeFailsafeChain]). Without the fallbacks a "Video unavailable" from
+         * the shipped client order failed the download even when the same track still played.
          */
         private suspend fun resolveYouTubeDownload(
             mediaId: String,
             requestedAudioQuality: AudioQuality,
             lowDataModeActive: Boolean,
-        ): Result<YTPlayerUtils.PlaybackData> =
-            appContext
+        ): Result<YTPlayerUtils.PlaybackData> {
+            val shippedStartedAt = SystemClock.elapsedRealtime()
+            return appContext
                 .retryWithoutPlaybackLoginContext {
                     YTPlayerUtils.playerResponseForDownload(
                         mediaId,
@@ -557,23 +560,18 @@ class DownloadUtil
                         networkMetered = lowDataModeActive,
                     )
                 }.recoverCatching { primaryFailure ->
-                    if (primaryFailure is YTPlayerUtils.InvalidPlaybackLoginContextException ||
-                        primaryFailure is YTPlayerUtils.LoginRequiredForPlaybackException
-                    ) {
-                        throw primaryFailure
-                    }
-                    Timber.tag("DownloadUtil").w(primaryFailure, "Shipped resolver failed for %s; trying echo", mediaId)
-                    runCatching {
-                        EchoStreamResolver.playerResponseForPlayback(
-                            videoId = mediaId,
-                            audioQuality = requestedAudioQuality,
-                            connectivityManager = connectivityManager,
-                        )
-                    }.getOrElse { echoFailure ->
-                        Timber.tag("DownloadUtil").w(echoFailure, "Echo resolver also failed for %s", mediaId)
-                        throw primaryFailure
-                    }
+                    YouTubeFailsafeChain.recover(
+                        context = appContext,
+                        mediaId = mediaId,
+                        primaryFailure = primaryFailure,
+                        shippedStartedAtMs = shippedStartedAt,
+                        audioQuality = requestedAudioQuality,
+                        networkMetered = lowDataModeActive,
+                        purpose = StreamPurpose.DOWNLOAD,
+                        connectivityManager = connectivityManager,
+                    )
                 }
+        }
 
         /**
          * Streams [url] into [playerCache] under [cacheKey] using a single OkHttp GET, writing

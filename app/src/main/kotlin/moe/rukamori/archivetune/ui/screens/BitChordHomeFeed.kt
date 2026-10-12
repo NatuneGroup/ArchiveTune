@@ -177,7 +177,10 @@ fun BitChordPlayingBars(modifier: Modifier = Modifier) {
                 modifier =
                     Modifier
                         .width(3.dp)
-                        .height((14.dp * bar.value))
+                        .height(14.dp)
+                        // Scaled in the draw layer: reading the animation in composition would
+                        // recompose and re-measure the row every frame while a track plays.
+                        .graphicsLayer { scaleY = bar.value }
                         .background(Color.White),
             )
         }

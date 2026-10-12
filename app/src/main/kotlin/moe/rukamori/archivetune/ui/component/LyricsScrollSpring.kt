@@ -114,8 +114,9 @@ suspend fun LazyListState.intervalAdaptiveScrollTo(
     val target = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index }
     if (target != null) {
         // animateScrollToItem(index, scrollOffset) settles the item at
-        // `offset == scrollOffset`, so the remaining distance is exact.
-        val delta = (target.offset - scrollOffset).toFloat()
+        // `offset == -scrollOffset` (a positive offset scrolls it further up), so
+        // this is the exact remaining distance.
+        val delta = (target.offset + scrollOffset).toFloat()
         if (delta == 0f) return
         animateScrollBy(delta, spec)
     } else {

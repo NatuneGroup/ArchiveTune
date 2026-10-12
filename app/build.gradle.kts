@@ -384,6 +384,9 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Slim builds do not package the runtime, so keeping the whole package there would
+            // only pin dead classes into the dex.
+            if (automix) proguardFiles("proguard-onnx.pro")
         }
         debug {
             applicationIdSuffix = ".debug"
@@ -480,8 +483,9 @@ android {
             // excludes them. Dropped by mistake during the packaging-block rewrite — ~1.17 MiB.
             excludes += "org/bouncycastle/pqc/legacy/picnic/**"
             excludes += "org/bouncycastle/x509/CertPathReviewerMessages*.properties"
-            excludes += "org/mozilla/javascript/resources/**"
-            excludes += "org/commonmark/internal/util/**"
+            // org/mozilla/javascript/resources and org/commonmark/internal/util hold no classes,
+            // only properties files read at runtime (Rhino's message bundle, commonmark's HTML
+            // entity table, loaded by a static initializer); excluding them crashes on first use.
             // Additional safe META-INF / metadata excludes — none of these are read at runtime by
             // the app or any of its libraries (verified by checking for ServiceLoader / reflection
             // usage on each). They are pure build-time / IDE metadata and just bloat every APK.

@@ -425,7 +425,7 @@ import kotlin.time.Duration.Companion.seconds
 // wanted artist), and a JioSaavn search typically returns 5-20 candidates.
 // Compiling the Pattern once at class-load avoids ~20-80 Regex allocations
 // per stream resolution. Same pattern, same replacement semantics.
-private val JIO_SAAVN_NORMALIZE_REGEX = Regex("[^a-z0-9]")
+private val JIO_SAAVN_NORMALIZE_REGEX = Regex("[^\\p{L}\\p{N}]")
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class, UnstableApi::class)
 @AndroidEntryPoint

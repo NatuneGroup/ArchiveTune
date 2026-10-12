@@ -393,7 +393,10 @@ class ListenTogetherManager @Inject constructor(
                 .collect { enabled ->
                     syncHostVolumeEnabled.value = enabled
                 }
-
+        }
+        // A separate coroutine: collect never returns, so a second collector after the first in
+        // the same launch was never reached and the smart-resync switch did nothing.
+        scope.launch {
             context.dataStore.data
                 .map { it[ListenTogetherSmartResyncKey] ?: true }
                 .distinctUntilChanged()

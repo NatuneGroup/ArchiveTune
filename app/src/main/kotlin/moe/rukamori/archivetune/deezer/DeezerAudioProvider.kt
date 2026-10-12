@@ -896,9 +896,13 @@ object DeezerAudioProvider {
         return titleScore * 0.45 + artistScore * 0.30 + albumScore * 0.15 + durationScore * 0.10
     }
 
+    // Letters and digits of any script: an ASCII-only class blanked Japanese and other non-Latin
+    // titles, and two blank strings compared as a perfect match.
+    private val NON_LETTER_DIGIT_SPACE_REGEX = Regex("[^\\p{L}\\p{N} ]")
+
     private fun normalizedSimilarity(a: String, b: String): Double {
-        val na = a.lowercase().trim().replace(Regex("[^a-z0-9 ]"), "")
-        val nb = b.lowercase().trim().replace(Regex("[^a-z0-9 ]"), "")
+        val na = a.lowercase().trim().replace(NON_LETTER_DIGIT_SPACE_REGEX, "")
+        val nb = b.lowercase().trim().replace(NON_LETTER_DIGIT_SPACE_REGEX, "")
         if (na == nb) return 1.0
         if (na.isBlank() || nb.isBlank()) return 0.0
         val sa = na.split(" ").toSet()

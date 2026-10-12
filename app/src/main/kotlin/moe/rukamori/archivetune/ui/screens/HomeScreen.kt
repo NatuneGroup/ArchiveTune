@@ -99,7 +99,6 @@ import moe.rukamori.archivetune.ui.menu.ArtistMenu
 import moe.rukamori.archivetune.ui.menu.PlaylistMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
-import dev.chrisbanes.haze.hazeSource
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 
@@ -179,13 +178,11 @@ fun HomeScreen(
         }
     }
 
-    val homeHazeState = LocalHomeHazeState.current
     val (disableBlur) = rememberPreference(DisableBlurKey, false)
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
-                .let { m -> if (homeHazeState != null) m.hazeSource(homeHazeState) else m }
                 .then(
                     if (headerScrollConnection != null) {
                         Modifier.nestedScroll(headerScrollConnection)

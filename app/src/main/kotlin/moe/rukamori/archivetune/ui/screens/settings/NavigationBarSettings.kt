@@ -233,8 +233,11 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         EnumListPreference(
                             title = { Text(stringResource(R.string.navigation_bar_style)) },
                             icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                            selectedValue = navigationBarStyle,
+                            // The Apple Music Experience owns the tab bar while it is on; show the bar it
+                            // applies and leave the stored choice untouched for when it is turned off.
+                            selectedValue = if (appleMusicExperience) NavigationBarStyle.APPLE_MUSIC else navigationBarStyle,
                             onValueSelected = onNavigationBarStyleChange,
+                            isEnabled = !appleMusicExperience,
                             valueText = {
                                 when (it) {
                                     NavigationBarStyle.DEFAULT ->

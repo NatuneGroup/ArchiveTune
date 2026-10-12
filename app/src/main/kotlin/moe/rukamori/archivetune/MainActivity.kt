@@ -216,7 +216,6 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
-import dev.chrisbanes.haze.HazeState
 import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
@@ -358,7 +357,6 @@ import moe.rukamori.archivetune.ui.player.BottomSheetPlayer
 import moe.rukamori.archivetune.ui.player.ProvideVideoFullscreenState
 import moe.rukamori.archivetune.ui.screens.HomeSourceToggleButton
 import moe.rukamori.archivetune.ui.screens.LOGIN_URL_ARGUMENT
-import moe.rukamori.archivetune.ui.screens.LocalHomeHazeState
 import moe.rukamori.archivetune.ui.screens.LoginScreen
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.screens.buildLoginRoute
@@ -817,10 +815,6 @@ class MainActivity : ComponentActivity() {
                     moe.rukamori.archivetune.ui.component
                         .MenuState()
                 }
-            // Shared Haze state for the Home route's progressive top-fade blur. HomeScreen tags
-            // its root Box as the haze source; the top bar renders the blurred strip (see the
-            // topBar slot). Provided to the tree via LocalHomeHazeState.
-            val homeHazeState = remember { HazeState() }
             val releaseNotesState = remember { mutableStateOf<String?>(null) }
             val currentVersionMarker = remember {
                 "${BuildConfig.VERSION_NAME}|${BuildConfig.VERSION_CODE}"
@@ -999,7 +993,7 @@ class MainActivity : ComponentActivity() {
             val appleMusicExperience = rememberAppleMusicExperience()
             val navigationBarStyle =
                 if (appleMusicExperience) {
-                    NavigationBarStyle.YUMA_PLAYER
+                    NavigationBarStyle.APPLE_MUSIC
                 } else {
                     navigationBarStyleStored
                 }
@@ -2366,9 +2360,6 @@ class MainActivity : ComponentActivity() {
                         LocalDownloadUtil provides downloadUtil,
                         LocalShimmerTheme provides ShimmerTheme,
                         LocalSyncUtils provides syncUtils,
-                        // The haze state shared between HomeScreen's hazeSource and the top
-                        // bar's progressive fade blur over the Home route.
-                        moe.rukamori.archivetune.ui.screens.LocalHomeHazeState provides homeHazeState,
                         moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState provides bottomSheetPageState,
                         moe.rukamori.archivetune.ui.component.LocalMenuState provides menuState,
                         LocalNavigationBarBackdrop provides navBarFrostedBackdrop,

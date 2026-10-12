@@ -487,7 +487,7 @@ object LosslessStreamResolver {
     }
 
     /** Strips punctuation and whitespace so titles compare on their words alone. */
-    private val SAAVN_NORMALIZE_REGEX = Regex("[^a-z0-9]")
+    private val SAAVN_NORMALIZE_REGEX = Regex("[^\\p{L}\\p{N}]")
 
     /**
      * Returns the cache key prefix for [source], matching

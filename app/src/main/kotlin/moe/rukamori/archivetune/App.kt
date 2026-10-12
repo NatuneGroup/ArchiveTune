@@ -204,7 +204,9 @@ class App :
         // The UI cache only exists to make scrolling cheap. Once the activity is
         // hidden the decoded artwork is reconstructible, so drop it instead of
         // holding it for background playback that only needs the audio buffers.
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+        // SingletonImageLoader.get builds the loader if none exists, which in the :crash or a
+        // service-only process would block on preferences just to clear an empty cache.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && imageLoaderCreated) {
             runCatching { SingletonImageLoader.get(this).memoryCache?.clear() }
         }
     }
@@ -659,7 +661,10 @@ class App :
         }
     }
 
+    @Volatile private var imageLoaderCreated = false
+
     override fun newImageLoader(context: PlatformContext): ImageLoader {
+        imageLoaderCreated = true
         // Coil builds this once and keeps it for the life of the process, so reading a preference
         // here before the first DataStore snapshot has landed does not just miss once — it pins the
         // image cache to the built-in defaults until the app is killed, silently ignoring the size

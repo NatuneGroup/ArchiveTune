@@ -336,24 +336,16 @@ fun ShowMediaInfo(videoId: String) {
     val overviewArtistsValue =
         song?.artists?.takeIf { it.isNotEmpty() }?.joinToString { it.name } ?: info?.author
     // The fork's MediaInfo (core/innertube/models) has no credits field, so the
-    // YouTube credit rows the upstream sheet showed are not available here.
-    // Lyrics writers below still come from the TTML tags.
-    val youtubeCredits: List<MediaInfoDetail> = emptyList()
-    val hasWriterRowFromYouTube =
-        youtubeCredits.any { detail ->
-            detail.label.contains(Regex("writ|compos|lyricis", RegexOption.IGNORE_CASE))
-        }
+    // writers come from the lyrics alone. Both extractors scan the whole text, so
+    // they run once per lyrics rather than on every recomposition of the sheet.
     val writtenByLabel = stringResource(R.string.credits_written_by)
+    val lyricsText = lyricsEntity?.lyrics
     val lyricsWriters =
-        if (hasWriterRowFromYouTube) {
-            ""
-        } else {
-            extractTtmlWriters(lyricsEntity?.lyrics)
-                .ifBlank { extractTrailingWrittenBy(lyricsEntity?.lyrics) }
+        remember(lyricsText) {
+            extractTtmlWriters(lyricsText).ifBlank { extractTrailingWrittenBy(lyricsText) }
         }
     val creditDetails =
         buildList {
-            addAll(youtubeCredits)
             if (lyricsWriters.isNotBlank()) {
                 add(
                     MediaInfoDetail(
@@ -765,8 +757,11 @@ fun ShowMediaInfo(videoId: String) {
                                                         ),
                                                     )
                                                 }
-                                                val pipelineStateValue = run {
+                                                // Nothing publishes BitPerfectRuntime on the stock output path,
+                                                // and its defaults would label a 24-bit FLAC "16-bit".
+                                                val pipelineStateValue: String? = run {
                                                     val bp = BitPerfectRuntime.status
+                                                    if (bp.sourceSampleRate <= 0) return@run null
                                                     val inForm = when {
                                                         bp.sourceSampleRate > 0 && bp.sourceIsLossy -> "Lossy Source"
                                                         bp.sourceEncoding == C.ENCODING_PCM_FLOAT -> "Float PCM"
@@ -796,13 +791,15 @@ fun ShowMediaInfo(videoId: String) {
                                                     }
                                                     "$inForm → $outForm"
                                                 }
-                                                add(
-                                                    MediaInfoDetail(
-                                                        iconRes = R.drawable.solar_wave,
-                                                        label = pipelineStateLabel,
-                                                        value = pipelineStateValue,
-                                                    ),
-                                                )
+                                                if (pipelineStateValue != null) {
+                                                    add(
+                                                        MediaInfoDetail(
+                                                            iconRes = R.drawable.solar_wave,
+                                                            label = pipelineStateLabel,
+                                                            value = pipelineStateValue,
+                                                        ),
+                                                    )
+                                                }
                                                 add(
                                                     MediaInfoDetail(
                                                         iconRes = R.drawable.solar_code,

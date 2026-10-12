@@ -150,7 +150,7 @@ internal object TrackMatching {
             ?.lowercase(Locale.US)
             ?.let { Normalizer.normalize(it, Normalizer.Form.NFD) }
             ?.replace(Regex("\\p{Mn}+"), "")
-            ?.replace(Regex("[^a-z0-9]+"), " ")
+            ?.replace(Regex("[^\\p{L}\\p{N}]+"), " ")
             ?.trim()
             .orEmpty()
 

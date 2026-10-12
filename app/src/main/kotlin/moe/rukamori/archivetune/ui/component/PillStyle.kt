@@ -190,7 +190,7 @@ fun rememberNavigationBarCompactBehavior(): Pair<NavigationBarCompactBehavior, (
 @Composable
 fun rememberNavigationPillStyle(): NavigationBarStyle {
     val (stored) = rememberEnumPreference(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT)
-    return if (rememberAppleMusicExperience()) NavigationBarStyle.YUMA_PLAYER else stored
+    return if (rememberAppleMusicExperience()) NavigationBarStyle.APPLE_MUSIC else stored
 }
 
 /** Resolves the style from the stored preferences, for surfaces that are not handed it by the shell. */

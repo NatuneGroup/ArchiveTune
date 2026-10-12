@@ -47,7 +47,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -167,16 +166,6 @@ fun Modifier.homeFeedThumbnailBorder(shape: Shape): Modifier =
             ),
         )
     }
-
-/**
- * Shared HazeState for the home page's top progressive blur (BitChord
- * TopFadeBlur). MainActivity provides the instance and renders the blurred
- * strip inside the top bar for the Home route; HomeScreen tags its own root
- * Box as the blur's source. A CompositionLocal is used because the bar and the
- * feed live in different parts of the tree (Scaffold.topBar vs NavHost
- * content) and must share the exact same state object.
- */
-val LocalHomeHazeState = compositionLocalOf<HazeState?> { null }
 
 // ============================================================================
 // Shimmer skeletons (ported from BitChord Skeletons.kt). Grey stand-ins for

@@ -31,7 +31,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeSource
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
@@ -80,15 +79,12 @@ fun rememberGlassScreenHeader(): GlassScreenHeader {
 }
 
 /**
- * Tags the scrolling content as the header's backdrop + haze source. The
- * layerBackdrop half is a no-op unless the kit created a live backdrop, so
- * this is safe to apply unconditionally — rendering with liquid glass OFF is
- * unchanged.
+ * Tags the scrolling content as the header's backdrop. A no-op unless the kit created a live
+ * backdrop, so it is safe to apply unconditionally. No haze source: HomeTopFadeBlur draws a
+ * plain gradient, and a source nothing samples still records the list into a layer every frame.
  */
 fun Modifier.glassHeaderSource(header: GlassScreenHeader): Modifier =
-    this
-        .then(if (header.backdrop != null) Modifier.layerBackdrop(header.backdrop) else Modifier)
-        .hazeSource(header.haze)
+    if (header.backdrop != null) this.layerBackdrop(header.backdrop) else this
 
 @Composable
 fun BoxScope.GlassScreenHeaderOverlay(

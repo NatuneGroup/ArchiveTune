@@ -19,7 +19,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -76,6 +75,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shadow
@@ -262,7 +262,9 @@ fun FloatingNavigationToolbar(
             pureBlack -> Color.White.copy(alpha = 0.16f)
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
-    val glassIsNight = isSystemInDarkTheme()
+    // The app's own theme, not the system's: a forced light theme on a dark system would otherwise
+    // put white glyphs on a light backdrop.
+    val glassIsNight = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val glassContentColor = if (glassIsNight) Color.White else MaterialTheme.colorScheme.onSurface
     // White labels over a bright patch of artwork need a soft dark halo to stay readable.
     val glassLabelStyle =

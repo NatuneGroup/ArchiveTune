@@ -17,8 +17,10 @@ import com.google.common.collect.ImmutableList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
@@ -436,6 +438,10 @@ class HomeViewModel
         private var chipLoadJob: Job? = null
         private var loadMoreJob: Job? = null
         private val remoteRequests = HomeRequestGate()
+
+        @Volatile private var activeLoadJob: Job? = null
+
+        @Volatile private var refreshJob: Job? = null
         private val refreshStartedAtMs = AtomicLong(0L)
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
@@ -621,7 +627,19 @@ class HomeViewModel
         // claimed generation is what lets runCurrentLoad skip this load if a newer request
         // supersedes it while it waits on the mutex.
         private suspend fun load(generation: Long = remoteRequests.next()) {
-            if (!remoteRequests.runCurrentLoad(generation) { performLoad(generation) }) {
+            // The load in flight answers an older generation, so its result would be dropped at
+            // commit anyway; cancelling it stops this one waiting up to a full load timeout.
+            activeLoadJob?.cancel()
+            val ran =
+                remoteRequests.runCurrentLoad(generation) {
+                    coroutineScope {
+                        val job = launch { performLoad(generation) }
+                        activeLoadJob = job
+                        job.join()
+                        if (activeLoadJob === job) activeLoadJob = null
+                    }
+                }
+            if (!ran) {
                 Timber.d("Skipping superseded home load for generation $generation")
             }
         }
@@ -637,6 +655,7 @@ class HomeViewModel
                     }
                 if (loaded == null) {
                     reportException(TimeoutException("home load timed out after ${HOME_LOAD_TIMEOUT_MS / 1000}s"))
+                    loadError.value = R.string.error_unknown
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -1038,10 +1057,11 @@ class HomeViewModel
                     throw e
                 } catch (e: Exception) {
                     reportException(e)
-                } finally {
-                    isLoadingMore.value = false
                 }
             }
+            // Not a finally block: a job cancelled before it starts never runs its body, which
+            // left load-more disabled for good when a refresh or chip tap landed in that window.
+            loadMoreJob?.invokeOnCompletion { isLoadingMore.value = false }
         }
 
         private fun toggleChip(chip: HomePage.Chip?) {
@@ -1116,6 +1136,11 @@ class HomeViewModel
                 val startedAt = refreshStartedAtMs.get()
                 val stuck = startedAt != 0L && System.currentTimeMillis() - startedAt > REFRESH_STUCK_WATCHDOG_MS
                 if (!stuck) return
+                // Detached before cancelling, so its finally cannot match and clear our flag.
+                refreshJob?.let { stale ->
+                    refreshJob = null
+                    stale.cancel()
+                }
                 isRefreshing.value = false
                 if (!isRefreshing.compareAndSet(false, true)) return
             }
@@ -1125,7 +1150,7 @@ class HomeViewModel
             // their late commits cannot interleave with the fresh page below.
             loadMoreJob?.cancel()
             chipLoadJob?.cancel()
-            viewModelScope.launch(Dispatchers.IO) {
+            val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 try {
                     supervisorScope {
                         launch { load(generation) }
@@ -1155,10 +1180,15 @@ class HomeViewModel
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {
-                    refreshStartedAtMs.set(0L)
-                    isRefreshing.value = false
+                    // A watchdog-replaced refresh must not clear the flag its successor now owns.
+                    if (refreshJob === currentCoroutineContext()[Job]) {
+                        refreshStartedAtMs.set(0L)
+                        isRefreshing.value = false
+                    }
                 }
             }
+            refreshJob = job
+            job.start()
         }
 
         fun switchToAccount(

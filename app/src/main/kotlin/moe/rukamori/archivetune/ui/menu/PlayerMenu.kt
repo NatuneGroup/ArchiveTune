@@ -1914,6 +1914,7 @@ private fun SongSourceDialog(
             AudioSourceType.QOBUZ_BACKUP,
             AudioSourceType.DEEZER,
             AudioSourceType.JIOSAAVN,
+            AudioSourceType.AMAZON,
         )
     val backendMissing = sourceFilter != null && sourceFilter !in searchableSources
 

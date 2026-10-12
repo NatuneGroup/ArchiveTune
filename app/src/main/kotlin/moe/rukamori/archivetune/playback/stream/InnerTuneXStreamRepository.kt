@@ -27,8 +27,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.AudioQuality
-import moe.rukamori.archivetune.innertube.YouTube
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * The InnerTuneX tier of [ResolveAudioStreamUseCase], and the first extractor tried after the native
@@ -186,7 +186,7 @@ class InnerTuneXStreamRepository
 
                 engine {
                     config {
-                        proxy(YouTube.proxy)
+                        withAppProxy()
                     }
                 }
             }

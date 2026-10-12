@@ -9,7 +9,7 @@ package moe.rukamori.archivetune.echo.utils.cipher
 
 import android.content.Context
 import android.util.Base64
-import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.utils.withAppProxy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -77,7 +77,7 @@ object PlayerConfigStore {
 
     private val httpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .apply { YouTube.proxy?.let { proxy(it) } }
+            .withAppProxy()
             .build()
     }
 

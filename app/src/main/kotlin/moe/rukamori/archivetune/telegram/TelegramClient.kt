@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.suspendCancellableCoroutine
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.utils.AppProxy
 import org.drinkless.tdlib.Client
 import org.drinkless.tdlib.TdApi
 import timber.log.Timber
@@ -84,6 +85,8 @@ class TelegramApiException(
 
 object TelegramClient {
     private const val TAG = "TelegramClient"
+
+    private const val APP_PROXY_COMMENT = "archivetune-app-proxy"
 
     /** TDLib download priority for actively-playing streams (1..32, higher = sooner). */
     const val STREAM_DOWNLOAD_PRIORITY = 32
@@ -548,6 +551,7 @@ object TelegramClient {
             is TdApi.AuthorizationStateReady -> _authState.value = TelegramAuthState.Ready
             is TdApi.AuthorizationStateLoggingOut -> _authState.value = TelegramAuthState.LoggingOut
             is TdApi.AuthorizationStateClosed -> {
+                parametersAccepted = false
                 synchronized(lock) { client = null }
                 chatCache.clear()
                 _authState.value = TelegramAuthState.Idle
@@ -591,7 +595,61 @@ object TelegramClient {
             if (result is TdApi.Error) {
                 Timber.tag(TAG).e("SetTdlibParameters failed: %s", result.message)
                 _authState.value = TelegramAuthState.Unsupported("InvalidApiCredentials")
+            } else {
+                parametersAccepted = true
+                syncProxy()
             }
+        }
+    }
+
+    @Volatile
+    private var parametersAccepted = false
+
+    /**
+     * Mirrors the app proxy into TDLib, which opens its own sockets in native code and never sees
+     * the JVM proxy selector. TDLib persists proxies in its database, so only the entry tagged
+     * [APP_PROXY_COMMENT] is managed and it is replaced only when it differs.
+     */
+    fun syncProxy() {
+        val current = client ?: return
+        if (!parametersAccepted || !AppProxy.isLoaded) return
+        val wanted = AppProxy.config
+        current.send(TdApi.GetProxies()) { result ->
+            val ours = (result as? TdApi.AddedProxies)?.proxies.orEmpty().filter { it.comment == APP_PROXY_COMMENT }
+            val desired = wanted?.let { toTdProxy(it) }
+            if (desired != null && ours.size == 1 && ours[0].isEnabled && sameProxy(ours[0].proxy, desired)) return@send
+            ours.forEach { current.send(TdApi.RemoveProxy(it.id), null) }
+            if (desired != null) {
+                current.send(TdApi.AddProxy(desired, true, APP_PROXY_COMMENT)) { added ->
+                    if (added is TdApi.Error) Timber.tag(TAG).w("AddProxy failed: %s", added.message)
+                }
+            }
+        }
+    }
+
+    private fun toTdProxy(config: AppProxy.Config): TdApi.Proxy {
+        val type =
+            if (config.type == java.net.Proxy.Type.SOCKS) {
+                TdApi.ProxyTypeSocks5(config.username.orEmpty(), config.password.orEmpty())
+            } else {
+                TdApi.ProxyTypeHttp(config.username.orEmpty(), config.password.orEmpty(), false)
+            }
+        return TdApi.Proxy(config.host, config.port, type)
+    }
+
+    private fun sameProxy(
+        a: TdApi.Proxy?,
+        b: TdApi.Proxy,
+    ): Boolean {
+        if (a == null || a.server != b.server || a.port != b.port) return false
+        val left = a.type
+        val right = b.type
+        return when {
+            left is TdApi.ProxyTypeSocks5 && right is TdApi.ProxyTypeSocks5 ->
+                left.username == right.username && left.password == right.password
+            left is TdApi.ProxyTypeHttp && right is TdApi.ProxyTypeHttp ->
+                left.username == right.username && left.password == right.password && left.httpOnly == right.httpOnly
+            else -> false
         }
     }
 

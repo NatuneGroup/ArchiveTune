@@ -22,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object AppleMusicCatalog {
     private const val SEARCH_ENDPOINT = "https://itunes.apple.com/search"
@@ -29,6 +30,7 @@ object AppleMusicCatalog {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)

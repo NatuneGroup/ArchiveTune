@@ -25,6 +25,8 @@ import java.io.File
 import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 class CipherWebView private constructor(
     context: Context,
@@ -117,6 +119,16 @@ class CipherWebView private constructor(
         }
 
         webView.webViewClient = object : WebViewClient() {
+            override fun onReceivedHttpAuthRequest(
+                view: WebView?,
+                handler: HttpAuthHandler?,
+                host: String?,
+                realm: String?,
+            ) {
+                if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                super.onReceivedHttpAuthRequest(view, handler, host, realm)
+            }
+
 
             @androidx.annotation.RequiresApi(android.os.Build.VERSION_CODES.O)
             override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {

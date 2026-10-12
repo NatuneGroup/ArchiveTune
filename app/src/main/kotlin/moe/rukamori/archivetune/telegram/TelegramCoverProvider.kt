@@ -23,6 +23,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object TelegramCoverProvider {
     private const val SEARCH_ENDPOINT = "https://itunes.apple.com/search"
@@ -33,6 +34,7 @@ object TelegramCoverProvider {
     private val client: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build()

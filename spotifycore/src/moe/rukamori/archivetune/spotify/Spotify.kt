@@ -94,6 +94,11 @@ object Spotify {
 
     private val restClient by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) {
                 json(json)
             }
@@ -112,6 +117,7 @@ object Spotify {
         HttpClient(OkHttp) {
             engine {
                 config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
                     connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                     writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)

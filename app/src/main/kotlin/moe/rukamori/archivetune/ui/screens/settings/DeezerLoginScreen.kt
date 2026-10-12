@@ -39,6 +39,8 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 const val DEEZER_LOGIN_ROUTE = "settings/deezer/login"
 
@@ -163,6 +165,16 @@ fun DeezerLoginScreen(navController: NavController) {
 private class DeezerArlWebViewClient(
     private val onArl: (String) -> Unit,
 ) : WebViewClient() {
+    override fun onReceivedHttpAuthRequest(
+        view: WebView?,
+        handler: HttpAuthHandler?,
+        host: String?,
+        realm: String?,
+    ) {
+        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+        super.onReceivedHttpAuthRequest(view, handler, host, realm)
+    }
+
     private var extractionRunnable: Runnable? = null
 
     override fun onPageFinished(

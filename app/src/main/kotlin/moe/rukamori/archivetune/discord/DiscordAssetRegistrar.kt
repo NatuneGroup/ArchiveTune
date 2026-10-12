@@ -23,6 +23,7 @@ import timber.log.Timber
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object DiscordAssetRegistrar {
     private const val TAG = "DiscordAssetRegistrar"
@@ -31,6 +32,7 @@ object DiscordAssetRegistrar {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)

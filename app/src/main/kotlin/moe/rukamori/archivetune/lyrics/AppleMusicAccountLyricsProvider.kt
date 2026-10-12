@@ -35,6 +35,7 @@ import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Apple Music lyrics via the user's own Media-User-Token.
@@ -82,6 +83,11 @@ object AppleMusicAccountLyricsProvider : LyricsProvider {
 
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    withAppProxy()
+                }
+            }
             install(ContentNegotiation) { json(json) }
             install(HttpTimeout) {
                 connectTimeoutMillis = 12_000

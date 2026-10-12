@@ -100,6 +100,7 @@ import java.net.SocketTimeoutException
 import timber.log.Timber
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 
 // A/V sync tuning. The rationale for every threshold below is in docs/video-sync.md.
 
@@ -408,7 +409,7 @@ fun rememberVideoArtworkState(
         remember {
             OkHttpClient
                 .Builder()
-                .proxy(YouTube.streamOkHttpProxy)
+                .withAppStreamProxy()
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .connectTimeout(30, TimeUnit.SECONDS)

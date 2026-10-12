@@ -27,6 +27,7 @@ import timber.log.Timber
 import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Resolves playable Deezer streams for a track, mirroring the shape of
@@ -79,6 +80,7 @@ object DeezerAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)

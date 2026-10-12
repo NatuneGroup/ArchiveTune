@@ -31,6 +31,11 @@ object ArchiveTuneCanvas {
     private const val CACHE_TTL_MS = 60_000L
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
             install(HttpTimeout) {
                 connectTimeoutMillis = 12_000

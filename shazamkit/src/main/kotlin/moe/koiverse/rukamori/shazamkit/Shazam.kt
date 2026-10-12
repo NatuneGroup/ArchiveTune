@@ -10,7 +10,8 @@ package moe.rukamori.archivetune.shazamkit
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -73,7 +74,9 @@ object Shazam {
 
     // HTTP Client Configuration
     private val client by lazy {
-        HttpClient(CIO) {
+        // OkHttp rather than CIO: CIO ignores the JVM proxy selector, so recognition went around
+        // the user's proxy.
+        HttpClient(OkHttp) {
             install(ContentNegotiation) {
                 json(
                     Json {
@@ -85,8 +88,14 @@ object Shazam {
             }
             expectSuccess = false
 
+            install(HttpTimeout) {
+                requestTimeoutMillis = 30_000
+            }
+
             engine {
-                requestTimeout = 30000
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
             }
         }
     }

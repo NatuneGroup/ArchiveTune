@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.utils
 
 import androidx.datastore.preferences.core.edit
 import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.request.get
 import io.ktor.client.request.headers
 import io.ktor.client.statement.HttpResponse
@@ -59,7 +60,16 @@ private data class ReleasesNetworkResult(
 )
 
 object Updater {
-    private val client = HttpClient()
+    // The engine is named because the default one is whichever ServiceLoader finds first, and CIO
+    // (also on the classpath) ignores the proxy.
+    private val client =
+        HttpClient(OkHttp) {
+            engine {
+                config {
+                    withAppProxy()
+                }
+            }
+        }
     private const val ReleaseCacheCheckIntervalMs: Long = 6 * 60 * 60 * 1000L
     private const val NightlyCacheCheckIntervalMs: Long = 15 * 60 * 1000L
     private const val OWNER = "NatuneGroup/ArchiveTune"

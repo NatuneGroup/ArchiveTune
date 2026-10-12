@@ -23,6 +23,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Resolves album/track cover URLs from third-party catalogues that the Last.fm API doesn't always
@@ -35,6 +36,7 @@ object CatalogueCoverProvider {
     private val client: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .callTimeout(8, TimeUnit.SECONDS)

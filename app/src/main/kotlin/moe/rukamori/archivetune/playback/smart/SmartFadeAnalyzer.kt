@@ -34,6 +34,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @UnstableApi
 class SmartFadeAnalyzer(
@@ -133,6 +134,7 @@ class SmartFadeAnalyzer(
     private val fetchClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(java.time.Duration.ofSeconds(10))
             .readTimeout(java.time.Duration.ofSeconds(60))
             // A hard ceiling for the whole call: a stalled transfer used to

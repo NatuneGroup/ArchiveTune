@@ -7,7 +7,7 @@
 
 package moe.rukamori.archivetune.echo.utils.cipher
 
-import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.utils.withAppProxy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -22,7 +22,7 @@ object PlayerJsFetcher {
     private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L
 
     private val httpClient = OkHttpClient.Builder()
-        .proxy(YouTube.proxy)
+        .withAppProxy()
         .build()
 
     private val PLAYER_HASH_REGEX = Regex("""\\?/s\\?/player\\?/([a-zA-Z0-9_-]+)\\?/""")

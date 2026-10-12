@@ -77,6 +77,8 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroupScope
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 private val SpotifyAccountIconSize = 44.dp
 private const val SpotifyLoginUserAgent =
@@ -338,6 +340,16 @@ internal fun SpotifyLoginSheet(
 
                             webViewClient =
                                 object : WebViewClient() {
+                                    override fun onReceivedHttpAuthRequest(
+                                        view: WebView?,
+                                        handler: HttpAuthHandler?,
+                                        host: String?,
+                                        realm: String?,
+                                    ) {
+                                        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                                        super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                                    }
+
                                     override fun shouldOverrideUrlLoading(
                                         view: WebView,
                                         request: WebResourceRequest,
@@ -481,6 +493,16 @@ private class SpotifyLoginWebChromeClient(
                 configureSpotifyLoginWebView()
                 webViewClient =
                     object : WebViewClient() {
+                        override fun onReceivedHttpAuthRequest(
+                            view: WebView?,
+                            handler: HttpAuthHandler?,
+                            host: String?,
+                            realm: String?,
+                        ) {
+                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                        }
+
                         override fun shouldOverrideUrlLoading(
                             view: WebView,
                             request: WebResourceRequest,

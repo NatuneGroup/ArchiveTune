@@ -36,6 +36,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object SpotifyWebStreamer {
     private const val TAG = "SpotifyWebStreamer"
@@ -77,6 +78,7 @@ object SpotifyWebStreamer {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

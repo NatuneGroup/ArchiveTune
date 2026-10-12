@@ -36,10 +36,11 @@ import java.util.zip.ZipFile
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resumeWithException
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @Singleton
 class DriveBackupRepository @Inject constructor(@ApplicationContext private val context: Context) {
-    private val client = OkHttpClient.Builder()
+    private val client = OkHttpClient.Builder().withAppProxy()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)

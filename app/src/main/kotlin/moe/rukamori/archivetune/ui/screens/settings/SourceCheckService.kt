@@ -37,6 +37,7 @@ import okhttp3.Request
 import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Result of a "Check source" probe. The [summary] is shown in a Toast / dialog body;
@@ -53,7 +54,7 @@ object SourceCheckService {
     private const val KOZU_PROBE_YT_ID = "dQw4w9WgXcQ"
 
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
@@ -528,6 +529,7 @@ object SourceCheckService {
         val client =
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .connectTimeout(4, TimeUnit.SECONDS)
                 .readTimeout(4, TimeUnit.SECONDS)
                 .callTimeout(4, TimeUnit.SECONDS)

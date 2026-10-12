@@ -32,6 +32,7 @@ import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import java.net.URLEncoder
 import java.util.Locale
+import moe.rukamori.archivetune.utils.withAppProxy
 
 internal fun JsonElement?.asObject(): JsonObject? = this as? JsonObject
 
@@ -57,6 +58,11 @@ internal object LyricsProviderHttp {
 
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    withAppProxy()
+                }
+            }
             install(HttpTimeout) {
                 connectTimeoutMillis = 8_000
                 requestTimeoutMillis = 12_000

@@ -1206,4 +1206,12 @@
     <string name="spotify_stream_method_echo">Desktop (Ogg Vorbis or FLAC)</string>
     <string name="spotify_stream_method_note_title">About the methods</string>
     <string name="spotify_stream_method_note">The web player method needs Widevine on this device. The desktop method decrypts on the device and falls back to the web player method when it cannot resolve a track.</string>
+    <string name="proxy_enable_desc">Sends the app\'s traffic through this proxy: every audio source, lyrics, artwork, sign-in pages and Telegram. Proxy apps such as Clash or v2rayNG usually listen on 127.0.0.1, port 7890 (HTTP or mixed) or 10808 (SOCKS).</string>
+    <string name="proxy_test_success_latency">Reached YouTube Music through the proxy in %1$d ms.</string>
+    <string name="proxy_test_http_status">The proxy works, but YouTube Music answered HTTP %1$d.</string>
+    <string name="proxy_test_auth_failed">The proxy rejected the username or password.</string>
+    <string name="proxy_test_unreachable">Could not connect to the proxy at %1$s. Check the host and port, and that the proxy app is running.</string>
+    <string name="proxy_test_unknown_host">Could not find the proxy host %1$s.</string>
+    <string name="proxy_test_timeout">The connection through the proxy timed out.</string>
+    <string name="proxy_test_wrong_type">The proxy did not answer as a %1$s proxy. Check that the proxy type matches the port.</string>
 </resources>

@@ -67,6 +67,7 @@ object YTPlayerUtils {
     private val streamProbeClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(2, TimeUnit.SECONDS)
             .callTimeout(3, TimeUnit.SECONDS)

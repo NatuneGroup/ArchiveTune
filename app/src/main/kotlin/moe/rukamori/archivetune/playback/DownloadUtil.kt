@@ -85,6 +85,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.enumPreference
 import moe.rukamori.archivetune.utils.preference
 import moe.rukamori.archivetune.utils.isLowDataModeActive
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 import moe.rukamori.archivetune.utils.retryWithoutPlaybackLoginContext
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -139,7 +140,7 @@ class DownloadUtil
         private val mediaOkHttpClient: OkHttpClient by lazy {
             OkHttpClient
                 .Builder()
-                .proxy(YouTube.streamOkHttpProxy)
+                .withAppStreamProxy()
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)

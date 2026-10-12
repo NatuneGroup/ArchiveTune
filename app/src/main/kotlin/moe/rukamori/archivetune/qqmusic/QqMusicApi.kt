@@ -53,6 +53,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * QQ's request sign: a 33-multiplier string hash held inside 31 bits.
@@ -226,6 +227,7 @@ internal object QqMusicApi {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)

@@ -48,6 +48,8 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 const val TIDAL_LOGIN_ROUTE = "settings/tidal/login"
 
@@ -190,6 +192,16 @@ fun TidalLoginScreen(navController: NavController) {
             WebView(ctx).apply {
                 webViewClient =
                     object : WebViewClient() {
+                        override fun onReceivedHttpAuthRequest(
+                            view: WebView?,
+                            handler: HttpAuthHandler?,
+                            host: String?,
+                            realm: String?,
+                        ) {
+                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                        }
+
                         override fun onPageStarted(
                             view: WebView,
                             url: String?,

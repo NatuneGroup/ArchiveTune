@@ -56,11 +56,11 @@ import kotlinx.coroutines.isActive
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.di.CanvasCacheEntryPoint
-import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.util.Locale
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 
 private const val CanvasPlaybackStallCheckIntervalMs = 1_000L
 private const val CanvasPlaybackStallTimeoutMs = 5_000L
@@ -132,7 +132,7 @@ fun CanvasArtworkPlayer(
         remember {
             OkHttpClient
                 .Builder()
-                .proxy(YouTube.streamOkHttpProxy)
+                .withAppStreamProxy()
                 .addInterceptor { chain ->
                     val request = chain.request()
                     val host = request.url.host

@@ -81,6 +81,7 @@ object AppUpdateInstaller {
         HttpClient(OkHttp) {
             engine {
                 config {
+                    withAppProxy()
                     connectTimeout(30, TimeUnit.SECONDS)
                     readTimeout(60, TimeUnit.SECONDS)
                     connectionPool(ConnectionPool(2, 30, TimeUnit.SECONDS))

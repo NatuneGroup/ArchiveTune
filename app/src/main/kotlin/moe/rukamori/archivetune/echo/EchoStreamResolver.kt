@@ -38,6 +38,7 @@ import moe.rukamori.archivetune.echo.utils.cipher.CipherDeobfuscator
 import moe.rukamori.archivetune.echo.utils.potoken.PoTokenGenerator
 import moe.rukamori.archivetune.echo.utils.potoken.PoTokenResult
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.utils.withAppProxy
 import moe.rukamori.archivetune.innertube.models.YouTubeClient
 import moe.rukamori.archivetune.innertube.models.YouTubeClient.Companion.ANDROID_VR_1_43_32
 import moe.rukamori.archivetune.innertube.models.YouTubeClient.Companion.ANDROID_VR_1_65_10
@@ -65,7 +66,7 @@ object EchoStreamResolver {
     private val httpClient =
         OkHttpClient
             .Builder()
-            .proxy(YouTube.proxy)
+            .withAppProxy()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .writeTimeout(20, TimeUnit.SECONDS)

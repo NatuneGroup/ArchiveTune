@@ -35,6 +35,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Apple Music full-track playback source. */
 object AppleMusicAudioProvider {
@@ -52,6 +53,7 @@ object AppleMusicAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(25, TimeUnit.SECONDS)

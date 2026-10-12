@@ -33,6 +33,7 @@ import timber.log.Timber
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Fetches skip segments from a SponsorBlock instance. */
 @Singleton
@@ -45,6 +46,11 @@ class SponsorBlockRepository
 
         private val client by lazy {
             HttpClient(OkHttp) {
+                engine {
+                    config {
+                        withAppProxy()
+                    }
+                }
                 install(ContentNegotiation) { json(json) }
                 install(HttpTimeout) {
                     connectTimeoutMillis = 8_000

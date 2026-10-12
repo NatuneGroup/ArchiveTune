@@ -16,6 +16,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import moe.rukamori.archivetune.utils.withAppProxy
 
 private sealed class GatewayFrame {
     data class Text(
@@ -87,6 +88,7 @@ class GatewayClient {
         httpClient =
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .build()
 
         val generation = connectionGeneration.incrementAndGet()

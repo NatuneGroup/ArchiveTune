@@ -40,6 +40,7 @@ object CanvasSaver {
     private val client: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(60, TimeUnit.SECONDS)

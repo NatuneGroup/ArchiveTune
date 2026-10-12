@@ -20,6 +20,7 @@ import timber.log.Timber
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * The Deezer "API / Instance" tier: self-hosted servers that hold their own Deezer accounts and
@@ -45,6 +46,7 @@ object DeezerInstances {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)

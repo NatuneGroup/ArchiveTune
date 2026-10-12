@@ -72,6 +72,7 @@ import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.ui.screens.settings.ThemePalettes
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
+import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -86,6 +87,7 @@ import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.utils.toPlaybackAuthState
+import moe.rukamori.archivetune.utils.withAppProxy
 import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -93,7 +95,6 @@ import timber.log.Timber
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.net.Proxy
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -174,6 +175,9 @@ class App :
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
+        // Ahead of super.onCreate(): Hilt injects there, and an OkHttpClient built by an injected
+        // object would otherwise capture the system ProxySelector for good.
+        AppProxy.install()
         super.onCreate()
         startCanvasPolicy.start(applicationScope)
         instance = this
@@ -216,6 +220,13 @@ class App :
     }
 
     private fun initializeCriticalSync() {
+        // A collector, so editing the proxy in settings takes effect without a restart.
+        applicationScope.launch(Dispatchers.IO) {
+            dataStore.data
+                .map { ProxyUtils.configFromPreferences(it) }
+                .distinctUntilChanged()
+                .collect { AppProxy.apply(it) }
+        }
         runCatching {
             val config = com.downloader.PRDownloaderConfig.newBuilder()
                 .setReadTimeout(60_000)
@@ -397,16 +408,6 @@ class App :
                 }
 
                 LastFmServiceConfig.fromPreferences(prefs).apply(prefs[LastFMSessionKey])
-
-                ProxyUtils.applyYouTubeProxy(
-                    enabled = prefs[ProxyEnabledKey] == true,
-                    type = prefs[ProxyTypeKey].toEnum(defaultValue = Proxy.Type.HTTP),
-                    host = prefs[ProxyHostKey],
-                    port = prefs[ProxyPortKey],
-                    username = prefs[ProxyUsernameKey],
-                    password = prefs[ProxyPasswordKey],
-                )
-                YouTube.streamBypassProxy = YouTube.proxy != null && prefs[StreamBypassProxyKey] == true
 
                 // Re-install the rotating proxy pool when the user left IP rotation on. Without
                 // this the toggle in Internet Settings read as ON after every restart while no
@@ -699,6 +700,7 @@ class App :
         val imageHttpClient =
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .connectionPool(ConnectionPool(20, 5, TimeUnit.MINUTES))
                 .connectTimeout(6, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)

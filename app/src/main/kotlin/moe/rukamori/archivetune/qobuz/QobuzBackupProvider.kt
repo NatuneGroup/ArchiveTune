@@ -23,6 +23,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Catalogue lookups for the **Qobuz backup** source (the community-hosted kouzu.in
@@ -69,6 +70,7 @@ object QobuzBackupProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)

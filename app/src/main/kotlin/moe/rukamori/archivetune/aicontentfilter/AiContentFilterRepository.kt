@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @Singleton
 class AiContentFilterRepository
@@ -70,6 +71,7 @@ class AiContentFilterRepository
                 .connectTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .readTimeout(NETWORK_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                 .callTimeout(NETWORK_CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                .withAppProxy()
                 .build()
 
         fun observeSettings(): Flow<AiContentFilterSettings> =

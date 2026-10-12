@@ -28,6 +28,7 @@ import org.json.JSONObject
 import org.json.JSONTokener
 import java.util.concurrent.TimeUnit
 import java.util.regex.Pattern
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Resolves a playlist URL from a foreign music service (Apple Music, Amazon Music, Tidal, Deezer)
@@ -78,7 +79,7 @@ object CrossServicePlaylistImporter {
     )
 
     private val client: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .followRedirects(true)

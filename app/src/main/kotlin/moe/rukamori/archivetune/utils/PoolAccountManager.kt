@@ -254,6 +254,7 @@ object PoolAccountManager {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .callTimeout(10, TimeUnit.SECONDS)

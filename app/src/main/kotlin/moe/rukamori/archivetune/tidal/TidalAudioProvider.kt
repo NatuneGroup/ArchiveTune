@@ -43,6 +43,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.roundToInt
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object TidalAudioProvider {
     internal const val PROGRESSIVE_DASH_SCHEME = "tidal-dash"
@@ -676,6 +677,7 @@ object TidalAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .dns(TidalDns) // DoH fallback so streaming works on ISPs that DNS-block tidal.com
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
@@ -687,6 +689,7 @@ object TidalAudioProvider {
     private val healthClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .dns(TidalDns)
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)

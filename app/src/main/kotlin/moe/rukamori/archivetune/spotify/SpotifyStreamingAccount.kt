@@ -49,6 +49,7 @@ import timber.log.Timber
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object SpotifyStreamingAccount {
     /** The WebView profile the streaming sign-in runs in, apart from the catalog's cookie jar. */
@@ -65,6 +66,7 @@ object SpotifyStreamingAccount {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .build()

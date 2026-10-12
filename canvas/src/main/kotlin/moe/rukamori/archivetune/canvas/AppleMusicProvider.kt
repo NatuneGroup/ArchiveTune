@@ -161,6 +161,11 @@ object AppleMusicProvider {
 
     private val tokenClient by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(HttpTimeout) {
                 requestTimeoutMillis = 10_000
                 connectTimeoutMillis = 8_000
@@ -376,6 +381,11 @@ object AppleMusicProvider {
 
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) {
                 json(json)
                 register(ContentType.Text.JavaScript, KotlinxSerializationConverter(json))

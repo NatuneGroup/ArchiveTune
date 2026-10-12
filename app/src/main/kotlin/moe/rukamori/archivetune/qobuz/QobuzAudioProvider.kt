@@ -28,6 +28,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Streaming/playback provider for user-provided Qobuz-DL proxy instances (squid.wtf / kennyy /
@@ -124,6 +125,7 @@ object QobuzAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
@@ -132,6 +134,7 @@ object QobuzAudioProvider {
     private val healthClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .callTimeout(8, TimeUnit.SECONDS)

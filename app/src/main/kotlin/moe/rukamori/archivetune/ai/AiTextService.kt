@@ -27,6 +27,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import moe.rukamori.archivetune.utils.withAppProxy
 
 open class AiServiceException(
     message: String,
@@ -72,6 +73,7 @@ object AiTextService {
         HttpClient(OkHttp) {
             engine {
                 config {
+                    withAppProxy()
                     connectTimeout(20, TimeUnit.SECONDS)
                     readTimeout(60, TimeUnit.SECONDS)
                     writeTimeout(60, TimeUnit.SECONDS)

@@ -21,6 +21,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object ListenBrainzManager {
     private val logTag = "ListenBrainzManager"
@@ -31,6 +32,7 @@ object ListenBrainzManager {
     private val httpClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)

@@ -70,6 +70,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Connection state for the Listen Together feature
@@ -529,7 +530,7 @@ class ListenTogetherClient @Inject constructor(
         true
     }
 
-    private val client = OkHttpClient.Builder()
+    private val client = OkHttpClient.Builder().withAppProxy()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)

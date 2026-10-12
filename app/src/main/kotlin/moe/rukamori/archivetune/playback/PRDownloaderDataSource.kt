@@ -31,6 +31,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * A Media3 [DataSource] that delegates the actual HTTP fetching to
@@ -49,7 +50,7 @@ internal class PRDownloaderDataSource private constructor(
     private var activeDownloadId: Int = -1
     /** Shared OkHttp client for HEAD requests — created lazily on first use. */
     private val headClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)

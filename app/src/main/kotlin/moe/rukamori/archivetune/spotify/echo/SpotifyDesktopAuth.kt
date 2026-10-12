@@ -29,6 +29,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object SpotifyDesktopAuth {
     private const val TAG = "SpotifyDesktopAuth"
@@ -65,6 +66,7 @@ object SpotifyDesktopAuth {
     private val baseClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

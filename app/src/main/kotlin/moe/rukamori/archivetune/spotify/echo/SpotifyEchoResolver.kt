@@ -25,6 +25,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object SpotifyEchoResolver {
     private const val TAG = "SpotifyEchoResolver"
@@ -40,6 +41,7 @@ object SpotifyEchoResolver {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .build()

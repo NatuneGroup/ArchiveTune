@@ -37,6 +37,7 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object TidalAccountManager {
     private data class SearchMatch(
@@ -78,6 +79,7 @@ object TidalAccountManager {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .dns(TidalDns) // DoH fallback so login works on ISPs that DNS-block tidal.com
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)

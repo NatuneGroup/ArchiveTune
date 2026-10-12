@@ -51,6 +51,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Where a scanned QR code has got to. */
 internal enum class QqQrStatus {
@@ -223,6 +224,7 @@ internal object QqQrLogin {
     private val client by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)

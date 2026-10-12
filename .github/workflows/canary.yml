@@ -312,14 +312,42 @@ jobs:
           echo "Canary signing secrets present."
 
       - name: Sign APK (release keystore)
-        uses: ilharp/sign-android-release@v2.0.0
-        with:
-          releaseDir: ${{ steps.release_dir.outputs.release_dir }}/
-          signingKey: ${{ secrets.KEYSTORE }}
-          keyAlias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 35.0.0
+        shell: bash
+        env:
+          RELEASE_DIR: ${{ steps.release_dir.outputs.release_dir }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          fi
+          KEYSTORE_FILE="$(mktemp)"
+          trap 'rm -f "$KEYSTORE_FILE"' EXIT
+          echo "$KEYSTORE" | base64 -d > "$KEYSTORE_FILE"
+          mapfile -t APKS < <(
+            find "$RELEASE_DIR" -maxdepth 1 -type f -name "*.apk" ! -name "*-signed.apk"
+          )
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "Expected exactly one unsigned APK in $RELEASE_DIR, found ${#APKS[@]}"
+            find "$RELEASE_DIR" -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          SIGNED="${APK%.apk}-signed.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$SIGNED"
+          # v1 (JAR) signing is dead weight at minSdk 26: the MANIFEST.MF/.SF/.RSA block is never
+          # used to verify and costs ~215 KB per APK. v2/v3 stay on, same keystore as before.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$SIGNED"
 
       - name: Move and rename APK
         shell: bash

@@ -54,8 +54,9 @@ internal fun resolveAudioOffloadEnabled(
 
 internal fun resolveAudioSourceAttemptTimeoutMs(source: AudioSourceType): Long =
     when (source) {
-        // Both download and decrypt the whole protected file before playback can start.
-        AudioSourceType.AMAZON, AudioSourceType.QQ -> AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS
+        // Covers only their search: the whole-file download after a match runs on its own
+        // deadline (AudioSourceAttemptScope.withinTransfer), so a slow link is not cut off.
+        AudioSourceType.AMAZON, AudioSourceType.QQ -> AudioSourceAttemptTimeouts.WHOLE_FILE_SOURCE_SEARCH_MS
         // A cold resolve chains a token, device registration, file lookup and key request.
         AudioSourceType.SPOTIFY -> AudioSourceAttemptTimeouts.SPOTIFY_RESOLVE_MS
         else -> AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS

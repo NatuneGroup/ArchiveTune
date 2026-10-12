@@ -45,6 +45,7 @@ import java.util.Base64
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object AmazonAudioProvider {
     // No public default ships. The web player's gateway (music-api.geeked.wtf, also answering as
@@ -107,6 +108,7 @@ object AmazonAudioProvider {
             .readTimeout(60, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
             .callTimeout(0, TimeUnit.SECONDS)
+            .withAppProxy()
             .build()
 
     /**
@@ -213,8 +215,28 @@ object AmazonAudioProvider {
         bypassToken: String? = null,
         quality: String = "HD",
         turnstileJwt: String? = null,
-    ): DirectStream? =
-        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS) {
+    ): DirectStream? {
+        val resolved =
+            findMatchingStream(title, artists, album, durationMs, instanceBaseUrl, bypassToken, quality, turnstileJwt)
+                ?: return null
+        // The search above shares the source chain's budget; the download does not, so a slow
+        // connection still gets the file that matched instead of a fallback.
+        return AudioSourceAttemptScope.withinTransfer {
+            withContext(Dispatchers.IO) { downloadAndPrepare(resolved, cacheDir) }
+        }
+    }
+
+    private suspend fun findMatchingStream(
+        title: String,
+        artists: List<String>,
+        album: String?,
+        durationMs: Long?,
+        instanceBaseUrl: String,
+        bypassToken: String?,
+        quality: String,
+        turnstileJwt: String?,
+    ): ResolvedStream? =
+        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.WHOLE_FILE_SOURCE_SEARCH_MS) {
             withContext(Dispatchers.IO) {
             // The web player sent every credited artist, and the instance matches against all of them.
             val artist = artists.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(", ")
@@ -270,7 +292,7 @@ object AmazonAudioProvider {
                 return@withContext null
             }
 
-            return@withContext downloadAndPrepare(resolved, cacheDir)
+            return@withContext resolved
             }
         }
 
@@ -607,7 +629,7 @@ object AmazonAudioProvider {
     }
 
     /** Downloads the (possibly encrypted) stream to a file and, if a key is present, decrypts it there. */
-    private fun downloadAndPrepare(
+    private suspend fun downloadAndPrepare(
         resolved: ResolvedStream,
         cacheDir: File,
     ): DirectStream? {
@@ -652,7 +674,7 @@ object AmazonAudioProvider {
      * Streams the body to [target] rather than into memory: a hi-res track runs to a couple of
      * hundred megabytes, more than the default heap of many phones.
      */
-    private fun download(
+    private suspend fun download(
         url: String,
         target: File,
     ): Boolean =
@@ -664,7 +686,7 @@ object AmazonAudioProvider {
                     .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
-            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().executeCancellable().use { response ->
                 if (!response.isSuccessful) {
                     Timber.tag(TAG).w("Amazon stream download failed: HTTP %d", response.code)
                     return@use false

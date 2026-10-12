@@ -15,12 +15,15 @@ import moe.rukamori.archivetune.playback.resolveAudioAuthenticitySampleRateHz
 import moe.rukamori.archivetune.playback.resolveAudioOffloadEnabled
 import moe.rukamori.archivetune.playback.resolveAudioSourceAttemptTimeoutMs
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptDeadline
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.constants.AudioSourceType
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.TimeUnit
 
 class PlaybackPipelinePolicyTest {
     @Test
@@ -86,10 +89,14 @@ class PlaybackPipelinePolicyTest {
     }
 
     @Test
-    fun `Amazon uses its transfer budget while remaining capped by the fallback chain`() {
+    fun `Amazon search uses its budget while remaining capped by the fallback chain`() {
         assertEquals(
-            AudioSourceAttemptTimeouts.AMAZON_STREAM_TRANSFER_MS,
+            AudioSourceAttemptTimeouts.WHOLE_FILE_SOURCE_SEARCH_MS,
             resolveAudioSourceAttemptTimeoutMs(AudioSourceType.AMAZON),
+        )
+        assertEquals(
+            AudioSourceAttemptTimeouts.WHOLE_FILE_SOURCE_SEARCH_MS,
+            resolveAudioSourceAttemptTimeoutMs(AudioSourceType.QQ),
         )
         assertEquals(
             AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS,
@@ -99,5 +106,24 @@ class PlaybackPipelinePolicyTest {
         val amazonDeadline = chainDeadline.child(resolveAudioSourceAttemptTimeoutMs(AudioSourceType.AMAZON))
         assertTrue(amazonDeadline.remainingMillis() <= AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS)
         assertTrue(amazonDeadline.remainingMillis() > 0L)
+    }
+
+    @Test
+    fun `a matched whole-file transfer is not cut by an expired source chain`() {
+        var nowNanos = 0L
+        val chainDeadline = AudioSourceAttemptDeadline.start(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) { nowNanos }
+        nowNanos += TimeUnit.MILLISECONDS.toNanos(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS + 1L)
+        assertTrue(chainDeadline.isExpired())
+
+        val transferRemainingMs =
+            AudioSourceAttemptScope.withDeadline(chainDeadline) {
+                runBlocking {
+                    AudioSourceAttemptScope.withinTransfer {
+                        AudioSourceAttemptScope.current()?.remainingMillis()
+                    }
+                }
+            }
+        assertTrue((transferRemainingMs ?: 0L) > AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS)
+        assertTrue((transferRemainingMs ?: 0L) <= AudioSourceAttemptTimeouts.WHOLE_FILE_TRANSFER_MS)
     }
 }

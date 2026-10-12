@@ -33,6 +33,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.executeCancellable
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TitleMatch
@@ -41,6 +42,7 @@ import moe.rukamori.archivetune.constants.QqAudioQuality
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 internal object QqMusicAudioProvider {
     private const val TAG = "QqMusicAudio"
@@ -60,14 +62,6 @@ internal object QqMusicAudioProvider {
     private const val CACHE_LIMIT_BYTES = 300L * 1024 * 1024
 
     /**
-     * The budget for the whole attempt when a protected container has to be downloaded before it
-     * can be decrypted. The catalogue and url-minter calls keep the ordinary provider budget inside
-     * it; this only matters when the caller's own deadline allows a transfer that long, because a
-     * child deadline never outlives its parent.
-     */
-    private const val CONTAINER_TRANSFER_MS = 120_000L
-
-    /**
      * Generous read timeout, no overall cap: a lossless container is a large download and the
      * decrypt only starts once all of it has arrived.
      */
@@ -77,6 +71,7 @@ internal object QqMusicAudioProvider {
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .callTimeout(0, TimeUnit.SECONDS)
+            .withAppProxy()
             .build()
 
     /**
@@ -96,20 +91,24 @@ internal object QqMusicAudioProvider {
         session: QqMusicSession,
         cacheDir: File,
         trusted: Boolean,
-    ): DirectStream? =
-        AudioSourceAttemptScope.withinSuspending(CONTAINER_TRANSFER_MS) {
-            withContext(Dispatchers.IO) {
-                if (title.isBlank()) return@withContext null
-                val resolved =
-                    AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-                        findSource(title, artists, album, durationMs, quality, session, trusted)
-                    } ?: return@withContext null
-                val (matched, source) = resolved
-                val stream = playable(source, matched, cacheDir, trusted) ?: return@withContext null
-                Timber.tag(TAG).i("QQ Music resolved \"%s\" as %s (%s)", title, matched.mid, stream.label)
-                stream
-            }
-        }
+    ): DirectStream? {
+        if (title.isBlank()) return null
+        val found: Pair<QqTrack, QqStreamSource> =
+            AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+                withContext(Dispatchers.IO) {
+                    findSource(title, artists, album, durationMs, quality, session, trusted)
+                }
+            } ?: return null
+        val (matched, source) = found
+        // The search above shares the source chain's budget; a protected container's download does
+        // not, so a slow connection still gets the file that matched instead of a fallback.
+        val stream =
+            AudioSourceAttemptScope.withinTransfer {
+                withContext(Dispatchers.IO) { playable(source, matched, cacheDir, trusted) }
+            } ?: return null
+        Timber.tag(TAG).i("QQ Music resolved \"%s\" as %s (%s)", title, matched.mid, stream.label)
+        return stream
+    }
 
     /**
      * The first catalogue hit that clears the metadata gate and that this account is served, with
@@ -210,7 +209,7 @@ internal object QqMusicAudioProvider {
      * decrypts it, and hands over the local file. A container already decrypted for the same
      * resource is reused without being fetched again.
      */
-    private fun playable(
+    private suspend fun playable(
         source: QqStreamSource,
         matched: QqTrack,
         cacheDir: File,
@@ -274,7 +273,7 @@ internal object QqMusicAudioProvider {
             trustedDirectId = trusted,
         )
 
-    private fun download(url: String): ByteArray? =
+    private suspend fun download(url: String): ByteArray? =
         runCatching {
             val request =
                 Request
@@ -283,7 +282,7 @@ internal object QqMusicAudioProvider {
                     .header("User-Agent", USER_AGENT)
                     .get()
                     .build()
-            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().executeCancellable().use { response ->
                 if (!response.isSuccessful) {
                     Timber.tag(TAG).w("QQ Music container download failed: HTTP %d", response.code)
                     null

@@ -10,15 +10,19 @@ package moe.rukamori.archivetune.audiosource
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.resumeWithException
 
 class AudioSourceAttemptDeadline private constructor(
     private val deadlineNanos: Long,
@@ -64,8 +68,16 @@ class AudioSourceAttemptDeadline private constructor(
 object AudioSourceAttemptTimeouts {
     const val PROVIDER_ATTEMPT_MS = 8_000L
     const val FALLBACK_CHAIN_MS = 30_000L
-    const val AMAZON_STREAM_TRANSFER_MS = 120_000L
+    /** Search and match for a source that then downloads the whole file; the download itself is not counted. */
+    const val WHOLE_FILE_SOURCE_SEARCH_MS = 20_000L
     const val SPOTIFY_RESOLVE_MS = 20_000L
+
+    /**
+     * The ceiling for downloading a whole file whose metadata has already matched. A lossless file
+     * on a slow connection takes minutes, and the client's per-read timeout already catches a dead
+     * connection, so this only bounds a transfer that keeps trickling forever.
+     */
+    const val WHOLE_FILE_TRANSFER_MS = 15 * 60_000L
 }
 
 object AudioSourceAttemptScope {
@@ -110,6 +122,22 @@ object AudioSourceAttemptScope {
         }
     }
 
+    /**
+     * Runs a transfer under a fresh deadline that the search budget around it does not cap. Only
+     * for a download that starts after its match was accepted: cutting it at the search deadline
+     * would throw away the one copy that matched and fall back to a worse source. Cancellation by
+     * the caller still applies; pair it with [executeCancellable] so a skip stops the download.
+     */
+    suspend fun <T> withinTransfer(
+        timeoutMillis: Long = AudioSourceAttemptTimeouts.WHOLE_FILE_TRANSFER_MS,
+        block: suspend CoroutineScope.() -> T,
+    ): T? {
+        val deadline = AudioSourceAttemptDeadline.start(timeoutMillis)
+        return withContext(activeDeadline.asContextElement(deadline)) {
+            deadline.runWithin { block(this) }
+        }
+    }
+
     fun coroutineContextElement(): CoroutineContext {
         val deadline = activeDeadline.get() ?: return kotlin.coroutines.EmptyCoroutineContext
         return activeDeadline.asContextElement(deadline)
@@ -123,6 +151,34 @@ fun Call.withAudioSourceAttemptDeadline(): Call {
     timeout().timeout(remaining, TimeUnit.MILLISECONDS)
     return this
 }
+
+/**
+ * Executes the call so that cancelling the calling coroutine cancels the call too. A blocking
+ * `execute()` keeps reading after its coroutine is cancelled, which for a whole-file download
+ * means minutes of bandwidth spent on a track the user already skipped. Reading the body after a
+ * cancellation fails with an `IOException("Canceled")`.
+ */
+suspend fun Call.executeCancellable(): Response =
+    suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { cancel() }
+        enqueue(
+            object : Callback {
+                override fun onResponse(
+                    call: Call,
+                    response: Response,
+                ) {
+                    continuation.resume(response) { _, _, _ -> response.close() }
+                }
+
+                override fun onFailure(
+                    call: Call,
+                    e: IOException,
+                ) {
+                    continuation.resumeWithException(e)
+                }
+            },
+        )
+    }
 
 class AudioSourceAttemptTimedOutException : SocketTimeoutException("Audio source attempt deadline exceeded")
 

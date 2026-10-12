@@ -435,6 +435,7 @@ import kotlin.math.ceil
 import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.seconds
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 
 // Hoisted file-level Regex: the JioSaavn candidate penalty loop below calls
 // "[^a-z0-9]".toRegex() 4 times per candidate (title, wanted title, artist,
@@ -561,7 +562,7 @@ class MusicService :
     private val mediaOkHttpClient: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
-            .proxy(YouTube.streamOkHttpProxy)
+            .withAppStreamProxy()
             .followRedirects(true)
             .followSslRedirects(true)
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -692,6 +693,10 @@ class MusicService :
     // re-prepare so the resolver picks a fresh (possibly different-client) stream URL.
     private var initialBufferRecoveryJob: Job? = null
     private var initialBufferRecoveryAttemptedMediaId: String? = null
+
+    // Media ids whose playback resolution is still running. That is not a stalled stream: on a slow
+    // link Amazon and QQ are downloading the matched file, and re-preparing would restart it.
+    private val mediaIdsResolvingSource: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     // Codec-state recovery counter, SEPARATE from PlaybackStreamRecoveryTracker.
     @Volatile
@@ -4912,6 +4917,7 @@ class MusicService :
         initialBufferRecoveryJob =
             scope.launch {
                 delay(INITIAL_BUFFER_STALL_DELAY_MS)
+                while (mediaId in mediaIdsResolvingSource) delay(INITIAL_BUFFER_STALL_DELAY_MS)
                 if (player.playbackState != Player.STATE_BUFFERING ||
                     !player.playWhenReady ||
                     player.currentPosition >= INITIAL_BUFFER_STALL_POSITION_MS ||
@@ -8435,10 +8441,16 @@ class MusicService :
         mediaId: String,
         lowDataModeActive: Boolean,
         isPrefetch: Boolean = false,
-    ): DataSpec? =
-        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
-            resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch)
+    ): DataSpec? {
+        if (!isPrefetch) mediaIdsResolvingSource.add(mediaId)
+        return try {
+            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
+                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch)
+            }
+        } finally {
+            if (!isPrefetch) mediaIdsResolvingSource.remove(mediaId)
         }
+    }
 
     private fun resolveMultiSourceDataSpecWithinDeadline(
         dataSpec: DataSpec,
@@ -8697,7 +8709,10 @@ class MusicService :
                     null
                 }
             val attemptTimedOut = attemptDeadline.isExpired()
-            val stream = attemptResult.takeUnless { attemptTimedOut }
+            // A stream that arrives after the deadline is kept: Amazon and QQ download a matched
+            // file on their own transfer deadline, and on a slow link that ends after the search
+            // budget. Discarding it would fall back to a worse source after the wait was paid.
+            val stream = attemptResult
             Timber.tag("PlaybackDiagnostics").d(
                 "Source attempt provider=%s resolved=%s timedOut=%s elapsedMs=%d",
                 source.name,

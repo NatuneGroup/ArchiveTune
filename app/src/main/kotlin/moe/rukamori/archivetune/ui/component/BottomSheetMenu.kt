@@ -74,6 +74,10 @@ fun BottomSheetMenu(
     background: Color = MaterialTheme.colorScheme.surface,
 ) {
     val focusManager = LocalFocusManager.current
+    // Back handling is intentionally not routed through PredictiveStyleBackHandler: this sheet is
+    // a Material3 ModalBottomSheet, whose own internal PredictiveBackHandler already scales and
+    // fades it with the gesture and springs back on cancel. Wrapping it here would fight the
+    // dialog's dispatcher, and the ORIGINAL style never had a handler of its own either.
 
     state.dialogContent?.invoke()
 

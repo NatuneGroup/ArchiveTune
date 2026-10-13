@@ -20,7 +20,6 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -86,6 +85,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
@@ -225,6 +225,9 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.PlayerBackController
+import moe.rukamori.archivetune.ui.component.PlayerBackTarget
+import moe.rukamori.archivetune.ui.component.PredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.bitchord.BitChordPlayerContent
@@ -379,6 +382,8 @@ fun BottomSheetPlayer(
     compactFractionState: State<Float>? = null,
     compactHorizontalPadding: Dp = 0.dp,
     compactReserveEndControl: Boolean = false,
+    backController: PlayerBackController? = null,
+    predictiveBackState: PredictiveSheetBackState? = null,
     immersivePlayerViewModel: ImmersivePlayerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -1114,7 +1119,7 @@ fun BottomSheetPlayer(
     }
 
     // The lyrics overlay belongs to the EXPANDED player: it is opened from it, drawn over it, and
-    // every way out of it — the BackHandler below, LyricsScreen's own, and the top-edge dismiss
+    // every way out of it — the shared back controller, LyricsScreen's own, and the top-edge dismiss
     // drag — is gated on `state.isExpandedOrExpanding`. Nothing tied the overlay's own lifetime to
     // that, so collapsing the player while lyrics were open (a drag on the sheet, ON_STOP, or a
     // restore from process death, since the flag is rememberSaveable) left the overlay covering
@@ -1153,16 +1158,40 @@ fun BottomSheetPlayer(
             }
         }
 
-    if (!aodModeEnabled) {
-        BackHandler(
-            enabled =
-                queueSheetState.isExpandedOrExpanding ||
-                    state.isExpandedOrExpanding,
-        ) {
-            when {
-                isLyricsScreenVisible && state.isExpandedOrExpanding -> isLyricsScreenVisible = false
-                queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
-                state.isExpandedOrExpanding -> state.collapseSoft()
+    // Player styles with in-player pages (Flamingo today) report whether one is open, and receive
+    // a back request through this epoch when the shared controller routes back to them.
+    val stylePageBackRequests = remember { mutableIntStateOf(0) }
+    var anyStylePageOverlayOpen by remember { mutableStateOf(false) }
+
+    // Which surface owns the next back press. Published once per composition into the shared
+    // controller; MainActivity's two player back handlers (composed after the NavHost, so they
+    // register after every handler in here) route the gesture to it. Without this the generic
+    // collapse handler won by registration order and back collapsed the whole player while the
+    // queue was open. SUB_PAGE covers the shared queue, the standalone lyrics screen and player
+    // style pages. isInlineLyricsOpen is deliberately absent: Apple Music's lyrics morph reports
+    // that flag but owns no downward sync, so its own in-place back handler (which registers
+    // after the shields' last re-registration) must keep closing it, as it does today.
+    val publishedBackTarget =
+        when {
+            aodModeEnabled -> PlayerBackTarget.NONE
+            !state.isExpandedOrExpanding && !queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.NONE
+            queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.SUB_PAGE
+            isLyricsScreenVisible || anyStylePageOverlayOpen -> PlayerBackTarget.SUB_PAGE
+            else -> PlayerBackTarget.SHEET
+        }
+
+    if (backController != null) {
+        SideEffect {
+            backController.backTarget = publishedBackTarget
+            backController.routeBack = {
+                when {
+                    isLyricsScreenVisible && state.isExpandedOrExpanding -> isLyricsScreenVisible = false
+                    // A Flamingo page reports through BOTH flags (its page feeds
+                    // onLyricsVisibilityChange), so the page epoch must be consulted first.
+                    anyStylePageOverlayOpen && state.isExpandedOrExpanding -> stylePageBackRequests.intValue++
+                    queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
+                    state.isExpandedOrExpanding -> state.collapseSoft()
+                }
             }
         }
     }
@@ -1387,7 +1416,16 @@ fun BottomSheetPlayer(
         onDismiss = {
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
-        backHandlerEnabled = !aodModeEnabled && !isLyricsScreenVisible,
+        predictiveBackState = predictiveBackState,
+        // With a shared controller the sheet's own handler is the fallback behind MainActivity's
+        // shields: it may only fire when the sheet itself is the back target — never while a
+        // page, the queue or lyrics sit on top of it.
+        backHandlerEnabled =
+            if (backController != null) {
+                publishedBackTarget == PlayerBackTarget.SHEET
+            } else {
+                !aodModeEnabled && !isLyricsScreenVisible
+            },
         keepContentAlive = true,
         collapsedContent = {
             MiniPlayer(
@@ -2153,6 +2191,8 @@ fun BottomSheetPlayer(
                     // reports them upward. In landscape it opens on its lyrics page.
                     enrichedMetadata?.let { metadata ->
                         FlamingoPlayerContent(
+                            onStylePageOpenChange = { anyStylePageOverlayOpen = it },
+                            stylePageBackRequests = stylePageBackRequests.intValue,
                             mediaMetadata = metadata,
                             playbackState = playbackState,
                             isPlaying = isPlaying && !isLyricsScreenVisible,
@@ -2762,6 +2802,8 @@ fun BottomSheetPlayer(
                     // insets its own content from the status bar.
                     enrichedMetadata?.let { metadata ->
                         FlamingoPlayerContent(
+                            onStylePageOpenChange = { anyStylePageOverlayOpen = it },
+                            stylePageBackRequests = stylePageBackRequests.intValue,
                             mediaMetadata = metadata,
                             playbackState = playbackState,
                             isPlaying = isPlaying && !isLyricsScreenVisible,

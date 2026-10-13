@@ -1219,4 +1219,8 @@
     <string name="proxy_test_unknown_host">Could not find the proxy host %1$s.</string>
     <string name="proxy_test_timeout">The connection through the proxy timed out.</string>
     <string name="proxy_test_wrong_type">The proxy did not answer as a %1$s proxy. Check that the proxy type matches the port.</string>
+    <string name="back_animation_style">Back animation style</string>
+    <string name="back_animation_style_desc">How the back gesture animates the screen it closes. Predictive moves the player and sheets under your finger and springs back if you cancel.</string>
+    <string name="back_animation_style_original">Original</string>
+    <string name="back_animation_style_predictive">Predictive</string>
 </resources>

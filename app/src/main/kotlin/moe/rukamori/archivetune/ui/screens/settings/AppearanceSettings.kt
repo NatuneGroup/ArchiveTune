@@ -73,6 +73,8 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
+import moe.rukamori.archivetune.constants.BackAnimationStyle
+import moe.rukamori.archivetune.constants.BackAnimationStyleKey
 import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
 import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
 import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
@@ -368,6 +370,11 @@ fun AppearanceSectionSettings(
         rememberEnumPreference(SearchBarPositionKey, defaultValue = SearchBarPosition.TOP)
     val (hideSearchBarWhileScrolling, onHideSearchBarWhileScrollingChange) =
         rememberPreference(HideSearchChromeWhileScrollingKey, defaultValue = false)
+    val (backAnimationStyle, onBackAnimationStyleChange) =
+        rememberEnumPreference(
+            BackAnimationStyleKey,
+            defaultValue = BackAnimationStyle.PREDICTIVE,
+        )
     // The experience owns the player style while it is on, and the coupling lives with the setting
     // rather than here — the settings-search switch sets the same thing and has to move the style
     // with it too.
@@ -1622,6 +1629,23 @@ fun AppearanceSectionSettings(
                         icon = { Icon(painterResource(R.drawable.search), null) },
                         checked = hideSearchBarWhileScrolling,
                         onCheckedChange = onHideSearchBarWhileScrollingChange,
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        modifier = positions.modifierFor("back_animation_style"),
+                        title = { Text(stringResource(R.string.back_animation_style)) },
+                        description = stringResource(R.string.back_animation_style_desc),
+                        icon = { Icon(painterResource(R.drawable.arrow_back), null) },
+                        selectedValue = backAnimationStyle,
+                        onValueSelected = onBackAnimationStyleChange,
+                        valueText = {
+                            when (it) {
+                                BackAnimationStyle.ORIGINAL -> stringResource(R.string.back_animation_style_original)
+                                BackAnimationStyle.PREDICTIVE -> stringResource(R.string.back_animation_style_predictive)
+                            }
+                        },
                     )
                 }
                 }

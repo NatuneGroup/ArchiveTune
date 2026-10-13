@@ -8,7 +8,6 @@
 
 package moe.rukamori.archivetune.ui.component
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -52,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.unit.dp
@@ -88,15 +88,18 @@ fun BottomSheetPage(
     val coroutineScope = rememberCoroutineScope()
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
+    val predictiveBack = rememberPredictiveSheetBackState()
+    PredictiveStyleBackHandler(
+        backState = predictiveBack,
+        enabled = state.isVisible,
+        onBack = state::dismiss,
+    )
+
     AnimatedVisibility(
         visible = state.isVisible,
         enter = fadeIn(animationSpec = tween(300)),
         exit = fadeOut(animationSpec = tween(300)),
     ) {
-        BackHandler {
-            state.dismiss()
-        }
-
         Spacer(
             modifier =
                 Modifier
@@ -127,6 +130,15 @@ fun BottomSheetPage(
             modifier =
                 Modifier
                     .fillMaxWidth()
+                    .graphicsLayer {
+                        val p = predictiveBack.progress.value
+                        if (p > 0f) {
+                            val scale = 1f - 0.06f * p
+                            scaleX = scale
+                            scaleY = scale
+                            alpha = 1f - 0.3f * p
+                        }
+                    }
                     .windowInsetsPadding(WindowInsets.statusBars)
                     .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Horizontal))
                     .padding(top = 100.dp) // Give enough space from top

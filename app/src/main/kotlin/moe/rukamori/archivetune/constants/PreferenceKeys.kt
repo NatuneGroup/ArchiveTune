@@ -24,6 +24,21 @@ val RandomThemeOnStartupKey = booleanPreferencesKey("randomThemeOnStartup")
 val DarkModeKey = stringPreferencesKey("darkMode")
 val PureBlackKey = booleanPreferencesKey("pureBlack")
 val DisableAnimationsKey = booleanPreferencesKey("disableAnimations")
+
+/**
+ * How the system back gesture animates the surface it closes.
+ *
+ * ORIGINAL keeps the classic instant back dispatch (the surface closes with its own close
+ * animation, untouched by the gesture). PREDICTIVE routes sheet back handling through
+ * androidx's PredictiveBackHandler, so the player sheet, bottom-sheet pages and menus scale
+ * away with the gesture and spring back when it is cancelled, and pushed screens slide.
+ */
+enum class BackAnimationStyle {
+    ORIGINAL,
+    PREDICTIVE,
+}
+
+val BackAnimationStyleKey = stringPreferencesKey("backAnimationStyle")
 val ForceHighRefreshRateKey = booleanPreferencesKey("forceHighRefreshRate")
 val WallpaperExtractionFailedKey = booleanPreferencesKey("wallpaperExtractionFailed")
 val HideStatusBarKey = booleanPreferencesKey("hideStatusBar")

@@ -206,6 +206,7 @@ fun buildSettingsGroups(
                 SettingsChild("Default open tab", "default_open_tab", listOf("default tab", "home tab", "start page", "open tab")),
                 SettingsChild("Search bar position", "search_bar_position", listOf("search bar", "bottom search", "search at bottom", "search position")),
                 SettingsChild("Hide search bar while scrolling", "hide_search_bar_while_scrolling", listOf("hide search bar", "search scrolling", "auto hide search")) { SearchResultSwitch(HideSearchChromeWhileScrollingKey, false) },
+                SettingsChild("Back animation style", "back_animation_style", listOf("back animation", "predictive back", "back gesture", "gesture animation")),
                 SettingsChild("Grid layout", "grid_layout", listOf("grid", "layout", "list view", "artist grid")),
                 SettingsChild("Show home category chips", "show_home_category_chips", listOf("home chips", "category chips", "home category", "chips")) { SearchResultSwitch(ShowHomeCategoryChipsKey, false) },
                 SettingsChild("Language", "app_language", listOf("language", "app language", "locale")),

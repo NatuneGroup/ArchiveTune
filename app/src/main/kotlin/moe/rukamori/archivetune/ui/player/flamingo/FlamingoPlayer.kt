@@ -409,6 +409,10 @@ fun FlamingoPlayerContent(
     lyricsSyncOffset: Int = 0,
     onLyricsSyncOffsetChange: (Int) -> Unit = {},
     onLyricsVisibilityChange: (Boolean) -> Unit = {},
+    // Reports whether a non-Album page is on top of the player, and carries the shared
+    // controller's close requests for it (BackAnimationStyle routing in MainActivity).
+    onStylePageOpenChange: (Boolean) -> Unit = {},
+    stylePageBackRequests: Int = 0,
     modifier: Modifier = Modifier,
     landscape: Boolean = false,
 ) {
@@ -598,6 +602,8 @@ fun FlamingoPlayerContent(
         // Composed only while a page is open, so it registers after the player sheet's own handler
         // (added when the sheet expands) and wins; an always-present handler registered at first
         // composition lost to it, and back collapsed the whole player instead of leaving the page.
+        // With a shared back controller it is a fallback: MainActivity's SUB_PAGE handler routes
+        // back here through stylePageBackRequests.
         if (nowPage != FlamingoPage.Album) {
             BackHandler {
                 nowPage = FlamingoPage.Album
@@ -605,7 +611,12 @@ fun FlamingoPlayerContent(
         }
 
         LaunchedEffect(nowPage, state.isExpandedOrExpanding) {
-            onLyricsVisibilityChange(nowPage != FlamingoPage.Album && state.isExpandedOrExpanding)
+            val pageOpen = nowPage != FlamingoPage.Album && state.isExpandedOrExpanding
+            onLyricsVisibilityChange(pageOpen)
+            onStylePageOpenChange(pageOpen)
+        }
+        LaunchedEffect(stylePageBackRequests) {
+            if (stylePageBackRequests > 0) nowPage = FlamingoPage.Album
         }
 
         var lyricsContentReady by remember { mutableStateOf(false) }

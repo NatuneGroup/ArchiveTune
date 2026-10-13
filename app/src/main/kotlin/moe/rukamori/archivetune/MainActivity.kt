@@ -239,6 +239,8 @@ import moe.rukamori.archivetune.constants.AodAutoTimerSecondsKey
 import moe.rukamori.archivetune.constants.AppBarHeight
 import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.AppLanguageKey
+import moe.rukamori.archivetune.constants.BackAnimationStyle
+import moe.rukamori.archivetune.constants.BackAnimationStyleKey
 import moe.rukamori.archivetune.constants.CustomFontUriKey
 import moe.rukamori.archivetune.constants.CustomThemeColorKey
 import moe.rukamori.archivetune.constants.DarkModeKey
@@ -338,6 +340,9 @@ import moe.rukamori.archivetune.ui.component.LocalNavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.component.NavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.NetworkStatusBanner
+import moe.rukamori.archivetune.ui.component.PlayerBackController
+import moe.rukamori.archivetune.ui.component.PlayerBackTarget
+import moe.rukamori.archivetune.ui.component.PredictiveStyleBackHandler
 import moe.rukamori.archivetune.ui.component.ProfileMenuDialog
 import moe.rukamori.archivetune.ui.component.ProfileMenuItem
 import moe.rukamori.archivetune.ui.component.SearchSourcePicker
@@ -348,6 +353,7 @@ import moe.rukamori.archivetune.ui.component.pillBottomInset
 import moe.rukamori.archivetune.ui.component.pillHorizontalInset
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
+import moe.rukamori.archivetune.ui.component.rememberPredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
 import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBar
 import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBarHeight
@@ -964,6 +970,10 @@ class MainActivity : ComponentActivity() {
             // Scale 0 is the system's own "remove animations": everything downstream treats it
             // exactly like the in-app toggle.
             val animationsOff = disableAnimations || animatorScale == 0f
+            val backAnimationStyle by rememberEnumPreference(
+                BackAnimationStyleKey,
+                defaultValue = BackAnimationStyle.PREDICTIVE,
+            )
             val disableBlur by rememberPreference(DisableBlurKey, defaultValue = false)
             // Task 8: app-wide scrollbar toggle. Provided via LocalHideScrollbar so any
             // composable that draws a scrollbar can opt-out when the user has hidden them.
@@ -1739,6 +1749,12 @@ class MainActivity : ComponentActivity() {
                         defaultValue = PlayerDesignStyle.Default,
                     )
 
+                    // One owner of the player's back target: BottomSheetPlayer reports which
+                    // surface is on top (the sheet, a page over it, or nothing) and what back
+                    // should do; the two handlers composed after the NavHost route the gesture.
+                    val playerBackController = remember { PlayerBackController() }
+                    val playerSheetPredictiveBack = rememberPredictiveSheetBackState()
+
                     val aodModeEnabled by remember(playerConnection) {
                         playerConnection?.aodModeEnabled ?: MutableStateFlow(false)
                     }.collectAsStateWithLifecycle()
@@ -2417,6 +2433,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
                         moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
                         moe.rukamori.archivetune.LocalAnimationScale provides animatorScale,
+                        moe.rukamori.archivetune.ui.component.LocalBackAnimationStyle provides backAnimationStyle,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
                         LocalDensity provides scaledDensity,
@@ -3358,6 +3375,8 @@ class MainActivity : ComponentActivity() {
                                                 compactFractionState = bottomUiCompactFractionState,
                                                 compactHorizontalPadding = navBarHorizontalPadding,
                                                 compactReserveEndControl = compactSearchCircleVisible,
+                                                backController = playerBackController,
+                                                predictiveBackState = playerSheetPredictiveBack,
                                             )
                                         }
 
@@ -3584,6 +3603,17 @@ class MainActivity : ComponentActivity() {
                                     enterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in topLevelScreens
+                                        ) {
+                                            // Predictive back: pushed screens arrive from the right
+                                            // edge; navigation-compose 2.9 scrubs this slide with the
+                                            // gesture on the way back.
+                                            slideInHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                initialOffsetX = { it },
+                                            ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
                                         } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopEnter
                                         } else if (initialState.destination.route in topLevelScreens &&
@@ -3602,6 +3632,16 @@ class MainActivity : ComponentActivity() {
                                     exitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in topLevelScreens
+                                        ) {
+                                            // The screen under a pushed one retreats a third of the
+                                            // width (parallax) instead of only fading.
+                                            slideOutHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                targetOffsetX = { -it / 3 },
+                                            ) + fadeOut(tween(200, easing = LinearOutSlowInEasing))
                                         } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopExit
                                         } else if (initialState.destination.route in topLevelScreens &&
@@ -3615,6 +3655,16 @@ class MainActivity : ComponentActivity() {
                                     popEnterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in topLevelScreens
+                                        ) {
+                                            // Revealed pushed screens return from their parallax
+                                            // position; popping back to a tab keeps the fade below.
+                                            slideInHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                initialOffsetX = { -it / 3 },
+                                            ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
                                         } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopEnter
                                         } else if ((
@@ -3632,6 +3682,16 @@ class MainActivity : ComponentActivity() {
                                     popExitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            initialState.destination.route !in topLevelScreens
+                                        ) {
+                                            // The pushed screen leaves through the right edge it came
+                                            // from — the transition navigation scrubs with the finger.
+                                            slideOutHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                targetOffsetX = { it },
+                                            ) + fadeOut(tween(280, easing = LinearOutSlowInEasing))
                                         } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopExit
                                         } else if ((
@@ -3714,8 +3774,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }
 
-                        BackHandler(enabled = playerBottomSheetState.isExpanded && !isPlayerLyricsFullScreen && !aodModeEnabled) {
-                            playerBottomSheetState.collapseSoft()
+                        // Player back ownership (see playerBackController): these two handlers are
+                        // composed after the NavHost, so they register after every handler inside
+                        // the player sheet and win the gesture whenever enabled. Only one is
+                        // enabled at a time; when neither is, back belongs to the rest of the app.
+                        // An open queue/lyrics/style page (SUB_PAGE) closes before the sheet does.
+                        PredictiveStyleBackHandler(
+                            backState = playerSheetPredictiveBack,
+                            enabled = playerBackController.backTarget == PlayerBackTarget.SHEET,
+                            onBack = playerBottomSheetState::collapseSoft,
+                        )
+
+                        BackHandler(
+                            enabled = playerBackController.backTarget == PlayerBackTarget.SUB_PAGE,
+                        ) {
+                            playerBackController.routeBack()
                         }
 
                         BottomSheetMenu(

@@ -35,6 +35,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
+import moe.rukamori.archivetune.audiosource.AudioSourceConfig
+import moe.rukamori.archivetune.constants.AudioSourceOrderKey
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_LEGACY_FLOAT_KEY
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_MAX
 import moe.rukamori.archivetune.constants.HISTORY_DURATION_MIN
@@ -135,6 +137,23 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
                 override suspend fun migrate(currentData: Preferences): Preferences =
                     currentData.toMutablePreferences().apply {
                         this[PlayerStreamClientKey] = PlayerStreamClient.WEB_REMIX.name
+                    }
+
+                override suspend fun cleanUp() {}
+            },
+            // Source orders written before Spotify, Amazon and QQ became first-class entries in
+            // AudioSourceConfig.DEFAULT_ORDER don't list them; the decision (pure, idempotent,
+            // unit-tested) inserts the missing ones directly above YouTube and drops unknown
+            // names. A blank order stays blank so it keeps tracking the defaults.
+            object : DataMigration<Preferences> {
+                override suspend fun shouldMigrate(currentData: Preferences): Boolean {
+                    val raw = currentData[AudioSourceOrderKey] ?: return false
+                    return AudioSourceConfig.migrateStoredOrder(raw) != raw
+                }
+
+                override suspend fun migrate(currentData: Preferences): Preferences =
+                    currentData.toMutablePreferences().apply {
+                        this[AudioSourceOrderKey] = AudioSourceConfig.migrateStoredOrder(this[AudioSourceOrderKey])
                     }
 
                 override suspend fun cleanUp() {}

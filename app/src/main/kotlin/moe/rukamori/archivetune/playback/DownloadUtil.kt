@@ -46,15 +46,21 @@ import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.audiosource.TitleMatch
+import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AudioQualityKey
+import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import moe.rukamori.archivetune.constants.DownloadSourceOrderKey
 import moe.rukamori.archivetune.constants.DeezerAudioQuality
 import moe.rukamori.archivetune.constants.DeezerAudioQualityKey
+import moe.rukamori.archivetune.constants.DeezerEnabledKey
+import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
 import moe.rukamori.archivetune.constants.QobuzAudioQuality
 import moe.rukamori.archivetune.constants.QobuzAudioQualityKey
+import moe.rukamori.archivetune.constants.QobuzBackupEnabledKey
+import moe.rukamori.archivetune.constants.QobuzEnabledKey
 import moe.rukamori.archivetune.constants.SaavnAudioQuality
 import moe.rukamori.archivetune.constants.SaavnAudioQualityKey
 import moe.rukamori.archivetune.constants.SongSourceOverrideKey
@@ -62,6 +68,8 @@ import moe.rukamori.archivetune.constants.SongSourceQobuzBackupVideoIdKey
 import moe.rukamori.archivetune.constants.SongSourceQobuzTrackIdKey
 import moe.rukamori.archivetune.constants.TidalAudioQuality
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
+import moe.rukamori.archivetune.constants.TidalEnabledKey
+import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
 import moe.rukamori.archivetune.constants.toFormatId
 import moe.rukamori.archivetune.constants.toFormatName
 import moe.rukamori.archivetune.db.MusicDatabase
@@ -119,6 +127,33 @@ class DownloadUtil
         // this path used to consult is no longer read: the settings UI only ever writes this order,
         // so the order list is the one source of truth for which sources a download may use.
         private val downloadSourceOrderCsv by preference(context, DownloadSourceOrderKey, "")
+        // The playback source toggles, read at download time. Downloads keep their own source
+        // order, but a source the user turned off for playback is skipped here too (user
+        // decision 2026-10-13) — the same rule the playback cache shortcut follows.
+        private val tidalPlaybackEnabled by
+            preference(context, TidalEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL))
+        private val qobuzPlaybackEnabled by
+            preference(context, QobuzEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ))
+        private val qobuzBackupPlaybackEnabled by
+            preference(context, QobuzBackupEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ_BACKUP))
+        private val deezerPlaybackEnabled by
+            preference(context, DeezerEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.DEEZER))
+        private val jioSaavnPlaybackEnabled by
+            preference(context, JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN))
+        private val youTubePlaybackEnabled by
+            preference(context, YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE))
+
+        /** The playback-enabled set the download chain is gated by (Spotify is not a download source). */
+        private val playbackEnabledSources: Set<AudioSourceType>
+            get() =
+                setOfNotNull(
+                    AudioSourceType.TIDAL.takeIf { tidalPlaybackEnabled },
+                    AudioSourceType.QOBUZ.takeIf { qobuzPlaybackEnabled },
+                    AudioSourceType.QOBUZ_BACKUP.takeIf { qobuzBackupPlaybackEnabled },
+                    AudioSourceType.DEEZER.takeIf { deezerPlaybackEnabled },
+                    AudioSourceType.JIOSAAVN.takeIf { jioSaavnPlaybackEnabled },
+                    AudioSourceType.YOUTUBE.takeIf { youTubePlaybackEnabled },
+                )
         private val qobuzAudioQuality by enumPreference(context, QobuzAudioQualityKey, QobuzAudioQuality.FLAC)
         private val tidalAudioQuality by enumPreference(context, TidalAudioQualityKey, TidalAudioQuality.FLAC)
         private val saavnAudioQuality by enumPreference(context, SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
@@ -693,7 +728,12 @@ class DownloadUtil
             val directQobuzBackupVideoId =
                 SongSourceQobuzBackupVideoId.get(readPreference(SongSourceQobuzBackupVideoIdKey), mediaId)
 
-            val chain = DownloadSourceConfig.resolutionChain(downloadSourceOrderCsv, pinnedSource)
+            val chain =
+                DownloadSourceConfig.resolutionChain(
+                    rawOrder = downloadSourceOrderCsv,
+                    pinnedSource = pinnedSource,
+                    playbackEnabled = playbackEnabledSources,
+                )
             val pinnedDownloadSource = pinnedSource?.let(DownloadSourceConfig::fromAudioSource)
             for (source in chain) {
                 // Deezer's public catalogue lookup fills in ISRC / album name / thumbnail, which is

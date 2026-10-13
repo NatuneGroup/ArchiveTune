@@ -104,4 +104,55 @@ class DownloadSourceChainTest {
         assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.QQ))
         assertNull(DownloadSourceConfig.fromAudioSource(AudioSourceType.SPOTIFY))
     }
+
+    @Test
+    fun disabledPlaybackSourceIsSkippedForDownloads() {
+        // Downloads keep their own order but skip sources the user turned off for playback
+        // (user decision): Qobuz disabled removes it — and a Qobuz pin to it — from the chain.
+        val enabled = setOf(AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+
+        assertEquals(
+            listOf(DownloadSource.TIDAL),
+            DownloadSourceConfig.resolutionChain(
+                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                pinnedSource = null,
+                playbackEnabled = enabled,
+            ),
+        )
+        assertEquals(
+            listOf(DownloadSource.TIDAL),
+            DownloadSourceConfig.resolutionChain(
+                "QOBUZ,QOBUZ_BACKUP,TIDAL,DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                pinnedSource = AudioSourceType.QOBUZ,
+                playbackEnabled = enabled,
+            ),
+        )
+        // An enabled pin still replaces the order outright.
+        assertEquals(
+            listOf(DownloadSource.TIDAL),
+            DownloadSourceConfig.resolutionChain(
+                "DEEZER,JIOSAAVN,YOUTUBE_MUSIC",
+                pinnedSource = AudioSourceType.TIDAL,
+                playbackEnabled = enabled,
+            ),
+        )
+        // An enabled YouTube pin still empties the chain so the caller uses the YouTube resolver;
+        // with YouTube's playback toggle off the pin yields to the gated order instead.
+        assertEquals(
+            emptyList<DownloadSource>(),
+            DownloadSourceConfig.resolutionChain(
+                "TIDAL,YOUTUBE_MUSIC",
+                pinnedSource = AudioSourceType.YOUTUBE,
+                playbackEnabled = enabled,
+            ),
+        )
+        assertEquals(
+            listOf(DownloadSource.TIDAL),
+            DownloadSourceConfig.resolutionChain(
+                "TIDAL,YOUTUBE_MUSIC",
+                pinnedSource = AudioSourceType.YOUTUBE,
+                playbackEnabled = setOf(AudioSourceType.TIDAL),
+            ),
+        )
+    }
 }

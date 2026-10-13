@@ -3,7 +3,9 @@
 `AudioSourceType.SPOTIFY` plays audio from Spotify itself. It is ported from 4nx3b's fork
 (`4nx3b/dev`, commits `3b138b559` through `4d183f803`), which in turn ported the web-player
 pipeline from Stopify and the desktop pipeline from echo-spotify-extension. It is opt-in, off by
-default, and never part of `AudioSourceConfig.DEFAULT_ORDER`.
+default, and sits in `AudioSourceConfig.DEFAULT_ORDER` like every other source — just above
+YouTube — but counts as enabled only while the streaming switch is on and a streaming account is
+signed in.
 
 ## Two accounts, never one
 
@@ -67,10 +69,12 @@ account, scored on title, artist and duration (minimum score 5).
 
 ## Wiring in MusicService
 
-- Chain: `sourceResolutionChain`, `isSourceEnabled`, `availableSourcesForSong` and
-  `tidalSourceApplies` treat SPOTIFY as enabled only when `SpotifyStreamEnabledKey` is on **and** a
-  streaming account is signed in (`isSpotifyStreamingConfigured`). Turning it on in settings adds it
-  to the stored order above YouTube via `withSourceAdded`.
+- Chain: every playback path derives its source chain from one `PlaybackSourceSnapshot`
+  (`audiosource/PlaybackSourceChain.kt`) built from the stored order plus the per-source toggles.
+  SPOTIFY is part of that snapshot and is enabled only when `SpotifyStreamEnabledKey` is on **and**
+  a streaming account is signed in (`isSpotifyStreamingConfigured`). Its default position is just
+  above YouTube; the user reorders it in "Preferred sources", and switching the toggle on or off
+  never changes the order.
 - Data sources: `echo-spotify://` is routed by both `SchemeRoutingDataSource` and
   `ResolvedSchemeRoutingDataSource` to `EchoDecryptingDataSource`, decrypted below the player cache,
   and bypasses the YouTube resolver. STOPIFY URLs are plain HTTPS on `*.spotifycdn.com`; the

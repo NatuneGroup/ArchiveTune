@@ -61,9 +61,6 @@ import androidx.navigation.NavController
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.audiosource.AudioSourceConfig
-import moe.rukamori.archivetune.constants.AudioSourceOrderKey
-import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.SpotifyStreamAccountNameKey
 import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
 import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
@@ -91,7 +88,6 @@ fun SpotifyStreamingSettings(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val (enabledRaw, onEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
-    val (orderRaw, onOrderChange) = rememberPreference(AudioSourceOrderKey, "")
     val (spDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
     val (accountName, _) = rememberPreference(SpotifyStreamAccountNameKey, "")
     val (userId, _) = rememberPreference(SpotifyStreamUserIdKey, "")
@@ -104,12 +100,12 @@ fun SpotifyStreamingSettings(
     var verifying by remember { mutableStateOf(false) }
     var signInError by remember { mutableStateOf<String?>(null) }
 
-    // Spotify streaming is not in AudioSourceConfig.DEFAULT_ORDER, so switching it on has to write
-    // it into the order as well, or the resolver would never reach it.
+    // The toggle flips only its own flag. Spotify sits in the source order like every other
+    // source now; the user positions it in "Preferred sources", and while signed out the
+    // resolver treats the source as disabled anyway.
     val onEnabledChange: (Boolean) -> Unit = { next ->
         if (!next || signedIn) {
             onEnabledChangeRaw(next)
-            if (next) onOrderChange(AudioSourceConfig.withSourceAdded(orderRaw, AudioSourceType.SPOTIFY))
         }
     }
 

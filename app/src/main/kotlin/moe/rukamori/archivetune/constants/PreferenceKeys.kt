@@ -485,14 +485,44 @@ object DownloadSourceConfig {
      * which is also the source playback used — *is* the chain: pinning YouTube yields an empty list
      * so the caller uses the YouTube resolver, and pinning a source this path cannot resolve falls
      * back to the order. Without a pin the chain is [fetchChain].
+     *
+     * When [playbackEnabled] is given, sources whose playback toggle is off are skipped (user
+     * decision 2026-10-13): the download order stays its own, but a source that playback would
+     * not use is not used for downloads either, and a pin to a disabled source yields to the
+     * order the way playback's stale pins do. Pass null to keep the ungated chain (tests,
+     * offline exports).
      */
     fun resolutionChain(
         rawOrder: String?,
         pinnedSource: AudioSourceType?,
+        playbackEnabled: Set<AudioSourceType>? = null,
     ): List<DownloadSource> {
-        val pinned = pinnedSource?.let(::fromAudioSource) ?: return fetchChain(rawOrder)
-        return if (pinned == DownloadSource.YOUTUBE_MUSIC) emptyList() else listOf(pinned)
+        val pinned = pinnedSource?.let(::fromAudioSource)
+        val pinnedActive = pinned != null && (playbackEnabled == null || pinnedSource in playbackEnabled)
+        val chain =
+            when {
+                !pinnedActive -> fetchChain(rawOrder)
+                pinned == DownloadSource.YOUTUBE_MUSIC -> emptyList()
+                else -> listOf(pinned)
+            }
+        return if (playbackEnabled == null) {
+            chain
+        } else {
+            chain.filter { source -> toAudioSource(source)?.let(playbackEnabled::contains) ?: true }
+        }
     }
+
+    /** The playback source serving the same catalogue as [source], null for [DownloadSource.AUTO]. */
+    fun toAudioSource(source: DownloadSource): AudioSourceType? =
+        when (source) {
+            DownloadSource.QOBUZ -> AudioSourceType.QOBUZ
+            DownloadSource.QOBUZ_BACKUP -> AudioSourceType.QOBUZ_BACKUP
+            DownloadSource.TIDAL -> AudioSourceType.TIDAL
+            DownloadSource.DEEZER -> AudioSourceType.DEEZER
+            DownloadSource.JIOSAAVN -> AudioSourceType.JIOSAAVN
+            DownloadSource.YOUTUBE_MUSIC -> AudioSourceType.YOUTUBE
+            DownloadSource.AUTO -> null
+        }
 }
 
 val AiContentFilterEnabledKey = booleanPreferencesKey("aiContentFilterEnabled")
@@ -1496,8 +1526,8 @@ val SearchSourceKey = stringPreferencesKey("searchSource")
 val SwipeThumbnailKey = booleanPreferencesKey("swipeThumbnail")
 val SwipeSensitivityKey = floatPreferencesKey("swipeSensitivity")
 // Catalog providers are independent from the local-vs-online search scope above. Spotify is a
-// metadata/search provider here; it is intentionally not an AudioSourceType because playback is
-// resolved by the existing audio-source chain.
+// metadata/search provider here; that is a different account and a different surface from the
+// experimental AudioSourceType.SPOTIFY streaming source, which has its own keys below.
 val DefaultMetadataSourceKey = stringPreferencesKey("defaultMetadataSource")
 val DefaultSearchSourceKey = stringPreferencesKey("defaultSearchSource")
 
@@ -1805,8 +1835,9 @@ enum class AudioSourceType {
 //  - it decrypts only a container the account itself was served, on device, into the app's own
 //    cache, and never writes anything back to the service;
 //  - it circumvents no advert, no limit and no purchase prompt.
-// It is deliberately not in AudioSourceConfig.DEFAULT_ORDER: it joins the order by hand through
-// withSourceAdded, once the user has signed in and turned it on.
+// QQ sits in AudioSourceConfig.DEFAULT_ORDER like every other source, just above YouTube, and
+// defaults to off: the chain filters disabled sources out, so listing it costs nothing until
+// the user signs in and switches it on.
 val QqMusicEnabledKey = booleanPreferencesKey("qqMusicEnabled")
 
 val QqMusicAudioQualityKey = stringPreferencesKey("qqMusicAudioQuality")
@@ -1831,8 +1862,9 @@ val QqMusicNicknameKey = stringPreferencesKey("qqMusicNickname")
 // the streaming source signs in through its own WebView profile, keeps its own cookie and token,
 // and refuses the account the catalog is signed in with, so playback reporting and any action
 // Spotify takes against a streaming session land on the throwaway account and not on the library.
-// Not in AudioSourceConfig.DEFAULT_ORDER; it joins the order through withSourceAdded once the user
-// has signed in and turned it on.
+// Spotify sits in AudioSourceConfig.DEFAULT_ORDER like every other source, just above YouTube,
+// and defaults to off. The switch alone does nothing until a streaming account is signed in —
+// only then does the source count as enabled.
 val SpotifyStreamEnabledKey = booleanPreferencesKey("spotifyStreamEnabled")
 
 val SpotifyStreamSpDcKey = stringPreferencesKey("spotifyStreamSpDc")

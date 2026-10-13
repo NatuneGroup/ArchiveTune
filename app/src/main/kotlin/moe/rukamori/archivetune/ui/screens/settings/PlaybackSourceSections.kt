@@ -205,27 +205,16 @@ internal fun PlaybackSourceSections(
     }
     val onAmazonEnabledChange: (Boolean) -> Unit = { enabled ->
         onAmazonEnabledChangeRaw(enabled)
-        if (enabled) {
-            onSourceOrderChange(AudioSourceConfig.withSourceAdded(sourceOrderRaw, AudioSourceType.AMAZON))
-        }
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
                 runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
-    val onQqMusicEnabledChange: (Boolean) -> Unit = { enabled ->
-        onQqMusicEnabledChangeRaw(enabled)
-        if (enabled) {
-            onSourceOrderChange(AudioSourceConfig.withSourceAdded(sourceOrderRaw, AudioSourceType.QQ))
-        }
-    }
+    val onQqMusicEnabledChange: (Boolean) -> Unit = onQqMusicEnabledChangeRaw
     val onSpotifyStreamEnabledChange: (Boolean) -> Unit = { enabled ->
         if (!enabled || spotifyStreamSignedIn) {
             onSpotifyStreamEnabledChangeRaw(enabled)
-            if (enabled) {
-                onSourceOrderChange(AudioSourceConfig.withSourceAdded(sourceOrderRaw, AudioSourceType.SPOTIFY))
-            }
         }
     }
 
@@ -278,21 +267,26 @@ internal fun PlaybackSourceSections(
 
     // Dragging a source to the top is the strongest possible signal the user wants it — a
     // disabled top source would be silently skipped by the resolver, which is exactly how
-    // "I put Qobuz first but still got YouTube" happens. Auto-enable the new top source on
-    // confirm so the order dialog and the enable toggles can never disagree again.
+    // "I put Qobuz first but still got YouTube" happens. Confirming writes the order exactly
+    // once, then at most one enabled-flag write for the new top source; the toggles no longer
+    // touch the order, so no second unordered write can race or revert the reorder. Spotify is
+    // the exception: it is enabled only through its streaming sign-in, so a signed-out top
+    // source stays disabled and the dialog's "Disabled" label stands.
     fun onOrderConfirm(newOrder: List<AudioSourceType>) {
         newOrder.firstOrNull()?.let { top ->
-            when (top) {
-                AudioSourceType.TIDAL -> if (!tidalEnabled) onTidalEnabledChange(true)
-                AudioSourceType.QOBUZ -> if (!qobuzEnabled) onQobuzEnabledChange(true)
-                AudioSourceType.QOBUZ_BACKUP -> if (!qobuzBackupEnabled) onQobuzBackupEnabledChange(true)
-                AudioSourceType.DEEZER -> if (!deezerEnabled) onDeezerEnabledChange(true)
-                AudioSourceType.APPLE -> if (!appleMusicEnabled) onAppleMusicEnabledChange(true)
-                AudioSourceType.AMAZON -> if (!amazonEnabled) onAmazonEnabledChange(true)
-                AudioSourceType.QQ -> if (!qqMusicEnabled) onQqMusicEnabledChange(true)
-                AudioSourceType.SPOTIFY -> if (!spotifyStreamEnabled) onSpotifyStreamEnabledChange(true)
-                AudioSourceType.JIOSAAVN -> if (!jioSaavnEnabled) onJioSaavnEnabledChange(true)
-                AudioSourceType.YOUTUBE -> if (!youTubeEnabled) onYouTubeEnabledChange(true)
+            if (top != AudioSourceType.SPOTIFY && !isEnabled(top)) {
+                when (top) {
+                    AudioSourceType.TIDAL -> onTidalEnabledChange(true)
+                    AudioSourceType.QOBUZ -> onQobuzEnabledChange(true)
+                    AudioSourceType.QOBUZ_BACKUP -> onQobuzBackupEnabledChange(true)
+                    AudioSourceType.DEEZER -> onDeezerEnabledChange(true)
+                    AudioSourceType.APPLE -> onAppleMusicEnabledChange(true)
+                    AudioSourceType.AMAZON -> onAmazonEnabledChange(true)
+                    AudioSourceType.QQ -> onQqMusicEnabledChange(true)
+                    AudioSourceType.SPOTIFY -> Unit // gated on streaming sign-in; never auto-enabled here
+                    AudioSourceType.JIOSAAVN -> onJioSaavnEnabledChange(true)
+                    AudioSourceType.YOUTUBE -> onYouTubeEnabledChange(true)
+                }
             }
         }
         onSourceOrderChange(newOrder.joinToString(",") { it.name })

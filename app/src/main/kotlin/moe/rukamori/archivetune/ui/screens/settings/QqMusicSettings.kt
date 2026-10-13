@@ -70,9 +70,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.audiosource.AudioSourceConfig
-import moe.rukamori.archivetune.constants.AudioSourceOrderKey
-import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
@@ -117,25 +114,16 @@ fun QqMusicSettings(
     navController: NavController,
     scrollTo: String? = null,
 ) {
-    val (enabled, onEnabledChangeRaw) = rememberPreference(QqMusicEnabledKey, false)
+    val (enabled, onEnabledChange) = rememberPreference(QqMusicEnabledKey, false)
     val (quality, onQualityChange) =
         rememberEnumPreference(QqMusicAudioQualityKey, QqAudioQuality.Default)
-    val (orderRaw, onOrderChange) = rememberPreference(AudioSourceOrderKey, "")
     val (uin, onUinChange) = rememberPreference(QqMusicUinKey, "")
     val (nickname, onNicknameChange) = rememberPreference(QqMusicNicknameKey, "")
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Turning the source on has to write it into the order as well. QQ is deliberately not a member
-    // of AudioSourceConfig.DEFAULT_ORDER, and the order picker can only reorder what it is given, so
-    // without this the toggle would flip a preference the resolver never reads and playback would
-    // stay on YouTube with no indication why.
-    val onEnabledChange: (Boolean) -> Unit = { next ->
-        onEnabledChangeRaw(next)
-        if (next) {
-            onOrderChange(AudioSourceConfig.withSourceAdded(orderRaw, AudioSourceType.QQ))
-        }
-    }
+    // The toggle flips only its own flag; QQ already sits in the source order (default just
+    // above YouTube) and the user positions it in "Preferred sources".
 
     val signedInAs = if (uin.isBlank()) null else nickname.ifBlank { uin }
 

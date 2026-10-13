@@ -824,6 +824,34 @@ class MusicService :
     private var crossfadeProgress = 0f
     private var crossfadeHandoffProgress = 0f
     private var crossfadePlaybackRequested = false
+
+    // ---- Crossfade hand-off state (decisions live in CrossfadeHandoffPolicy) ----
+    // Cue point of the running blend: the incoming song enters here, so a position carry and
+    // the restore-after-failure seek both measure against it. Kept across cancelCrossfade —
+    // the failure recovery needs it AFTER the fade is torn down; the next start overwrites it.
+    private var crossfadeCueMs = 0L
+
+    // Last observed incoming-player position, tracked by the fade loop: an errored player can
+    // report 0, and the position carry must not lose the heard time to that.
+    private var crossfadeLastIncomingPositionMs = 0L
+
+    // Set when the user pressed Next mid-fade and the incoming song was committed as the skip
+    // (see commitCrossfadeForSkipNext); the fade loop answers it with the early-finish ramp.
+    @Volatile
+    private var crossfadeSkipNextCommitRequested = false
+
+    // True while a skip-next commit's promotion is queued or running, so a second Next press
+    // cannot launch a second finishCrossfade for the same player (double promotion).
+    @Volatile
+    private var crossfadeSkipCommitInFlight = false
+
+    // Last (action, reason) the hand-off dispatcher logged, so a stall that keeps deciding
+    // CONTINUE every 32ms tick logs once instead of spamming the diagnostics.
+    private var crossfadeLastHandoffLog: Pair<String, String>? = null
+
+    // Live SkipSilenceKey value, cached by the preference collector: the fade exit paths
+    // restore skip-silence from it without a suspend DataStore read.
+    private var skipSilencePreferenceEnabled = false
     private val crossfadeFailureTracker = CrossfadeFailureTracker()
     @Volatile
     private var rejectSuspectedUpscaledAudioEnabled = false
@@ -886,10 +914,17 @@ class MusicService :
                 val outgoingMediaId = player.currentMediaItem?.mediaId
                 val incomingMediaId = secondaryCrossfadeTarget?.mediaId
                 scope.launch {
-                    val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
-                    recoverCrossfadeFailure(retryAllowed)
-                    if (!retryAllowed) {
-                        Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                    // The hand-off policy decides: an errored incoming player that the listener
+                    // has already heard enough of is carried to the primary player at its
+                    // position; before the commit point the outgoing song is restored.
+                    val handled = handleCrossfadeHandoff(reason = "incoming_error")
+                    if (handled == null) {
+                        // No active fade to hand off (the error landed after a cancel): keep
+                        // the failure bookkeeping so repeated attempts stay throttled.
+                        val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
+                        if (!retryAllowed) {
+                            Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                        }
                     }
                 }
             }
@@ -1561,9 +1596,15 @@ class MusicService :
         dataStore.data
             .map { it[SkipSilenceKey] ?: false }
             .distinctUntilChanged()
-            .collectLatest(scope) {
-                localPlayer.skipSilenceEnabled = it
-                secondaryCrossfadePlayer?.skipSilenceEnabled = it
+            .collectLatest(scope) { enabled ->
+                skipSilencePreferenceEnabled = enabled
+                // During a blend skip-silence is force-off on both players (it moves media
+                // time on its own and confuses the fade clock and the position carry); a
+                // change made mid-fade is recorded and honoured by the fade's exit path.
+                if (!isCrossfading) {
+                    localPlayer.skipSilenceEnabled = enabled
+                    secondaryCrossfadePlayer?.skipSilenceEnabled = enabled
+                }
             }
 
         dataStore.data
@@ -1698,7 +1739,7 @@ class MusicService :
                 if ((crossfadeEnabled && crossfadeDurationMs > 0L) || smartFadeEnabled) {
                     scheduleCrossfade()
                 } else {
-                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "crossfade_disabled")
                 }
             }
 
@@ -2631,7 +2672,7 @@ class MusicService :
         if (outputSignature == lastAudioOutputDeviceSignature) return
         lastAudioOutputDeviceSignature = outputSignature
         audioOutputResolver.refresh()
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "audio_output_changed")
         player.setAudioAttributes(playbackAudioAttributes(), false)
         audioRouteRecoveryJob?.cancel()
         audioRouteRecoveryJob =
@@ -2887,7 +2928,7 @@ class MusicService :
         sleepTimer.clear()
         crossfadeTriggerJob?.cancel()
         crossfadeTriggerJob = null
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "sleep_timer")
         releaseSecondaryCrossfadePlayer()
         player.pause()
         player.playWhenReady = false
@@ -3541,6 +3582,13 @@ class MusicService :
                 secondaryPlayer.setMediaItems(items, target.index, cueTimeMs.coerceAtLeast(0L))
                 secondaryPlayer.repeatMode = player.repeatMode
                 secondaryPlayer.shuffleModeEnabled = player.shuffleModeEnabled
+                // Copy the session player's shuffle order: a fresh DefaultShuffleOrder would
+                // re-roll it, so after promotion "next" would play a different song than the
+                // queue UI showed.
+                if (secondaryPlayer.mediaItemCount == player.mediaItemCount) {
+                    runCatching { secondaryPlayer.setShuffleOrder(localPlayer.shuffleOrder) }
+                        .onFailure { Timber.tag(TAG).w(it, "Failed to copy shuffle order to crossfade player") }
+                }
                 secondaryPlayer.playbackParameters = player.playbackParameters
                 secondaryPlayer.volume = 0f
                 secondaryPlayer.prepare()
@@ -3594,6 +3642,10 @@ class MusicService :
         }
         val incomingPlayer = prepareSecondaryCrossfadePlayer(target, cueTimeMs) ?: return
         val generation = crossfadeGeneration.incrementAndGet()
+        crossfadeCueMs = cueTimeMs
+        crossfadeLastIncomingPositionMs = 0L
+        crossfadeSkipNextCommitRequested = false
+        crossfadeLastHandoffLog = null
 
         crossfadeTriggerJob?.cancel()
         crossfadeTriggerJob = null
@@ -3606,6 +3658,12 @@ class MusicService :
                 crossfadeIncomingBaseVolume = currentEffectivePlayerVolumeForMediaId(target.mediaId)
                 crossfadePlaybackRequested = player.playWhenReady
                 localPlayer.pauseAtEndOfMediaItems = true
+                // Skip-silence moves media time on its own and would confuse both the
+                // position-driven fade clock and the hand-off position carry. Suspend it for
+                // the blend on both players; every exit path restores the user's setting
+                // (user decision 2026-10-13).
+                localPlayer.skipSilenceEnabled = false
+                incomingPlayer.skipSilenceEnabled = false
                 crossfadeUserPlaybackParameters = player.playbackParameters
                 crossfadeSmartActive = smart
                 Timber.tag("PlaybackDiagnostics").i(
@@ -3651,10 +3709,10 @@ class MusicService :
                             .coerceAtMost(outgoingLeftMs.coerceAtLeast(0L))
                     if (!awaitCrossfadePlayerReady(incomingPlayer, CROSSFADE_READY_TIMEOUT_MS, requiredBufferedMs)) {
                         Timber.tag(TAG).d("crossfade[%d] incoming player not ready in time; aborting", generation)
-                        val retryAllowed =
-                            incomingPlayer.playerError == null &&
-                                crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                        recoverCrossfadeFailure(retryAllowed)
+                        // Nothing has been heard yet, so the policy restores the outgoing song;
+                        // RESTORE is forced because a CONTINUE here would leave the armed fade
+                        // with no loop running.
+                        handleCrossfadeHandoff(reason = "incoming_not_ready", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
                         return@launch
                     }
 
@@ -3698,10 +3756,7 @@ class MusicService :
                         // advancing through the audio output. Require the play position to move.
                         if (!awaitAudioPositionAdvancement(incomingPlayer, CROSSFADE_AUDIO_ADVANCE_TIMEOUT_MS)) {
                             Timber.tag(TAG).w("crossfade[%d] no audio advancement on incoming player; aborting", generation)
-                            val retryAllowed =
-                                incomingPlayer.playerError == null &&
-                                    crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                            recoverCrossfadeFailure(retryAllowed)
+                            handleCrossfadeHandoff(reason = "no_audio_advance", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
                             return@launch
                         }
                     }
@@ -3730,13 +3785,19 @@ class MusicService :
                     var earlyFinishFromProgress = 0f
                     while (isActive && elapsedMs < fadeMs) {
                         if (player.currentMediaItem?.mediaId != outgoingMediaId) {
-                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "outgoing_media_changed")
                             return@launch
                         }
 
                         val nowMs = android.os.SystemClock.elapsedRealtime()
                         val incomingAdvancing =
                             incomingPlayer.playbackState == Player.STATE_READY && incomingPlayer.isPlaying
+                        // Feed the position-carry tracker: an incoming player that errors out can
+                        // start reporting 0, and the carry must keep the last heard position.
+                        runCatching { incomingPlayer.currentPosition }
+                            .getOrDefault(0L)
+                            .takeIf { it > crossfadeLastIncomingPositionMs }
+                            ?.let { crossfadeLastIncomingPositionMs = it }
                         if (!crossfadePlaybackRequested || incomingAdvancing) {
                             incomingStallStartedAtMs = -1L
                         } else if (incomingStallStartedAtMs < 0L) {
@@ -3754,12 +3815,20 @@ class MusicService :
                                 maximumStallMs = CROSSFADE_BUFFER_STALL_GRACE_MS,
                             )
                         ) {
-                            val retryAllowed =
-                                incomingPlayer.playerError == null &&
-                                    incomingPlayer.playbackState != Player.STATE_ENDED &&
-                                    crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                            recoverCrossfadeFailure(retryAllowed)
-                            return@launch
+                            // The 250ms trigger only asks the hand-off policy: it decides
+                            // freeze (CONTINUE), restore (uncommitted stall), promote or carry
+                            // once the blend is committed.
+                            val handoffAction =
+                                handleCrossfadeHandoff(
+                                    reason = "incoming_stall",
+                                    stallElapsedMs =
+                                        if (incomingStallStartedAtMs >= 0L) {
+                                            nowMs - incomingStallStartedAtMs
+                                        } else {
+                                            0L
+                                        },
+                                )
+                            if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
                         }
                         if (earlyFinishElapsedMs < 0L && crossfadePlaybackRequested) {
                             // onPlayWhenReadyChanged keeps crossfadePlaybackRequested true across
@@ -3774,33 +3843,43 @@ class MusicService :
                                             outgoingDuration != C.TIME_UNSET &&
                                             player.currentPosition >= outgoingDuration - CROSSFADE_END_GUARD_MS - 100L
                                         )
-                            if (outgoingRanOut) {
-                                if (!incomingAdvancing) {
-                                    val retryAllowed =
-                                        incomingPlayer.playerError == null &&
-                                            incomingPlayer.playbackState != Player.STATE_ENDED &&
-                                            crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                                    recoverCrossfadeFailure(retryAllowed)
-                                    return@launch
-                                }
+                            if (crossfadeSkipNextCommitRequested) {
+                                // The user pressed Next mid-fade and the incoming song was
+                                // committed as the skip: compress the remaining ramp and
+                                // promote it — the song keeps its position, never restarts.
+                                crossfadeSkipNextCommitRequested = false
                                 earlyFinishElapsedMs = 0L
                                 earlyFinishFromProgress = crossfadeProgress
                                 Timber.tag(TAG).d(
-                                    "crossfade[%d] outgoing ended mid-blend at %.0f%%; finishing early",
+                                    "crossfade[%d] manual next committed the incoming song at %.0f%%; finishing early",
                                     generation,
                                     crossfadeProgress * 100f,
                                 )
+                            } else if (outgoingRanOut) {
+                                if (!incomingAdvancing) {
+                                    // The reported bug: the outgoing song ended while the
+                                    // incoming player was not advancing (paused or stalled).
+                                    // The policy promotes a non-terminal player (buffering
+                                    // included) and carries or restores a terminal one — it
+                                    // never restarts the incoming song from 0.
+                                    val handoffAction = handleCrossfadeHandoff(reason = "outgoing_ran_out")
+                                    if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                                } else {
+                                    earlyFinishElapsedMs = 0L
+                                    earlyFinishFromProgress = crossfadeProgress
+                                    Timber.tag(TAG).d(
+                                        "crossfade[%d] outgoing ended mid-blend at %.0f%%; finishing early",
+                                        generation,
+                                        crossfadeProgress * 100f,
+                                    )
+                                }
                             }
                         }
                         if (earlyFinishElapsedMs >= 0L) {
                             if (crossfadePlaybackRequested) {
                                 if (!incomingAdvancing) {
-                                    val retryAllowed =
-                                        incomingPlayer.playerError == null &&
-                                            incomingPlayer.playbackState != Player.STATE_ENDED &&
-                                            crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                                    recoverCrossfadeFailure(retryAllowed)
-                                    return@launch
+                                    val handoffAction = handleCrossfadeHandoff(reason = "early_finish_stall")
+                                    if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
                                 }
                                 incomingPlayer.playWhenReady = true
                                 earlyFinishElapsedMs =
@@ -3858,27 +3937,32 @@ class MusicService :
                     }
 
                     if (smart) {
-                        val tailDeadlineMs =
+                        var tailDeadlineMs =
                             android.os.SystemClock.elapsedRealtime() + SMART_FADE_TAIL_WAIT_MS
                         while (isActive && player.currentMediaItem?.mediaId == outgoingMediaId) {
                             if (!crossfadePlaybackRequested) {
-                                Timber.tag("PlaybackDiagnostics").d("Smart fade tail wait canceled after playback pause")
-                                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                                return@launch
+                                // User pause at the tail: freeze the wait (policy CONTINUE)
+                                // instead of tearing the blend down — resuming must continue
+                                // into the promotion, not restart the next song. The deadline
+                                // is re-armed so the pause itself never times the wait out.
+                                tailDeadlineMs = android.os.SystemClock.elapsedRealtime() + SMART_FADE_TAIL_WAIT_MS
+                                delay(CROSSFADE_FRAME_MS)
+                                continue
                             }
                             val outgoingDuration = player.duration
                             if (outgoingDuration == C.TIME_UNSET || outgoingDuration <= 0L) {
                                 Timber.tag("PlaybackDiagnostics").w("Smart fade tail wait canceled because duration became unknown")
-                                recoverCrossfadeFailure()
+                                handleCrossfadeHandoff(reason = "tail_duration_unknown", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
                                 return@launch
                             }
                             if (incomingPlayer.playbackState != Player.STATE_READY || !incomingPlayer.isPlaying) {
-                                val retryAllowed =
-                                    incomingPlayer.playerError == null &&
-                                        incomingPlayer.playbackState != Player.STATE_ENDED &&
-                                        crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                                recoverCrossfadeFailure(retryAllowed)
-                                return@launch
+                                // At the tail the ramp is done and the incoming song is already
+                                // the audible voice: the policy promotes a non-terminal player
+                                // (4nx3b promotes on the tail timeout too), and carries or
+                                // restores a terminal one.
+                                val handoffAction =
+                                    handleCrossfadeHandoff(reason = "tail_incoming_not_playing", fallbackAction = CrossfadeHandoffAction.PROMOTE)
+                                if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
                             }
                             val outgoingPosition = player.currentPosition
                             if (player.playbackState == Player.STATE_ENDED ||
@@ -3893,14 +3977,14 @@ class MusicService :
                                 break
                             }
                             if (android.os.SystemClock.elapsedRealtime() >= tailDeadlineMs) {
-                                val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
                                 Timber.tag("PlaybackDiagnostics").w(
-                                    "Smart fade tail wait timed out positionMs=%d durationMs=%d; restoring outgoing gain",
+                                    "Smart fade tail wait timed out positionMs=%d durationMs=%d; handing off",
                                     outgoingPosition,
                                     outgoingDuration,
                                 )
-                                recoverCrossfadeFailure(retryAllowed)
-                                return@launch
+                                val handoffAction =
+                                    handleCrossfadeHandoff(reason = "tail_timeout", fallbackAction = CrossfadeHandoffAction.PROMOTE)
+                                if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
                             }
                             applyCrossfadeVolumes(
                                 1f,
@@ -3912,7 +3996,7 @@ class MusicService :
                             delay(CROSSFADE_FRAME_MS)
                         }
                         if (player.currentMediaItem?.mediaId != outgoingMediaId) {
-                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "outgoing_media_changed")
                             return@launch
                         }
                     }
@@ -3932,11 +4016,15 @@ class MusicService :
                             Timber.tag(TAG).w("Crossfade failed with %s", error::class.java.simpleName)
                         }
                     }
-                    runCatching { recoverCrossfadeFailure() }
-                        .onFailure {
-                            runCatching { isCrossfading = false }
-                            runCatching { localPlayer.pauseAtEndOfMediaItems = false }
-                        }
+                    runCatching {
+                        handleCrossfadeHandoff(reason = "fade_loop_error", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
+                    }.onFailure {
+                        runCatching { recoverCrossfadeFailure(reason = "fade_loop_error_cleanup_failed") }
+                            .onFailure {
+                                runCatching { isCrossfading = false }
+                                runCatching { localPlayer.pauseAtEndOfMediaItems = false }
+                            }
+                    }
                 }
             }
     }
@@ -4016,6 +4104,9 @@ class MusicService :
             return
         }
         val targetIndex = resolveCrossfadeTargetIndex(target, incomingPlayer)
+        // The promotion point is by definition the committed end of the handoff: the ramp has
+        // run (or been compressed), so the incoming player is promoted even when it is only
+        // buffering — the position-carry rules of CrossfadeHandoffPolicy do not apply here.
         val incomingUsable =
             CrossfadePolicy.mayPromote(
                 CrossfadePolicy.PromotionSnapshot(
@@ -4029,21 +4120,16 @@ class MusicService :
                     isPlaying = incomingPlayer.isPlaying,
                     playbackRequested = crossfadePlaybackRequested,
                     unsetIndex = C.INDEX_UNSET,
+                    outgoingRanOut = true,
                 ),
             )
         if (!incomingUsable) {
             // Never continue a destructive handoff when the incoming player is not valid:
-            // the outgoing player remains authoritative and keeps playing.
+            // the outgoing player remains authoritative and keeps playing. The hand-off
+            // policy carries the heard position (CARRY_TO_PRIMARY) or restores the outgoing
+            // song; CONTINUE cannot come out of a promotion-time snapshot.
             Timber.tag(TAG).w("crossfade[%d] incoming player unusable at promotion; keeping outgoing", generation)
-            val retryAllowed =
-                targetIndex != C.INDEX_UNSET &&
-                    incomingPlayer.playerError == null &&
-                    incomingPlayer.playbackState != Player.STATE_ENDED &&
-                    crossfadeFailureTracker.registerFailure(
-                        player.currentMediaItem?.mediaId,
-                        target.mediaId,
-                    )
-            recoverCrossfadeFailure(retryAllowed)
+            handleCrossfadeHandoff(reason = "promotion_unusable")
             return
         }
 
@@ -4070,7 +4156,7 @@ class MusicService :
                 secondaryTransitionFilter?.let { primaryTransitionFilter = it }
                 secondaryTransitionFilter = null
             }
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "promotion_failed")
             return
         }
 
@@ -4098,6 +4184,10 @@ class MusicService :
         crossfadeProgress = 0f
         crossfadeIncomingBaseVolume = 1f
         crossfadePlaybackRequested = false
+        crossfadeSkipNextCommitRequested = false
+        // The promoted player is the survivor of the blend: give it back the user's
+        // skip-silence setting (possibly changed during the fade).
+        localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled
         // Restore the configured final volume on the promoted player.
         applyEffectiveVolumeImmediately()
         updateAudiblePlaybackRecovery()
@@ -4142,17 +4232,49 @@ class MusicService :
             secondaryCrossfadePlayer = null
             secondaryCrossfadeTarget = null
 
-            // The incoming player's queue was snapshotted at prepare time; items appended to
-            // the live queue since then (e.g. auto-load-more) must follow the promoted player.
-            val incomingItemIds =
-                (0 until incomingPlayer.mediaItemCount)
-                    .mapTo(HashSet()) { incomingPlayer.getMediaItemAt(it).mediaId }
-            val missingItems =
-                (0 until oldSessionPlayer.mediaItemCount)
-                    .map { oldSessionPlayer.getMediaItemAt(it) }
-                    .filter { it.mediaId !in incomingItemIds }
-            if (missingItems.isNotEmpty()) {
-                incomingPlayer.addMediaItems(missingItems)
+            // The incoming player's queue was snapshotted at prepare time; removals,
+            // insertions and reorders made since then (queue edit, auto-load-more) must
+            // follow the promoted player. The sync never touches the playing item, so the
+            // promotion cannot interrupt it; the shuffle order is copied after the sync so
+            // the promoted player keeps playing the sequence the queue UI showed.
+            val liveTargetIndex = resolveCrossfadeTargetIndex(target, oldSessionPlayer)
+            val liveIds = (0 until oldSessionPlayer.mediaItemCount).map { oldSessionPlayer.getMediaItemAt(it).mediaId }
+            val incomingIds = (0 until incomingPlayer.mediaItemCount).map { incomingPlayer.getMediaItemAt(it).mediaId }
+            val syncPlan =
+                CrossfadeQueueSync.plan(
+                    liveIds = liveIds,
+                    liveTargetIndex = liveTargetIndex,
+                    incomingIds = incomingIds,
+                    incomingCurrentIndex = incomingPlayer.currentMediaItemIndex,
+                )
+            if (syncPlan != null) {
+                if (syncPlan.afterIds.isNotEmpty()) {
+                    val afterItems =
+                        (liveTargetIndex + 1 until oldSessionPlayer.mediaItemCount).map { oldSessionPlayer.getMediaItemAt(it) }
+                    // After-range first: the replacement does not shift indices before it.
+                    incomingPlayer.replaceMediaItems(syncPlan.incomingCurrentIndex + 1, incomingPlayer.mediaItemCount, afterItems)
+                }
+                if (syncPlan.beforeIds.isNotEmpty()) {
+                    val beforeItems = (0 until liveTargetIndex).map { oldSessionPlayer.getMediaItemAt(it) }
+                    incomingPlayer.replaceMediaItems(0, syncPlan.incomingCurrentIndex, beforeItems)
+                }
+            } else {
+                // The target is gone from the live queue (or moved unclearably): keep the old
+                // best-effort append so auto-load-more items still follow the promotion.
+                val incomingItemIds =
+                    (0 until incomingPlayer.mediaItemCount)
+                        .mapTo(HashSet()) { incomingPlayer.getMediaItemAt(it).mediaId }
+                val missingItems =
+                    (0 until oldSessionPlayer.mediaItemCount)
+                        .map { oldSessionPlayer.getMediaItemAt(it) }
+                        .filter { it.mediaId !in incomingItemIds }
+                if (missingItems.isNotEmpty()) {
+                    incomingPlayer.addMediaItems(missingItems)
+                }
+            }
+            if (incomingPlayer.mediaItemCount == outgoingPlayer.mediaItemCount) {
+                runCatching { incomingPlayer.setShuffleOrder(outgoingPlayer.shuffleOrder) }
+                    .onFailure { Timber.tag(TAG).w(it, "Failed to copy shuffle order to promoted crossfade player") }
             }
 
             // 2. Session-facing player + Cast delegation. CastPlayer pins its local player at
@@ -4288,16 +4410,60 @@ class MusicService :
     fun prepareForManualSkip() {
         if (!::player.isInitialized) return
         if (!isCrossfading && !crossfadeHandoffInProgress && secondaryCrossfadePlayer == null) return
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "manual_skip")
+    }
+
+    /**
+     * Commits the incoming song as the answer to a manual Next pressed mid-fade (user
+     * decision 2026-10-13): when the fade is healthy and the incoming item is the next queue
+     * item, the remaining ramp is compressed and the incoming song is promoted, keeping its
+     * position. The caller must then NOT call seekToNext — the promotion IS the skip.
+     *
+     * @return true when the skip was satisfied by the promotion.
+     */
+    fun commitCrossfadeForSkipNext(): Boolean {
+        if (!::player.isInitialized) return false
+        if (!isCrossfading || crossfadeHandoffInProgress) return false
+        if (crossfadeSkipCommitInFlight) return true
+        val incomingPlayer = secondaryCrossfadePlayer ?: return false
+        val target = secondaryCrossfadeTarget ?: return false
+        if (!crossfadePlaybackRequested) return false
+        if (!CrossfadeHandoffPolicy.isPromotableIncoming(crossfadeIncomingStateOf(incomingPlayer))) return false
+        if (incomingPlayer.currentMediaItem?.mediaId != target.mediaId) return false
+        val targetIndex = resolveCrossfadeTargetIndex(target, player)
+        if (targetIndex == C.INDEX_UNSET || targetIndex != player.nextMediaItemIndex) return false
+        if (crossfadeProgress >= CrossfadeHandoffPolicy.COMMIT_PROGRESS) {
+            // Past the commit point the incoming song is already the dominant voice: promote
+            // it right away instead of waiting for the loop to finish the ramp.
+            crossfadeSkipCommitInFlight = true
+            scope.launch {
+                try {
+                    runCatching { incomingPlayer.playWhenReady = true }
+                    finishCrossfade(target, incomingPlayer, crossfadeGeneration.get())
+                } finally {
+                    crossfadeSkipCommitInFlight = false
+                }
+            }
+        } else {
+            // Early in the fade the outgoing song is still clearly audible: let the loop
+            // compress the remaining ramp (CROSSFADE_EARLY_FINISH_MS) so no volume jumps.
+            crossfadeSkipNextCommitRequested = true
+        }
+        Timber
+            .tag("PlaybackDiagnostics")
+            .i("Crossfade manual next committed the incoming song progress=%.3f", crossfadeProgress)
+        return true
     }
 
     private fun cancelCrossfade(
         resetVolume: Boolean,
         resetPauseAtEnd: Boolean,
+        reason: String,
     ) {
         if (isCrossfading || crossfadeHandoffInProgress || secondaryCrossfadePlayer != null) {
             Timber.tag("PlaybackDiagnostics").d(
-                "Crossfade canceled progress=%.3f handoffProgress=%.3f resetVolume=%s resetPauseAtEnd=%s",
+                "Crossfade canceled reason=%s progress=%.3f handoffProgress=%.3f resetVolume=%s resetPauseAtEnd=%s",
+                reason,
                 crossfadeProgress,
                 crossfadeHandoffProgress,
                 resetVolume,
@@ -4317,10 +4483,17 @@ class MusicService :
         crossfadeProgress = 0f
         crossfadeIncomingBaseVolume = 1f
         crossfadePlaybackRequested = false
+        crossfadeSkipNextCommitRequested = false
+        crossfadeLastHandoffLog = null
         if (::player.isInitialized && resetPauseAtEnd) {
             localPlayer.pauseAtEndOfMediaItems = false
         }
         releaseSecondaryCrossfadePlayer()
+        // The outgoing player is the survivor of a cancelled blend: give it back the user's
+        // skip-silence setting (possibly changed during the fade).
+        if (::player.isInitialized) {
+            localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled
+        }
         // A cancel mid-ride can leave the audible player's filter partway closed; open it or the
         // rest of the song plays muffled. A stretch the plan put on the incoming player died with
         // it, so the saved user parameters are simply dropped.
@@ -4334,7 +4507,11 @@ class MusicService :
         }
     }
 
-    private fun recoverCrossfadeFailure(retryAllowed: Boolean = false) {
+    private fun recoverCrossfadeFailure(
+        retryAllowed: Boolean = false,
+        reason: String = "unspecified",
+        target: CrossfadeTarget? = null,
+    ) {
         val shouldResumeOutgoing =
             CrossfadePolicy.shouldResumeAfterEnded(
                 playbackRequested = crossfadePlaybackRequested,
@@ -4342,12 +4519,170 @@ class MusicService :
                 repeatOne = player.repeatMode == REPEAT_MODE_ONE,
                 suppressAutoPlayback = suppressAutoPlayback,
             )
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = reason)
         if (shouldResumeOutgoing && !player.playWhenReady) {
+            if (outgoingSongHasRunOut()) {
+                // The parked outgoing player would auto-advance on play() and start the
+                // incoming song at 0 (the restart bug this whole hand-off exists for). Enter
+                // the target at the blend's cue instead — for a classic fade that is the
+                // song's start, which is correct there.
+                val resolvedIndex =
+                    target?.let { resolveCrossfadeTargetIndex(it, player) }
+                        ?.takeIf { it != C.INDEX_UNSET }
+                        ?: player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+                if (resolvedIndex != null) {
+                    player.seekTo(resolvedIndex, crossfadeCueMs.coerceAtLeast(0L))
+                }
+            }
             player.play()
         } else if (retryAllowed) {
             scheduleCrossfade()
         }
+    }
+
+    /** True when the outgoing song has ended, or is parked at its end-of-item pause. */
+    private fun outgoingSongHasRunOut(): Boolean {
+        val outgoingDuration = player.duration
+        return player.playbackState == Player.STATE_ENDED ||
+            (
+                !player.playWhenReady &&
+                    player.playbackState == Player.STATE_READY &&
+                    outgoingDuration != C.TIME_UNSET &&
+                    player.currentPosition >= outgoingDuration - CROSSFADE_END_GUARD_MS - 100L
+            )
+    }
+
+    private fun crossfadeIncomingStateOf(crossfadePlayer: ExoPlayer): CrossfadeIncomingState =
+        when {
+            crossfadePlayer.playerError != null -> CrossfadeIncomingState.ERROR
+            crossfadePlayer.playbackState == Player.STATE_IDLE -> CrossfadeIncomingState.IDLE
+            crossfadePlayer.playbackState == Player.STATE_ENDED -> CrossfadeIncomingState.ENDED
+            crossfadePlayer.playbackState == Player.STATE_BUFFERING -> CrossfadeIncomingState.BUFFERING
+            crossfadePlayer.isPlaying -> CrossfadeIncomingState.READY_PLAYING
+            else -> CrossfadeIncomingState.READY_PAUSED
+        }
+
+    /**
+     * Streamed and DRM sources re-buffer far slower than local playback, so their stall
+     * grace is wider. Everything ArchiveTune plays over the network (and any scheme this
+     * does not recognise) counts as streamed; only file-backed URIs keep the tight grace.
+     */
+    private fun crossfadeIncomingIsStreamedOrDrm(crossfadePlayer: ExoPlayer): Boolean {
+        val scheme = crossfadePlayer.currentMediaItem?.localConfiguration?.uri?.scheme?.lowercase()
+        return scheme != "file" && scheme != "content"
+    }
+
+    /**
+     * The ONE dispatcher for every crossfade failure or hand-over site: builds the
+     * [CrossfadeHandoffSnapshot] from live player state, asks the pure
+     * [CrossfadeHandoffPolicy], logs the decision with its reason, and executes it.
+     *
+     * @param fallbackAction used when the policy says CONTINUE but the call site cannot keep
+     *   looping (it has no fade loop to return to, or the wait it was guarding is over).
+     * @return the executed action, or null when no crossfade was active (nothing to hand off).
+     */
+    private suspend fun handleCrossfadeHandoff(
+        reason: String,
+        stallElapsedMs: Long = 0L,
+        fallbackAction: CrossfadeHandoffAction? = null,
+    ): CrossfadeHandoffAction? {
+        val incomingPlayer = secondaryCrossfadePlayer ?: return null
+        val target = secondaryCrossfadeTarget ?: return null
+        val generation = crossfadeGeneration.get()
+        val outgoingMediaId = player.currentMediaItem?.mediaId
+        val incomingPositionMs =
+            runCatching { incomingPlayer.currentPosition }
+                .getOrDefault(0L)
+                .coerceAtLeast(crossfadeLastIncomingPositionMs)
+        val snapshot =
+            CrossfadeHandoffSnapshot(
+                playbackRequested = crossfadePlaybackRequested,
+                outgoingRanOut = outgoingSongHasRunOut(),
+                progress = crossfadeProgress,
+                incomingState = crossfadeIncomingStateOf(incomingPlayer),
+                incomingItemMatchesTarget = incomingPlayer.currentMediaItem?.mediaId == target.mediaId,
+                incomingHeardMs = (incomingPositionMs - crossfadeCueMs.coerceAtLeast(0L)).coerceAtLeast(0L),
+                stallElapsedMs = stallElapsedMs,
+            )
+        var action =
+            CrossfadeHandoffPolicy.decide(
+                snapshot,
+                uncommittedStallGraceMs = CrossfadeHandoffPolicy.uncommittedStallGraceMs(
+                    crossfadeIncomingIsStreamedOrDrm(incomingPlayer),
+                ),
+            )
+        if (action == CrossfadeHandoffAction.CONTINUE && fallbackAction != null) action = fallbackAction
+        val logKey = action.name to reason
+        if (action != CrossfadeHandoffAction.CONTINUE || crossfadeLastHandoffLog != logKey) {
+            Timber.tag("PlaybackDiagnostics").i(
+                "Crossfade handoff action=%s reason=%s progress=%.3f incomingState=%s incomingPosMs=%d heardMs=%d outgoingRanOut=%s stallMs=%d",
+                action,
+                reason,
+                crossfadeProgress,
+                snapshot.incomingState,
+                incomingPositionMs,
+                snapshot.incomingHeardMs,
+                snapshot.outgoingRanOut,
+                stallElapsedMs,
+            )
+            crossfadeLastHandoffLog = logKey
+        }
+        when (action) {
+            CrossfadeHandoffAction.PROMOTE -> {
+                // Re-assert the live playback intent before the promotion rebuilds the
+                // session player: a paused incoming song must not come up silent.
+                runCatching { incomingPlayer.playWhenReady = crossfadePlaybackRequested }
+                finishCrossfade(target, incomingPlayer, generation)
+            }
+            CrossfadeHandoffAction.CARRY_TO_PRIMARY -> {
+                crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                carryIncomingPositionToPrimary(target, incomingPlayer)
+            }
+            CrossfadeHandoffAction.RESTORE_OUTGOING -> {
+                val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                if (!retryAllowed) {
+                    Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                }
+                recoverCrossfadeFailure(retryAllowed = retryAllowed, reason = "restore:$reason", target = target)
+            }
+            CrossfadeHandoffAction.CONTINUE -> {}
+        }
+        return action
+    }
+
+    /**
+     * CARRY_TO_PRIMARY: the incoming player cannot be promoted, so the primary player takes
+     * the target song back at the position the listener had reached. The seek goes through
+     * the session player, i.e. through the normal source chain — expired URLs re-resolve and
+     * a rejected source keeps the position, per the audio-authenticity invariant.
+     */
+    private fun carryIncomingPositionToPrimary(
+        target: CrossfadeTarget,
+        incomingPlayer: ExoPlayer,
+    ) {
+        val incomingPositionMs =
+            runCatching { incomingPlayer.currentPosition }
+                .getOrDefault(0L)
+                .coerceAtLeast(crossfadeLastIncomingPositionMs)
+        val carriedMs =
+            CrossfadeHandoffPolicy.carriedPositionMs(
+                incomingPositionMs = incomingPositionMs,
+                cueMs = crossfadeCueMs,
+                targetDurationMs = runCatching { incomingPlayer.duration }.getOrDefault(C.TIME_UNSET),
+                unsetTime = C.TIME_UNSET,
+                endGuardMs = CROSSFADE_END_GUARD_MS,
+            )
+        val targetIndex = resolveCrossfadeTargetIndex(target, player)
+        val playbackRequested = crossfadePlaybackRequested
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "carry_to_primary")
+        if (targetIndex == C.INDEX_UNSET) {
+            // The target no longer exists in the live queue; nothing to seek to. The
+            // outgoing player continues (or advances) naturally.
+            if (playbackRequested) player.play()
+            return
+        }
+        player.seekTo(targetIndex, carriedMs ?: crossfadeCueMs.coerceAtLeast(0L))
+        if (playbackRequested) player.play()
     }
 
     private fun releaseSecondaryCrossfadePlayer() {
@@ -5152,7 +5487,7 @@ class MusicService :
         }
         cancelRestoredQueueHydration()
         ensureScopesActive()
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "service_created")
         cancelInfiniteQueueBootstrap()
         suppressAutoPlayback = false
         val initialLoadGeneration = ++initialQueueLoadGeneration
@@ -5525,7 +5860,7 @@ class MusicService :
         initialQueueLoadGeneration++
         initialQueueLoadInProgress = false
         suppressAutoPlayback = true
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "playback_cleared")
         clearAutomix()
         currentQueue = EmptyQueue
         queueTitle = null
@@ -6607,7 +6942,7 @@ class MusicService :
             isCrossfading &&
             !crossfadeHandoffInProgress
         ) {
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek_skip")
         }
 
         if (sleepTimer.pauseWhenSongEnd) {
@@ -6868,20 +7203,39 @@ class MusicService :
                 scrobbleManager?.onSongStop()
             }
             val playbackWasRequested = player.playWhenReady || crossfadePlaybackRequested
+            val endedDuringCrossfade = isCrossfading
+            val endedCueMs = crossfadeCueMs
+            val endedTarget = secondaryCrossfadeTarget
+            var incomingPromotedOnEnded = false
             if (!isCrossfading || playbackState == Player.STATE_IDLE) {
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                cancelCrossfade(
+                    resetVolume = true,
+                    resetPauseAtEnd = true,
+                    reason = if (playbackState == Player.STATE_IDLE) "state_idle" else "not_crossfading",
+                )
             } else if (playbackState == Player.STATE_ENDED) {
-                // The crossfade was supposed to hand off to the next item before STATE_ENDED
-                // fired, but it didn't complete in time. A stale `isCrossfading = true` here
-                // means `pauseAtEndOfMediaItems` is still `true`, which prevents ExoPlayer's
-                // auto-advance — the player stops at the end of the current song and the user
-                // has to press Play to continue. Tear the crossfade down so the player can
-                // auto-advance normally. The crossfade's secondary player (if any) was either
-                // already promoting itself or never became ready — either way, releasing it
-                // here is safe and prevents a stuck `pauseAtEndOfMediaItems`.
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                val handoffPossible = secondaryCrossfadePlayer != null && secondaryCrossfadeTarget != null
+                if (handoffPossible) {
+                    // The crossfade was supposed to hand off to the next item before
+                    // STATE_ENDED fired. Tearing the blend down here (the old behaviour)
+                    // released the incoming player and let the parked outgoing player
+                    // auto-advance into the same song from 0. The hand-off policy instead
+                    // promotes a healthy incoming player (position kept) and carries or
+                    // restores a terminal one. CONTINUE — a real user pause — leaves the
+                    // still-running fade loop in charge, so resuming playback continues the
+                    // blend into the promotion instead of restarting the song.
+                    incomingPromotedOnEnded = true
+                    scope.launch {
+                        handleCrossfadeHandoff(reason = "state_ended")
+                    }
+                } else {
+                    // No incoming player to hand off: tear the stale blend down and let the
+                    // resume block below advance — at the blend's cue when one was armed.
+                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "state_ended_no_handoff")
+                }
             }
             if (playbackState == Player.STATE_ENDED &&
+                !incomingPromotedOnEnded &&
                 CrossfadePolicy.shouldResumeAfterEnded(
                     playbackRequested = playbackWasRequested,
                     hasNextItem = player.hasNextMediaItem(),
@@ -6889,7 +7243,21 @@ class MusicService :
                     suppressAutoPlayback = suppressAutoPlayback,
                 )
             ) {
-                player.seekToNextMediaItem()
+                if (endedDuringCrossfade && endedCueMs > 0L) {
+                    // A smart blend was torn down mid-handoff: the natural advance must enter
+                    // the next song at its cue, not at 0.
+                    val resolvedIndex =
+                        endedTarget?.let { resolveCrossfadeTargetIndex(it, player) }
+                            ?.takeIf { it != C.INDEX_UNSET }
+                            ?: player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
+                    if (resolvedIndex != null) {
+                        player.seekTo(resolvedIndex, endedCueMs)
+                    } else {
+                        player.seekToNextMediaItem()
+                    }
+                } else {
+                    player.seekToNextMediaItem()
+                }
                 player.play()
             }
             if (playbackState == Player.STATE_ENDED &&
@@ -7009,12 +7377,20 @@ class MusicService :
         super.onIsPlayingChanged(isPlaying)
         updateInitialBufferRecovery(player.playbackState)
         secondaryCrossfadePlayer?.let { secondaryPlayer ->
-            if (isCrossfading && !crossfadeHandoffInProgress) {
-                if (isPlaying) {
-                    secondaryPlayer.play()
-                } else {
-                    secondaryPlayer.pause()
-                }
+            // Ported from 4nx3b 26b407c39: the session player's isPlaying=false during a blend
+            // is the outgoing player's end-of-item pause or a transient buffering stall — never
+            // a reason to pause the incoming player (that froze the ramp and muted both sides,
+            // and the failure recovery then restarted the next song from 0). Real user pauses
+            // are mirrored by onPlayWhenReadyChanged via crossfadePlaybackRequested.
+            when (
+                CrossfadeListenerPolicy.onSessionIsPlayingChanged(
+                    isPlaying = isPlaying,
+                    crossfading = isCrossfading,
+                    handoffInProgress = crossfadeHandoffInProgress,
+                )
+            ) {
+                CrossfadeSecondaryCommand.PLAY -> secondaryPlayer.play()
+                CrossfadeSecondaryCommand.PAUSE, CrossfadeSecondaryCommand.NONE -> {}
             }
         }
         if (isPlaying && !isCrossfading) {
@@ -7280,7 +7656,7 @@ class MusicService :
                 crossfadeProgress,
             )
             if (!crossfadeHandoffInProgress) {
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek")
             }
             // A seek forces a re-buffer; the BUFFERING->READY transition re-fires the reactive
             // volume pipeline (playerVolume x normalize x focus), which can pin the primary
@@ -8391,7 +8767,7 @@ class MusicService :
             }
             // Cancel any in-flight crossfade so its volume ramp / secondary player can't pin the
             // primary player's volume low while the new source is preparing.
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "source_resolve")
             // Re-claim audio focus BEFORE computing/applying the effective volume: applying the
             // volume first multiplies by a stale ducked audioFocusVolumeFactor when focus had been
             // transiently lost, which pins the player at the ducked volume until the reactive
@@ -11136,7 +11512,7 @@ class MusicService :
 
             if (isSecondaryPlayer) {
                 evictAudioAuthenticityRejectedSource(result.playbackKey, source)
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "authenticity_rejected")
                 scheduleCrossfade()
                 return@launch
             }
@@ -11761,7 +12137,7 @@ class MusicService :
         super.onDestroy()
         effectiveVolumeRampJob?.cancel()
         effectiveVolumeRampJob = null
-        cancelCrossfade(resetVolume = false, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = false, resetPauseAtEnd = true, reason = "service_destroy")
         audioRouteRecoveryJob?.cancel()
         if (audioDeviceCallbackRegistered) {
             audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
@@ -11927,10 +12303,15 @@ class MusicService :
 
             "moe.rukamori.archivetune.WIDGET_SKIP_NEXT" -> {
                 if (player.hasNextMediaItem()) {
-                    prepareForManualSkip()
-                    player.seekToNext()
-                    player.prepare()
-                    player.play()
+                    // Next during a fade commits the song that is fading in (user decision
+                    // 2026-10-13): the promotion IS the skip, so no seekToNext may follow —
+                    // it would restart that song from 0.
+                    if (!commitCrossfadeForSkipNext()) {
+                        prepareForManualSkip()
+                        player.seekToNext()
+                        player.prepare()
+                        player.play()
+                    }
                 }
             }
 

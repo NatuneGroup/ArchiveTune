@@ -212,6 +212,40 @@ class CrossfadePolicyTest {
     }
 
     @Test
+    fun promotionOnceOutgoingRanOutNoLongerRequiresPlayingIncoming() {
+        fun snapshot(
+            ranOut: Boolean,
+            ready: Boolean,
+            playing: Boolean,
+            error: Boolean = false,
+            idle: Boolean = false,
+            ended: Boolean = false,
+        ) = CrossfadePolicy.PromotionSnapshot(
+            generationMatches = true,
+            targetIndex = 3,
+            incomingItemMatchesTarget = true,
+            hasError = error,
+            isIdle = idle,
+            isEnded = ended,
+            isReady = ready,
+            isPlaying = playing,
+            playbackRequested = true,
+            unsetIndex = -1,
+            outgoingRanOut = ranOut,
+        )
+
+        // The outgoing song ran out and the incoming player is buffering: promote — a promoted
+        // buffering player resumes from its position when its buffer fills.
+        assertTrue(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false)))
+        // ...but a terminal incoming player is still refused.
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = true, playing = true, error = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false, idle = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false, ended = true)))
+        // Without the outgoing song having run out, the old strictness holds.
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = false, ready = false, playing = true)))
+    }
+
+    @Test
     fun endedPlaybackResumesOnlyWhenPlaybackWasRequestedAndAQueueTargetExists() {
         assertTrue(
             CrossfadePolicy.shouldResumeAfterEnded(

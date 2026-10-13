@@ -490,6 +490,10 @@ class PlayerConnection(
     }
 
     fun seekToNext() {
+        // Next during a fade commits the song that is fading in (user decision 2026-10-13):
+        // the promotion IS the skip, so no seekToNext may follow — it would restart that
+        // song from 0.
+        if (service.commitCrossfadeForSkipNext()) return
         service.prepareForManualSkip()
         player.seekToNext()
         player.prepare()

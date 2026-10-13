@@ -160,13 +160,21 @@ object CrossfadePolicy {
         val isPlaying: Boolean,
         val playbackRequested: Boolean,
         val unsetIndex: Int,
+        /**
+         * The outgoing song has run out underneath the blend (ended, or parked at its
+         * end-of-item pause), so there is nothing left to mix out of: the incoming player is
+         * promoted even when it is only buffering, exactly like a mid-song rebuffer resumes.
+         */
+        val outgoingRanOut: Boolean = false,
     )
 
     /**
      * The incoming player may be promoted only when the crossfade generation is still current
      * (no cancel/skip happened), the target item still exists in its queue, and the player is
      * not in a terminal state. When this is false, the outgoing player must remain
-     * authoritative and must NOT be released.
+     * authoritative and must NOT be released. Once the outgoing song has run out, promotion no
+     * longer requires the incoming player to be playing: a buffering player promoted with the
+     * playback intent set simply resumes when its buffer fills, keeping its position.
      */
     fun mayPromote(snapshot: PromotionSnapshot): Boolean =
         snapshot.generationMatches &&
@@ -175,7 +183,7 @@ object CrossfadePolicy {
             !snapshot.hasError &&
             !snapshot.isIdle &&
             !snapshot.isEnded &&
-            (!snapshot.playbackRequested || (snapshot.isReady && snapshot.isPlaying))
+            (!snapshot.playbackRequested || snapshot.outgoingRanOut || (snapshot.isReady && snapshot.isPlaying))
 
     fun shouldResumeAfterEnded(
         playbackRequested: Boolean,

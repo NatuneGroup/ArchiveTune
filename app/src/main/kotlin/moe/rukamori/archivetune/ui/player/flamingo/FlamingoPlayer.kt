@@ -54,6 +54,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -135,6 +136,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -211,11 +215,12 @@ import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.menu.rememberCastPlayerMenuAction
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.highRes
+import moe.rukamori.archivetune.customartwork.CustomArtworkStore
+import moe.rukamori.archivetune.utils.ImageBlurUtils
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.widthIn
@@ -239,6 +244,11 @@ import com.kyant.backdrop.effects.colorControls
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.media3.ui.AspectRatioFrameLayout
 import coil3.compose.AsyncImage
+import coil3.imageLoader
+import coil3.request.ImageRequest
+import coil3.request.SuccessResult
+import coil3.request.allowHardware
+import coil3.toBitmap
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -252,12 +262,26 @@ private val QueueRowHeight = 64.dp
 private val QueueDraggingItemShape = RoundedCornerShape(0.dp)
 
 private const val FlamingoSharpStageFadeStart = 0.50f
-private const val FlamingoCanvasBackdropUpscale = 6f
-private const val FlamingoCanvasBackdropOverscan = 1.10f
+
+// The canvas frost is a CPU-blurred STILL of the canvas (one bake per capture event), not a
+// runtime-blurred live video copy — a GPU RenderEffect blur re-applied to a rescaling video
+// surface every frame is what drew the banding "lines" across the backdrop. The display intent
+// stays the old copy's 288dp blur; the bake shrinks the captured still until the CPU helper's
+// 48px radius ceiling maps back to that intent once the bake is stretched over the band
+// (see flamingoFrostBakePlan).
 private val FlamingoCanvasBackdropBlurRadius = 288.dp
-private const val FlamingoCanvasBackdropMaxVideoEdgePx = 480
+private const val FlamingoCanvasBakeMaxRadiusPx = 48f
 
 private const val FlamingoCanvasPageFadeMs = 650
+
+// Alpha-mask stops for the frost band's top edge: the top 16% of the band fades in, so the
+// boundary between the band and the plain background above it never reads as a hard seam.
+private val FlamingoBandTopFeatherBrush =
+    Brush.verticalGradient(
+        0f to Color.Transparent,
+        0.16f to Color.Black,
+        1f to Color.Black,
+    )
 private const val FlamingoCanvasFlightMs = 600
 private val FlamingoCanvasFlightCornerDp = 5.dp
 private const val FlamingoCanvasFlightAlphaInMs = 300
@@ -451,15 +475,96 @@ fun FlamingoPlayerContent(
             !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
         val canvasVisualActive = canvasActive && !videoShowing && !isPreS
 
-        var canvasRendering by remember { mutableStateOf(false) }
+        // The frost bake. The captured still arrives through the stage's frame callback (video
+        // canvases; one per URL and per stage re-attach when a page round-trip recreates the
+        // capture) or straight from a user-picked image canvas, and is blurred on
+        // Dispatchers.Default — no capture loop, no per-frame allocation. The bake survives page
+        // switches (only a URL change clears it) and a failed bake keeps the last good still, so
+        // the backdrop can neither go black mid-session nor latch invisible: the reveal tracks the
+        // bake's existence, and a failed capture retries on the next page round-trip.
+        var canvasFrostFrame by remember { mutableStateOf<Bitmap?>(null) }
+        var canvasFrostBake by remember { mutableStateOf<ImageBitmap?>(null) }
+        var canvasFrostWidthPx by remember { mutableStateOf(0) }
 
         val canvasBackdropReveal by animateFloatAsState(
-            targetValue = if (canvasVisualActive && canvasRendering) 1f else 0f,
+            targetValue = if (canvasVisualActive && canvasFrostBake != null) 1f else 0f,
             animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
             label = "flamingo-canvas-backdrop-reveal",
         )
 
         val canvasDensity = LocalDensity.current
+        val canvasFrostDisplayRadiusPx = with(canvasDensity) { FlamingoCanvasBackdropBlurRadius.toPx() }
+
+        LaunchedEffect(canvasVisualActive, canvasPrimaryUrl, canvasFallbackUrl) {
+            canvasFrostFrame = null
+            canvasFrostBake?.asAndroidBitmap()?.recycle()
+            canvasFrostBake = null
+            if (!canvasVisualActive) return@LaunchedEffect
+            // A user-picked IMAGE canvas has no video frames to capture — load it and feed the
+            // same bake. Video canvases deliver their still through the stage's frame capture.
+            val customImageUrl =
+                listOfNotNull(canvasPrimaryUrl, canvasFallbackUrl).firstOrNull {
+                    CustomArtworkStore.isCustomImageCanvasUrl(it)
+                }
+            if (customImageUrl != null) {
+                canvasFrostFrame =
+                    withContext(Dispatchers.IO) {
+                        runCatching {
+                            val request =
+                                ImageRequest
+                                    .Builder(context)
+                                    .data(customImageUrl)
+                                    .allowHardware(false)
+                                    .size(256, 256)
+                                    .build()
+                            (context.imageLoader.execute(request) as? SuccessResult)?.image?.toBitmap()
+                        }.getOrNull()
+                    }
+            }
+        }
+
+        LaunchedEffect(canvasPrimaryUrl, canvasFallbackUrl, canvasFrostFrame) {
+            val frame = canvasFrostFrame ?: return@LaunchedEffect
+            try {
+                val plan =
+                    flamingoFrostBakePlan(
+                        sourceWidth = frame.width,
+                        sourceHeight = frame.height,
+                        displayRadiusPx = canvasFrostDisplayRadiusPx,
+                        frostWidthPx = canvasFrostWidthPx,
+                        maxBlurRadiusPx = FlamingoCanvasBakeMaxRadiusPx,
+                    )
+                val baked =
+                    plan?.let {
+                        withContext(Dispatchers.Default) {
+                            runCatching {
+                                val scaled =
+                                    if (it.needsDownscale) {
+                                        Bitmap.createScaledBitmap(frame, it.bakeWidth, it.bakeHeight, true)
+                                    } else {
+                                        frame
+                                    }
+                                try {
+                                    ImageBlurUtils.blur(scaled, it.blurRadiusPx).asImageBitmap()
+                                } finally {
+                                    if (scaled !== frame) scaled.recycle()
+                                }
+                            }.getOrNull()
+                        }
+                    }
+                if (baked != null) {
+                    canvasFrostBake?.asAndroidBitmap()?.recycle()
+                    canvasFrostBake = baked
+                }
+            } finally {
+                if (!frame.isRecycled) frame.recycle()
+            }
+        }
+        val currentFrostBake by rememberUpdatedState(canvasFrostBake)
+        DisposableEffect(Unit) {
+            onDispose { currentFrostBake?.asAndroidBitmap()?.recycle() }
+        }
+
         var titleTopInRootY by remember { mutableStateOf<Float?>(null) }
         var backgroundTopY by remember { mutableStateOf(0f) }
         var backgroundLeftX by remember { mutableStateOf(0f) }
@@ -530,8 +635,6 @@ fun FlamingoPlayerContent(
         val pageTakesBackdrop =
             (nowPage == FlamingoPage.Lyric || nowPage == FlamingoPage.PlayingList) &&
                 !landscape
-        var canvasSurfacesPlaying by remember { mutableStateOf(true) }
-        var canvasSurfacesVisible by remember { mutableStateOf(true) }
         val canvasSurfacesAlpha by animateFloatAsState(
             targetValue = if (pageTakesBackdrop) 0f else 1f,
             animationSpec = tween(
@@ -540,19 +643,17 @@ fun FlamingoPlayerContent(
             ),
             label = "flamingo-canvas-surfaces-fade",
         )
+        // The stage's video stays visible (flying into the bar slot) while a page fades out, so
+        // its decoder pauses only once that fade has actually landed, at whatever scale it runs —
+        // a wall-clock wait cuts the fade short above 1x and leaves the video decoding pointlessly
+        // at 0x.
+        var canvasStagePlaybackActive by remember { mutableStateOf(true) }
         LaunchedEffect(pageTakesBackdrop) {
             if (pageTakesBackdrop) {
-                canvasSurfacesPlaying = true
-                canvasSurfacesVisible = true
-                // Hide (and pause the decoder) only once the fade-out has actually landed, at
-                // whatever scale it runs — a wall-clock wait cuts the fade short above 1x and
-                // leaves the video decoding pointlessly at 0x.
                 snapshotFlow { canvasSurfacesAlpha }.first { it <= 0f }
-                canvasSurfacesPlaying = false
-                canvasSurfacesVisible = false
+                canvasStagePlaybackActive = false
             } else {
-                canvasSurfacesPlaying = true
-                canvasSurfacesVisible = true
+                canvasStagePlaybackActive = true
             }
         }
 
@@ -870,40 +971,37 @@ fun FlamingoPlayerContent(
                                 val frostFraction =
                                     (1f - FlamingoSharpStageFadeStart * stageFraction).coerceIn(0.2f, 1f)
 
+                                // The frost band: the baked blur of the canvas, never a live
+                                // surface — a bake is state-held, so page switches find it
+                                // exactly as they left it instead of an unrendered video
+                                // surface. The feather softens the band's top edge, which a
+                                // hard-cut rectangle reads as a seam against the plain
+                                // background above.
                                 Box(
                                     modifier =
                                         Modifier
                                             .align(Alignment.BottomCenter)
                                             .fillMaxWidth()
                                             .fillMaxHeight(frostFraction)
+                                            .onSizeChanged { canvasFrostWidthPx = it.width }
                                             .graphicsLayer {
+                                                compositingStrategy = CompositingStrategy.Offscreen
                                                 alpha = canvasSurfacesAlpha * canvasBackdropReveal
+                                            }
+                                            .drawWithContent {
+                                                drawContent()
+                                                drawRect(
+                                                    brush = FlamingoBandTopFeatherBrush,
+                                                    blendMode = BlendMode.DstIn,
+                                                )
                                             },
                                 ) {
-                                    Box(
-                                        modifier =
-                                            Modifier
-                                                .matchParentSize()
-                                                .graphicsLayer {
-                                                    val scale =
-                                                        FlamingoCanvasBackdropOverscan * FlamingoCanvasBackdropUpscale
-                                                    scaleX = scale
-                                                    scaleY = scale
-                                                },
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        CanvasArtworkPlayer(
-                                            primaryUrl = canvasPrimaryUrl,
-                                            fallbackUrl = canvasFallbackUrl,
-                                            isPlaying = isPlayingStatusLambda.value && canvasSurfacesPlaying,
-                                            visible = canvasSurfacesVisible,
-                                            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM,
-                                            maxVideoEdgePx = FlamingoCanvasBackdropMaxVideoEdgePx,
-                                            modifier =
-                                                Modifier
-                                                    .fillMaxWidth(1f / FlamingoCanvasBackdropUpscale)
-                                                    .fillMaxHeight(1f / FlamingoCanvasBackdropUpscale)
-                                                    .blur(FlamingoCanvasBackdropBlurRadius / FlamingoCanvasBackdropUpscale),
+                                    canvasFrostBake?.let { bake ->
+                                        Image(
+                                            bitmap = bake,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.FillBounds,
+                                            modifier = Modifier.matchParentSize(),
                                         )
                                     }
                                 }
@@ -927,8 +1025,8 @@ fun FlamingoPlayerContent(
                                 FlamingoCanvasStage(
                                     canvasPrimaryUrl = canvasPrimaryUrl,
                                     canvasFallbackUrl = canvasFallbackUrl,
-                                    isPlaying = isPlayingStatusLambda.value && canvasSurfacesPlaying,
-                                    onFrameCaptured = { frame -> canvasRendering = frame != null },
+                                    isPlaying = isPlayingStatusLambda.value && canvasStagePlaybackActive,
+                                    onFrameCaptured = { frame -> canvasFrostFrame = frame },
                                     stageHeight = sharpStageHeight,
                                     fadeStrength = { (1f - canvasFlightAnim.value * 2.5f).coerceIn(0f, 1f) },
                                     staticArtworkUrl = artworkUrl,

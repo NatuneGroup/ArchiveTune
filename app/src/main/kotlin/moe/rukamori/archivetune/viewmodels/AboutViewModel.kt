@@ -23,7 +23,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.about.AboutContributor
 import moe.rukamori.archivetune.about.AboutContributorCollection
@@ -34,7 +33,6 @@ import moe.rukamori.archivetune.about.AboutTranslationContributorCollection
 import moe.rukamori.archivetune.about.FetchAboutContributorsUseCase
 import moe.rukamori.archivetune.about.FetchAboutDependencyLicensesUseCase
 import moe.rukamori.archivetune.about.FetchAboutTranslationContributorsUseCase
-import moe.rukamori.archivetune.currentBuildHash
 import javax.inject.Inject
 
 sealed interface AboutScreenState {
@@ -54,9 +52,6 @@ sealed interface AboutScreenState {
 @Immutable
 data class AboutUiModel(
     @StringRes val appNameResId: Int,
-    val versionName: String,
-    val buildHash: String?,
-    val buildVariant: String,
     val primaryLinks: AboutLinkCollection,
     val leadDevelopers: TeamMemberCollection,
     val collaborators: TeamMemberCollection,
@@ -407,22 +402,16 @@ class AboutViewModel
         private fun buildUiModel(): AboutUiModel =
             AboutUiModel(
                 appNameResId = R.string.app_name,
-                versionName = BuildConfig.VERSION_NAME,
-                buildHash = currentBuildHash,
-                buildVariant = if (BuildConfig.DEBUG) DebugBuildBadge else BuildConfig.ARCHITECTURE.uppercase(),
+                // Real destinations only: the fork repo (matching Updater.OWNER), Telegram and
+                // Discord. The old Website/Donate/Privacy rows were placeholders pointing at a
+                // personal repo page and are gone for good.
                 primaryLinks =
                     AboutLinkCollection.of(
                         AboutLinkUiModel(
                             id = "github",
                             iconResId = R.drawable.github,
                             labelResId = R.string.about_content_desc_github,
-                            url = "https://github.com/rukamori/ArchiveTune",
-                        ),
-                        AboutLinkUiModel(
-                            id = "website",
-                            iconResId = R.drawable.website,
-                            labelResId = R.string.about_content_desc_website,
-                            url = "https://github.com/vossgraves/ArchiveTune",
+                            url = "https://github.com/NatuneGroup/ArchiveTune",
                         ),
                         AboutLinkUiModel(
                             id = "telegram",
@@ -431,22 +420,10 @@ class AboutViewModel
                             url = "https://t.me/ArchiveTuneGC",
                         ),
                         AboutLinkUiModel(
-                            id = "donate",
-                            iconResId = R.drawable.coffee,
-                            labelResId = R.string.about_content_desc_donate,
-                            url = "https://github.com/vossgraves/ArchiveTune",
-                        ),
-                        AboutLinkUiModel(
                             id = "discord",
                             iconResId = R.drawable.discord,
                             labelResId = R.string.discord,
                             url = "https://discord.gg/XF2fpb9rTq",
-                        ),
-                        AboutLinkUiModel(
-                            id = "privacy_policy",
-                            iconResId = R.drawable.lock,
-                            labelResId = R.string.privacy,
-                            url = "https://github.com/vossgraves/ArchiveTune",
                         ),
                     ),
                 leadDevelopers =
@@ -463,12 +440,6 @@ class AboutViewModel
                                         iconResId = R.drawable.github,
                                         labelResId = R.string.about_content_desc_github,
                                         url = "https://github.com/rukamori",
-                                    ),
-                                    AboutLinkUiModel(
-                                        id = "website",
-                                        iconResId = R.drawable.website,
-                                        labelResId = R.string.about_content_desc_website,
-                                        url = "https://github.com/rukamori/ArchiveTune",
                                     ),
                                     AboutLinkUiModel(
                                         id = "discord",
@@ -634,7 +605,6 @@ class AboutViewModel
 
         private companion object {
             const val MaxDisplayedContributors = 20
-            const val DebugBuildBadge = "DEBUG"
             const val ContributorsReadMoreUrl = "https://github.com/rukamori/ArchiveTune/graphs/contributors"
         }
     }

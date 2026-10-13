@@ -544,13 +544,11 @@
     <string name="ai_fetch_models">Obtener modelos</string>
     <string name="about_lead_developer">Desarrollador principal</string>
     <string name="about_archive_tune_team">Equipo</string>
-    <string name="about_respecter">Cumplir</string>
     <string name="about_contributors">Colaboradores</string>
     <string name="about_position_lead_dev">¿Eh?</string>
     <string name="about_position_mo_agamy">Estructura básica | Metrolist</string>
     <string name="about_position_zion_huang">Creador de InnerTune · Fundador de Metrolist, ArchiveTune y otras bifurcaciones</string>
     <string name="about_content_desc_github">GitHub</string>
-    <string name="about_content_desc_website">Página web</string>
     <string name="about_content_desc_discord">Discord</string>
     <string name="about_content_desc_telegram">Telegram</string>
     <string name="about_content_desc_donate">Donar</string>
@@ -610,7 +608,6 @@
     <string name="restore_file_not_found">No se pudo abrir el archivo seleccionado.</string>
     <string name="restore_select_backup">Seleccione un archivo de copia de seguridad para restaurar.</string>
     <string name="about_contributor_translation">Colaboradores de la traducción</string>
-    <string name="about_license">LICENCIA</string>
     <string name="about_license_unknown">Licencia desconocida</string>
     <string name="about_position_developers">Desarrollador | Equipo</string>
     <string name="about_position_yuki">Cuenta de prueba de Reze | Admin</string>

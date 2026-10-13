@@ -497,12 +497,10 @@
     <string name="about_content_desc_donate">Spenden</string>
     <string name="about_content_desc_telegram">Telegram</string>
     <string name="about_position_developers">Entwickler | Team</string>
-    <string name="about_license">LIZENZ</string>
     <string name="about_contributors">Beitragende</string>
     <string name="about_archive_tune_team">Team</string>
     <string name="about_content_desc_discord">Discord</string>
     <string name="about_content_desc_github">GitHub</string>
-    <string name="about_content_desc_website">Webseite</string>
     <string name="about_position_mo_agamy">Basis-Framework | Metrolist</string>
     <string name="about_license_unknown">Unbekannte Lizenz</string>
     <string name="about_contributor_translation">Beitragende Übersetzung</string>

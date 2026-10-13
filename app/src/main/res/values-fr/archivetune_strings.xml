@@ -455,7 +455,6 @@
     <string name="about_contributors">Contributeurs</string>
     <string name="aod_customize_dp_value">%1$d jour</string>
     <string name="settings_about_subtitle">Informations sur l\'application, licences et contributeurs</string>
-    <string name="about_respecter">Respecter</string>
     <string name="ai_integration_desc">Configurer la traduction par IA et les automatisations personnalisées pour les utilisateurs.</string>
     <string name="singles">Singles</string>
     <string name="aod_customize_layout">Mise en page</string>
@@ -471,7 +470,6 @@
     <string name="music_recognition_history_empty_title">Aucun titre n\'a encore été reconnu</string>
     <string name="year_in_music_ranked_albums">Les albums que vous avez réécoutés</string>
     <string name="ai_api_status_unknown">Non testé</string>
-    <string name="about_content_desc_website">Site web</string>
     <string name="new_releases">Nouveautés</string>
     <string name="aod_customize_background_style">Style d\'arrière-plan</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
@@ -560,7 +558,6 @@
     <string name="restore_corrupted">Le fichier de sauvegarde semble être corrompu et n\'a pas pu être lu.</string>
     <string name="restore_file_not_found">Impossible d\'ouvrir le fichier sélectionné.</string>
     <string name="restore_select_backup">Sélectionnez un fichier de sauvegarde à restaurer.</string>
-    <string name="about_license">LICENCE</string>
     <string name="about_license_unknown">Licence inconnue</string>
     <string name="about_position_developers">Développeur | Équipe</string>
     <string name="about_position_yuki">dummy reze | admin</string>

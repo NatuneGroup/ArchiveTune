@@ -1098,9 +1098,9 @@ fun buildSettingsGroups(
             keywords = listOf("about", "info", "version", "license", "credits", "contributors", "changelog"),
             onClick = { navController.navigate("settings/about") },
             children = listOf(
-                SettingsChild("Version", "about_version", listOf("version", "build")),
-                SettingsChild("Changelog", "about_changelog", listOf("changelog", "changes", "release notes", "what's new")),
-                SettingsChild("License", "about_license", listOf("license", "gpl", "open source")),
+                SettingsChild(stringResource(R.string.about_version), "about_version", listOf("version", "build")),
+                SettingsChild(stringResource(R.string.changelog), "about_changelog", listOf("changelog", "changes", "release notes", "what's new")),
+                SettingsChild(stringResource(R.string.about_open_source_licenses), "about_license", listOf("license", "gpl", "open source")),
             ),
         )
 

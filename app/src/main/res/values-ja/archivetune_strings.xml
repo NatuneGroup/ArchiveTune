@@ -562,10 +562,8 @@
     <string name="ai_translation_menu">AI翻訳</string>
     <string name="about_lead_developer">リード開発者</string>
     <string name="about_archive_tune_team">チーム</string>
-    <string name="about_respecter">リスペクター</string>
     <string name="about_contributors">貢献者</string>
     <string name="about_contributor_translation">翻訳貢献者</string>
-    <string name="about_license">ライセンス</string>
     <string name="about_license_unknown">不明なライセンス</string>
     <string name="about_position_lead_dev">え？</string>
     <string name="about_position_developers">開発者 | チーム</string>
@@ -573,7 +571,6 @@
     <string name="about_position_mo_agamy">ベースフレームワーク | Metrolist</string>
     <string name="about_position_zion_huang">InnerTuneの作成者 · Metrolist、ArchiveTune、その他フォークの基盤</string>
     <string name="about_content_desc_github">GitHub</string>
-    <string name="about_content_desc_website">ウェブサイト</string>
     <string name="about_content_desc_discord">Discord</string>
     <string name="about_content_desc_telegram">Telegram</string>
     <string name="about_content_desc_donate">寄付</string>

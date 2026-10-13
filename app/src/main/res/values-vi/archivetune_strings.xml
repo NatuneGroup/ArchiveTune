@@ -540,13 +540,11 @@
     <string name="lyrics_share_style_vivid_glow">Phát sáng rực rỡ</string>
     <string name="about_lead_developer">Nhà phát triển chính</string>
     <string name="about_archive_tune_team">Nhóm ArchiveTune</string>
-    <string name="about_respecter">Tôn kính</string>
     <string name="about_contributors">Người đóng góp</string>
     <string name="about_position_lead_dev">Hả?</string>
     <string name="about_position_mo_agamy">Khung cơ bản | Metrolist</string>
     <string name="about_position_zion_huang">Người tạo InnerTune · Nền tảng cho Metrolist, ArchiveTune và các fork khác</string>
     <string name="about_content_desc_github">GitHub</string>
-    <string name="about_content_desc_website">Trang web</string>
     <string name="about_content_desc_discord">Discord</string>
     <string name="about_content_desc_telegram">Telegram</string>
     <string name="about_content_desc_donate">Quyên góp</string>
@@ -554,7 +552,6 @@
     <string name="storage_cache_clear_failed">Không thể xóa cache. Kiểm tra quyền truy cập thẻ SD.</string>
     <string name="suggestions">Gợi ý</string>
     <string name="about_contributor_translation">Bản dịch của người đóng góp</string>
-    <string name="about_license">GIẤY PHÉP</string>
     <string name="about_license_unknown">Giấy phép không xác định</string>
     <string name="history_duration_desc">Thời gian phát tối thiểu để tính là đã nghe</string>
     <string name="history_duration_seconds">%1$s giây</string>

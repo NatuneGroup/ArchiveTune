@@ -478,7 +478,6 @@
     <string name="aod_alignment_end">오른쪽 정렬</string>
     <string name="about_contributors">기여자 목록</string>
     <string name="aod_customize_dp_value">%1$d dp</string>
-    <string name="about_respecter">존경 및 명예 기여자</string>
     <string name="aod_customize_layout">레이아웃</string>
     <string name="aod_customize_progress">진행</string>
     <string name="aod_customize_slider_style">슬라이더 스타일</string>
@@ -491,7 +490,6 @@
     <string name="storage_location_sheet_title">저장 위치</string>
     <string name="music_recognition_history_empty_title">인식된 곡이 아직 없습니다.</string>
     <string name="year_in_music_ranked_albums">자주 찾은 앨범</string>
-    <string name="about_content_desc_website">웹사이트</string>
     <string name="aod_customize_background_style">배경 스타일</string>
     <string name="year_in_music_recap">Recap</string>
     <string name="about_content_desc_github">GitHub</string>
@@ -567,7 +565,6 @@
     <string name="restore_file_not_found">백업 파일을 찾을 수 없습니다.</string>
     <string name="restore_select_backup">복원할 백업 파일 선택</string>
     <string name="about_contributor_translation">번역 기여자</string>
-    <string name="about_license">오픈소스 라이선스</string>
     <string name="about_license_unknown">알 수 없는 라이선스</string>
     <string name="about_position_developers">개발자</string>
     <string name="about_position_yuki">dummy reze | admin</string>

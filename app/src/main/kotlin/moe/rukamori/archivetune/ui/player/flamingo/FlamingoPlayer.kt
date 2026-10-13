@@ -226,6 +226,8 @@ import moe.rukamori.archivetune.ui.player.InlineVideoPlayer
 import moe.rukamori.archivetune.ui.player.LocalVideoPlaybackFailed
 import moe.rukamori.archivetune.ui.player.rememberThumbnailSwapState
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
+import moe.rukamori.archivetune.ui.player.MixTrackSheen
+import moe.rukamori.archivetune.ui.player.rememberMixFillFactor
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
@@ -3947,6 +3949,10 @@ private fun FlamingoPlayerControl(
 
     val player = playerConnection.player
 
+    // A plain crossfade or an automix mix is blending right now: the seek bar collapses
+    // and sweeps until it hands over.
+    val isMixing by playerConnection.isMixing.collectAsStateWithLifecycle()
+
     FlamingoWrapper {
         Column(
             modifier = modifier
@@ -4038,6 +4044,7 @@ private fun FlamingoPlayerControl(
                                 },
                                 height = 7.dp + 4.dp * sliderEngage,
                                 engage = sliderEngage,
+                                mixing = isMixing,
                             )
                         },
                     )
@@ -4383,64 +4390,77 @@ private fun FlamingoTrack(
     modifier: Modifier = Modifier,
     height: Dp,
     engage: Float = 0f,
+    mixing: Boolean = false,
 ) = FlamingoWrapper {
     val inactiveTrackColor = Color.White.copy(alpha = 0.5f)
     val activeTrackColor = Color.White
-    Canvas(
+    // While a mix blends, the played fill collapses to nothing (and grows back when the
+    // mix hands over) — the sheen below takes over as the position signal.
+    val fillFactor = rememberMixFillFactor(mixing, "flamingoSeekFillFactor")
+    Box(
         modifier
             .fillMaxWidth()
             .height(height),
     ) {
-        val isRtl = layoutDirection == LayoutDirection.Rtl
-        val sliderLeft = Offset(0f, center.y)
-        val sliderRight = Offset(size.width, center.y)
-        val sliderStart = if (isRtl) sliderRight else sliderLeft
-        val sliderEnd = if (isRtl) sliderLeft else sliderRight
-        val trackStrokeWidth = height.toPx()
+        Canvas(
+            Modifier
+                .fillMaxWidth()
+                .height(height),
+        ) {
+            val isRtl = layoutDirection == LayoutDirection.Rtl
+            val sliderLeft = Offset(0f, center.y)
+            val sliderRight = Offset(size.width, center.y)
+            val sliderStart = if (isRtl) sliderRight else sliderLeft
+            val sliderEnd = if (isRtl) sliderLeft else sliderRight
+            val trackStrokeWidth = height.toPx()
 
-        if (engage > 0.01f) {
-            val halo1 = trackStrokeWidth + 4.dp.toPx() * engage
+            if (engage > 0.01f) {
+                val halo1 = trackStrokeWidth + 4.dp.toPx() * engage
+                drawRoundRect(
+                    color = activeTrackColor.copy(alpha = 0.10f * engage),
+                    topLeft = Offset(0f, center.y - halo1 / 2f),
+                    size = Size(size.width, halo1),
+                    cornerRadius = CornerRadius(halo1 / 2f),
+                )
+                val halo2 = trackStrokeWidth + 8.dp.toPx() * engage
+                drawRoundRect(
+                    color = activeTrackColor.copy(alpha = 0.05f * engage),
+                    topLeft = Offset(0f, center.y - halo2 / 2f),
+                    size = Size(size.width, halo2),
+                    cornerRadius = CornerRadius(halo2 / 2f),
+                )
+            }
+
             drawRoundRect(
-                color = activeTrackColor.copy(alpha = 0.10f * engage),
-                topLeft = Offset(0f, center.y - halo1 / 2f),
-                size = Size(size.width, halo1),
-                cornerRadius = CornerRadius(halo1 / 2f),
+                color = inactiveTrackColor,
+                topLeft = Offset(0f, center.y - trackStrokeWidth / 2f),
+                size = Size(size.width, trackStrokeWidth),
+                cornerRadius = CornerRadius(trackStrokeWidth / 2f),
             )
-            val halo2 = trackStrokeWidth + 8.dp.toPx() * engage
-            drawRoundRect(
-                color = activeTrackColor.copy(alpha = 0.05f * engage),
-                topLeft = Offset(0f, center.y - halo2 / 2f),
-                size = Size(size.width, halo2),
-                cornerRadius = CornerRadius(halo2 / 2f),
+            val sliderValueEnd = Offset(
+                sliderStart.x +
+                    (sliderEnd.x - sliderStart.x) * activeFraction * fillFactor,
+                center.y,
             )
+
+            val sliderValueStart = Offset(
+                sliderStart.x +
+                    (sliderEnd.x - sliderStart.x) * 0f,
+                center.y,
+            )
+
+            val activeLeft = minOf(sliderValueStart.x, sliderValueEnd.x)
+            val activeWidth = kotlin.math.abs(sliderValueEnd.x - sliderValueStart.x)
+            if (activeWidth > 0f) {
+                drawRoundRect(
+                    color = activeTrackColor,
+                    topLeft = Offset(activeLeft, center.y - trackStrokeWidth / 2f),
+                    size = Size(activeWidth, trackStrokeWidth),
+                    cornerRadius = CornerRadius(trackStrokeWidth / 2f),
+                )
+            }
         }
-
-        drawRoundRect(
-            color = inactiveTrackColor,
-            topLeft = Offset(0f, center.y - trackStrokeWidth / 2f),
-            size = Size(size.width, trackStrokeWidth),
-            cornerRadius = CornerRadius(trackStrokeWidth / 2f),
-        )
-        val sliderValueEnd = Offset(
-            sliderStart.x +
-                (sliderEnd.x - sliderStart.x) * activeFraction,
-            center.y,
-        )
-
-        val sliderValueStart = Offset(
-            sliderStart.x +
-                (sliderEnd.x - sliderStart.x) * 0f,
-            center.y,
-        )
-
-        val activeLeft = minOf(sliderValueStart.x, sliderValueEnd.x)
-        val activeWidth = kotlin.math.abs(sliderValueEnd.x - sliderValueStart.x)
-        drawRoundRect(
-            color = activeTrackColor,
-            topLeft = Offset(activeLeft, center.y - trackStrokeWidth / 2f),
-            size = Size(activeWidth, trackStrokeWidth),
-            cornerRadius = CornerRadius(trackStrokeWidth / 2f),
-        )
+        MixTrackSheen(visible = mixing, color = activeTrackColor, height = height)
     }
 }
 

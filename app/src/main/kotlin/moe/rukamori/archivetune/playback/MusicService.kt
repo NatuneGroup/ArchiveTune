@@ -807,7 +807,17 @@ class MusicService :
     private var crossfadeJob: Job? = null
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
-    private var isCrossfading = false
+    // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
+    // `var` below, so every existing write site publishes without knowing it.
+    private val _crossfadeMixing = MutableStateFlow(false)
+
+    /** True while a plain crossfade is blending two tracks; read-only to the UI. */
+    val crossfadeMixing: StateFlow<Boolean> = _crossfadeMixing.asStateFlow()
+    private var isCrossfading: Boolean
+        get() = _crossfadeMixing.value
+        set(value) {
+            _crossfadeMixing.value = value
+        }
     private var crossfadeHandoffInProgress = false
     private var crossfadeBaseVolume = 1f
     private var crossfadeIncomingBaseVolume = 1f

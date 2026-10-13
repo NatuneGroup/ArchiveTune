@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.playback.MusicService.MusicBinder
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.playback.smart.SmartFadeRuntimeState
 import moe.rukamori.archivetune.ui.player.refetchCanvasArtworkForPlayback
 import moe.rukamori.archivetune.telegram.TelegramClient
 import moe.rukamori.archivetune.telegram.TelegramMediaId
@@ -121,6 +122,21 @@ class PlayerConnection(
 
     /** Media3's own definition: ready, wanted, and not suppressed. */
     val isAudioAdvancing = MutableStateFlow(player.isPlaying)
+
+    /**
+     * Read-only to the UI: a transition is audibly blending two tracks right now — a
+     * plain crossfade, or an automix mix. The BitChord and Flamingo seek bars morph
+     * (fill collapse + sheen) while it holds.
+     */
+    val isMixing =
+        combine(
+            service.crossfadeMixing,
+            SmartFadeRuntimeState.mixing,
+        ) { crossfade, automix -> crossfade || automix }.stateIn(
+            connectionScope,
+            SharingStarted.Lazily,
+            service.crossfadeMixing.value || SmartFadeRuntimeState.mixing.value,
+        )
     val mediaMetadata = service.currentMediaMetadata
     val currentSong =
         mediaMetadata.flatMapLatest {

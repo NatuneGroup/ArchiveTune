@@ -490,6 +490,12 @@ fun BitChordPlayerContent(
     // Automix: the engine's published state, straight from the service (4nx3b 875062efc).
     val automixOn by SmartFadeRuntimeState.enabled.collectAsStateWithLifecycle()
     val automixAnalysis by SmartFadeRuntimeState.analysis.collectAsStateWithLifecycle()
+    // A mix is audibly blending right now — the plain crossfade, or an automix one — and
+    // the seek bar morphs (fill collapse + sheen) until it hands over.
+    val isMixing by playerConnection.isMixing.collectAsStateWithLifecycle()
+    // Where the next automix transition will land, drawn as the brighter stretch of the
+    // unplayed bar.
+    val automixTransitionWindow by SmartFadeRuntimeState.transitionWindow.collectAsStateWithLifecycle()
 
     val reduceAnimations = LocalAnimationsDisabled.current
 
@@ -1472,6 +1478,8 @@ fun BitChordPlayerContent(
                     onSeekFraction(scrubValue)
                     scrubbing = false
                 },
+                mixing = isMixing,
+                transitionWindow = automixTransitionWindow?.let { it.start..it.end },
             )
             BitChordScrubTimes(
                 shownFraction = shownFraction,

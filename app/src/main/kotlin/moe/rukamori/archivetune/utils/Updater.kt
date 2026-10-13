@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.utils
 
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -17,9 +18,22 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.App
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.UpdateChannel
+import moe.rukamori.archivetune.constants.GitHubCommitsBranchKey
+import moe.rukamori.archivetune.constants.GitHubCommitsEtagKey
+import moe.rukamori.archivetune.constants.GitHubCommitsJsonKey
+import moe.rukamori.archivetune.constants.GitHubCommitsLastCheckedAtKey
+import moe.rukamori.archivetune.constants.GitHubRateLimitedUntilKey
 import moe.rukamori.archivetune.constants.NightlyReleasesEtagKey
 import moe.rukamori.archivetune.constants.NightlyReleasesFingerprintKey
 import moe.rukamori.archivetune.constants.NightlyReleasesJsonKey
@@ -28,8 +42,13 @@ import moe.rukamori.archivetune.constants.GitHubReleasesEtagKey
 import moe.rukamori.archivetune.constants.GitHubReleasesFingerprintKey
 import moe.rukamori.archivetune.constants.GitHubReleasesJsonKey
 import moe.rukamori.archivetune.constants.GitHubReleasesLastCheckedAtKey
+import moe.rukamori.archivetune.constants.UpdateFeedManifestNightlyJsonKey
+import moe.rukamori.archivetune.constants.UpdateFeedManifestNightlyLastCheckedAtKey
+import moe.rukamori.archivetune.constants.UpdateFeedManifestStableJsonKey
+import moe.rukamori.archivetune.constants.UpdateFeedManifestStableLastCheckedAtKey
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.TimeUnit
 
 data class GitCommit(
     val sha: String,
@@ -47,12 +66,18 @@ data class ReleaseInfo(
     val publishedAt: String,
     val htmlUrl: String,
     val downloadUrl: String? = null,
+    // The monotonic build number (git commit count) the release was built from. Set by the
+    // update-feed manifest mapping; API-sourced releases carry it inside the `at-build:` body
+    // marker instead, which [nightlyBuildNumber] falls back to.
+    val versionCode: Int? = null,
 )
 
 private data class ReleasesNetworkResult(
     val status: HttpStatusCode,
     val body: String?,
     val etag: String?,
+    val rateLimitRemaining: String? = null,
+    val rateLimitReset: String? = null,
 )
 
 object Updater {
@@ -63,11 +88,17 @@ object Updater {
             engine {
                 config {
                     withAppProxy()
+                    // Every request through this client is a small JSON GET (feeds, commit pages),
+                    // so bound them: an update check must not hang on a stuck connection, and the
+                    // manifest fetch runs ahead of every fallback.
+                    connectTimeout(10, TimeUnit.SECONDS)
+                    callTimeout(15, TimeUnit.SECONDS)
                 }
             }
         }
     private const val ReleaseCacheCheckIntervalMs: Long = 6 * 60 * 60 * 1000L
     private const val NightlyCacheCheckIntervalMs: Long = 15 * 60 * 1000L
+    private const val CommitHistoryCacheIntervalMs: Long = 15 * 60 * 1000L
     private const val OWNER = "NatuneGroup/ArchiveTune"
     private const val StableReleaseBaseUrl = "https://github.com/$OWNER/releases"
 
@@ -76,22 +107,24 @@ object Updater {
     private const val NightlyReleaseBaseUrl =
         "https://github.com/$OWNER/releases"
 
+    /**
+     * The fixed release whose assets are the keyless update-feed manifests
+     * (`releases/download/update-feed/<channel>.json`). It is a prerelease marked not-latest, and
+     * both tag filters reject it, so it can never be picked as an update.
+     */
+    private const val UpdateFeedTag = "update-feed"
+
     /** The pre-release update feed. Nightly tracks `dev`. */
-    private enum class PreChannel(
+    internal enum class PreChannel(
         val artifactSuffix: String,
         val tagPrefix: String,
-        val workflowFile: String,
         val branch: String,
     ) {
-        NIGHTLY("nightly", "N", "nightly.yml", "dev"),
+        NIGHTLY("nightly", "N", "dev"),
         ;
 
         val tagRegex: Regex get() = Regex("""$tagPrefix\d{8}(?:\d{4})?""")
     }
-
-    private fun preWorkflowRunsUrl(channel: PreChannel): String =
-        "https://api.github.com/repos/$OWNER/actions/workflows/${channel.workflowFile}/runs" +
-            "?branch=${channel.branch}&status=success&per_page=1&exclude_pull_requests=true"
 
     var lastCheckTime = -1L
         private set
@@ -127,16 +160,6 @@ object Updater {
 
     private fun preReleaseArtifactName(channel: PreChannel): String =
         "app-$releaseArtifactPrefix${BuildConfig.DEVICE}-${BuildConfig.ARCHITECTURE}-${channel.artifactSuffix}.apk"
-
-    private fun workflowArtifactName(channel: PreChannel): String =
-        "app-$releaseArtifactPrefix${BuildConfig.DEVICE}-${BuildConfig.ARCHITECTURE}-${channel.artifactSuffix}"
-
-    private fun workflowArtifactDownloadUrl(channel: PreChannel): String {
-        val workflowName = channel.workflowFile.removeSuffix(".yml")
-        val artifactUrl =
-            "https://nightly.link/$OWNER/workflows/$workflowName/${channel.branch}/${workflowArtifactName(channel)}"
-        return if (canDownloadUpdatesDirectly) "$artifactUrl.zip" else artifactUrl
-    }
 
     private data class SemVer(
         val major: Int,
@@ -288,7 +311,10 @@ object Updater {
         // `preRelease.isEmpty()` stable filter below — `parseReleaseSemVerOrNull` falls back to
         // parsing the release name when the tag itself isn't SemVer, and "13.7.5" has no
         // pre-release identifier — and a stable-channel user would see a pre-release popup.
-        val nonPreRelease = releases.filterNot { preReleaseTagRegex.matches(it.tagName) }
+        // The `update-feed` manifest release is excluded too: its tag carries no version, and with
+        // no SemVer release on the page the last-resort fallback below could otherwise serve it.
+        val nonPreRelease =
+            releases.filterNot { preReleaseTagRegex.matches(it.tagName) || it.tagName == UpdateFeedTag }
         if (nonPreRelease.isEmpty()) return null
 
         val parsed =
@@ -303,7 +329,7 @@ object Updater {
         return candidates.maxWithOrNull(compareBy({ it.first }, { it.second.publishedAt }))?.second
     }
 
-    private fun findLatestPreRelease(
+    internal fun findLatestPreRelease(
         releases: List<ReleaseInfo>,
         channel: PreChannel,
     ): ReleaseInfo? {
@@ -353,6 +379,7 @@ object Updater {
                             item.optString("download_url").takeIf { it.isNotBlank() }
                         }
                             ?: assetDownloadUrl,
+                    versionCode = item.optInt("version_code", -1).takeIf { it > 0 },
                 ),
             )
         }
@@ -370,6 +397,7 @@ object Updater {
                         put("published_at", release.publishedAt)
                         put("html_url", release.htmlUrl)
                         put("download_url", release.downloadUrl ?: JSONObject.NULL)
+                        release.versionCode?.let { put("version_code", it) }
                     },
                 )
             }
@@ -401,12 +429,16 @@ object Updater {
                 }
             }
         val etag = response.headers["ETag"]
+        val rateLimitRemaining = response.headers["X-RateLimit-Remaining"]
+        val rateLimitReset = response.headers["X-RateLimit-Reset"]
         return when (response.status) {
             HttpStatusCode.NotModified -> {
                 ReleasesNetworkResult(
                     status = response.status,
                     body = null,
                     etag = cachedEtag ?: etag,
+                    rateLimitRemaining = rateLimitRemaining,
+                    rateLimitReset = rateLimitReset,
                 )
             }
 
@@ -415,6 +447,8 @@ object Updater {
                     status = response.status,
                     body = response.bodyAsText(),
                     etag = etag,
+                    rateLimitRemaining = rateLimitRemaining,
+                    rateLimitReset = rateLimitReset,
                 )
             }
         }
@@ -471,6 +505,29 @@ object Updater {
                 return@runCatchingCancellable emptyList()
             }
 
+            val now = System.currentTimeMillis()
+            val cachedBranch = App.instance.dataStore.getAsync(GitHubCommitsBranchKey)
+            val cachedJson = App.instance.dataStore.getAsync(GitHubCommitsJsonKey)
+            val cachedEtag = App.instance.dataStore.getAsync(GitHubCommitsEtagKey)
+            val lastCheckedAt = App.instance.dataStore.getAsync(GitHubCommitsLastCheckedAtKey, 0L)
+            // Only a page fetched for the same branch is usable: a channel switch (main ↔ dev)
+            // must not serve the other branch's history.
+            val cachedCommits = cachedJson?.takeIf { it.isNotBlank() }?.let(::parseCommitHistoryJson)
+            val cachedCommitsForBranch = cachedCommits?.takeIf { cachedBranch == branch }
+
+            if (cachedCommitsForBranch != null && now - lastCheckedAt < CommitHistoryCacheIntervalMs) {
+                return@runCatchingCancellable cachedCommitsForBranch
+            }
+
+            // The Updates screen fires this request on every open; while the rate-limit backoff is
+            // active api.github.com is off limits and the cached page is served instead.
+            if (rateLimitBackoffActive(now)) {
+                if (cachedCommitsForBranch != null) {
+                    return@runCatchingCancellable cachedCommitsForBranch
+                }
+                throw IllegalStateException("GitHub API is rate limited and no cached commit history exists")
+            }
+
             // GitHub's `/commits` endpoint caps `per_page` at 100. To honour a request larger
             // than that (or an "unlimited" request when callers pass a very large `count`),
             // we paginate by following the `Link: rel="next"` header until we've collected
@@ -481,15 +538,42 @@ object Updater {
             val commits = mutableListOf<GitCommit>()
             var pageUrl: String? =
                 "https://api.github.com/repos/$OWNER/commits?sha=$branch&per_page=$perPage&page=1"
+            var firstPageEtag: String? = null
+            var onFirstPage = true
 
             while (pageUrl != null) {
                 val response = client.get(pageUrl) {
                     headers {
                         append("Accept", "application/vnd.github+json")
                         append("User-Agent", "ArchiveTune")
+                        if (onFirstPage && !cachedEtag.isNullOrBlank() && cachedCommitsForBranch != null) {
+                            append("If-None-Match", cachedEtag)
+                        }
                     }
                 }
-                if (response.status.value !in 200..299) break
+                if (onFirstPage) {
+                    onFirstPage = false
+                    recordRateLimitBackoff(
+                        response.status.value,
+                        response.headers["X-RateLimit-Remaining"],
+                        response.headers["X-RateLimit-Reset"],
+                        now,
+                    )
+                    if (response.status == HttpStatusCode.NotModified && cachedCommitsForBranch != null) {
+                        App.instance.dataStore.edit { settings ->
+                            settings[GitHubCommitsLastCheckedAtKey] = now
+                            response.headers["ETag"]?.let { settings[GitHubCommitsEtagKey] = it }
+                        }
+                        return@runCatchingCancellable cachedCommitsForBranch
+                    }
+                    if (response.status.value !in 200..299) {
+                        if (cachedCommitsForBranch != null) {
+                            return@runCatchingCancellable cachedCommitsForBranch
+                        }
+                        throw IllegalStateException("Failed to fetch commit history: HTTP ${response.status.value}")
+                    }
+                    firstPageEtag = response.headers["ETag"]
+                }
 
                 val body = response.bodyAsText()
                 val jsonArray = JSONArray(body)
@@ -521,6 +605,22 @@ object Updater {
                     nextRegex.find(linkHeader)?.groupValues?.getOrNull(1)
                 }
             }
+
+            if (commits.isEmpty()) {
+                // A usable cache beats an empty page on the Updates screen (e.g. pagination died
+                // mid-way, or the API answered 2xx with nothing parseable).
+                if (cachedCommitsForBranch != null) {
+                    return@runCatchingCancellable cachedCommitsForBranch
+                }
+                return@runCatchingCancellable emptyList()
+            }
+
+            App.instance.dataStore.edit { settings ->
+                settings[GitHubCommitsBranchKey] = branch
+                settings[GitHubCommitsJsonKey] = encodeCommitHistory(commits)
+                firstPageEtag?.let { settings[GitHubCommitsEtagKey] = it }
+                settings[GitHubCommitsLastCheckedAtKey] = now
+            }
             commits
         }
 
@@ -544,11 +644,13 @@ object Updater {
 
     // The nightly workflow embeds the build's monotonic versionCode in the release notes as
     // "at-build:<n>". Fall back to the numeric patch segment of the release name ("Nightly 13.7.<n>")
-    // for older releases that predate the marker.
+    // for older releases that predate the marker. A release mapped from the update-feed manifest
+    // carries the number directly in [ReleaseInfo.versionCode].
     private val nightlyBuildMarkerRegex = Regex("""at-build:(\d+)""")
 
     internal fun nightlyBuildNumber(release: ReleaseInfo): Int? =
-        release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+        release.versionCode
+            ?: release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
             ?: parseSemVerOrNull(release.name)?.patch
 
     /**
@@ -579,7 +681,7 @@ object Updater {
 
     suspend fun getCachedNightlyReleases(): List<ReleaseInfo> = getCachedPreReleases(PreChannel.NIGHTLY)
 
-    suspend fun getAllNightlyReleases(perPage: Int = 10, forceRefresh: Boolean = false): Result<List<ReleaseInfo>> =
+    suspend fun getAllNightlyReleases(perPage: Int = 30, forceRefresh: Boolean = false): Result<List<ReleaseInfo>> =
         getAllPreReleases(PreChannel.NIGHTLY, perPage, forceRefresh)
 
     fun getLatestNightlyDownloadUrl(): String = getLatestPreReleaseDownloadUrl(PreChannel.NIGHTLY)
@@ -617,7 +719,7 @@ object Updater {
 
     private suspend fun getAllPreReleases(
         channel: PreChannel,
-        perPage: Int = 10,
+        perPage: Int = 30,
         forceRefresh: Boolean = false,
     ): Result<List<ReleaseInfo>> {
         if (!isUpdaterDistribution) {
@@ -636,16 +738,48 @@ object Updater {
                     ?.takeIf { it.isNotBlank() }
                     ?.let { runCatching { parseReleasesJson(it, preReleaseArtifactName(channel)) }.getOrNull() }
 
-            val shouldCheckNetwork =
-                forceRefresh || cachedJson.isNullOrBlank() || (now - lastCheckedAt) >= NightlyCacheCheckIntervalMs
+            val feedChannel = UpdateChannel.NIGHTLY
+            val cachedManifestRelease = readCachedUpdateFeed(feedChannel, preReleaseArtifactName(channel))
 
-            if (!shouldCheckNetwork) {
-                return@runCatchingCancellable cachedReleases ?: emptyList()
+            val manifestFresh = isUpdateFeedCacheFresh(feedChannel, now)
+            val releasesFresh = !cachedJson.isNullOrBlank() && (now - lastCheckedAt) < NightlyCacheCheckIntervalMs
+
+            if (!forceRefresh && (manifestFresh || releasesFresh)) {
+                lastCheckTime = now
+                return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
+            }
+
+            // Manifest first: release-asset downloads are CDN-served, unauthenticated and not
+            // API-metered, so the fixed feed asset is read before every api.github.com call. A
+            // miss (bad JSON, wrong channel, no asset for this device, HTTP failure) is silent —
+            // the API below is the fallback, not an error.
+            fetchUpdateFeed(feedChannel, preReleaseArtifactName(channel))?.let { fetched ->
+                val merged = mergeManifestRelease(cachedReleases, fetched.release)
+                App.instance.dataStore.edit { settings ->
+                    settings[manifestJsonKey(feedChannel)] = fetched.rawJson
+                    settings[manifestCheckedAtKey(feedChannel)] = now
+                    settings[NightlyReleasesLastCheckedAtKey] = now
+                    settings[NightlyReleasesJsonKey] = encodeReleasesJson(merged)
+                    settings[NightlyReleasesFingerprintKey] = getPreReleaseTopFingerprint(merged, channel)
+                }
+                lastCheckTime = now
+                return@runCatchingCancellable merged
+            }
+
+            // Manifest miss. api.github.com is the fallback, and while the rate-limit backoff is
+            // active it is off limits entirely: serve whatever cache exists until the reset passes.
+            if (rateLimitBackoffActive(now)) {
+                lastCheckTime = now
+                val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
+                if (cached.isNotEmpty()) {
+                    return@runCatchingCancellable cached
+                }
+                throw IllegalStateException("GitHub API is rate limited and no cached releases exist")
             }
 
             val networkResult =
                 try {
-                    fetchPreReleasesNetwork(
+                    fetchReleasesNetwork(
                         perPage = perPage,
                         cachedEtag = cachedEtag,
                     )
@@ -654,6 +788,7 @@ object Updater {
                 } catch (_: Exception) {
                     null
                 }
+            networkResult?.let { recordRateLimitBackoff(it.status.value, it.rateLimitRemaining, it.rateLimitReset, now) }
 
             when {
                 networkResult?.status == HttpStatusCode.NotModified && cachedReleases != null -> {
@@ -661,7 +796,8 @@ object Updater {
                         settings[NightlyReleasesLastCheckedAtKey] = now
                         networkResult.etag?.let { settings[NightlyReleasesEtagKey] = it }
                     }
-                    return@runCatchingCancellable cachedReleases
+                    lastCheckTime = now
+                    return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
                 }
 
                 networkResult != null &&
@@ -683,155 +819,25 @@ object Updater {
                                 settings[NightlyReleasesFingerprintKey] = newFingerprint
                             }
                         }
+                        lastCheckTime = now
                         return@runCatchingCancellable releases
                     }
                 }
             }
 
-            val releasePageFallback =
-                try {
-                    fetchLatestPreReleasePage(channel)
-                } catch (error: CancellationException) {
-                    throw error
-                } catch (_: Exception) {
-                    null
-                }
-            val workflowFallback =
-                if (releasePageFallback == null) {
-                    try {
-                        fetchLatestWorkflowRelease(channel)
-                    } catch (error: CancellationException) {
-                        throw error
-                    } catch (_: Exception) {
-                        null
-                    }
-                } else {
-                    null
-                }
-            val fallbackRelease = releasePageFallback ?: workflowFallback
-            if (fallbackRelease != null) {
-                val cachedLatest = cachedReleases?.let { findLatestPreRelease(it, channel) }
-                if (
-                    cachedLatest != null &&
-                    findLatestPreRelease(listOf(cachedLatest, fallbackRelease), channel) === cachedLatest
-                ) {
-                    return@runCatchingCancellable cachedReleases
-                }
-
-                val fallbackReleases = listOf(fallbackRelease)
-                val fallbackJson = encodeReleasesJson(fallbackReleases)
-                App.instance.dataStore.edit { settings ->
-                    settings[NightlyReleasesLastCheckedAtKey] = now
-                    settings.remove(NightlyReleasesEtagKey)
-                    settings[NightlyReleasesJsonKey] = fallbackJson
-                    settings[NightlyReleasesFingerprintKey] = getPreReleaseTopFingerprint(fallbackReleases, channel)
-                }
-                return@runCatchingCancellable fallbackReleases
+            val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
+            if (cached.isNotEmpty()) {
+                lastCheckTime = now
+                return@runCatchingCancellable cached
             }
-
-            cachedReleases ?: throw IllegalStateException("No ${channel.name.lowercase()} update source is currently available")
+            throw IllegalStateException("No ${channel.name.lowercase()} update source is currently available")
         }
     }
 
-    private suspend fun fetchLatestPreReleasePage(channel: PreChannel): ReleaseInfo? {
-        val response: HttpResponse =
-            client.get("$NightlyReleaseBaseUrl/latest") {
-                headers {
-                    append("User-Agent", "ArchiveTune")
-                }
-            }
-        response.bodyAsText()
-        if (response.status.value !in 200..299) return null
-
-        val resolvedUrl = response.call.request.url.toString()
-        val tagName =
-            resolvedUrl
-                .substringAfter("/tag/", missingDelimiterValue = "")
-                .substringBefore('?')
-                .trimEnd('/')
-        // `/releases/latest` resolves to whatever the newest published release is, which may belong
-        // to the OTHER pre-release channel (or a stable). Only accept it for this channel's prefix.
-        if (!channel.tagRegex.matches(tagName)) return null
-
-        val date = tagName.removePrefix(channel.tagPrefix)
-        return ReleaseInfo(
-            tagName = tagName,
-            name = tagName,
-            body = null,
-            publishedAt =
-                "${date.substring(0, 4)}-${date.substring(4, 6)}-${date.substring(6, 8)}T00:00:00Z",
-            htmlUrl = resolvedUrl,
-            downloadUrl = "$NightlyReleaseBaseUrl/download/$tagName/${preReleaseArtifactName(channel)}",
-        )
-    }
-
-    private suspend fun fetchPreReleasesNetwork(
-        perPage: Int,
-        cachedEtag: String?,
-    ): ReleasesNetworkResult {
-        val response: HttpResponse =
-            client.get("https://api.github.com/repos/$OWNER/releases?per_page=$perPage") {
-                headers {
-                    append("Accept", "application/vnd.github+json")
-                    append("User-Agent", "ArchiveTune")
-                    if (!cachedEtag.isNullOrBlank()) {
-                        append("If-None-Match", cachedEtag)
-                    }
-                }
-            }
-        val etag = response.headers["ETag"]
-        return when (response.status) {
-            HttpStatusCode.NotModified -> {
-                ReleasesNetworkResult(
-                    status = response.status,
-                    body = null,
-                    etag = cachedEtag ?: etag,
-                )
-            }
-
-            else -> {
-                ReleasesNetworkResult(
-                    status = response.status,
-                    body = response.bodyAsText(),
-                    etag = etag,
-                )
-            }
-        }
-    }
-
-    private suspend fun fetchLatestWorkflowRelease(channel: PreChannel): ReleaseInfo? {
-        val response: HttpResponse =
-            client.get(preWorkflowRunsUrl(channel)) {
-                headers {
-                    append("Accept", "application/vnd.github+json")
-                    append("User-Agent", "ArchiveTune")
-                }
-            }
-        val responseBody = response.bodyAsText()
-        if (response.status.value !in 200..299) return null
-
-        val workflowRun =
-            JSONObject(responseBody)
-                .optJSONArray("workflow_runs")
-                ?.optJSONObject(0)
-                ?: return null
-        val publishedAt =
-            workflowRun
-                .optString("run_started_at")
-                .ifBlank { workflowRun.optString("created_at") }
-        val date = publishedAt.take(10).filter(Char::isDigit)
-        if (date.length != 8) return null
-
-        val tagName = "${channel.tagPrefix}$date"
-        return ReleaseInfo(
-            tagName = tagName,
-            name = tagName,
-            body = null,
-            publishedAt = publishedAt,
-            htmlUrl = workflowRun.optString("html_url"),
-            downloadUrl = workflowArtifactDownloadUrl(channel),
-        )
-    }
+    // The old `/releases/latest` HTML-redirect and workflow-runs/nightly.link fallbacks are gone.
+    // `/releases/latest` never resolves to a prerelease, and the workflow-runs path is API-metered
+    // and reachable only through the pre-release fallback — exactly the requests the rate-limit
+    // backoff exists to avoid. The keyless update-feed manifest plus the cached API page cover it.
 
     private fun getPreReleaseTopFingerprint(
         releases: List<ReleaseInfo>,
@@ -865,6 +871,147 @@ object Updater {
         return "$NightlyReleaseBaseUrl/latest/download/$artifactName"
     }
 
+    // ── Keyless update feed (schema-v1 manifest) ──────────────────────────────────────────
+
+    private data class UpdateFeedFetch(
+        val rawJson: String,
+        val release: ReleaseInfo,
+    )
+
+    private fun updateFeedManifestUrl(channel: UpdateChannel): String =
+        "$NightlyReleaseBaseUrl/download/$UpdateFeedTag/${channel.name.lowercase()}.json"
+
+    private fun manifestJsonKey(channel: UpdateChannel): Preferences.Key<String> =
+        when (channel) {
+            UpdateChannel.NIGHTLY -> UpdateFeedManifestNightlyJsonKey
+            UpdateChannel.STABLE -> UpdateFeedManifestStableJsonKey
+        }
+
+    private fun manifestCheckedAtKey(channel: UpdateChannel): Preferences.Key<Long> =
+        when (channel) {
+            UpdateChannel.NIGHTLY -> UpdateFeedManifestNightlyLastCheckedAtKey
+            UpdateChannel.STABLE -> UpdateFeedManifestStableLastCheckedAtKey
+        }
+
+    private fun manifestTtlMs(channel: UpdateChannel): Long =
+        when (channel) {
+            UpdateChannel.NIGHTLY -> NightlyCacheCheckIntervalMs
+            UpdateChannel.STABLE -> ReleaseCacheCheckIntervalMs
+        }
+
+    /**
+     * Maps raw manifest JSON into this build's release model, or null on any miss. An asset for
+     * THIS device must exist: offering an update whose APK the manifest does not carry is worse
+     * than falling back to the API release list.
+     */
+    private fun mapUpdateFeedBody(
+        body: String,
+        channel: UpdateChannel,
+        expectedArtifactName: String,
+    ): ReleaseInfo? {
+        val manifest = parseUpdateFeedManifest(body, channel.name.lowercase()) ?: return null
+        val assetUrl = selectUpdateFeedAssetUrl(manifest.assets, expectedArtifactName) ?: return null
+        return manifest.toReleaseInfo(assetUrl, StableReleaseBaseUrl)
+    }
+
+    private suspend fun readCachedUpdateFeed(
+        channel: UpdateChannel,
+        expectedArtifactName: String,
+    ): ReleaseInfo? =
+        App.instance.dataStore
+            .getAsync(manifestJsonKey(channel))
+            ?.takeIf { it.isNotBlank() }
+            ?.let { mapUpdateFeedBody(it, channel, expectedArtifactName) }
+
+    private suspend fun isUpdateFeedCacheFresh(
+        channel: UpdateChannel,
+        now: Long,
+    ): Boolean {
+        val lastCheckedAt = App.instance.dataStore.getAsync(manifestCheckedAtKey(channel), 0L)
+        return lastCheckedAt > 0 && now - lastCheckedAt < manifestTtlMs(channel)
+    }
+
+    /**
+     * Fetches the channel's manifest from the fixed `update-feed` release asset. The asset URL is
+     * served by a CDN redirect (followed by the engine), carries no Authorization header and does
+     * not count against the api.github.com budget — which is why it is tried before every API
+     * call. The engine-level call timeout bounds a hung redirect.
+     */
+    private suspend fun fetchUpdateFeed(
+        channel: UpdateChannel,
+        expectedArtifactName: String,
+    ): UpdateFeedFetch? =
+        try {
+            val response =
+                client.get(updateFeedManifestUrl(channel)) {
+                    headers {
+                        append("Accept", "application/vnd.github+json")
+                        append("User-Agent", "ArchiveTune")
+                    }
+                }
+            if (response.status.value !in 200..299) return null
+            val body = response.bodyAsText()
+            mapUpdateFeedBody(body, channel, expectedArtifactName)?.let { UpdateFeedFetch(rawJson = body, release = it) }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            null
+        }
+
+    /** The manifest carries only the newest release; the cached API history is kept behind it. */
+    private fun mergeManifestRelease(
+        cached: List<ReleaseInfo>?,
+        manifest: ReleaseInfo?,
+    ): List<ReleaseInfo> =
+        when (manifest) {
+            null -> cached.orEmpty()
+            else -> listOf(manifest) + cached.orEmpty().filter { it.tagName != manifest.tagName }
+        }
+
+    private suspend fun rateLimitBackoffActive(now: Long): Boolean =
+        GitHubRateLimit.isBlocked(App.instance.dataStore.getAsync(GitHubRateLimitedUntilKey, 0L), now)
+
+    private suspend fun recordRateLimitBackoff(
+        statusCode: Int,
+        rateLimitRemaining: String?,
+        rateLimitReset: String?,
+        nowMs: Long,
+    ) {
+        val until = GitHubRateLimit.backoffUntil(statusCode, rateLimitRemaining, rateLimitReset, nowMs) ?: return
+        App.instance.dataStore.edit { settings -> settings[GitHubRateLimitedUntilKey] = until }
+    }
+
+    private fun encodeCommitHistory(commits: List<GitCommit>): String =
+        buildJsonArray {
+            commits.forEach { commit ->
+                add(
+                    buildJsonObject {
+                        put("sha", commit.sha)
+                        put("message", commit.message)
+                        put("author", commit.author)
+                        put("date", commit.date)
+                        put("url", commit.url)
+                        commit.authorAvatarUrl?.let { put("authorAvatarUrl", it) }
+                    },
+                )
+            }
+        }.toString()
+
+    internal fun parseCommitHistoryJson(text: String): List<GitCommit>? =
+        runCatching {
+            Json.parseToJsonElement(text).jsonArray.map { element ->
+                val commit = element.jsonObject
+                GitCommit(
+                    sha = commit["sha"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    message = commit["message"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    author = commit["author"]?.jsonPrimitive?.contentOrNull.orEmpty().ifEmpty { "Unknown" },
+                    date = commit["date"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    url = commit["url"]?.jsonPrimitive?.contentOrNull.orEmpty(),
+                    authorAvatarUrl = commit["authorAvatarUrl"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
+                )
+            }
+        }.getOrNull()
+
     suspend fun getAllReleases(
         perPage: Int = 30,
         forceRefresh: Boolean = false,
@@ -885,12 +1032,39 @@ object Updater {
                     ?.takeIf { it.isNotBlank() }
                     ?.let { runCatching { parseReleasesJson(it, stableReleaseArtifactName()) }.getOrNull() }
 
-            val shouldCheckNetwork =
-                forceRefresh || cachedJson.isNullOrBlank() || (now - lastCheckedAt) >= ReleaseCacheCheckIntervalMs
+            val feedChannel = UpdateChannel.STABLE
+            val cachedManifestRelease = readCachedUpdateFeed(feedChannel, stableReleaseArtifactName())
 
-            if (!shouldCheckNetwork) {
+            val manifestFresh = isUpdateFeedCacheFresh(feedChannel, now)
+            val releasesFresh = !cachedJson.isNullOrBlank() && (now - lastCheckedAt) < ReleaseCacheCheckIntervalMs
+
+            if (!forceRefresh && (manifestFresh || releasesFresh)) {
                 lastCheckTime = now
-                return@runCatchingCancellable cachedReleases ?: emptyList()
+                return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
+            }
+
+            // Manifest first (see getAllPreReleases): the fixed stable.json asset avoids the API
+            // and its rate limit, and only a miss falls through to api.github.com.
+            fetchUpdateFeed(feedChannel, stableReleaseArtifactName())?.let { fetched ->
+                val merged = mergeManifestRelease(cachedReleases, fetched.release)
+                App.instance.dataStore.edit { settings ->
+                    settings[manifestJsonKey(feedChannel)] = fetched.rawJson
+                    settings[manifestCheckedAtKey(feedChannel)] = now
+                    settings[GitHubReleasesLastCheckedAtKey] = now
+                    settings[GitHubReleasesJsonKey] = encodeReleasesJson(merged)
+                    settings[GitHubReleasesFingerprintKey] = getTopReleaseFingerprint(merged)
+                }
+                lastCheckTime = now
+                return@runCatchingCancellable merged
+            }
+
+            if (rateLimitBackoffActive(now)) {
+                lastCheckTime = now
+                val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
+                if (cached.isNotEmpty()) {
+                    return@runCatchingCancellable cached
+                }
+                throw IllegalStateException("GitHub API is rate limited and no cached releases exist")
             }
 
             val networkResult =
@@ -904,12 +1078,13 @@ object Updater {
                 } catch (_: Exception) {
                     null
                 }
+            networkResult?.let { recordRateLimitBackoff(it.status.value, it.rateLimitRemaining, it.rateLimitReset, now) }
 
             if (networkResult == null) {
-                val fallback = cachedReleases
-                if (fallback != null) {
+                val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
+                if (cached.isNotEmpty()) {
                     lastCheckTime = now
-                    return@runCatchingCancellable fallback
+                    return@runCatchingCancellable cached
                 }
                 throw IllegalStateException("Failed to fetch releases")
             }
@@ -920,10 +1095,10 @@ object Updater {
                         settings[GitHubReleasesLastCheckedAtKey] = now
                         networkResult.etag?.let { settings[GitHubReleasesEtagKey] = it }
                     }
-                    val fallback = cachedReleases
-                    if (fallback != null) {
+                    val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
+                    if (cached.isNotEmpty()) {
                         lastCheckTime = now
-                        return@runCatchingCancellable fallback
+                        return@runCatchingCancellable cached
                     }
                     throw IllegalStateException("Release cache is empty")
                 }

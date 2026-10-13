@@ -2107,6 +2107,25 @@ val NightlyReleasesJsonKey = stringPreferencesKey("daily_nightly_releases_json")
 val NightlyReleasesLastCheckedAtKey = longPreferencesKey("daily_nightly_releases_last_checked_at")
 val NightlyReleasesFingerprintKey = stringPreferencesKey("daily_nightly_releases_fingerprint")
 
+// Keyless update feed: CI uploads a schema-v1 manifest per channel to the fixed `update-feed`
+// release (releases/download/update-feed/<channel>.json). The app caches the raw JSON with a TTL
+// (15 min nightly, 6 h stable) so a fresh manifest costs no api.github.com request at all.
+val UpdateFeedManifestNightlyJsonKey = stringPreferencesKey("update_feed_manifest_nightly_json")
+val UpdateFeedManifestNightlyLastCheckedAtKey = longPreferencesKey("update_feed_manifest_nightly_last_checked_at")
+val UpdateFeedManifestStableJsonKey = stringPreferencesKey("update_feed_manifest_stable_json")
+val UpdateFeedManifestStableLastCheckedAtKey = longPreferencesKey("update_feed_manifest_stable_last_checked_at")
+
+// GitHub API rate-limit backoff: epoch ms until which api.github.com must not be called (403/429
+// with X-RateLimit-Remaining: 0); caches are served until it passes.
+val GitHubRateLimitedUntilKey = longPreferencesKey("github_rate_limited_until")
+
+// Cached Updates-screen commit history, kept per requested branch (dev for Nightly, main for
+// Stable) so a channel switch never serves the other branch's page.
+val GitHubCommitsJsonKey = stringPreferencesKey("github_commits_json")
+val GitHubCommitsEtagKey = stringPreferencesKey("github_commits_etag")
+val GitHubCommitsLastCheckedAtKey = longPreferencesKey("github_commits_last_checked_at")
+val GitHubCommitsBranchKey = stringPreferencesKey("github_commits_branch")
+
 enum class UpdateChannel {
     STABLE,
     NIGHTLY,

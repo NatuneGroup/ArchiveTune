@@ -37,7 +37,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -138,7 +137,6 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -224,6 +222,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.PlayerBackController
 import moe.rukamori.archivetune.ui.component.PlayerBackTarget
 import moe.rukamori.archivetune.ui.component.PredictiveSheetBackState
@@ -3442,10 +3441,7 @@ private fun LittlePlayerContent(
                                 style = LocalTextStyle.current,
                                 fontSize = titleSize,
                                 fontWeight = FontWeight.Bold,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .basicMarquee(),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
@@ -3457,16 +3453,11 @@ private fun LittlePlayerContent(
                                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                                 label = "little_album",
                             ) { album ->
-                                Text(
+                                MarqueeText(
                                     text = album,
                                     color = secondaryColor,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .basicMarquee(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }
@@ -3477,16 +3468,11 @@ private fun LittlePlayerContent(
                                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                                 label = "little_artists",
                             ) { artistLine ->
-                                Text(
+                                MarqueeText(
                                     text = "by - $artistLine",
                                     color = secondaryColor,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .basicMarquee(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.models.MediaMetadata
 
 /** Renders a comma-separated artist line where **each artist name is individually tappable**. */
@@ -62,6 +63,7 @@ fun ClickableArtists(
     // the marquee scrolls underneath. Fade shows ONLY while actually scrolling:
     // basicMarquee measures its child with unbounded width so hasVisualOverflow
     // never fires — compare laid-out text width vs the box (viewport) width.
+    val animationsDisabled = LocalAnimationsDisabled.current
     val layoutState = remember { mutableStateOf<TextLayoutResult?>(null) }
     val layoutResult = layoutState.value
     val viewportWidth = remember { mutableStateOf(0) }
@@ -84,11 +86,13 @@ fun ClickableArtists(
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { layoutState.value = it },
             modifier =
-                Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE)
+                Modifier.fillMaxWidth()
+                    .then(if (animationsDisabled) Modifier else Modifier.basicMarquee(iterations = Int.MAX_VALUE))
                     .pointerInput(annotatedString) {
                     detectTapGestures(
                         onTap = { offset ->
-                            val layout = layoutResult ?: return@detectTapGestures
+                            // Read the state, not the captured value: this block outlives recompositions.
+                            val layout = layoutState.value ?: return@detectTapGestures
                             val position = layout.getOffsetForPosition(offset)
                             annotatedString
                                 .getStringAnnotations(position, position)

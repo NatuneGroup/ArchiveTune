@@ -10,7 +10,6 @@
 
 package moe.rukamori.archivetune.ui.player
 
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -101,6 +100,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.models.MediaMetadata
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.utils.supportsArtworkGlowShadow
 import moe.rukamori.archivetune.ui.utils.toComposeShape
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -284,35 +284,43 @@ fun AodPlayerScreen(
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(
-                        text = mediaMetadata.title,
-                        style = MaterialTheme.typography.titleLarge,
-                        color = Color.White,
-                        maxLines = titleMaxLines.coerceIn(1, 3),
-                        overflow = TextOverflow.Ellipsis,
-                        textAlign = textAlign,
-                        modifier = Modifier.fillMaxWidth().basicMarquee(),
-                    )
-                    if (showArtist) {
+                    val titleLines = titleMaxLines.coerceIn(1, 3)
+                    if (titleLines == 1) {
+                        MarqueeText(
+                            text = mediaMetadata.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                            textAlign = textAlign,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else {
+                        // A wrapped title has no single line to scroll, so it ellipsizes.
                         Text(
+                            text = mediaMetadata.title,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = Color.White,
+                            maxLines = titleLines,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = textAlign,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    if (showArtist) {
+                        MarqueeText(
                             text = artistText,
                             style = MaterialTheme.typography.bodyMedium,
                             color = White65,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             textAlign = textAlign,
-                            modifier = Modifier.fillMaxWidth().basicMarquee(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     if (showAlbum && mediaMetadata.album?.title?.isNotBlank() == true) {
-                        Text(
+                        MarqueeText(
                             text = mediaMetadata.album.title,
                             style = MaterialTheme.typography.labelMedium,
                             color = White65.copy(alpha = 0.78f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             textAlign = textAlign,
-                            modifier = Modifier.fillMaxWidth().basicMarquee(),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                     if (showLyrics) {

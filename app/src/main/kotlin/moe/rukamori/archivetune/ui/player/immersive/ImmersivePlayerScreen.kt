@@ -11,7 +11,6 @@ package moe.rukamori.archivetune.ui.player.immersive
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -37,6 +36,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -79,6 +79,7 @@ import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.hazeSource
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.component.ListDialog
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
@@ -566,31 +567,27 @@ private fun MetadataRow(
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(
+            MarqueeText(
                 text = title,
                 color = ImmersiveContentColor,
                 fontSize = 27.sp,
-                lineHeight = 31.sp,
+                style = LocalTextStyle.current.copy(lineHeight = 31.sp),
                 fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier =
                     Modifier
-                        .basicMarquee()
+                        .fillMaxWidth()
                         .clickable(enabled = albumId != null) {
                             onAction(ImmersivePlayerAction.OpenAlbum)
                         },
             )
             val artistText = remember(artists) { artists.joinToString(separator = " • ") { it.name } }
-            Text(
+            MarqueeText(
                 text = artistText,
                 color = ImmersiveSecondaryContentColor,
                 fontSize = 19.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier =
                     Modifier
-                        .basicMarquee()
+                        .fillMaxWidth()
                         .clickable(enabled = artists.any { !it.id.isNullOrBlank() }) {
                             onAction(ImmersivePlayerAction.OpenArtists)
                         },

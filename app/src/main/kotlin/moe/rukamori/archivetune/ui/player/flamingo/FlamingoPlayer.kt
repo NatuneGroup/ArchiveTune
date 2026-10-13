@@ -56,7 +56,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
@@ -93,6 +92,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
@@ -204,6 +204,7 @@ import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import android.graphics.Bitmap
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassTuning
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.PlatformBackdrop
@@ -1527,12 +1528,11 @@ fun FlamingoPlayerContent(
                                                                     .weight(1f)
                                                                     .padding(end = 15.dp),
                                                             ) {
-                                                                Text(
+                                                                MarqueeText(
                                                                     text = metadata.title,
                                                                     fontSize = 19.5.sp,
-                                                                    maxLines = 1,
                                                                     fontWeight = FontWeight.Medium,
-                                                                    modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                                                                    modifier = Modifier.fillMaxWidth(),
                                                                 )
                                                                 Text(
                                                                     text = metadata.artistNames(),
@@ -2756,12 +2756,11 @@ private fun FlamingoLandscapeTitleBlock(
                 .weight(1f)
                 .padding(end = 12.dp),
         ) {
-            Text(
+            MarqueeText(
                 text = mediaMetadata.title,
                 fontSize = 19.5.sp,
-                maxLines = 1,
                 fontWeight = FontWeight.Medium,
-                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                modifier = Modifier.fillMaxWidth(),
             )
             Text(
                 text = mediaMetadata.artistNames(),
@@ -3808,13 +3807,12 @@ private fun FlamingoPlayingBar(
                 .weight(1f)
                 .padding(start = 12.dp, end = 15.dp),
         ) {
-            Text(
+            MarqueeText(
                 text = mediaMetadata.title,
                 fontSize = 16.5.sp,
-                maxLines = 1,
                 fontWeight = FontWeight.Medium,
-                lineHeight = 16.5.sp,
-                modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE),
+                style = LocalTextStyle.current.copy(lineHeight = 16.5.sp),
+                modifier = Modifier.fillMaxWidth(),
             )
             Text(
                 text = mediaMetadata.artistNames(),

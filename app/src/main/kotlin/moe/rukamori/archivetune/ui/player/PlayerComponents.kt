@@ -1996,17 +1996,12 @@ fun V8PlayerControlsContent(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (subtitle.isNotBlank()) {
-                Text(
+                MarqueeText(
                     text = subtitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = secondaryForeground,
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(Modifier.height(contentGap))
@@ -2497,17 +2492,12 @@ private fun V8Header(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
-        Text(
+        MarqueeText(
             text = subtitle,
             style = MaterialTheme.typography.titleMedium,
             color = secondaryForeground,
             textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .basicMarquee(),
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -2600,7 +2590,6 @@ private fun V8MetadataActions(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .basicMarquee()
                             .clickable(
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() },
@@ -2612,10 +2601,7 @@ private fun V8MetadataActions(
                     onArtistClick = onArtistClick,
                     style = MaterialTheme.typography.titleMedium,
                     color = foreground,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -3534,7 +3520,6 @@ private fun V9Metadata(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .basicMarquee()
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -3547,10 +3532,7 @@ private fun V9Metadata(
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = textColor.copy(alpha = 0.72f),
                 textAlign = TextAlign.Center,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .basicMarquee(),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }

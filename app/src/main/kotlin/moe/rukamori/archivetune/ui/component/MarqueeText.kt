@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.InlineTextContent
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.utils.fadingEdge
 
 /**
@@ -53,6 +54,7 @@ fun MarqueeText(
     fadeWidth: Dp = 24.dp,
     animationMode: MarqueeAnimationMode = MarqueeAnimationMode.Immediately,
 ) {
+    val animationsDisabled = LocalAnimationsDisabled.current
     var contentWidth by remember { mutableIntStateOf(0) }
     var viewportWidth by remember { mutableIntStateOf(0) }
     val overflows = viewportWidth > 0 && contentWidth > viewportWidth
@@ -76,11 +78,17 @@ fun MarqueeText(
             // owns the overflow.
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { contentWidth = it.size.width },
+            // With animations off the line stays still and ellipsizes; it then never measures as
+            // overflowing, so no edge fade is drawn over the "…" either.
             modifier =
-                Modifier.fillMaxWidth().basicMarquee(
-                    iterations = Int.MAX_VALUE,
-                    animationMode = animationMode,
-                ),
+                if (animationsDisabled) {
+                    Modifier.fillMaxWidth()
+                } else {
+                    Modifier.fillMaxWidth().basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        animationMode = animationMode,
+                    )
+                },
         )
     }
 }

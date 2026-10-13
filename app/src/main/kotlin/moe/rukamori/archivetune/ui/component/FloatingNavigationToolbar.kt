@@ -904,7 +904,9 @@ fun FloatingNavigationToolbar(
                                     vibrancy()
                                     blur(4f.dp.toPx())
                                     lens(
-                                        refractionHeight = 24f.dp.toPx(),
+                                        // Clamped so a small pill can't fold the refraction
+                                        // band over itself (dark stripe in light mode).
+                                        refractionHeight = minOf(24f.dp.toPx(), size.minDimension / 2f),
                                         refractionAmount = size.minDimension / 4f,
                                         chromaticAberration = false,
                                     )

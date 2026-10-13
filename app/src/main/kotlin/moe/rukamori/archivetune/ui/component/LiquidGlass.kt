@@ -123,7 +123,14 @@ fun Modifier.liquidGlass(
                         lerp(8f.dp.toPx(), 2f.dp.toPx(), -l)
                     },
                 )
-                lens(24f.dp.toPx(), size.minDimension / 4f, false)
+                // A refraction band taller than half the element folds the shader over
+                // itself and reads as a dark stripe on light backgrounds; small pills
+                // (mini player, About header) hit that at a fixed 24dp.
+                lens(
+                    refractionHeight = minOf(24f.dp.toPx(), size.minDimension / 2f),
+                    refractionAmount = size.minDimension / 4f,
+                    depthEffect = false,
+                )
             },
             onDrawBackdrop = { drawBackdrop ->
                 drawBackdrop()

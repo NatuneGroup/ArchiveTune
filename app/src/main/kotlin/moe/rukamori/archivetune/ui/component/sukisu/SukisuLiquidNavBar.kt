@@ -387,7 +387,9 @@ fun SukisuLiquidNavBar(
                                     vibrancy()
                                     blur(4.dp.toPx())
                                     lens(
-                                        refractionHeight = 24.dp.toPx(),
+                                        // Clamped so a small pill can't fold the refraction
+                                        // band over itself (dark stripe in light mode).
+                                        refractionHeight = minOf(24.dp.toPx(), size.minDimension / 2f),
                                         refractionAmount = 24.dp.toPx(),
                                     )
                                 },
@@ -442,7 +444,8 @@ fun SukisuLiquidNavBar(
                                     vibrancy()
                                     blur(4.dp.toPx())
                                     lens(
-                                        refractionHeight = 24.dp.toPx(),
+                                        // Same clamp as the ghost pill above.
+                                        refractionHeight = minOf(24.dp.toPx(), size.minDimension / 2f),
                                         refractionAmount = 24.dp.toPx(),
                                     )
                                 },
@@ -573,7 +576,7 @@ fun SukisuLiquidNavBar(
                                 effects = {
                                     val progress = dampedDragAnimation.pressProgress
                                     lens(
-                                        refractionHeight = 10.dp.toPx() * progress,
+                                        refractionHeight = minOf(10.dp.toPx() * progress, size.minDimension / 2f),
                                         refractionAmount = 14.dp.toPx() * progress,
                                         depthEffect = true,
                                         chromaticAberration = true,

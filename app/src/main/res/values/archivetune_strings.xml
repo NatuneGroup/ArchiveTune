@@ -1095,6 +1095,7 @@
     <string name="flamingo_queue_up_next">Continue Playing</string>
     <string name="flamingo_queue_added_toast">Added to queue</string>
     <string name="flamingo_quality_lossless">Lossless</string>
+    <string name="flamingo_quality_hires_lossless">Hi-Res Lossless</string>
     <string name="credits_written_by">Written by</string>
     <string name="live_audio_chain_android_mixer">ANDROID MIXER</string>
     <string name="live_audio_chain_direct_hal">DIRECT HAL</string>

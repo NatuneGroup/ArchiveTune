@@ -3007,7 +3007,14 @@ private fun FlamingoPlayingList(
                 initialFirstVisibleItemScrollOffset = 0,
             )
 
-            val mutableQueueWindows = remember { mutableStateListOf<Timeline.Window>() }
+            // Seeded from the queue at composition so the up-next rows exist on the first
+            // frame; the LaunchedEffect below re-syncs it while the page stays composed.
+            val mutableQueueWindows =
+                remember {
+                    mutableStateListOf<Timeline.Window>().apply {
+                        addAll(queueWindows.drop(currentWindowIndex + 1))
+                    }
+                }
 
             val currentPlayingUid =
                 remember(currentWindowIndex, queueWindows) {
@@ -3066,7 +3073,9 @@ private fun FlamingoPlayingList(
 
             LaunchedEffect(currentWindowIndex, queueWindows) {
                 if (!state.isScrollInProgress && !reorderableState.isAnyItemDragging) {
-                    runCatching { state.animateScrollToItem(currentDisplayIndex) }
+                    // Snap, not animate: the recenter rides on top of the controls'
+                    // expand/collapse, and an animated scroll there reads as flicker.
+                    runCatching { state.scrollToItem(currentDisplayIndex) }
                 }
             }
 
@@ -4576,15 +4585,12 @@ private fun FlamingoQualityIndicator(
         (musicBitrateKbps >= 700 && musicSamplingRate >= 44100)
     val isHiRes = musicBitrateKbps >= 2000 && musicSamplingRate >= 96000
 
-    val qualityLabel =
-        remember(currentFormat) {
-            when {
-                isHiRes -> "Hi-Res"
-                isLossless -> null
-                else -> currentFormat.codecLabel()
-            }
+    val text =
+        when {
+            isHiRes -> stringResource(id = R.string.flamingo_quality_hires_lossless)
+            isLossless -> stringResource(id = R.string.flamingo_quality_lossless)
+            else -> currentFormat.codecLabel() ?: stringResource(id = R.string.flamingo_quality_lossless)
         }
-    val text = qualityLabel ?: stringResource(id = R.string.flamingo_quality_lossless)
 
     Box(
         modifier = Modifier

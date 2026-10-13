@@ -1142,6 +1142,37 @@ class MusicService :
             state != Player.STATE_ENDED
     }
 
+    // Route string of the last session-activity PendingIntent ("album/<id>" or null), so the
+    // PendingIntent is only rebuilt when the target actually changes.
+    private var lastSessionActivityAlbumRoute: String? = null
+
+    // Tapping the playback notification opens the playing song's album when it has one; songs
+    // without an album keep the plain open-the-app intent. MainActivity consumes the extra.
+    private fun updateSessionActivityAlbumLink(metadata: moe.rukamori.archivetune.models.MediaMetadata?) {
+        if (!this::mediaSession.isInitialized) return
+        val albumId = metadata?.album?.id?.takeIf { it.isNotBlank() }
+        val route = albumId?.let { "album/$it" }
+        if (route == lastSessionActivityAlbumRoute) return
+        lastSessionActivityAlbumRoute = route
+        val intent =
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (route != null) {
+                    putExtra("navigate_to", route)
+                }
+            }
+        runCatching {
+            mediaSession.setSessionActivity(
+                PendingIntent.getActivity(
+                    this,
+                    SessionActivityAlbumLinkRequestCode,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        }.onFailure { reportException(it) }
+    }
+
     private fun stopForegroundAndSelf() {
         cancelIdleStop()
         runCatching {
@@ -1384,6 +1415,12 @@ class MusicService :
             ),
         )
         addSession(mediaSession)
+
+        scope.launch {
+            currentMediaMetadata.collect { metadata ->
+                updateSessionActivityAlbumLink(metadata)
+            }
+        }
 
         updateNotification()
         player.repeatMode = REPEAT_MODE_OFF
@@ -11987,6 +12024,7 @@ class MusicService :
         const val ONLINE_PLAYLIST = "online_playlist"
 
         private const val TAG = "MusicService"
+        private const val SessionActivityAlbumLinkRequestCode = 889
         private const val AUDIO_EFFECT_INITIALIZATION_MAX_ATTEMPTS = 4
         private const val AUDIO_EFFECT_INITIALIZATION_RETRY_DELAY_MS = 250L
         private const val INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES = 3

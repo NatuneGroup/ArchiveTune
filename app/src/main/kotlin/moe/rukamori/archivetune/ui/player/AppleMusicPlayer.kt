@@ -80,6 +80,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,11 +126,12 @@ import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
 import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
@@ -404,12 +406,29 @@ fun AppleMusicPlayerContent(
     // In landscape the artwork column stays on screen beside the lyric sheet, so the backdrop keeps
     // its canvas and its cover look instead of handing off to the lyrics backdrop (4nx3b 998edf62c).
     val lyricsTakesBackdrop = lyricsOpen && !landscape
+
+    // === COVER ↔ LYRICS backdrop hand-off === The backdrop's blur, zoom and drift are all
+    // driven by this one progress value, so the hand-off is a single continuous morph.
+    // Declared ahead of the effects below so they can wait on the morph itself instead of a
+    // wall-clock copy of its duration.
+    val lyricsBackdropProgress =
+        animateFloatAsState(
+            targetValue = if (lyricsTakesBackdrop) 1f else 0f,
+            animationSpec =
+                tween(
+                    durationMillis = AmLyricsBackdropMorphMs,
+                    easing = FastOutSlowInEasing,
+                ),
+            label = "am-lyrics-backdrop-progress",
+        )
+
     var canvasVisibleForLyrics by remember { mutableStateOf(true) }
     LaunchedEffect(lyricsTakesBackdrop) {
         if (lyricsTakesBackdrop) {
-            // Keep canvas visible while the backdrop cross-dissolve runs.
+            // Keep canvas visible while the backdrop cross-dissolve runs, and tear it down only
+            // once the morph has actually landed, at whatever scale it runs.
             canvasVisibleForLyrics = true
-            delay(AmLyricsBackdropMorphMs.toLong())
+            snapshotFlow { lyricsBackdropProgress.value }.first { it >= 1f }
             canvasVisibleForLyrics = false
         } else {
             canvasVisibleForLyrics = true
@@ -425,7 +444,7 @@ fun AppleMusicPlayerContent(
         if (lyricsTakesBackdrop) {
             lyricsBackdropActive = true
         } else {
-            delay(AmLyricsBackdropMorphMs.toLong())
+            snapshotFlow { lyricsBackdropProgress.value }.first { it <= 0f }
             lyricsBackdropActive = false
         }
     }
@@ -443,9 +462,10 @@ fun AppleMusicPlayerContent(
         // on Dispatchers.Default and only the composition is left on the main thread. Keeping it
         // long hurts: the AnimatedVisibility fadeIn below is 400ms, so almost all of it would be
         // spent on an empty box and the lyrics would arrive as a pop rather than a fade. The
-        // renderers' own first-focus fade covers the remainder.
+        // renderers' own first-focus fade covers the remainder. The span rides the animator
+        // scale — the morph it is deferring behind is scaled too.
         lyricsContentReady = false
-        delay(AppleMusicLyricsContentDeferMs)
+        scaledDelay(AppleMusicLyricsContentDeferMs)
         lyricsContentReady = true
     }
     // Nothing to re-summon any more; kept as a no-op so the call sites that report a tap stay
@@ -468,18 +488,6 @@ fun AppleMusicPlayerContent(
     val driftDpToPx = with(density) { 1.dp.toPx() }
     val lyricsSwipeDismissThresholdPx = with(density) { 96.dp.toPx() }
 
-    // === COVER ↔ LYRICS backdrop hand-off === The backdrop's blur, zoom and drift are all
-    // driven by this one progress value, so the hand-off is a single continuous morph.
-    val lyricsBackdropProgress =
-        animateFloatAsState(
-            targetValue = if (lyricsTakesBackdrop) 1f else 0f,
-            animationSpec =
-                tween(
-                    durationMillis = AmLyricsBackdropMorphMs,
-                    easing = FastOutSlowInEasing,
-                ),
-            label = "am-lyrics-backdrop-progress",
-        )
     // Optional backdrop wander: while lyrics are open the blurred backdrop zooms and drifts.
     // Off keeps the COVER look (static blur at [AmCoverBlurScale]) in every state.
     val (backdropWanderEnabled) = rememberPreference(AppleMusicBackdropWanderKey, defaultValue = true)

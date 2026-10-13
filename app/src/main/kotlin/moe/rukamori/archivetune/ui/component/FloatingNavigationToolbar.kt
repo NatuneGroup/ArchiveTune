@@ -67,7 +67,6 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -106,6 +105,8 @@ import moe.rukamori.archivetune.utils.isLowEndDevice
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.scaleAwareSpring
 import moe.rukamori.archivetune.utils.ImageBlurUtils
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
@@ -159,16 +160,6 @@ private val NavigationIndicatorHeight = 32.dp
 // tinted with the accent color like the reference bar.
 private val FloatingNavigationIndicatorWidth = 64.dp
 private val FloatingNavigationIndicatorHeight = 42.dp
-
-/**
- * Forces the signature navigation-bar motion (the sliding pill + icon pop) to always run at its
- * full, intended duration, ignoring the system "Animator duration scale" developer setting. Users
- * who run the OS at 0.5x still get expressive tab-switch motion, while the in-app "disable
- * animations" toggle continues to fully bypass these animations.
- */
-private object FullMotionDurationScale : MotionDurationScale {
-    override val scaleFactor: Float = 1f
-}
 
 @Composable
 fun FloatingNavigationToolbar(
@@ -237,6 +228,11 @@ fun FloatingNavigationToolbar(
     val navigationContainerColor = pill.containerColor
     val motionScheme = MaterialTheme.motionScheme
     val (disableAnimations) = rememberPreference(DisableAnimationsKey, defaultValue = false)
+    // The pill slide and the icon pop run on the system animator duration scale: an Animatable
+    // in a LaunchedEffect already shortens with Compose's MotionDurationScale, and the
+    // scale-aware spring reshapes itself below 1x so the bounce never has to be crammed into
+    // the frames that are left. Snap at 0, like everything else.
+    val animationScale = LocalAnimationScale.current
     val (hideNavigationBarLabelsPreference) =
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     // Apple Music's tab bar is icon + label by definition, so the style wins over the global
@@ -471,7 +467,7 @@ fun FloatingNavigationToolbar(
         } else {
             indicatorWidth
         }
-    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, fittedIndicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
+    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, animationScale, fittedIndicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
         if (canLiquidGlass) {
             if (tabWidthPx <= 0f) return@LaunchedEffect
             liquidGlassPillWidth = with(density) { tabWidthPx.toDp() }
@@ -495,12 +491,15 @@ fun FloatingNavigationToolbar(
                 indicatorX.snapTo(targetX)
                 indicatorPlaced = true
             } else {
-                withContext(FullMotionDurationScale) {
-                    indicatorX.animateTo(
-                        targetValue = targetX,
-                        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
-                    )
-                }
+                indicatorX.animateTo(
+                    targetValue = targetX,
+                    animationSpec =
+                        scaleAwareSpring(
+                            scale = animationScale,
+                            dampingRatio = 0.72f,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                )
             }
         }
     }
@@ -681,22 +680,23 @@ fun FloatingNavigationToolbar(
                             // from 80% up past 100% and settles back, giving the bottom pill a
                             // lively bounce on every tab switch (skipped when animations are off).
                             val iconScale = remember(screen) { Animatable(1f) }
-                            LaunchedEffect(selected, disableAnimations) {
+                            LaunchedEffect(selected, disableAnimations, animationScale) {
                                 if (disableAnimations) {
                                     iconScale.snapTo(1f)
                                 } else if (selected) {
                                     iconScale.snapTo(0.8f)
-                                    // Fixed motion scale keeps the pop expressive at 0.5x too.
-                                    withContext(FullMotionDurationScale) {
-                                        iconScale.animateTo(
-                                            targetValue = 1f,
-                                            animationSpec =
-                                                spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow,
-                                                ),
-                                        )
-                                    }
+                                    // The pop follows the system animator scale like every other
+                                    // motion: below 1x the spring damps so the bounce survives
+                                    // the shortened duration, and at 0 it snaps.
+                                    iconScale.animateTo(
+                                        targetValue = 1f,
+                                        animationSpec =
+                                            scaleAwareSpring(
+                                                scale = animationScale,
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow,
+                                            ),
+                                    )
                                 } else {
                                     iconScale.snapTo(1f)
                                 }

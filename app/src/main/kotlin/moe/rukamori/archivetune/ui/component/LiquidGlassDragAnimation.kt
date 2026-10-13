@@ -45,7 +45,6 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
@@ -182,8 +181,6 @@ class LiquidGlassDragAnimation(
 
     private val mutatorMutex = MutatorMutex()
 
-    private val velocityTracker = VelocityTracker()
-
     val value: Float get() = valueAnimation.value
     val targetValue: Float get() = valueAnimation.targetValue
     val pressProgress: Float get() = pressProgressAnimation.value
@@ -229,7 +226,6 @@ class LiquidGlassDragAnimation(
     }
 
     fun press() {
-        velocityTracker.resetTracking()
         animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
@@ -272,11 +268,11 @@ class LiquidGlassDragAnimation(
     }
 
     private fun updateVelocity() {
-        velocityTracker.addPosition(
-            System.currentTimeMillis(),
-            Offset(value, 0f),
-        )
-        val targetVelocity = velocityTracker.calculateVelocity().x / (valueRange.endInclusive - valueRange.start)
+        // The squash/stretch driver reads the value animation's own velocity. It advances in
+        // play time — the same scaled clock the pill's motion runs on — so the stretch stays
+        // honest at every animator scale, where a wall-clock tracker would exaggerate it below
+        // 1x and flatten it above.
+        val targetVelocity = valueAnimation.velocity / (valueRange.endInclusive - valueRange.start)
         animationScope.launch { velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec) }
     }
 }

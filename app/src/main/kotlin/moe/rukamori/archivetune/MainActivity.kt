@@ -313,7 +313,6 @@ import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
-import moe.rukamori.archivetune.systemAnimationScale
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
@@ -948,12 +947,16 @@ class MainActivity : ComponentActivity() {
             val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
             val defaultDisableAnimations = remember(this@MainActivity) { applicationContext.isLowRamDevice() }
             // Developer options can halve or disable every animation; the springs need to know.
-            val systemAnimationScale =
-                remember(this@MainActivity) { applicationContext.systemAnimationScale() }
+            // Live, not latched: the developer option does not recreate this Activity, so a
+            // one-shot read would go stale until the next launch.
+            val animatorScale by rememberAnimatorDurationScale()
             val disableAnimations by rememberPreference(
                 DisableAnimationsKey,
                 defaultValue = defaultDisableAnimations,
             )
+            // Scale 0 is the system's own "remove animations": everything downstream treats it
+            // exactly like the in-app toggle.
+            val animationsOff = disableAnimations || animatorScale == 0f
             val disableBlur by rememberPreference(DisableBlurKey, defaultValue = false)
             // Task 8: app-wide scrollbar toggle. Provided via LocalHideScrollbar so any
             // composable that draws a scrollbar can opt-out when the user has hidden them.
@@ -1220,7 +1223,12 @@ class MainActivity : ComponentActivity() {
                 // an entry animation belongs to this launch, so flipping the switch mid-session
                 // must not start one.
                 val splashAnimationEnabled by rememberPreference(SplashOverlayEnabledKey, defaultValue = true)
-                val coldSplash = remember { splashAnimationEnabled && !disableAnimations }
+                // Latched once per process. animatorScale is read inside the calculation on
+                // purpose: the entry animation belongs to this launch, so its gate is whether
+                // animation was on at launch — the particle burst cannot follow a developer
+                // option that flips mid-session. Scale 0 is animations off, so no splash.
+                val coldSplash =
+                    remember { splashAnimationEnabled && !disableAnimations && animatorScale > 0f }
                 var contentVisible by remember { mutableStateOf(!coldSplash) }
                 // Set by the first tap on the opening animation. The overlay owns the exit (it
                 // fades itself out), this only tells it that the reader has asked for the screen.
@@ -2336,10 +2344,10 @@ class MainActivity : ComponentActivity() {
 
                     CompositionLocalProvider(
                         LocalHapticFeedback provides customHaptic,
-                        LocalAnimationsDisabled provides disableAnimations,
+                        LocalAnimationsDisabled provides animationsOff,
                         moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
                         moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
-                        moe.rukamori.archivetune.LocalAnimationScale provides systemAnimationScale,
+                        moe.rukamori.archivetune.LocalAnimationScale provides animatorScale,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
                         LocalDensity provides scaledDensity,

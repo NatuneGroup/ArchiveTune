@@ -117,6 +117,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.constants.LyricsClickKey
 import moe.rukamori.archivetune.constants.LyricsLineBlurKey
@@ -2092,7 +2093,7 @@ private fun LyricsLineLrcBounce(
         if (!isActive || bounceFactor == 0f) return@LaunchedEffect
         words.indices.forEach { i ->
             launch {
-                delay(i * 40L)
+                scaledDelay(i * 40L)
                 try {
                     scaleAnimatables[i].animateTo(
                         targetValue = 1f + 0.045f * bounceFactor,
@@ -2115,7 +2116,7 @@ private fun LyricsLineLrcBounce(
                 }
             }
             launch {
-                delay(i * 40L)
+                scaledDelay(i * 40L)
                 try {
                     floatAnimatables[i].animateTo(
                         targetValue = -5f * bounceFactor,

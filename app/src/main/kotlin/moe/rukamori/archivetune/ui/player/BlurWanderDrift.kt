@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.isActive
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.hypot
@@ -207,16 +209,24 @@ internal fun rememberBlurWanderDrift(
     maxDriftDp: Float = BlurWanderDrift.DefaultWanderRadiusDp,
 ): BlurWanderDrift {
     val drift = remember(maxDriftDp) { BlurWanderDrift(maxDriftDp = maxDriftDp) }
+    val animationsDisabled = LocalAnimationsDisabled.current
+    val animatorScale = LocalAnimationScale.current
     // Keyed on maxDriftDp as well: a size change (rotation, fold/unfold,
     // split-screen) recreates the drift instance above, and the animation
     // loop must follow the new instance or the wander freezes at (0, 0).
-    LaunchedEffect(active, maxDriftDp) {
-        if (!active) return@LaunchedEffect
+    LaunchedEffect(active, maxDriftDp, animationsDisabled, animatorScale) {
+        // Animations off — the system's remove-animations setting, the in-app toggle, or scale
+        // 0 — stop the wander; a background that will not sit still is exactly what those are
+        // meant to switch off. Other scales advance by scaled frame time, matching Compose's
+        // own infinite transitions.
+        if (!active || animationsDisabled || animatorScale <= 0f) return@LaunchedEffect
         var lastFrameNanos = 0L
         while (isActive) {
             withFrameNanos { frameTimeNanos ->
                 if (lastFrameNanos != 0L) {
-                    drift.advance((frameTimeNanos - lastFrameNanos) / 1_000_000f)
+                    drift.advance(
+                        (frameTimeNanos - lastFrameNanos) / 1_000_000f / animatorScale,
+                    )
                 }
                 lastFrameNanos = frameTimeNanos
             }

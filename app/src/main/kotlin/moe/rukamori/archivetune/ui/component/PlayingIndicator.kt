@@ -33,10 +33,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
+import moe.rukamori.archivetune.scaledDelay
 import kotlin.random.Random
 
 @Composable
@@ -54,13 +55,18 @@ fun PlayingIndicator(
             }
         }
 
-    LaunchedEffect(Unit) {
-        delay(300)
+    val animationsDisabled = LocalAnimationsDisabled.current
+    LaunchedEffect(animationsDisabled) {
+        // Animations off means a static indicator: at scale 0 the animateTo calls below would
+        // still land after one frame and the bars would teleport to a new height every ~66ms,
+        // which is busier than animating, not calmer.
+        if (animationsDisabled) return@LaunchedEffect
+        scaledDelay(300)
         animatables.forEach { animatable ->
             launch {
                 while (true) {
                     animatable.animateTo(Random.nextFloat() * 0.9f + 0.1f)
-                    delay(50)
+                    scaledDelay(50)
                 }
             }
         }

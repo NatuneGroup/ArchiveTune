@@ -37,11 +37,13 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import moe.rukamori.archivetune.utils.isLowEndDevice
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.utils.rememberPreference
+import kotlin.math.roundToLong
 
 @Composable
 fun SplashOverlay(
@@ -64,6 +66,10 @@ fun SplashOverlay(
         }
         val vv = SplashSlots.vectorVersion
         val animationsDisabled = LocalAnimationsDisabled.current
+        // The engine's clock is the scaled one: at 0.5x/2x the whole choreography must stay in
+        // step with the content reveal fading in behind it (a plain Compose tween, so already
+        // scaled). Read once — the overlay is composed for a single launch.
+        val animatorScale = LocalAnimationScale.current
         var showSplash by remember { mutableStateOf(!animationsDisabled) }
         val currentOnBurstStart by rememberUpdatedState(onBurstStart)
         val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -98,9 +104,11 @@ fun SplashOverlay(
             if (vv > 0) engine.rebuildSlots()
         }
 
-        // The safety net: whatever the engine is doing, the overlay gives the screen back.
+        // The safety net: whatever the engine is doing, the overlay gives the screen back. The
+        // ceiling rides the animator scale like the engine it bounds — a fixed 5s would cut the
+        // burst in half at 2x.
         LaunchedEffect(Unit) {
-            delay(SplashConfig.Reveal.MAX_VISIBLE_MS.toLong())
+            scaledDelay(SplashConfig.Reveal.MAX_VISIBLE_MS.toLong())
             dismissSplash()
         }
 
@@ -110,7 +118,12 @@ fun SplashOverlay(
 
         LaunchedEffect(showSplash) {
             if (!showSplash) return@LaunchedEffect
+            if (animatorScale <= 0f) return@LaunchedEffect
             var lastTime = 0L
+            // The engine's own clock: frame deltas divided by the animator scale, so the
+            // particle timeline stretches and shrinks with the system setting while its
+            // internal phases, the burst trigger and the force wobble all stay on one clock.
+            var engineTimeMs = 0L
             while (isActive) {
                 withFrameNanos { now ->
                     if (!isInitialized) return@withFrameNanos
@@ -120,7 +133,8 @@ fun SplashOverlay(
                     }
                     val dt = ((now - lastTime) / 1_000_000_000f).coerceIn(0f, 0.033f)
                     lastTime = now
-                    engine.update(dt, now / 1_000_000)
+                    engineTimeMs += (dt * 1000f / animatorScale).roundToLong()
+                    engine.update(dt / animatorScale, engineTimeMs)
                     frameTick = now
 
                     val burstLimit =

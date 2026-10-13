@@ -38,10 +38,12 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.EaseOutQuart
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.SpringSpec
 import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
@@ -100,6 +102,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.awaitFrame
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -113,6 +116,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.snapshots.Snapshot
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -170,6 +174,7 @@ import java.time.LocalDateTime
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -287,10 +292,6 @@ private val FlamingoLandscapeRightScrim =
         0.55f to Color.Transparent,
         1f to Color.Black.copy(alpha = 0.45f),
     )
-
-private const val FlamingoLyricsContentDeferMs = 600L
-private const val FlamingoLyricsContentDeferCanvasMs = 300L
-private const val FlamingoPageMorphHoldMs = 420L
 
 // Alpha-mask stops for the queue list's vertical edge fade (cached, never
 // rebuilt per draw).
@@ -497,17 +498,17 @@ fun FlamingoPlayerContent(
         val nowPageLambda = rememberUpdatedState(nowPage)
         val showControlLambda = rememberUpdatedState(showControl.value)
 
-        val firstPageObservation = remember { mutableStateOf(true) }
-        var pageMorphRunning by remember { mutableStateOf(false) }
-        LaunchedEffect(nowPage) {
-            if (firstPageObservation.value) {
-                firstPageObservation.value = false
-                return@LaunchedEffect
-            }
-            pageMorphRunning = true
-            delay(FlamingoPageMorphHoldMs)
-            pageMorphRunning = false
-        }
+        // The page morph below is an AnimatedContent crossfade with a sharedBounds spring; the
+        // overlay artwork has to cover it for exactly as long as it runs, which at the developer
+        // animation scales is not a fixed wall-clock hold (0x/0.5x left a ghost artwork up after
+        // the page had settled, 2x+ dropped it mid-flight). Driving the hold from the transition
+        // itself keeps the two in sync: isIdle flips false the moment a new page target differs
+        // from the settled state, and true again only when the morph lands. Seeding the state
+        // with the current page keeps the first composition from reading as a morph.
+        val pageMorphState = remember { MutableTransitionState(nowPage) }
+        pageMorphState.targetState = nowPage
+        val pageMorphTransition = rememberTransition(pageMorphState, label = "FlamingoPageMorph")
+        val pageMorphRunning = !pageMorphState.isIdle
 
         val overlayArtworkReveal by animateFloatAsState(
             targetValue = if (pageMorphRunning || nowPage != FlamingoPage.Album) 1f else 0f,
@@ -525,18 +526,6 @@ fun FlamingoPlayerContent(
                 !landscape
         var canvasSurfacesPlaying by remember { mutableStateOf(true) }
         var canvasSurfacesVisible by remember { mutableStateOf(true) }
-        LaunchedEffect(pageTakesBackdrop) {
-            if (pageTakesBackdrop) {
-                canvasSurfacesPlaying = true
-                canvasSurfacesVisible = true
-                delay(FlamingoCanvasPageFadeMs.toLong())
-                canvasSurfacesPlaying = false
-                canvasSurfacesVisible = false
-            } else {
-                canvasSurfacesPlaying = true
-                canvasSurfacesVisible = true
-            }
-        }
         val canvasSurfacesAlpha by animateFloatAsState(
             targetValue = if (pageTakesBackdrop) 0f else 1f,
             animationSpec = tween(
@@ -545,6 +534,21 @@ fun FlamingoPlayerContent(
             ),
             label = "flamingo-canvas-surfaces-fade",
         )
+        LaunchedEffect(pageTakesBackdrop) {
+            if (pageTakesBackdrop) {
+                canvasSurfacesPlaying = true
+                canvasSurfacesVisible = true
+                // Hide (and pause the decoder) only once the fade-out has actually landed, at
+                // whatever scale it runs — a wall-clock wait cuts the fade short above 1x and
+                // leaves the video decoding pointlessly at 0x.
+                snapshotFlow { canvasSurfacesAlpha }.first { it <= 0f }
+                canvasSurfacesPlaying = false
+                canvasSurfacesVisible = false
+            } else {
+                canvasSurfacesPlaying = true
+                canvasSurfacesVisible = true
+            }
+        }
 
         val canvasStageOnAlbum = !landscape && nowPage == FlamingoPage.Album
         var canvasStageSurfaceVisible by remember { mutableStateOf(true) }
@@ -587,7 +591,6 @@ fun FlamingoPlayerContent(
                     0f,
                     tween(durationMillis = FlamingoCanvasFlightHandoffMs, easing = FastOutSlowInEasing),
                 )
-                delay(FlamingoCanvasFlightHandoffMs.toLong())
                 canvasStageSurfaceVisible = false
             }
         }
@@ -610,13 +613,12 @@ fun FlamingoPlayerContent(
             if (nowPage == FlamingoPage.Lyric) {
                 lyricsContentReady = false
 
-                delay(
-                    if (canvasVisualActive) {
-                        FlamingoLyricsContentDeferCanvasMs
-                    } else {
-                        FlamingoLyricsContentDeferMs
-                    },
-                )
+                // The expensive first lyrics composition waits for the page morph to settle —
+                // at whatever scale it runs — so its burst cannot land mid-morph at 2x, or hold
+                // an empty page at 0x the way the old fixed defer did. One frame of grace keeps
+                // the composition off the morph's final frame.
+                snapshotFlow { pageMorphState.isIdle }.first { it }
+                awaitFrame()
                 lyricsContentReady = true
             } else {
                 lyricsContentReady = false
@@ -1342,8 +1344,7 @@ fun FlamingoPlayerContent(
                 } else {
                     FlamingoWrapper {
                         SharedTransitionLayout {
-                            AnimatedContent(
-                                targetState = nowPage,
+                            pageMorphTransition.AnimatedContent(
                                 transitionSpec = {
                                     fadeIn(
                                         tween(
@@ -1358,7 +1359,6 @@ fun FlamingoPlayerContent(
                                     )
                                 },
                                 modifier = Modifier.fillMaxSize(),
-                                label = "FlamingoPageCrossfade",
                             ) { page ->
                                 val pageBoundsScope = this@AnimatedContent
                                 val albumSharedBounds = Modifier.sharedBounds(

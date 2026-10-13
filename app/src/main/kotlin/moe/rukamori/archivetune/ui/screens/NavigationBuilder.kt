@@ -144,7 +144,10 @@ fun NavGraphBuilder.navigationBuilder(
     searchListState: LazyListState? = null,
     homeScrollConnection: NestedScrollConnection? = null,
     searchScrollConnection: NestedScrollConnection? = null,
-    onlineSearchSort: OnlineSearchSort = OnlineSearchSort.DEFAULT,
+    // A provider, not a value: the NavHost graph is built once (the builder lambda stays stable),
+    // so a by-value sort would be frozen at graph-build time. Reading the provider inside the
+    // destination content keeps the sort live.
+    onlineSearchSort: () -> OnlineSearchSort = { OnlineSearchSort.DEFAULT },
 ) {
     composable(Screens.Home.route) {
         // Three separate home pages behind one tab, picked by HomeSourceKey and switched from the
@@ -335,7 +338,7 @@ fun NavGraphBuilder.navigationBuilder(
     ) {
         OnlineSearchResult(
             navController = navController,
-            searchSort = onlineSearchSort,
+            searchSort = onlineSearchSort(),
         )
     }
     composable(

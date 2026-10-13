@@ -96,9 +96,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
@@ -164,7 +165,8 @@ fun RukamoriHomeScreen(
 
     val lazyListState = listState ?: rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val backStackEntry by navController.currentBackStackEntryAsState()
+    // This screen's own back-stack entry, not the controller's current one (see HomeScreen).
+    val backStackEntry = LocalLifecycleOwner.current as? NavBackStackEntry
     val scrollToTop =
         backStackEntry
             ?.savedStateHandle

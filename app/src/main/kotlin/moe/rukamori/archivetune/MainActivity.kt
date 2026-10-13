@@ -190,6 +190,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.datastore.preferences.core.edit
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
@@ -376,8 +377,12 @@ import moe.rukamori.archivetune.ui.theme.ExpressiveThemeColor
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.extractThemeColor
 import moe.rukamori.archivetune.ui.theme.extractWallpaperThemeColor
+import moe.rukamori.archivetune.ui.utils.TabNavAction
+import moe.rukamori.archivetune.ui.utils.TabNavEvent
+import moe.rukamori.archivetune.ui.utils.TabNavState
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
+import moe.rukamori.archivetune.ui.utils.reduceTabNav
 import moe.rukamori.archivetune.ui.utils.resetHeightOffset
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
@@ -1544,10 +1549,10 @@ class MainActivity : ComponentActivity() {
                     )
                     val (navigationBarCompactBehavior) = rememberNavigationBarCompactBehavior()
                     // Written by the scroll connection below; every destination starts expanded.
+                    // The route-change reset is throttled into the settle collector below (one
+                    // inset re-provision per switch, after the content transition) instead of an
+                    // immediate LaunchedEffect on every route change.
                     var scrolledDown by remember { mutableStateOf(false) }
-                    LaunchedEffect(navBackStackEntry?.destination?.route) {
-                        scrolledDown = false
-                    }
                     // The one-row layout: the tab bar folds into round Library/Home and Search buttons
                     // with the mini player between them. It steps aside while the top search is open,
                     // exactly as the tab bar does (shouldShowNavigationBar is false then); it is not
@@ -2021,31 +2026,70 @@ class MainActivity : ComponentActivity() {
                             },
                         )
 
-                    val handlePrimaryNavigationClick: (Screens, Boolean) -> Unit = { screen, isSelected ->
-                        if (isSelected) {
-                            if (screen == Screens.Search) {
-                                openSearch()
-                                coroutineScope.launch { searchScrollBehavior.state.resetHeightOffset() }
-                            } else {
-                                navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                                when (screen) {
-                                    Screens.Home -> {
-                                        coroutineScope.launch { homeScrollBehavior.state.resetHeightOffset() }
-                                    }
+                    // Coalesced tab navigation. A tap navigates right away when the current entry
+                    // is RESUMED and nothing is pending; otherwise it becomes the pending tab and
+                    // the collector below navigates to the last one once the running transition
+                    // settles — a tap burst costs at most one extra transition instead of stacked
+                    // navigates. optimisticTabRoute shows the tapped tab as selected from the tap
+                    // frame, so the bar's pill/highlight never waits for the back stack.
+                    var optimisticTabRoute by remember { mutableStateOf<String?>(null) }
+                    var pendingTabRoute by remember { mutableStateOf<String?>(null) }
 
-                                    else -> {}
-                                }
+                    // All header resets (re-select taps and route changes) share one cancellable
+                    // job: overlapping animate() writers on the same heightOffset jitter the
+                    // header when re-select is spammed.
+                    var headerResetJob by remember { mutableStateOf<Job?>(null) }
+                    val launchHeaderReset: (suspend () -> Unit) -> Unit = { block ->
+                        headerResetJob?.cancel()
+                        headerResetJob = coroutineScope.launch { block() }
+                    }
+
+                    val navigateToTab: (String) -> Unit = { route ->
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
                             }
-                        } else {
-                            if (navController.currentDestination?.route != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+
+                    val handlePrimaryNavigationClick: (Screens) -> Unit = { screen ->
+                        val (nextState, action) =
+                            reduceTabNav(
+                                TabNavState(pendingTabRoute),
+                                TabNavEvent.Tap(
+                                    targetRoute = screen.route,
+                                    isCurrentTab =
+                                        navController.currentDestination?.hierarchy
+                                            ?.any { it.route == screen.route } == true,
+                                    currentResumed =
+                                        navController.currentBackStackEntry?.lifecycle?.currentState ==
+                                            Lifecycle.State.RESUMED,
+                                ),
+                            )
+                        pendingTabRoute = nextState.pendingTab
+                        when (action) {
+                            is TabNavAction.Navigate -> {
+                                optimisticTabRoute = screen.route
+                                navigateToTab(action.targetRoute)
+                            }
+
+                            is TabNavAction.SetPending -> {
+                                optimisticTabRoute = screen.route
+                                pendingTabRoute = action.targetRoute
+                            }
+
+                            TabNavAction.None ->
+                                if (screen == Screens.Search) {
+                                    openSearch()
+                                    launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
+                                } else {
+                                    navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                                    if (screen == Screens.Home) {
+                                        launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                                     }
-                                    launchSingleTop = true
-                                    restoreState = true
                                 }
-                            }
                         }
                     }
 
@@ -2054,29 +2098,44 @@ class MainActivity : ComponentActivity() {
                     val navigateToTabRoot: (Screens) -> Unit = { screen ->
                         val popped = runCatching { navController.popBackStack(screen.route, false) }.getOrDefault(false)
                         if (!popped && navController.currentDestination?.route != screen.route) {
-                            navController.navigate(screen.route) {
-                                popUpTo(navController.graph.startDestinationId) {
-                                    saveState = true
-                                }
-                                launchSingleTop = true
-                            }
+                            navigateToTab(screen.route)
                         }
                         if (navController.currentDestination?.route == screen.route) {
                             navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
                             if (screen == Screens.Home) {
-                                coroutineScope.launch { homeScrollBehavior.state.resetHeightOffset() }
+                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                             }
+                        }
+                    }
+
+                    // One collector drives the coalesced navigation: when the current entry
+                    // settles (RESUMED) it navigates to the last pending tab. It also clears the
+                    // optimistic selection once the back stack caught up, and resets the
+                    // scroll-driven bottom-UI state at the settle point — the inset re-provision
+                    // then runs once per switch, after the content transition, instead of racing
+                    // it.
+                    LaunchedEffect(navController) {
+                        navController.currentBackStackEntryFlow.collectLatest { entry ->
+                            entry.lifecycle.currentStateFlow.first { it == Lifecycle.State.RESUMED }
+                            val pending = pendingTabRoute
+                            pendingTabRoute = null
+                            if (pending == null || pending == entry.destination.route) {
+                                optimisticTabRoute = null
+                            } else {
+                                navigateToTab(pending)
+                            }
+                            if (scrolledDown) scrolledDown = false
                         }
                     }
 
                     LaunchedEffect(currentRoute) {
                         when (currentRoute) {
                             Screens.Home.route -> {
-                                homeScrollBehavior.state.resetHeightOffset()
+                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                             }
 
                             Screens.Search.route -> {
-                                searchScrollBehavior.state.resetHeightOffset()
+                                launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
                             }
 
                             else -> {}
@@ -2458,7 +2517,7 @@ class MainActivity : ComponentActivity() {
                                             if (wasPlayerActive && isSelected) {
                                                 return@TvNavigationRail
                                             }
-                                            handlePrimaryNavigationClick(screen, isSelected)
+                                            handlePrimaryNavigationClick(screen)
                                         },
                                     )
                                 } else {
@@ -2562,7 +2621,7 @@ class MainActivity : ComponentActivity() {
                                                         }
 
                                                         if (wasPlayerActive && isSelected) return@NavigationRailItem
-                                                        handlePrimaryNavigationClick(screen, isSelected)
+                                                        handlePrimaryNavigationClick(screen)
                                                     },
                                                 )
                                             }
@@ -3355,12 +3414,16 @@ class MainActivity : ComponentActivity() {
                                                             bottom = bottomInset + floatingBarsBottomPadding,
                                                         ).height(navVisibleHeight),
                                                 isSelected = { screen ->
-                                                    navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
-                                                        true
+                                                    // Optimistic selection: the tapped or pending tab is
+                                                    // highlighted from the tap frame; otherwise the real
+                                                    // back-stack hierarchy decides.
+                                                    optimisticTabRoute?.let { it == screen.route }
+                                                        ?: (
+                                                            navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                                true
+                                                            )
                                                 },
-                                                onItemClick = { screen, isSelected ->
-                                                    handlePrimaryNavigationClick(screen, isSelected)
-                                                },
+                                                onItemClick = handlePrimaryNavigationClick,
                                                 onSearchItemDoubleClick = {
                                                     searchSource = SearchSource.ONLINE
                                                     openSearch()
@@ -3445,11 +3508,7 @@ class MainActivity : ComponentActivity() {
                                                                     ?.savedStateHandle
                                                                     ?.set("openInPageSearch", true)
                                                             } else {
-                                                                handlePrimaryNavigationClick(
-                                                                    Screens.Search,
-                                                                    navBackStackEntry?.destination?.hierarchy
-                                                                        ?.any { it.route == Screens.Search.route } == true,
-                                                                )
+                                                                handlePrimaryNavigationClick(Screens.Search)
                                                             }
                                                         },
                                                         backdrop = compactBackdrop,
@@ -3485,15 +3544,12 @@ class MainActivity : ComponentActivity() {
                                         } else if (initialState.destination.route in topLevelScreens &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
-                                            // Material "fade through" for bottom-nav switches: the
-                                            // incoming screen fades in slightly delayed while gently
-                                            // scaling up from 92%, so Home↔Search↔Library feels animated
-                                            // instead of an imperceptible straight crossfade.
-                                            fadeIn(tween(220, delayMillis = 90)) +
-                                                scaleIn(
-                                                    animationSpec = tween(220, delayMillis = 90),
-                                                    initialScale = 0.92f,
-                                                )
+                                            // Short, overlap-free fade-through for bottom-nav switches:
+                                            // no delay and no scale. The delayed 220 ms scale-in left a
+                                            // blank gap, re-rasterized text every scale step, and a tap
+                                            // burst kept restarting it. tween() follows the system
+                                            // animator scale.
+                                            fadeIn(tween(150))
                                         } else {
                                             fadeIn(tween(250)) + slideInHorizontally { it / 2 }
                                         }
@@ -3522,11 +3578,8 @@ class MainActivity : ComponentActivity() {
                                             ) &&
                                             targetState.destination.route in topLevelScreens
                                         ) {
-                                            fadeIn(tween(220, delayMillis = 90)) +
-                                                scaleIn(
-                                                    animationSpec = tween(220, delayMillis = 90),
-                                                    initialScale = 0.92f,
-                                                )
+                                            // Matches the enter spec: short fade, no delay, no scale.
+                                            fadeIn(tween(150))
                                         } else {
                                             fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
                                         }
@@ -3610,7 +3663,7 @@ class MainActivity : ComponentActivity() {
                                         searchListState = searchListState,
                                         homeScrollConnection = homeScrollBehavior.nestedScrollConnection,
                                         searchScrollConnection = searchScrollBehavior.nestedScrollConnection,
-                                        onlineSearchSort = onlineSearchSort,
+                                        onlineSearchSort = { onlineSearchSort },
                                     )
                                 }
                             }

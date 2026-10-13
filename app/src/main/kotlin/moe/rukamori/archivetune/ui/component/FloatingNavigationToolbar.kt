@@ -175,7 +175,9 @@ fun FloatingNavigationToolbar(
     liquidGlassBackdrop: LayerBackdrop? = null,
     glowStrength: Float = 0f,
     isSelected: (Screens) -> Boolean,
-    onItemClick: (Screens, Boolean) -> Unit,
+    // The click handler works out the selection itself at click time (it owns the pending-tab
+    // state), so no stale composition-captured `selected` is passed here.
+    onItemClick: (Screens) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
 ) {
     val isFloating = style == NavigationBarStyle.FLOATING
@@ -387,6 +389,11 @@ fun FloatingNavigationToolbar(
     val dampedDragAnimation =
         remember(tabsCount, canLiquidGlass) {
             if (canLiquidGlass && tabsCount > 0) {
+                // Total horizontal travel of the current gesture, reset on every touch down.
+                // A pure tap never moves the pill, so the selection change (the click navigates)
+                // is what animates it — animating here too pressed and re-released the glass a
+                // second and third time per tap.
+                var dragTravel = 0f
                 LiquidGlassDragAnimation(
                     animationScope = animationScope,
                     initialValue = selectedIndex.coerceIn(0, tabsCount - 1).toFloat(),
@@ -401,7 +408,9 @@ fun FloatingNavigationToolbar(
                         if (totalWidthPx == 0f) return@LiquidGlassDragAnimation false
                         offset.x in 0f..totalWidthPx && offset.y >= 0f
                     },
-                    onDragStarted = { /* no-op — press() is called by the modifier */ },
+                    onDragStarted = {
+                        dragTravel = 0f
+                    },
                     onDragStopped = {
                         val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                         animationScope.launch {
@@ -411,11 +420,14 @@ fun FloatingNavigationToolbar(
                         // otherwise we'd compare against the stale value captured
                         // at animation-creation time.
                         if (targetIndex != selectedIndexUpdated.value) {
-                            onItemClickUpdated.value(items[targetIndex], false)
+                            onItemClickUpdated.value(items[targetIndex])
                         }
-                        animateToValue(targetIndex.toFloat())
+                        if (dragTravel != 0f) {
+                            animateToValue(targetIndex.toFloat())
+                        }
                     },
                     onDrag = { _, dragAmount ->
+                        dragTravel += abs(dragAmount.x)
                         if (tabWidthPx > 0f) {
                             updateValue(
                                 (targetValue + dragAmount.x / tabWidthPx * if (isLtr) 1f else -1f)
@@ -451,7 +463,12 @@ fun FloatingNavigationToolbar(
             // lifetime of `dampedDragAnimation` (which is `remember(tabsCount, ...)`
             // keyed on `items.size`), so this check is safe.
             if (idx in 0..(items.size - 1)) {
-                anim.animateToValue(idx.toFloat())
+                // Ignore a selection update the pill is already animating to (a drag release or
+                // an earlier tap already targeted this index) — animating again would press and
+                // re-release the glass a second time for the same tap.
+                if (idx != anim.targetValue.roundToInt()) {
+                    anim.animateToValue(idx.toFloat())
+                }
             }
         }
     }
@@ -676,15 +693,16 @@ fun FloatingNavigationToolbar(
                     ) {
                         items.forEachIndexed { index, screen ->
                             val selected = isSelected(screen)
-                            // Tactile "pop": when an item becomes selected, its icon springs
-                            // from 80% up past 100% and settles back, giving the bottom pill a
-                            // lively bounce on every tab switch (skipped when animations are off).
+                            // Tactile "pop": when an item becomes selected, its icon kicks
+                            // downward with velocity and springs back past 100%, giving the bottom
+                            // pill a lively bounce on every tab switch (skipped when animations are
+                            // off). The kick replaces the old snap-to-80%, which made every rapid
+                            // tap jump the icon back to 80% instead of retargeting mid-flight.
                             val iconScale = remember(screen) { Animatable(1f) }
                             LaunchedEffect(selected, disableAnimations, animationScale) {
                                 if (disableAnimations) {
                                     iconScale.snapTo(1f)
                                 } else if (selected) {
-                                    iconScale.snapTo(0.8f)
                                     // The pop follows the system animator scale like every other
                                     // motion: below 1x the spring damps so the bounce survives
                                     // the shortened duration, and at 0 it snaps.
@@ -696,6 +714,7 @@ fun FloatingNavigationToolbar(
                                                 dampingRatio = Spring.DampingRatioMediumBouncy,
                                                 stiffness = Spring.StiffnessMediumLow,
                                             ),
+                                        initialVelocity = -4f,
                                     )
                                 } else {
                                     iconScale.snapTo(1f)
@@ -706,8 +725,12 @@ fun FloatingNavigationToolbar(
                                     if (screen == Screens.Search) onSearchItemDoubleClick else null
                                 }
                             val lastClickTime = remember(screen) { mutableLongStateOf(0L) }
+                            // Not keyed on `selected`: a second tap inside the double-tap window
+                            // must not take the stale branch. The handler decides re-select vs
+                            // navigate at click time from the nav controller and its own
+                            // optimistic selection.
                             val onClick =
-                                remember(screen, selected, onItemClick, onDoubleClick) {
+                                remember(screen, onItemClick, onDoubleClick) {
                                     {
                                         val currentTime = SystemClock.uptimeMillis()
                                         val isDoubleClick =
@@ -718,7 +741,7 @@ fun FloatingNavigationToolbar(
                                             onDoubleClick?.invoke()
                                             Unit
                                         } else {
-                                            onItemClick(screen, selected)
+                                            onItemClick(screen)
                                         }
                                     }
                                 }
@@ -735,14 +758,18 @@ fun FloatingNavigationToolbar(
                                             // label) so the Liquid Glass pill can size to
                                             // cover both. The default variant ignores this
                                             // and uses the icon-only [iconCenters] map.
+                                            // Writes are guarded on equality: a fresh Rect
+                                            // for an unchanged layout would otherwise
+                                            // invalidate composition on every layout pass.
                                             val pos = coordinates.positionInRoot()
-                                            itemBounds[index] =
+                                            val bounds =
                                                 Rect(
                                                     pos.x,
                                                     pos.y,
                                                     pos.x + coordinates.size.width,
                                                     pos.y + coordinates.size.height,
                                                 )
+                                            if (itemBounds[index] != bounds) itemBounds[index] = bounds
                                         },
                                 icon = {
                                     // Measure the icon's own bounds so the pill hugs only the icon.
@@ -750,11 +777,13 @@ fun FloatingNavigationToolbar(
                                         modifier =
                                             Modifier.onGloballyPositioned { coordinates ->
                                                 val pos = coordinates.positionInRoot()
-                                                iconCenters[index] =
+                                                val center =
                                                     Offset(
                                                         pos.x + coordinates.size.width / 2f,
                                                         pos.y + coordinates.size.height / 2f,
                                                     )
+                                                // Equality guard: see the itemBounds write below.
+                                                if (iconCenters[index] != center) iconCenters[index] = center
                                             },
                                         contentAlignment = Alignment.Center,
                                     ) {

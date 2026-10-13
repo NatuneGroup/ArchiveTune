@@ -101,9 +101,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
-import androidx.navigation.compose.currentBackStackEntryAsState
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -214,7 +215,8 @@ fun SearchScreen(
         label = "bottomSearchPillLowering",
     )
     val safeTopPadding = WindowInsets.safeDrawing.asPaddingValues().calculateTopPadding()
-    val backStackEntry by navController.currentBackStackEntryAsState()
+    // This screen's own back-stack entry, not the controller's current one (see HomeScreen).
+    val backStackEntry = LocalLifecycleOwner.current as? NavBackStackEntry
     val scrollToTop =
         backStackEntry
             ?.savedStateHandle

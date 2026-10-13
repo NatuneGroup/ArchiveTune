@@ -19,6 +19,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.TopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -30,13 +31,21 @@ fun appBarScrollBehavior(
     canScroll: () -> Boolean = { true },
     snapAnimationSpec: AnimationSpec<Float>? = spring(stiffness = Spring.StiffnessMediumLow),
     flingAnimationSpec: DecayAnimationSpec<Float>? = rememberSplineBasedDecay(),
-): TopAppBarScrollBehavior =
-    AppBarScrollBehavior(
-        state = state,
-        snapAnimationSpec = snapAnimationSpec,
-        flingAnimationSpec = flingAnimationSpec,
-        canScroll = canScroll,
-    )
+): TopAppBarScrollBehavior {
+    // The latest canScroll lambda is read through a State so the behaviour instance itself can be
+    // remembered: a new AppBarScrollBehavior per recomposition gave the NavHost builder lambda a
+    // fresh identity on every recomposition, which rebuilt the whole navigation graph (~97
+    // destinations) on every tab tap and state change.
+    val canScrollState = rememberUpdatedState(canScroll)
+    return remember(state, snapAnimationSpec, flingAnimationSpec) {
+        AppBarScrollBehavior(
+            state = state,
+            snapAnimationSpec = snapAnimationSpec,
+            flingAnimationSpec = flingAnimationSpec,
+            canScroll = { canScrollState.value() },
+        )
+    }
+}
 
 @ExperimentalMaterial3Api
 class AppBarScrollBehavior(
@@ -47,7 +56,7 @@ class AppBarScrollBehavior(
 ) : TopAppBarScrollBehavior {
     // The bar physically translates (rigid quick-return slide), so it is not pinned.
     override val isPinned: Boolean = false
-    override var nestedScrollConnection =
+    override val nestedScrollConnection =
         object : NestedScrollConnection {
             override fun onPostScroll(
                 consumed: Offset,

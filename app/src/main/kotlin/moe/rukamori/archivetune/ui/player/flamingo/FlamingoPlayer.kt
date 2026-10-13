@@ -474,6 +474,8 @@ fun FlamingoPlayerContent(
         val canvasActive =
             !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
         val canvasVisualActive = canvasActive && !videoShowing && !isPreS
+        // Without blur the frost band (a baked blur of the canvas) is never baked or revealed.
+        val canvasFrostAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
 
         // The frost bake. The captured still arrives through the stage's frame callback (video
         // canvases; one per URL and per stage re-attach when a page round-trip recreates the
@@ -487,7 +489,7 @@ fun FlamingoPlayerContent(
         var canvasFrostWidthPx by remember { mutableStateOf(0) }
 
         val canvasBackdropReveal by animateFloatAsState(
-            targetValue = if (canvasVisualActive && canvasFrostBake != null) 1f else 0f,
+            targetValue = if (canvasVisualActive && canvasFrostAllowed && canvasFrostBake != null) 1f else 0f,
             animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
             label = "flamingo-canvas-backdrop-reveal",
         )
@@ -523,7 +525,8 @@ fun FlamingoPlayerContent(
             }
         }
 
-        LaunchedEffect(canvasPrimaryUrl, canvasFallbackUrl, canvasFrostFrame) {
+        LaunchedEffect(canvasPrimaryUrl, canvasFallbackUrl, canvasFrostFrame, canvasFrostAllowed) {
+            if (!canvasFrostAllowed) return@LaunchedEffect
             val frame = canvasFrostFrame ?: return@LaunchedEffect
             try {
                 val plan =

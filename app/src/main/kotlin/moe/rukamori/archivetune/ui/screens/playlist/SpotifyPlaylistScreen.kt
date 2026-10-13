@@ -77,6 +77,7 @@ import androidx.navigation.NavController
 import com.google.common.collect.ImmutableList
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -104,8 +105,6 @@ import moe.rukamori.archivetune.ui.component.MediaDetailIconAction
 import moe.rukamori.archivetune.ui.component.SpotifyTrackListItem
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import android.os.Build
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.utils.HeaderDownloadItem
@@ -365,7 +364,7 @@ fun SpotifyPlaylistScreen(
     // Liquid Glass backdrop: created unconditionally (cheap — just a GraphicsLayer handle). The
     // actual content recording happens when `Modifier.layerBackdrop(artworkBackdrop)` is applied to
     // the LazyColumn below.
-    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
     val liquidGlassHeaderActive =
         liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current

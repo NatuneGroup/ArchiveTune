@@ -28,11 +28,9 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 import com.kyant.backdrop.highlight.Highlight
-import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.utils.rememberPreference
 
 private val LocalSpotifyHomeBackdrop = staticCompositionLocalOf<LayerBackdrop?> { null }
 
@@ -41,7 +39,7 @@ internal fun SpotifyHomeLayout(
     modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val (disableBlur) = rememberPreference(DisableBlurKey, defaultValue = false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val glassEnabled = rememberLiquidGlassEnabled() && !disableBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val backdrop = if (glassEnabled) rememberBackdrop(MaterialTheme.colorScheme.surface) else null
     Box(

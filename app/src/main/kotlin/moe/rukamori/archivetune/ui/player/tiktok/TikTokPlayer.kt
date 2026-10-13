@@ -408,7 +408,7 @@ fun TikTokPlayerContent(
     // queue sheet over the artwork blurred at 72dp (AppleMusicPlayer's Modifier.blur(72.dp) canvas
     // backdrop) — the sheet's translucent glassy rows are designed for that frosted field, not for
     // a sharp cover (user report 2026-09-03: "the background is transparent.
-    val canBlurFeed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val canBlurFeed = moe.rukamori.archivetune.LocalBlurPolicy.current.renderEffect
     val feedBlur by animateDpAsState(
         targetValue = if (queueOpen && canBlurFeed) TIKTOK_QUEUE_FEED_BLUR else 0.dp,
         animationSpec = tween(600, easing = FastOutSlowInEasing),

@@ -30,7 +30,6 @@ import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
 import moe.rukamori.archivetune.constants.FloatingNavigationBarBottomPadding
 import moe.rukamori.archivetune.constants.FloatingNavigationBarHorizontalPadding
 import moe.rukamori.archivetune.constants.FloatingNavigationBarMaxWidth
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_OPACITY_DEFAULT
@@ -205,7 +204,7 @@ fun rememberNavigationPillStyle(): NavigationBarStyle {
 fun rememberPillStyle(): PillStyle {
     val (frostedBlur) = rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
     val (tintFrostedBlur) = rememberPreference(NavigationBarTintFrostedBlurKey, defaultValue = false)
-    val (liquidGlassEnabled) = rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
     val (liquidGlassNavBar) = rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
     val (stockColours) = rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     return rememberPillStyle(

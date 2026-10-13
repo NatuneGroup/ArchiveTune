@@ -67,7 +67,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -93,6 +92,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
@@ -600,7 +600,7 @@ private fun TikTokRailCountLabel(label: String) {
                 Modifier
                     .align(Alignment.Center)
                     .offset(y = 1.dp)
-                    .blur(2.dp),
+                    .optionalBlur(2.dp),
         )
         Text(
             text = label,
@@ -652,7 +652,7 @@ private fun TikTokRailGlyph(
                 Modifier
                     .fillMaxSize()
                     .offset(y = 1.dp)
-                    .blur(2.dp),
+                    .optionalBlur(2.dp),
         )
         Icon(
             painter = painterResource(iconRes),

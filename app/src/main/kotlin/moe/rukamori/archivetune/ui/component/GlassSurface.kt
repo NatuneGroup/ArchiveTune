@@ -33,14 +33,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.LocalBlurPolicy
 import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.utils.rememberPreference
 
-/** True while the user has opted into the Liquid Glass look. */
+/** True while the user has opted into the Liquid Glass look and the blur policy allows it. */
 @Composable
 fun rememberLiquidGlassEnabled(): Boolean {
     val enabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
-    return enabled
+    return enabled && LocalBlurPolicy.current.any
 }
 
 /**

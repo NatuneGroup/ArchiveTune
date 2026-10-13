@@ -772,8 +772,16 @@ fun AppearanceSectionSettings(
                                 icon = { Icon(painterResource(R.drawable.blur_on), null) },
                                 checked = liquidGlassEnabled,
                                 onCheckedChange = onLiquidGlassEnabledChange,
+                                isEnabled = !disableBlur,
                             )
-                            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && liquidGlassEnabled) {
+                            if (disableBlur) {
+                                Text(
+                                    text = stringResource(R.string.blur_setting_overridden),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
+                                )
+                            } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && liquidGlassEnabled) {
                                 Text(
                                     text = stringResource(R.string.liquid_glass_effects_unsupported),
                                     style = MaterialTheme.typography.bodySmall,
@@ -913,6 +921,7 @@ fun AppearanceSectionSettings(
 
                 item {
                     SwitchPreference(
+                        modifier = positions.modifierFor("disable_blur"),
                         title = { Text(stringResource(R.string.disable_blur)) },
                         description = stringResource(R.string.disable_blur_desc),
                         icon = { Icon(painterResource(R.drawable.blur_off), null) },
@@ -1013,11 +1022,18 @@ fun AppearanceSectionSettings(
 
                 item {
                     SwitchPreference(
+                        modifier = positions.modifierFor("backdrop_blur"),
                         title = { Text(stringResource(R.string.album_backdrop)) },
-                        description = stringResource(R.string.album_backdrop_desc),
+                        description =
+                            if (disableBlur) {
+                                stringResource(R.string.blur_setting_overridden)
+                            } else {
+                                stringResource(R.string.album_backdrop_desc)
+                            },
                         icon = { Icon(painterResource(R.drawable.blur_on), null) },
                         checked = backdropEnabled,
                         onCheckedChange = onBackdropEnabledChange,
+                        isEnabled = !disableBlur,
                     )
                 }
 
@@ -1027,7 +1043,7 @@ fun AppearanceSectionSettings(
                         title = { Text(stringResource(R.string.backdrop_blur_amount)) },
                         description = stringResource(R.string.backdrop_blur_amount_value, backdropBlurAmount),
                         icon = { Icon(painterResource(R.drawable.blur_on), null) },
-                        isEnabled = backdropEnabled,
+                        isEnabled = backdropEnabled && !disableBlur,
                         content = {
                             Spacer(modifier = Modifier.height(10.dp))
                             Slider(
@@ -1035,7 +1051,7 @@ fun AppearanceSectionSettings(
                                 onValueChange = { onBackdropBlurAmountChange(it.roundToInt()) },
                                 valueRange = 0f..100f,
                                 steps = 19,
-                                enabled = backdropEnabled,
+                                enabled = backdropEnabled && !disableBlur,
                                 modifier = Modifier.fillMaxWidth(),
                             )
                         },
@@ -1402,7 +1418,19 @@ fun AppearanceSectionSettings(
                         // Pre-Android 12 warning: frosted mini player uses RenderEffect (API 31+).
                         // On pre-S the FROSTED style is silently downgraded to THEME — surface a
                         // warning so users on older devices know why their selection isn't applying.
-                        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
+                        if (disableBlur &&
+                            (
+                                miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED ||
+                                    miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.blur_setting_overridden),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 56.dp, top = 4.dp, end = 16.dp),
+                            )
+                        } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S &&
                             miniPlayerBackground == MiniPlayerBackgroundStyle.FROSTED
                         ) {
                             Text(
@@ -1417,7 +1445,7 @@ fun AppearanceSectionSettings(
                         // somehow has LIQUID_GLASS selected but the master toggle is off (e.g.
                         // they turned the master off after selecting LIQUID_GLASS), surface a
                         // hint that the master toggle needs to be on for the style to apply.
-                        if (miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
+                        if (!disableBlur && miniPlayerBackground == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
                             (!liquidGlassEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S)
                         ) {
                             Text(

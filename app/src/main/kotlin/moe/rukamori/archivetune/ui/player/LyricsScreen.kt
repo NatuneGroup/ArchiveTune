@@ -128,7 +128,6 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.BlurRadiusKey
-import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
@@ -237,7 +236,7 @@ fun LyricsScreen(
     val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
     val configuredLyricsBackground by rememberEnumPreference(LyricsBackgroundStyleKey, LyricsBackgroundStyle.DEFAULT)
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
-    val disableBlur by rememberPreference(DisableBlurKey, false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val blurRadius by rememberPreference(BlurRadiusKey, 48f)
     val playerCustomImageUri by rememberPreference(PlayerCustomImageUriKey, "")
     val playerCustomBlur by rememberPreference(PlayerCustomBlurKey, 0f)
@@ -894,6 +893,7 @@ private fun MovingBlurBackground(
     gradientColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
+    val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val colors = if (gradientColors.isNotEmpty()) gradientColors else AppleMusicFallbackGradient
 
     val backgroundBrush =
@@ -962,7 +962,7 @@ private fun MovingBlurBackground(
         // orbiting a narrow ring around the centre. Hoisted here because the amplitude needs the
         // measured size.
         val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
-        val blurWander = rememberBlurWanderDrift(active = true, maxDriftDp = wanderMaxDrift)
+        val blurWander = rememberBlurWanderDrift(active = blurAllowed, maxDriftDp = wanderMaxDrift)
         val preSDriftScale =
             if (isPreS) {
                 val safetyMargin = 48.dp
@@ -998,7 +998,10 @@ private fun MovingBlurBackground(
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
             label = "lyrics-moving-blur-bg",
         ) { thumbnailUrl ->
-            if (thumbnailUrl != null) {
+            if (thumbnailUrl != null && !blurAllowed) {
+                // The colour brush below is the whole backdrop; this keeps the double-tap seek.
+                Box(Modifier.fillMaxSize().playerSeekDoubleTap())
+            } else if (thumbnailUrl != null) {
                 if (isPreS) {
                     // Bare-URL cache key: this blur deliberately shares the decoded artwork with
                     // the other requests for the song instead of caching a second copy of it.
@@ -1096,6 +1099,7 @@ private fun AppleMusicBackground(
     gradientColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
+    val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val colors = if (gradientColors.isNotEmpty()) gradientColors else AppleMusicFallbackGradient
     val backgroundBrush =
         remember(colors) {
@@ -1129,7 +1133,10 @@ private fun AppleMusicBackground(
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
             label = "lyrics-apple-background",
         ) { thumbnailUrl ->
-            if (thumbnailUrl != null) {
+            if (thumbnailUrl != null && !blurAllowed) {
+                // The colour brush below is the whole backdrop; this keeps the double-tap seek.
+                Box(Modifier.fillMaxSize().playerSeekDoubleTap())
+            } else if (thumbnailUrl != null) {
                 if (isPreS) {
                     val blurredBitmap =
                         rememberPreBlurredBitmap(

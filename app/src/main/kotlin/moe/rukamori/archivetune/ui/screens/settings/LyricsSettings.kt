@@ -194,6 +194,7 @@ fun LyricsSettings(
             deserializeLyricsProviderOrder(providerOrderStr)
         }
     val (lyricsLineBlur, onLyricsLineBlurChange) = rememberPreference(LyricsLineBlurKey, defaultValue = false)
+    val blurDisabled = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val (lyricsRomanizeJapanese, onLyricsRomanizeJapaneseChange) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (lyricsRomanizeKorean, onLyricsRomanizeKoreanChange) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (lyricsRomanizeChinese, onLyricsRomanizeChineseChange) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
@@ -476,9 +477,11 @@ fun LyricsSettings(
                 SwitchPreference(
                     modifier = positions.modifierFor("lyrics_line_blur"),
                     title = { Text(stringResource(R.string.lyrics_line_blur)) },
+                    description = if (blurDisabled) stringResource(R.string.blur_setting_overridden) else null,
                     icon = { Icon(painterResource(R.drawable.lyrics), null) },
                     checked = lyricsLineBlur,
                     onCheckedChange = onLyricsLineBlurChange,
+                    isEnabled = !blurDisabled,
                 )
             }
 

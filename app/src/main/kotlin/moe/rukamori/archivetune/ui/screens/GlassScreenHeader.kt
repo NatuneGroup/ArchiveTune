@@ -30,22 +30,21 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
 import moe.rukamori.archivetune.ui.component.IconButton as AppIconButton
 import moe.rukamori.archivetune.ui.component.LiquidGlassActionPill
 import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen
-import moe.rukamori.archivetune.utils.rememberPreference
 
 /**
  * Shared glass header state for the detail screens (album / artist / playlist).
  *
  * Centralizes the three gates every hand-rolled header repeated: the
- * [LiquidGlassEnabledKey] master toggle, the Android 12+ RuntimeShader
+ * Liquid Glass master toggle (through the blur policy), the Android 12+ RuntimeShader
  * requirement, and the full-screen-lyrics suspension (the lyrics overlay is
  * opaque, so recording the list and sampling it every frame would just starve
  * the karaoke sweep of GPU). [backdrop] is null unless all three pass, so
@@ -59,7 +58,7 @@ class GlassScreenHeader(
 
 @Composable
 fun rememberGlassScreenHeader(): GlassScreenHeader {
-    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
     val surfaceColor = MaterialTheme.colorScheme.surface
 

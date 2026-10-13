@@ -331,7 +331,7 @@ fun SettingsScreen(
                         // directly so the modifier chain is stable when
                         // no dialog is open (avoids unnecessary
                         // RenderEffect allocation on every recomposition).
-                        if (settingsDialogShowing.value) {
+                        if (settingsDialogShowing.value && moe.rukamori.archivetune.LocalBlurPolicy.current.renderEffect) {
                             Modifier.blur(10.dp)
                         } else {
                             Modifier

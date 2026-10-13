@@ -386,8 +386,8 @@ fun SpatialFlowPlayerContent(
             // the small surface, upscaled 6x (+10% overscan). It runs the FULL
             // height of the player so the same canvas keeps playing, blurred,
             // behind the bottom controls — and fades out + stops rendering
-            // while the lyrics overlay is up.
-            Box(
+            // while the lyrics overlay is up. Skipped entirely without blur.
+            if (moe.rukamori.archivetune.LocalBlurPolicy.current.any) Box(
                 modifier =
                     Modifier
                         .matchParentSize()

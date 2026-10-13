@@ -61,7 +61,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -78,6 +77,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.PlayerCustomBlurKey
@@ -433,7 +433,7 @@ private fun BackgroundPreviewPane(
                     modifier =
                         Modifier
                             .matchParentSize()
-                            .blur(blur.dp),
+                            .optionalBlur(blur.dp),
                     contentScale = ContentScale.Crop,
                     colorFilter = colorFilter,
                 )

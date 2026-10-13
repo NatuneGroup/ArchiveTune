@@ -988,7 +988,8 @@ private fun SpatialFlowLyricsMovingBlur(
         // feels identical everywhere: the colour mass traverses the whole display instead of
         // orbiting near the centre.
         val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
-        val blurWander = rememberBlurWanderDrift(active = true, maxDriftDp = wanderMaxDrift)
+        val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
+        val blurWander = rememberBlurWanderDrift(active = blurAllowed, maxDriftDp = wanderMaxDrift)
         val driftFootprint =
             remember(maxWidth, maxHeight) {
                 blurBackdropFootprint(
@@ -1001,7 +1002,13 @@ private fun SpatialFlowLyricsMovingBlur(
             }
 
         if (artUrl != null) {
-            if (isPreS) {
+            if (!blurAllowed) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = artUrl,
+                    artworkUrl = artUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (isPreS) {
                 val preBlurredBitmap =
                     rememberPreBlurredBitmap(
                         imageUrl = artUrl,

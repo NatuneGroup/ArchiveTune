@@ -56,7 +56,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -88,6 +87,7 @@ import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.utils.optionalRenderEffectBlur
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
@@ -95,7 +95,6 @@ import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
-import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
@@ -163,7 +162,7 @@ fun Thumbnail(
             defaultValue = 16f,
         )
     val cropThumbnailToSquare by rememberPreference(CropThumbnailToSquareKey, false)
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val (backdropEnabled) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
@@ -537,7 +536,7 @@ fun Thumbnail(
 
                                     val thumbnailBgRequest = rememberOfflineArtworkImageRequest(displayUrl)
                                     val thumbnailArtworkRequest = rememberOfflineArtworkImageRequest(displayUrl)
-                                    val thumbnailBgBlurEnabled = backdropEnabled && backdropBlurAmount > 0
+                                    val thumbnailBgBlurEnabled = !disableBlur && backdropEnabled && backdropBlurAmount > 0
 
                                     if (thumbnailBgBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                         val blurRadiusPx = (backdropBlurAmount * 60 / 100f).coerceAtMost(60f)
@@ -549,10 +548,8 @@ fun Thumbnail(
                                                 Modifier
                                                     .fillMaxSize()
                                                     .let { if (shouldCropArtwork) it.aspectRatio(1f) else it }
-                                                    .graphicsLayer(
-                                                        renderEffect = BlurEffect(radiusX = blurRadiusPx, radiusY = blurRadiusPx),
-                                                        alpha = 0.6f,
-                                                    ),
+                                                    .optionalRenderEffectBlur(radiusX = blurRadiusPx)
+                                                    .graphicsLayer(alpha = 0.6f),
                                         )
                                     } else if (thumbnailBgBlurEnabled) {
                                         ThumbnailBgBlurApi30(

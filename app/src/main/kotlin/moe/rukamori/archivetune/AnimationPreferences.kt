@@ -10,6 +10,7 @@ package moe.rukamori.archivetune
 
 import android.content.Context
 import android.database.ContentObserver
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -19,10 +20,12 @@ import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.platform.LocalContext
 import kotlin.coroutines.coroutineContext
@@ -32,6 +35,30 @@ import kotlinx.coroutines.delay
 val LocalAnimationsDisabled = compositionLocalOf { false }
 
 val LocalBlurDisabled = compositionLocalOf { false }
+
+/**
+ * Whether the app may blur at all, decided once from "Disable blur effects" and provided at the
+ * root. Every blur or glass effect reads the policy through [LocalBlurPolicy] instead of the raw
+ * preference, so a site that forgets to check still cannot render one. [renderEffect] covers the
+ * platform paths (Modifier.blur, BlurEffect, Haze, the kyant backdrop) and [cpuFallback] the
+ * pre-Android-12 stack-blur bitmaps; the split exists because those are the two families call
+ * sites branch on.
+ */
+@Immutable
+data class BlurPolicy(
+    val userEnabled: Boolean,
+) {
+    /** Platform RenderEffect blur: allowed only when the user has not disabled it, and only on S+. */
+    val renderEffect: Boolean get() = userEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    /** CPU stack-blur fallbacks (rememberPreBlurredBitmap, ImageBlurUtils): the pre-S complement. */
+    val cpuFallback: Boolean get() = userEnabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+
+    /** May anything in the app blur, by any technique. */
+    val any: Boolean get() = userEnabled
+}
+
+val LocalBlurPolicy = staticCompositionLocalOf { BlurPolicy(userEnabled = true) }
 
 /**
  * The system's animator duration scale, as set in developer options.

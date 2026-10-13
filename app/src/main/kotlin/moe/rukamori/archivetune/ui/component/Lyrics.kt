@@ -410,7 +410,8 @@ fun Lyrics(
     val lyricsLineSpacing by rememberPreference(LyricsLineSpacingKey, 1.3f)
     // Default OFF: per-line blur is the heaviest per-frame cost in the lyrics
     // renderers and is the main source of choppy word-synced playback.
-    val lyricsLineBlur by rememberPreference(LyricsLineBlurKey, false)
+    val lyricsLineBlurPreference by rememberPreference(LyricsLineBlurKey, false)
+    val lyricsLineBlur = lyricsLineBlurPreference && moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val animationsDisabled = LocalAnimationsDisabled.current
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 

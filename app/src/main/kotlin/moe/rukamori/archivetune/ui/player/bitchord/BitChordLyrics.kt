@@ -466,7 +466,7 @@ internal fun SweptLyricLine(
             onTextLayout = { layout = it },
             modifier = room,
         )
-        if (glowAlpha > 0.01f) {
+        if (glowAlpha > 0.01f && moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
             Text(
                 text = line.text,
                 style = style,

@@ -3795,10 +3795,14 @@ fun PlayerBackground(
             isMusicVideo = mediaMetadata?.isMusicVideo ?: false,
         )
     val backgroundThumbnailUrl = backgroundSwapState.displayUrl
+    val blurOff = disableBlur || !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val styleAppliesBlur =
-        effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
+        !blurOff && effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
+    // Without blur, Blur falls back to the artwork-colour gradient it would otherwise blur toward.
+    val effectiveBackground =
+        if (blurOff && playerBackground == PlayerBackgroundStyle.BLUR) PlayerBackgroundStyle.GRADIENT else playerBackground
     Box(modifier = Modifier.fillMaxSize()) {
-        when (playerBackground) {
+        when (effectiveBackground) {
             PlayerBackgroundStyle.BLUR -> {
                 // ViviMusic-faithful blur: Haze source + Haze effect with
                 // tint = Color.Black.copy(alpha = 0.30f), blurRadius = 80.dp,
@@ -3937,15 +3941,17 @@ fun PlayerBackground(
                 ) { thumbnailUrl ->
                     if (thumbnailUrl != null) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            AsyncImage(
-                                model = thumbnailUrl.highRes(),
-                                contentDescription = "Blurred background",
-                                contentScale = ContentScale.Crop,
-                                modifier =
-                                    Modifier.fillMaxSize().let {
-                                        if (styleAppliesBlur) it.blur(radius = effectiveBlurRadius.dp) else it
-                                    },
-                            )
+                            if (!blurOff) {
+                                AsyncImage(
+                                    model = thumbnailUrl.highRes(),
+                                    contentDescription = "Blurred background",
+                                    contentScale = ContentScale.Crop,
+                                    modifier =
+                                        Modifier.fillMaxSize().let {
+                                            if (styleAppliesBlur) it.blur(radius = effectiveBlurRadius.dp) else it
+                                        },
+                                )
+                            }
                             val gradientColorStops =
                                 PlayerBackgroundColorUtils.buildBlurGradientStops(gradientColors)
                             Box(
@@ -4012,7 +4018,7 @@ fun PlayerBackground(
                                 contentScale = ContentScale.Crop,
                                 modifier =
                                     Modifier.fillMaxSize().let {
-                                        if (disableBlur) it else it.blur(radius = blurPx.dp)
+                                        if (blurOff) it else it.blur(radius = blurPx.dp)
                                     },
                                 colorFilter = ColorFilter.colorMatrix(cm),
                             )

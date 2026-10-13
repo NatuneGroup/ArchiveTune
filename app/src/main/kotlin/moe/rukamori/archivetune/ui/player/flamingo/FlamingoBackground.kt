@@ -72,6 +72,25 @@ fun FlamingoFloatingLight(
     nowPage: () -> String,
     backgroundEffect: Boolean,
 ) {
+    // The stack-blurred 32/96 px bitmap would look blocky unblurred, so without blur the
+    // backdrop is the artwork-colour gradient instead.
+    if (!moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
+        val url = albumUrl()
+        Box(
+            modifier = modifier.drawWithCache {
+                onDrawBehind {
+                    drawRect(Color.Black)
+                }
+            },
+        ) {
+            moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                mediaId = url,
+                artworkUrl = url,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+        return
+    }
     val context = LocalContext.current
 
     val processedBitmap by produceState<android.graphics.Bitmap?>(null, albumUrl(), backgroundEffect) {

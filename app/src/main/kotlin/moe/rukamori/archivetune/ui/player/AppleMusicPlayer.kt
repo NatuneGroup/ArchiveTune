@@ -692,7 +692,8 @@ fun AppleMusicPlayerContent(
         // the backdrop mirrors the canvas video in real time. Pre-Android-12 falls back to
         // the album-art blur (RenderEffect is unavailable, so blurring a video surface
         // efficiently isn't possible).
-        val useCanvasBackdrop = canvasActive && !videoShowing && !isPreS
+        val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
+        val useCanvasBackdrop = canvasActive && !videoShowing && !isPreS && blurAllowed
         val context = LocalContext.current
         val preBlurredBitmap =
             if (videoShowing || useCanvasBackdrop) {
@@ -722,7 +723,7 @@ fun AppleMusicPlayerContent(
             val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
             val blurWander =
                 rememberBlurWanderDrift(
-                    active = lyricsBackdropActive && backdropWanderEnabled,
+                    active = lyricsBackdropActive && backdropWanderEnabled && blurAllowed,
                     maxDriftDp = wanderMaxDrift,
                 )
             val driftGraphicsLayer: GraphicsLayerScope.() -> Unit = {
@@ -810,7 +811,13 @@ fun AppleMusicPlayerContent(
                         maxDriftDp = wanderMaxDrift,
                     )
                 }
-            Box(
+            if (!blurAllowed) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = mediaMetadata.id,
+                    artworkUrl = artworkUrl,
+                    modifier = Modifier.matchParentSize(),
+                )
+            } else Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -896,7 +903,7 @@ fun AppleMusicPlayerContent(
                             },
                 )
             }
-            val preBlurLoading = isPreS && preBlurredBitmap == null && !canvasActive
+            val preBlurLoading = isPreS && blurAllowed && preBlurredBitmap == null && !canvasActive
             // Brightened scrim — matches ViviMusic's brighter aesthetic. Kept deliberately light
             // over the blurred artwork (0.15/0.28/0.50 on the canvas path, 0.28/0.42/0.60 over the
             // pre-S bitmap) so its colour shows through; only the un-blurred placeholder while the

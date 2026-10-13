@@ -296,7 +296,8 @@ fun LyricsV2(
     // Apple Music style and all lyrics backgrounds always use white text so that
     // lyrics remain readable on the dark blurred backdrop regardless of system theme.
     val textColor = textColorOverride ?: Color.White
-    val lyricsLineBlur = (lyricsLineBlurOverride ?: lyricsLineBlurPreference) && !v2AnimationsDisabled
+    val lyricsLineBlur =
+        (lyricsLineBlurOverride ?: lyricsLineBlurPreference) && !v2AnimationsDisabled && moe.rukamori.archivetune.LocalBlurPolicy.current.any
 
     val inactiveAlpha = 0.35f
 

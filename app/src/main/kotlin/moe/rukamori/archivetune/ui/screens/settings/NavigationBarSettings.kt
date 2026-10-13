@@ -128,6 +128,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
         rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
     val (liquidGlassNavBarEnabled, onLiquidGlassNavBarEnabledChange) =
         rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
+    val blurDisabled = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     // Turning on any nav treatment turns the other treatments off.
     // Mutual-exclusivity wrappers: turning one frosted variant on turns the other off.
     val onFrostedBlurChange: (Boolean) -> Unit = { checked ->
@@ -305,10 +306,16 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         SwitchPreference(
                             modifier = positions.modifierFor("navigation_bar_frosted_blur"),
                             title = { Text(stringResource(R.string.navigation_bar_frosted_blur)) },
-                            description = stringResource(R.string.navigation_bar_frosted_blur_desc),
+                            description =
+                                if (blurDisabled) {
+                                    stringResource(R.string.blur_setting_overridden)
+                                } else {
+                                    stringResource(R.string.navigation_bar_frosted_blur_desc)
+                                },
                             icon = { Icon(painterResource(R.drawable.blur_on), null) },
                             checked = navigationBarFrostedBlur,
                             onCheckedChange = onFrostedBlurChange,
+                            isEnabled = !blurDisabled,
                         )
                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && navigationBarFrostedBlur) {
                             Text(
@@ -326,10 +333,16 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         SwitchPreference(
                             modifier = positions.modifierFor("navigation_bar_tint_frosted_blur"),
                             title = { Text(stringResource(R.string.navigation_bar_tint_frosted_blur)) },
-                            description = stringResource(R.string.navigation_bar_tint_frosted_blur_desc),
+                            description =
+                                if (blurDisabled) {
+                                    stringResource(R.string.blur_setting_overridden)
+                                } else {
+                                    stringResource(R.string.navigation_bar_tint_frosted_blur_desc)
+                                },
                             icon = { Icon(painterResource(R.drawable.blur_on), null) },
                             checked = navigationBarTintFrostedBlur,
                             onCheckedChange = onTintFrostedBlurChange,
+                            isEnabled = !blurDisabled,
                         )
                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && navigationBarTintFrostedBlur) {
                             Text(
@@ -352,6 +365,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         title = { Text(stringResource(R.string.liquid_glass_nav_bar)) },
                         description =
                             when {
+                                blurDisabled -> stringResource(R.string.blur_setting_overridden)
                                 !supported -> stringResource(R.string.liquid_glass_effects_unsupported)
                                 !liquidGlassEnabled -> stringResource(R.string.liquid_glass_nav_bar_disabled)
                                 else -> stringResource(R.string.liquid_glass_nav_bar_desc)
@@ -361,7 +375,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         // Disabled when the master Liquid Glass switch is off (Appearance →
                         // Liquid Glass effects) or on pre-Android 12: the kyant RuntimeShader
                         // stack requires API 31+.
-                        isEnabled = liquidGlassEnabled && supported,
+                        isEnabled = liquidGlassEnabled && supported && !blurDisabled,
                         onCheckedChange = onLiquidGlassNavBarChange,
                     )
                 }

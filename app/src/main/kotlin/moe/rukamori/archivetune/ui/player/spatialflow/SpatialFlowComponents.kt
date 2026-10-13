@@ -161,7 +161,13 @@ internal fun SpatialFlowBlurredBackdrop(
 
     Box(modifier = modifier) {
         if (artUrl != null) {
-            if (isPreS) {
+            if (!moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = artUrl,
+                    artworkUrl = artUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (isPreS) {
                 preBlurredBitmap?.let { bmp ->
                     Image(
                         bitmap = bmp.asImageBitmap(),

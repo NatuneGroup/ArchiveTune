@@ -1702,6 +1702,7 @@ class MainActivity : ComponentActivity() {
 
                     val liquidGlassActive =
                         liquidGlassEnabled &&
+                            !disableBlur &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     val liquidGlassBackdrop: LayerBackdrop? =
                         if (liquidGlassActive) {
@@ -2431,6 +2432,7 @@ class MainActivity : ComponentActivity() {
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides animationsOff,
                         moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
+                        moe.rukamori.archivetune.LocalBlurPolicy provides remember(disableBlur) { moe.rukamori.archivetune.BlurPolicy(userEnabled = !disableBlur) },
                         moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
                         moe.rukamori.archivetune.LocalAnimationScale provides animatorScale,
                         moe.rukamori.archivetune.ui.component.LocalBackAnimationStyle provides backAnimationStyle,
@@ -2557,7 +2559,7 @@ class MainActivity : ComponentActivity() {
                                         (navigationBarFrostedBlur || navigationBarTintFrostedBlur) &&
                                             navBarFrostedBackdrop != null && !isPreS
                                     val canRailLiquidGlass =
-                                        liquidGlassEnabled && liquidGlassNavBarEnabled &&
+                                        liquidGlassEnabled && liquidGlassNavBarEnabled && !disableBlur &&
                                             liquidGlassBackdrop != null && !isPreS
                                     var railPositionInRoot by remember {
                                         mutableStateOf(Offset.Zero)
@@ -3462,7 +3464,7 @@ class MainActivity : ComponentActivity() {
                                                     frostedBlur = navigationBarFrostedBlur,
                                                     tintFrostedBlur = navigationBarTintFrostedBlur,
                                                     frostedBackdrop = navBarFrostedBackdrop,
-                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !compactControlsStockColor,
+                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !disableBlur && !compactControlsStockColor,
                                                     liquidGlassBackdrop = liquidGlassBackdrop,
                                                     glowStrength = navGlassStrength,
                                                     modifier =

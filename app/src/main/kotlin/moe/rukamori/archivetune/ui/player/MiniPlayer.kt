@@ -61,6 +61,7 @@ import coil3.toBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
@@ -248,10 +249,7 @@ private fun NewMiniPlayer(
                 if (grayscale) gradientColors.map { it.toGrayscale() } else gradientColors,
             )
         }
-    val liquidGlassMaster by rememberPreference(
-        moe.rukamori.archivetune.constants.LiquidGlassEnabledKey,
-        defaultValue = false,
-    )
+    val liquidGlassMaster = rememberLiquidGlassEnabled()
     val stockColours by rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     val effectiveBackgroundStyle =
         when {

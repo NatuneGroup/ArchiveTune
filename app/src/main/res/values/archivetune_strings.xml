@@ -1,5 +1,6 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="blur_setting_overridden">Turned off by \"Disable blur effects\"</string>
     <string name="explore">Explore</string>
     <string name="suggestions">Suggestions</string>
     <string name="music_recognition_tap_to_listen">Tap to listen</string>

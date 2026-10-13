@@ -1368,7 +1368,15 @@ fun VideoArtworkSurface(
         // behind the video surface. The black letterbox area around a FIT
         // video then glows with the artwork's colors instead of being pure
         // black — mimicking YouTube's "ambient mode" effect.
-        if (ambientMode && !thumbnailUrl.isNullOrBlank()) {
+        if (ambientMode && !thumbnailUrl.isNullOrBlank() && !moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = thumbnailUrl,
+                    artworkUrl = thumbnailUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        } else if (ambientMode && !thumbnailUrl.isNullOrBlank()) {
             VideoAmbientBackdrop(
                 thumbnailUrl = thumbnailUrl,
                 modifier = Modifier.fillMaxSize(),

@@ -1,13 +1,13 @@
 name: Unit tests
 
 # Manual only (Actions → Unit tests → Run workflow). Push-triggered runs added ~4 minutes of runner
-# time to every canary push. Release assemblies never compile src/test, so these fork contract tests
-# can only rot unnoticed between manual runs: run this after merges and before promoting canary.
+# time to every dev push. Release assemblies never compile src/test, so these fork contract tests
+# can only rot unnoticed between manual runs: run this after merges.
 on:
   workflow_dispatch:
 
 concurrency:
-  # Per-commit, matching canary.yml: a second push must not wait out the first, and must not cancel it.
+  # Per-commit: a second push must not wait out the first, and must not cancel it.
   group: tests-${{ github.sha }}
   cancel-in-progress: false
 

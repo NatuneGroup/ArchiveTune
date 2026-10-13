@@ -668,3 +668,43 @@ jobs:
             --notes-file release_notes.md \
             "$MOBILE_UNIVERSAL_APK" \
             $OTHER_APKS
+
+      - name: Publish update-feed manifest
+        # Keyless update feed, stable equivalent of the nightly step: the updater reads
+        # stable.json from the fixed `update-feed` release (releases/download/update-feed/stable.json)
+        # before touching api.github.com, because release-asset downloads are CDN-served and not
+        # API-metered. The manifest is generated from the signed APKs uploaded above; versionName
+        # is the semver, versionCode the same commit count the build used.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ needs.check-version.outputs.new_version }}
+          VERSION_CODE: ${{ needs.check-version.outputs.version_code }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          STABLE_TAG="v${NEW_VERSION}"
+          PUBLISHED_AT="$(gh release view "$STABLE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
+          mapfile -t APK_FILES < <(find downloaded_artifacts -path '*/app-*-release/*.apk' -type f)
+          python3 .github/scripts/update_manifest.py \
+            --channel stable \
+            --tag "$STABLE_TAG" \
+            --version-name "$NEW_VERSION" \
+            --version-code "$VERSION_CODE" \
+            --commit "$COMMIT_SHA" \
+            --published-at "$PUBLISHED_AT" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$STABLE_TAG" \
+            --notes-file release_notes.md \
+            --output stable.json \
+            "${APK_FILES[@]}"
+
+          # The feed release holds only the manifests and is created once. As a prerelease marked
+          # not-latest it never matches the updater's tag filters and never displaces the stable
+          # Latest release.
+          gh release view update-feed --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create update-feed --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --latest=false \
+              --title 'Update feed (do not delete)' \
+              --notes 'Holds the nightly.json/stable.json manifests the in-app updater fetches without a token. Do not delete this release.'
+
+          gh release upload update-feed stable.json --repo "$GITHUB_REPOSITORY" --clobber

@@ -853,22 +853,22 @@ object Updater {
         ).joinToString("||")
     }
 
+    // The manifest/API resolve wins for every distribution: it is the asset the last resolve
+    // actually found (GMS installs it in place, FOSS opens it in a browser), so a pre-release
+    // channel never sends users to /releases/latest — that page resolves to the Stable release,
+    // which is exactly what a pre-release user must not land on.
     private fun getLatestPreReleaseDownloadUrl(channel: PreChannel): String {
         if (!isUpdaterDistribution) {
             return ""
         }
 
-        if (!canDownloadUpdatesDirectly) {
-            return "$NightlyReleaseBaseUrl/latest"
-        }
-
         latestPreReleaseDownloadUrl[channel]?.let { return it }
-        val artifactName = preReleaseArtifactName(channel)
-        val tag = latestPreReleaseTag[channel]
-        if (tag != null) {
-            return "$NightlyReleaseBaseUrl/download/$tag/$artifactName"
+        val tag = latestPreReleaseTag[channel] ?: return NightlyReleaseBaseUrl
+        return if (canDownloadUpdatesDirectly) {
+            "$NightlyReleaseBaseUrl/download/$tag/${preReleaseArtifactName(channel)}"
+        } else {
+            "$NightlyReleaseBaseUrl/tag/$tag"
         }
-        return "$NightlyReleaseBaseUrl/latest/download/$artifactName"
     }
 
     // ── Keyless update feed (schema-v1 manifest) ──────────────────────────────────────────

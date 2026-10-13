@@ -38,6 +38,7 @@ import moe.rukamori.archivetune.constants.LastUpdateCheckKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.defaultUpdateChannel
+import moe.rukamori.archivetune.effectiveUpdateChannel
 import java.util.concurrent.TimeUnit
 
 object UpdateNotificationManager {
@@ -121,14 +122,16 @@ object UpdateNotificationManager {
 
                 val updateChannel =
                     dataStore.data
-                        .map { UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel) }
-                        .first()
+                        .map {
+                            effectiveUpdateChannel(
+                                UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel),
+                            )
+                        }.first()
 
                 val lastCheck = dataStore.data.map { it[LastUpdateCheckKey] ?: 0L }.first()
                 val now = System.currentTimeMillis()
                 val checkInterval =
                     when (updateChannel) {
-                        UpdateChannel.CANARY -> NIGHTLY_CHECK_INTERVAL_MS
                         UpdateChannel.NIGHTLY -> NIGHTLY_CHECK_INTERVAL_MS
                         UpdateChannel.STABLE -> STABLE_CHECK_INTERVAL_MS
                     }
@@ -139,7 +142,6 @@ object UpdateNotificationManager {
 
                 val versionResult =
                     when (updateChannel) {
-                        UpdateChannel.CANARY -> Updater.getLatestCanaryVersionName()
                         UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
                         UpdateChannel.STABLE -> Updater.getLatestVersionName()
                     }
@@ -197,7 +199,6 @@ object UpdateNotificationManager {
 
         val downloadUrl =
             when (updateChannel) {
-                UpdateChannel.CANARY -> Updater.getLatestCanaryDownloadUrl()
                 UpdateChannel.NIGHTLY -> Updater.getLatestNightlyDownloadUrl()
                 UpdateChannel.STABLE -> Updater.getLatestDownloadUrl()
             }

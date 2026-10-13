@@ -20,10 +20,6 @@ import kotlinx.coroutines.CancellationException
 import moe.rukamori.archivetune.App
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.UpdateChannel
-import moe.rukamori.archivetune.constants.CanaryReleasesEtagKey
-import moe.rukamori.archivetune.constants.CanaryReleasesFingerprintKey
-import moe.rukamori.archivetune.constants.CanaryReleasesJsonKey
-import moe.rukamori.archivetune.constants.CanaryReleasesLastCheckedAtKey
 import moe.rukamori.archivetune.constants.NightlyReleasesEtagKey
 import moe.rukamori.archivetune.constants.NightlyReleasesFingerprintKey
 import moe.rukamori.archivetune.constants.NightlyReleasesJsonKey
@@ -75,13 +71,12 @@ object Updater {
     private const val OWNER = "NatuneGroup/ArchiveTune"
     private const val StableReleaseBaseUrl = "https://github.com/$OWNER/releases"
 
-    // Nightly and Canary are both served as GitHub pre-releases on this repo; they differ only by
-    // tag prefix + artifact suffix, and by the workflow/branch used for the workflow-artifact
-    // fallback. NightlyReleaseBaseUrl is kept as a name because both feeds share the releases URL.
+    // The pre-release channel is served as a GitHub pre-release on this repo. NightlyReleaseBaseUrl
+    // is kept as a name because the feed shares the stable channel's releases URL.
     private const val NightlyReleaseBaseUrl =
         "https://github.com/$OWNER/releases"
 
-    /** A pre-release update feed. Nightly tracks `dev`; Canary tracks the separate `canary` branch. */
+    /** The pre-release update feed. Nightly tracks `dev`. */
     private enum class PreChannel(
         val artifactSuffix: String,
         val tagPrefix: String,
@@ -89,7 +84,6 @@ object Updater {
         val branch: String,
     ) {
         NIGHTLY("nightly", "N", "nightly.yml", "dev"),
-        CANARY("canary", "C", "canary.yml", "canary"),
         ;
 
         val tagRegex: Regex get() = Regex("""$tagPrefix\d{8}(?:\d{4})?""")
@@ -99,25 +93,13 @@ object Updater {
         "https://api.github.com/repos/$OWNER/actions/workflows/${channel.workflowFile}/runs" +
             "?branch=${channel.branch}&status=success&per_page=1&exclude_pull_requests=true"
 
-    private fun preJsonKey(channel: PreChannel) =
-        if (channel == PreChannel.CANARY) CanaryReleasesJsonKey else NightlyReleasesJsonKey
-
-    private fun preEtagKey(channel: PreChannel) =
-        if (channel == PreChannel.CANARY) CanaryReleasesEtagKey else NightlyReleasesEtagKey
-
-    private fun preLastCheckedKey(channel: PreChannel) =
-        if (channel == PreChannel.CANARY) CanaryReleasesLastCheckedAtKey else NightlyReleasesLastCheckedAtKey
-
-    private fun preFingerprintKey(channel: PreChannel) =
-        if (channel == PreChannel.CANARY) CanaryReleasesFingerprintKey else NightlyReleasesFingerprintKey
-
     var lastCheckTime = -1L
         private set
     private var latestReleaseTag: String? = null
     private var latestReleaseDownloadUrl: String? = null
 
-    // Per-channel so switching between Nightly and Canary never serves the other feed's cached
-    // tag/url from a previous resolve.
+    // Per-channel so a channel switch never serves the other feed's cached tag/url from a
+    // previous resolve.
     private val latestPreReleaseTag = mutableMapOf<PreChannel, String?>()
     private val latestPreReleaseDownloadUrl = mutableMapOf<PreChannel, String?>()
 
@@ -218,9 +200,10 @@ object Updater {
 
     private val semVerRegex =
         Regex("""(?i)\bv?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?\b""")
-    // Pre-release tags include a date and usually an HHmm suffix (e.g. NyyyyMMddHHmm for Nightly,
-    // CyyyyMMddHHmm for Canary). Accept the older date-only form too so workflow fallback stays
-    // compatible. This matches EITHER channel's prefix so the stable filter excludes both.
+    // Pre-release tags include a date and usually an HHmm suffix (e.g. NyyyyMMddHHmm for Nightly).
+    // Accept the older date-only form too so workflow fallback stays compatible. The C prefix of
+    // the retired Canary channel matches as well, so its leftover releases never reach the stable
+    // feed.
     private val preReleaseTagRegex = Regex("""[NC]\d{8}(?:\d{4})?""")
 
     private fun parseSemVerOrNull(text: String): SemVer? {
@@ -300,8 +283,8 @@ object Updater {
     internal fun findLatestRelease(releases: List<ReleaseInfo>): ReleaseInfo? {
         if (releases.isEmpty()) return null
 
-        // Exclude pre-release-tagged (Nightly N…, Canary C…) releases up front. Without this
-        // filter, a nightly release whose *name* is "Nightly 13.7.5" would slip through the
+        // Exclude pre-release-tagged (Nightly N…, retired Canary C…) releases up front. Without
+        // this filter, a nightly release whose *name* is "Nightly 13.7.5" would slip through the
         // `preRelease.isEmpty()` stable filter below — `parseReleaseSemVerOrNull` falls back to
         // parsing the release name when the tag itself isn't SemVer, and "13.7.5" has no
         // pre-release identifier — and a stable-channel user would see a pre-release popup.
@@ -477,7 +460,6 @@ object Updater {
         when (channel) {
             UpdateChannel.STABLE -> "main"
             UpdateChannel.NIGHTLY -> PreChannel.NIGHTLY.branch
-            UpdateChannel.CANARY -> PreChannel.CANARY.branch
         }
 
     suspend fun getCommitHistory(
@@ -583,43 +565,24 @@ object Updater {
         }
     }
 
-    // Public per-channel wrappers over the shared pre-release resolution below. Nightly tracks
-    // `dev`; Canary tracks the `canary` branch. Both are identical except for the PreChannel config.
+    // Public wrappers over the shared pre-release resolution below. Nightly tracks `dev`.
     fun getNightlyReleaseVersionName(release: ReleaseInfo): String = getPreReleaseVersionName(release)
-
-    fun getCanaryReleaseVersionName(release: ReleaseInfo): String = getPreReleaseVersionName(release)
 
     suspend fun getLatestNightlyVersionName(): Result<String> =
         getLatestPreReleaseInfo(PreChannel.NIGHTLY).map(::getPreReleaseVersionName)
 
-    suspend fun getLatestCanaryVersionName(): Result<String> =
-        getLatestPreReleaseInfo(PreChannel.CANARY).map(::getPreReleaseVersionName)
-
     suspend fun getLatestNightlyReleaseNotes(): Result<String?> =
         getLatestPreReleaseInfo(PreChannel.NIGHTLY).map { it.body }
-
-    suspend fun getLatestCanaryReleaseNotes(): Result<String?> =
-        getLatestPreReleaseInfo(PreChannel.CANARY).map { it.body }
 
     suspend fun getLatestNightlyReleaseInfo(forceRefresh: Boolean = false): Result<ReleaseInfo> =
         getLatestPreReleaseInfo(PreChannel.NIGHTLY, forceRefresh)
 
-    suspend fun getLatestCanaryReleaseInfo(forceRefresh: Boolean = false): Result<ReleaseInfo> =
-        getLatestPreReleaseInfo(PreChannel.CANARY, forceRefresh)
-
     suspend fun getCachedNightlyReleases(): List<ReleaseInfo> = getCachedPreReleases(PreChannel.NIGHTLY)
-
-    suspend fun getCachedCanaryReleases(): List<ReleaseInfo> = getCachedPreReleases(PreChannel.CANARY)
 
     suspend fun getAllNightlyReleases(perPage: Int = 10, forceRefresh: Boolean = false): Result<List<ReleaseInfo>> =
         getAllPreReleases(PreChannel.NIGHTLY, perPage, forceRefresh)
 
-    suspend fun getAllCanaryReleases(perPage: Int = 10, forceRefresh: Boolean = false): Result<List<ReleaseInfo>> =
-        getAllPreReleases(PreChannel.CANARY, perPage, forceRefresh)
-
     fun getLatestNightlyDownloadUrl(): String = getLatestPreReleaseDownloadUrl(PreChannel.NIGHTLY)
-
-    fun getLatestCanaryDownloadUrl(): String = getLatestPreReleaseDownloadUrl(PreChannel.CANARY)
 
     private suspend fun getLatestPreReleaseInfo(
         channel: PreChannel,
@@ -645,7 +608,7 @@ object Updater {
             return emptyList()
         }
 
-        val cachedJson = App.instance.dataStore.getAsync(preJsonKey(channel))
+        val cachedJson = App.instance.dataStore.getAsync(NightlyReleasesJsonKey)
         return cachedJson
             ?.takeIf { it.isNotBlank() }
             ?.let { runCatching { parseReleasesJson(it, preReleaseArtifactName(channel)) }.getOrNull() }
@@ -663,10 +626,10 @@ object Updater {
 
         return runCatchingCancellable {
             val now = System.currentTimeMillis()
-            val cachedJson = App.instance.dataStore.getAsync(preJsonKey(channel))
-            val cachedEtag = App.instance.dataStore.getAsync(preEtagKey(channel))
-            val lastCheckedAt = App.instance.dataStore.getAsync(preLastCheckedKey(channel), 0L)
-            val cachedFingerprint = App.instance.dataStore.getAsync(preFingerprintKey(channel))
+            val cachedJson = App.instance.dataStore.getAsync(NightlyReleasesJsonKey)
+            val cachedEtag = App.instance.dataStore.getAsync(NightlyReleasesEtagKey)
+            val lastCheckedAt = App.instance.dataStore.getAsync(NightlyReleasesLastCheckedAtKey, 0L)
+            val cachedFingerprint = App.instance.dataStore.getAsync(NightlyReleasesFingerprintKey)
 
             val cachedReleases =
                 cachedJson
@@ -695,8 +658,8 @@ object Updater {
             when {
                 networkResult?.status == HttpStatusCode.NotModified && cachedReleases != null -> {
                     App.instance.dataStore.edit { settings ->
-                        settings[preLastCheckedKey(channel)] = now
-                        networkResult.etag?.let { settings[preEtagKey(channel)] = it }
+                        settings[NightlyReleasesLastCheckedAtKey] = now
+                        networkResult.etag?.let { settings[NightlyReleasesEtagKey] = it }
                     }
                     return@runCatchingCancellable cachedReleases
                 }
@@ -713,11 +676,11 @@ object Updater {
                         val hasTopReleaseChanged = cachedFingerprint != newFingerprint
 
                         App.instance.dataStore.edit { settings ->
-                            settings[preLastCheckedKey(channel)] = now
-                            networkResult.etag?.let { settings[preEtagKey(channel)] = it }
+                            settings[NightlyReleasesLastCheckedAtKey] = now
+                            networkResult.etag?.let { settings[NightlyReleasesEtagKey] = it }
                             if (hasPayloadChanged || hasTopReleaseChanged || cachedJson.isNullOrBlank()) {
-                                settings[preJsonKey(channel)] = networkBody
-                                settings[preFingerprintKey(channel)] = newFingerprint
+                                settings[NightlyReleasesJsonKey] = networkBody
+                                settings[NightlyReleasesFingerprintKey] = newFingerprint
                             }
                         }
                         return@runCatchingCancellable releases
@@ -758,10 +721,10 @@ object Updater {
                 val fallbackReleases = listOf(fallbackRelease)
                 val fallbackJson = encodeReleasesJson(fallbackReleases)
                 App.instance.dataStore.edit { settings ->
-                    settings[preLastCheckedKey(channel)] = now
-                    settings.remove(preEtagKey(channel))
-                    settings[preJsonKey(channel)] = fallbackJson
-                    settings[preFingerprintKey(channel)] = getPreReleaseTopFingerprint(fallbackReleases, channel)
+                    settings[NightlyReleasesLastCheckedAtKey] = now
+                    settings.remove(NightlyReleasesEtagKey)
+                    settings[NightlyReleasesJsonKey] = fallbackJson
+                    settings[NightlyReleasesFingerprintKey] = getPreReleaseTopFingerprint(fallbackReleases, channel)
                 }
                 return@runCatchingCancellable fallbackReleases
             }

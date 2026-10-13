@@ -10,7 +10,6 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -60,7 +59,6 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -85,13 +83,11 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.CanaryChannelUnlockedKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.theme.LocalYumaColors
 import moe.rukamori.archivetune.ui.theme.yumaGlassCard
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.AboutContributorUiCollection
 import moe.rukamori.archivetune.viewmodels.AboutContributorsUiState
 import moe.rukamori.archivetune.viewmodels.AboutDependencyLicenseUiCollection
@@ -886,34 +882,9 @@ private fun AboutIdentity(
     }
 }
 
-private const val CANARY_UNLOCK_TAPS = 8
-
 @Composable
 private fun SurfaceAppIcon(modifier: Modifier = Modifier) {
-    val context = LocalContext.current
-    val (canaryUnlocked, setCanaryUnlocked) = rememberPreference(CanaryChannelUnlockedKey, defaultValue = false)
-    var tapCount by remember { mutableIntStateOf(0) }
     androidx.compose.material3.Surface(
-        // Hidden unlock: tapping the icon eight times reveals the Canary update channel in the
-        // Updates screen. A no-op once already unlocked so it doesn't keep firing toasts.
-        onClick = {
-            if (canaryUnlocked) return@Surface
-            tapCount++
-            val remaining = CANARY_UNLOCK_TAPS - tapCount
-            when {
-                remaining <= 0 -> {
-                    setCanaryUnlocked(true)
-                    Toast.makeText(context, R.string.canary_channel_unlocked, Toast.LENGTH_SHORT).show()
-                }
-                remaining <= 3 ->
-                    Toast
-                        .makeText(
-                            context,
-                            context.getString(R.string.canary_unlock_countdown, remaining),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-            }
-        },
         modifier = modifier,
         shape = CircleShape,
         color = MaterialTheme.colorScheme.primaryContainer,

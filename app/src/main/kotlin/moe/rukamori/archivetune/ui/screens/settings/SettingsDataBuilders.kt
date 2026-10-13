@@ -1002,7 +1002,7 @@ fun buildSettingsGroups(
             children = listOf(
                 SettingsChild("Logcat", "logcat", listOf("logcat", "log", "debug log")),
                 SettingsChild("Changelog", "changelog", listOf("changelog", "changes", "release notes", "what's new")),
-                SettingsChild("Update channel", "update_channel", listOf("update channel", "canary", "stable", "beta")),
+                SettingsChild("Update channel", "update_channel", listOf("update channel", "nightly", "stable", "beta")),
                 SettingsChild("Enable update notification", "enable_update_notification", listOf("update notification", "notify update", "update alert")),
                 SettingsChild("YTM sync", "ytm_sync", listOf("ytm sync", "youtube music sync", "sync library")),
                 SettingsChild("Force sync on account switch", "force_sync_account_switch", listOf("force sync", "account switch sync", "sync on switch")),
@@ -1068,7 +1068,7 @@ fun buildSettingsGroups(
                 key = "updates",
                 icon = painterResource(R.drawable.ic_refresh),
                 title = stringResource(R.string.updates),
-                keywords = listOf("update", "upgrade", "version", "new version", "release", "canary", "stable"),
+                keywords = listOf("update", "upgrade", "version", "new version", "release", "nightly", "stable"),
                 subtitle =
                     if (hasUpdate) {
                         stringResource(R.string.new_version_available)

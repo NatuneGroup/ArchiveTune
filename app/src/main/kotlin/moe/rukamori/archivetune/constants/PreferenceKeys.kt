@@ -2107,26 +2107,9 @@ val NightlyReleasesJsonKey = stringPreferencesKey("daily_nightly_releases_json")
 val NightlyReleasesLastCheckedAtKey = longPreferencesKey("daily_nightly_releases_last_checked_at")
 val NightlyReleasesFingerprintKey = stringPreferencesKey("daily_nightly_releases_fingerprint")
 
-// Canary channel: a separate, more-bleeding-edge pre-release feed built from the `canary` branch
-// (the nightly feed above tracks `dev`). Cached independently so the two channels never clobber
-// each other's release list.
-val CanaryReleasesEtagKey = stringPreferencesKey("canary_releases_etag")
-val CanaryReleasesJsonKey = stringPreferencesKey("canary_releases_json")
-val CanaryReleasesLastCheckedAtKey = longPreferencesKey("canary_releases_last_checked_at")
-val CanaryReleasesFingerprintKey = stringPreferencesKey("canary_releases_fingerprint")
-
-// The Canary channel is hidden until the user unlocks it by tapping the About-screen app icon
-// eight times, so a casual user never lands on the least-stable feed by accident.
-val CanaryChannelUnlockedKey = booleanPreferencesKey("canaryChannelUnlocked")
-
-// Guards the one-time rewrite of a stored "CANARY" update-channel value (which used to mean the
-// nightly/dev build) to "NIGHTLY", freeing "CANARY" for the new channel. See DataStore migrations.
-val UpdateChannelNightlyRenameMigratedKey = booleanPreferencesKey("updateChannelNightlyRenameMigrated")
-
 enum class UpdateChannel {
     STABLE,
     NIGHTLY,
-    CANARY,
     ;
 
     companion object {
@@ -2135,14 +2118,51 @@ enum class UpdateChannel {
             defaultValue: UpdateChannel,
         ): UpdateChannel =
             when (value) {
-                // Legacy alias from before the pre-release channel had a name. The old "CANARY"
-                // value (which meant the dev/nightly build) is rewritten to "NIGHTLY" once by a
-                // one-time DataStore migration, so "CANARY" here is the new, separate channel.
-                "DAILY_NIGHTLY" -> NIGHTLY
+                // Legacy aliases: "DAILY_NIGHTLY" from before the pre-release channel had a name,
+                // and "CANARY" from installs that had selected the since-removed Canary channel.
+                // Both land on NIGHTLY.
+                "DAILY_NIGHTLY", "CANARY" -> NIGHTLY
                 else -> entries.firstOrNull { it.name == value } ?: defaultValue
             }
     }
 }
+
+// Key names only the removed Canary channel ever wrote: the About easter-egg unlock flag and the
+// canary release cache. The CANARY→NIGHTLY DataStore migration (see DataStore.kt) drops them; the
+// names live here next to [UpdateChannel] so the migration decision below stays pure.
+internal val CanaryLegacyKeyNames: Set<String> =
+    setOf(
+        "canaryChannelUnlocked",
+        "canary_releases_etag",
+        "canary_releases_json",
+        "canary_releases_last_checked_at",
+        "canary_releases_fingerprint",
+    )
+
+/**
+ * What the one-time CANARY→NIGHTLY DataStore migration does for a given DataStore snapshot. The
+ * removed Canary channel leaves two kinds of state behind: a stored `updateChannel` of "CANARY"
+ * (rewritten to NIGHTLY — the feed those installs follow from now on) and the keys only that
+ * channel wrote ([CanaryLegacyKeyNames], dropped). [needed] is false once neither remains, so the
+ * migration never re-runs.
+ */
+internal data class CanaryChannelMigration(
+    val channelToNightly: Boolean,
+    val dropKeyNames: Set<String>,
+) {
+    val needed: Boolean
+        get() = channelToNightly || dropKeyNames.isNotEmpty()
+}
+
+/** Pure decision for the CANARY→NIGHTLY migration, applied by DataStore.kt. */
+internal fun canaryChannelMigration(
+    storedChannel: String?,
+    presentLegacyKeyNames: Set<String>,
+): CanaryChannelMigration =
+    CanaryChannelMigration(
+        channelToNightly = storedChannel == "CANARY",
+        dropKeyNames = CanaryLegacyKeyNames.intersect(presentLegacyKeyNames),
+    )
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Inline / fullscreen music-video player preferences

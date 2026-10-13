@@ -759,12 +759,9 @@ class MainActivity : ComponentActivity() {
         setContent {
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
 
-            val effectiveUpdateChannel =
-                when {
-                    isCanaryBuild -> UpdateChannel.CANARY
-                    isNightlyBuild -> UpdateChannel.NIGHTLY
-                    else -> updateChannel
-                }
+            // One channel rule for every update path — a nightly build follows NIGHTLY regardless
+            // of the stored selection (see effectiveUpdateChannel).
+            val effectiveChannel = effectiveUpdateChannel(updateChannel)
 
             LaunchedEffect(Unit) {
                 while (playerConnection == null) {
@@ -777,18 +774,10 @@ class MainActivity : ComponentActivity() {
                     System.currentTimeMillis() - Updater.lastCheckTime > 1.days.inWholeMilliseconds
                 ) {
                     val channelString = withContext(Dispatchers.IO) { dataStore.data.first()[UpdateChannelKey] }
-                    val userSelectedChannel = UpdateChannel.fromStoredName(channelString, defaultUpdateChannel)
-                    // Lock canary builds to canary updates regardless of the user's
-                    // selection — see the comment on effectiveUpdateChannel above.
                     val actualChannel =
-                        when {
-                            isCanaryBuild -> UpdateChannel.CANARY
-                            isNightlyBuild -> UpdateChannel.NIGHTLY
-                            else -> userSelectedChannel
-                        }
+                        effectiveUpdateChannel(UpdateChannel.fromStoredName(channelString, defaultUpdateChannel))
                     val versionResult =
                         when (actualChannel) {
-                            UpdateChannel.CANARY -> Updater.getLatestCanaryVersionName()
                             UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
                             UpdateChannel.STABLE -> Updater.getLatestVersionName()
                         }
@@ -925,7 +914,7 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(
                 latestVersionName,
                 latestUpdateChannel,
-                effectiveUpdateChannel,
+                effectiveChannel,
                 neverShowUpdatePopup,
                 lastShownUpdatePopupVersion,
                 persistentUpdatePopup,
@@ -934,12 +923,11 @@ class MainActivity : ComponentActivity() {
                     BuildConfig.UPDATER_AVAILABLE &&
                     !neverShowUpdatePopup &&
                     (persistentUpdatePopup || lastShownUpdatePopupVersion != latestVersionName) &&
-                    latestUpdateChannel == effectiveUpdateChannel &&
+                    latestUpdateChannel == effectiveChannel &&
                     Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                 ) {
                     val releaseNotesResult =
                         when (latestUpdateChannel) {
-                            UpdateChannel.CANARY -> Updater.getLatestCanaryReleaseNotes()
                             UpdateChannel.NIGHTLY -> Updater.getLatestNightlyReleaseNotes()
                             UpdateChannel.STABLE -> Updater.getLatestReleaseNotes()
                         }
@@ -2783,7 +2771,7 @@ class MainActivity : ComponentActivity() {
                                                 },
                                                 actions = {
                                                     val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
-                                                        latestUpdateChannel == effectiveUpdateChannel &&
+                                                        latestUpdateChannel == effectiveChannel &&
                                                         Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                     if (isHomeRoute) {
                                                         // Only with a Spotify session: the toggle swaps which home

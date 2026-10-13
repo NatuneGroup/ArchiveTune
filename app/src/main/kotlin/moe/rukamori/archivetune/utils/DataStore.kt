@@ -19,7 +19,10 @@ import androidx.datastore.core.DataMigration
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -42,7 +45,7 @@ import moe.rukamori.archivetune.constants.PlayerStreamClient
 import moe.rukamori.archivetune.constants.PlayerStreamClientKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
-import moe.rukamori.archivetune.constants.UpdateChannelNightlyRenameMigratedKey
+import moe.rukamori.archivetune.constants.canaryChannelMigration
 import moe.rukamori.archivetune.extensions.toEnum
 import kotlin.properties.ReadOnlyProperty
 
@@ -69,12 +72,12 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 
                 override suspend fun cleanUp() {}
             },
+            // Rewrite the legacy alias for the pre-release channel. Only "DAILY_NIGHTLY" triggers
+            // it: an already-stored "NIGHTLY" must not match, or the migration re-runs on every
+            // DataStore init for every nightly reader.
             object : DataMigration<Preferences> {
                 override suspend fun shouldMigrate(currentData: Preferences): Boolean =
-                    when (currentData[UpdateChannelKey]) {
-                        "NIGHTLY", "DAILY_NIGHTLY" -> true
-                        else -> false
-                    }
+                    currentData[UpdateChannelKey] == "DAILY_NIGHTLY"
 
                 override suspend fun migrate(currentData: Preferences): Preferences =
                     currentData.toMutablePreferences().apply {
@@ -83,21 +86,25 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 
                 override suspend fun cleanUp() {}
             },
-            // One-time migration for the pre-release channel: a stored "CANARY" was written while
-            // "Canary" still named the dev/nightly build (now "NIGHTLY"), and "Canary" now names a
-            // new, separate branch. Rewrite it to "NIGHTLY" once so nobody is silently moved onto
-            // the new (initially empty) Canary feed, then release "CANARY" for real Canary
-            // selections. Guarded so a later, deliberate Canary choice sticks.
+            // The Canary channel is gone. A stored "CANARY" becomes "NIGHTLY" — the feed those
+            // installs follow from now on — and the keys only that channel wrote (the About
+            // easter-egg unlock flag and the canary release cache) are dropped. The decision is
+            // [canaryChannelMigration]; with neither the stored value nor the legacy keys present
+            // it is a no-op, so the migration runs at most once.
             object : DataMigration<Preferences> {
                 override suspend fun shouldMigrate(currentData: Preferences): Boolean =
-                    currentData[UpdateChannelNightlyRenameMigratedKey] != true
+                    canaryChannelMigration(
+                        storedChannel = currentData[UpdateChannelKey],
+                        presentLegacyKeyNames =
+                            canaryLegacyKeys.filter { currentData.contains(it) }.map { it.name }.toSet(),
+                    ).needed
 
                 override suspend fun migrate(currentData: Preferences): Preferences =
                     currentData.toMutablePreferences().apply {
                         if (currentData[UpdateChannelKey] == "CANARY") {
                             this[UpdateChannelKey] = UpdateChannel.NIGHTLY.name
                         }
-                        this[UpdateChannelNightlyRenameMigratedKey] = true
+                        canaryLegacyKeys.forEach { remove(it) }
                     }
 
                 override suspend fun cleanUp() {}
@@ -138,6 +145,17 @@ val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
 
 /** The retired `simpMusicLyrics` boolean, kept only so the migration above can read it. */
 private val LEGACY_SIMPMUSIC_LYRICS_KEY = androidx.datastore.preferences.core.booleanPreferencesKey("simpMusicLyrics")
+
+// The keys only the removed Canary channel wrote, by literal name — the typed declarations went
+// away with the channel (canonical list: constants.CanaryLegacyKeyNames).
+private val canaryLegacyKeys: List<Preferences.Key<*>> =
+    listOf(
+        booleanPreferencesKey("canaryChannelUnlocked"),
+        stringPreferencesKey("canary_releases_etag"),
+        stringPreferencesKey("canary_releases_json"),
+        longPreferencesKey("canary_releases_last_checked_at"),
+        stringPreferencesKey("canary_releases_fingerprint"),
+    )
 
 object PreferenceStore {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)

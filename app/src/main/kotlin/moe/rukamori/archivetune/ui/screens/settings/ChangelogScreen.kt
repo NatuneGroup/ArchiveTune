@@ -90,6 +90,7 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.UpdateChannel
+import moe.rukamori.archivetune.effectiveUpdateChannel
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.ReleaseInfo
@@ -110,10 +111,13 @@ fun ChangelogScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var currentTag by remember { mutableStateOf<String?>(null) }
 
+    // Same build-based lock as every other update path: a nightly build always reads the nightly
+    // feed, even if a stale link or argument names Stable.
+    val channel = effectiveUpdateChannel(channel)
+
     suspend fun loadReleases(forceRefresh: Boolean) {
         val result =
             when (channel) {
-                UpdateChannel.CANARY -> Updater.getAllCanaryReleases(forceRefresh = forceRefresh)
                 UpdateChannel.NIGHTLY -> Updater.getAllNightlyReleases(forceRefresh = forceRefresh)
                 else -> Updater.getAllReleases(forceRefresh = forceRefresh)
             }
@@ -133,7 +137,6 @@ fun ChangelogScreen(
     LaunchedEffect(Unit) {
         val cachedReleases =
             when (channel) {
-                UpdateChannel.CANARY -> Updater.getCachedCanaryReleases()
                 UpdateChannel.NIGHTLY -> Updater.getCachedNightlyReleases()
                 else -> Updater.getCachedReleases()
             }

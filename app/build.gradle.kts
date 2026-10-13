@@ -307,13 +307,6 @@ android {
                 .trim()
                 .equals("true", ignoreCase = true)
         buildConfigField("boolean", "IS_NIGHTLY", "$isNightlyBuild")
-        // True only for builds produced by the canary workflow (it sets IS_CANARY_BUILD), which
-        // tracks the separate `canary` branch. Defaults the updater to the CANARY channel.
-        val isCanaryBuild =
-            (System.getenv("IS_CANARY_BUILD") ?: localProperties.getProperty("IS_CANARY_BUILD") ?: "")
-                .trim()
-                .equals("true", ignoreCase = true)
-        buildConfigField("boolean", "IS_CANARY", "$isCanaryBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
         // The LastWave engine links Google Oboe (prefab), which requires the

@@ -110,12 +110,13 @@ import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.CanaryChannelUnlockedKey
 import moe.rukamori.archivetune.constants.EnableUpdateNotificationKey
 import moe.rukamori.archivetune.constants.PersistentUpdatePopupKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.defaultUpdateChannel
+import moe.rukamori.archivetune.effectiveUpdateChannel
+import moe.rukamori.archivetune.isNightlyBuild
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -154,20 +155,21 @@ fun UpdateScreen(
         )
     val (persistentUpdatePopup, onPersistentUpdatePopupChange) =
         rememberPreference(PersistentUpdatePopupKey, defaultValue = false)
-    val (updateChannel, onUpdateChannelChange) =
+    val (storedUpdateChannel, onUpdateChannelChange) =
         rememberEnumPreference(
             UpdateChannelKey,
             defaultValue = defaultUpdateChannel,
         )
 
-    val (canaryUnlocked, _) = rememberPreference(CanaryChannelUnlockedKey, defaultValue = false)
+    // Same build-based lock as every other update path: a nightly build follows NIGHTLY no matter
+    // what is stored, so the whole screen — feed, subtitle, selector — reads the effective channel.
+    val updateChannel = effectiveUpdateChannel(storedUpdateChannel)
 
     var commits by remember { mutableStateOf<List<GitCommit>>(emptyList()) }
     var isLoadingCommits by remember { mutableStateOf(true) }
     var latestVersion by remember { mutableStateOf<String?>(null) }
     var isExpanded by rememberSaveable { mutableStateOf(true) }
     var showNightlyChannelConfirmDialog by rememberSaveable { mutableStateOf(false) }
-    var showCanaryChannelConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var showEnableUpdateNotificationConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -312,7 +314,6 @@ fun UpdateScreen(
 
         val downloadUrl =
             when (updateChannel) {
-                UpdateChannel.CANARY -> Updater.getLatestCanaryDownloadUrl()
                 UpdateChannel.NIGHTLY -> Updater.getLatestNightlyDownloadUrl()
                 UpdateChannel.STABLE -> Updater.getLatestDownloadUrl()
             }
@@ -342,7 +343,6 @@ fun UpdateScreen(
                 coroutineScope.launch {
                     val releaseResult =
                         when (updateChannel) {
-                            UpdateChannel.CANARY -> Updater.getLatestCanaryReleaseInfo(forceRefresh = true)
                             UpdateChannel.NIGHTLY -> Updater.getLatestNightlyReleaseInfo(forceRefresh = true)
                             UpdateChannel.STABLE -> Updater.getLatestReleaseInfo(forceRefresh = true)
                         }
@@ -353,7 +353,6 @@ fun UpdateScreen(
                         .onSuccess { release ->
                             val version =
                                 when (updateChannel) {
-                                    UpdateChannel.CANARY -> Updater.getCanaryReleaseVersionName(release)
                                     UpdateChannel.NIGHTLY -> Updater.getNightlyReleaseVersionName(release)
                                     UpdateChannel.STABLE -> Updater.getReleaseVersionName(release)
                                 }
@@ -419,26 +418,26 @@ fun UpdateScreen(
 
                     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                         Text(
-                            text = stringResource(R.string.updates_channel_warning_canary_title),
+                            text = stringResource(R.string.updates_channel_warning_nightly_title),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(
-                            text = stringResource(R.string.updates_canary_hosting_description),
+                            text = stringResource(R.string.updates_nightly_hosting_description),
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(
-                            text = stringResource(R.string.updates_channel_warning_canary_risk),
+                            text = stringResource(R.string.updates_channel_warning_nightly_risk),
                             style = MaterialTheme.typography.bodySmall,
                         )
                     }
 
                     Text(
-                        text = stringResource(R.string.updates_channel_warning_canary_unstable),
+                        text = stringResource(R.string.updates_channel_warning_nightly_unstable),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Text(
-                        text = stringResource(R.string.updates_channel_warning_canary_acknowledgement),
+                        text = stringResource(R.string.updates_channel_warning_nightly_acknowledgement),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -494,34 +493,6 @@ fun UpdateScreen(
         )
     }
 
-    if (showCanaryChannelConfirmDialog) {
-        AlertDialog(
-            onDismissRequest = { showCanaryChannelConfirmDialog = false },
-            title = { Text(stringResource(R.string.channel_canary)) },
-            text = {
-                Text(
-                    text = stringResource(R.string.updates_canary_channel_confirmation),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showCanaryChannelConfirmDialog = false
-                        onUpdateChannelChange(UpdateChannel.CANARY)
-                    },
-                ) {
-                    Text(stringResource(android.R.string.ok))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showCanaryChannelConfirmDialog = false }) {
-                    Text(stringResource(android.R.string.cancel))
-                }
-            },
-        )
-    }
-
     LaunchedEffect(updateChannel) {
         if (!BuildConfig.UPDATER_AVAILABLE) {
             isLoadingCommits = false
@@ -534,7 +505,6 @@ fun UpdateScreen(
 
         val versionResult =
             when (updateChannel) {
-                UpdateChannel.CANARY -> Updater.getLatestCanaryVersionName()
                 UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
                 else -> Updater.getLatestVersionName()
             }
@@ -547,7 +517,7 @@ fun UpdateScreen(
 
         // Capped at 50: this page is for a glance at recent activity, and the full history is
         // always on GitHub. Read from the channel's own branch — showing main's commits to a
-        // Nightly or Canary reader describes a build they are not on.
+        // Nightly reader describes a build they are not on.
         Updater
             .getCommitHistory(50, branch = Updater.branchForChannel(updateChannel))
             .onSuccess {
@@ -564,7 +534,6 @@ fun UpdateScreen(
     )
     val topBarSubtitle =
         when (updateChannel) {
-            UpdateChannel.CANARY -> stringResource(R.string.updates_subtitle_canary)
             UpdateChannel.NIGHTLY -> stringResource(R.string.updates_subtitle_nightly)
             UpdateChannel.STABLE -> stringResource(R.string.updates_subtitle_stable)
         }
@@ -661,12 +630,6 @@ fun UpdateScreen(
                             showNightlyChannelConfirmDialog = true
                         }
                     },
-                    onCanarySelected = {
-                        if (updateChannel != UpdateChannel.CANARY) {
-                            showCanaryChannelConfirmDialog = true
-                        }
-                    },
-                    canaryUnlocked = canaryUnlocked,
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -774,12 +737,6 @@ fun UpdateScreen(
                         append(context.getString(R.string.app_name))
                         append(' ')
                         append(context.getString(R.string.channel_nightly))
-                    }
-
-                    UpdateChannel.CANARY -> {
-                        append(context.getString(R.string.app_name))
-                        append(' ')
-                        append(context.getString(R.string.channel_canary))
                     }
 
                     UpdateChannel.STABLE -> {
@@ -936,8 +893,6 @@ private fun UpdateDashboard(
     onPersistentUpdatePopupChange: (Boolean) -> Unit,
     onStableSelected: () -> Unit,
     onNightlySelected: () -> Unit,
-    onCanarySelected: () -> Unit,
-    canaryUnlocked: Boolean,
 ) {
     if (useWideLayout) {
         Row(
@@ -958,12 +913,10 @@ private fun UpdateDashboard(
                 enableUpdateNotification = enableUpdateNotification,
                 persistentUpdatePopup = persistentUpdatePopup,
                 updateChannel = updateChannel,
-                canaryUnlocked = canaryUnlocked,
                 onUpdateNotificationChange = onUpdateNotificationChange,
                 onPersistentUpdatePopupChange = onPersistentUpdatePopupChange,
                 onStableSelected = onStableSelected,
                 onNightlySelected = onNightlySelected,
-                onCanarySelected = onCanarySelected,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -984,12 +937,10 @@ private fun UpdateDashboard(
                 enableUpdateNotification = enableUpdateNotification,
                 persistentUpdatePopup = persistentUpdatePopup,
                 updateChannel = updateChannel,
-                canaryUnlocked = canaryUnlocked,
                 onUpdateNotificationChange = onUpdateNotificationChange,
                 onPersistentUpdatePopupChange = onPersistentUpdatePopupChange,
                 onStableSelected = onStableSelected,
                 onNightlySelected = onNightlySelected,
-                onCanarySelected = onCanarySelected,
             )
         }
     }
@@ -1009,7 +960,6 @@ private fun UpdateStatusPanel(
         when (updateChannel) {
             UpdateChannel.STABLE -> stringResource(R.string.channel_stable)
             UpdateChannel.NIGHTLY -> stringResource(R.string.channel_nightly)
-            UpdateChannel.CANARY -> stringResource(R.string.channel_canary)
         }
     val supportingText =
         when {
@@ -1165,13 +1115,11 @@ private fun UpdatePreferencesPanel(
     enableUpdateNotification: Boolean,
     persistentUpdatePopup: Boolean,
     updateChannel: UpdateChannel,
-    canaryUnlocked: Boolean,
     modifier: Modifier = Modifier,
     onUpdateNotificationChange: (Boolean) -> Unit,
     onPersistentUpdatePopupChange: (Boolean) -> Unit,
     onStableSelected: () -> Unit,
     onNightlySelected: () -> Unit,
-    onCanarySelected: () -> Unit,
 ) {
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -1287,14 +1235,15 @@ private fun UpdatePreferencesPanel(
                     }
                 }
 
-                // The Canary segment only appears once the user has unlocked it (eight taps on the
-                // About-screen icon), so the count is 3 when unlocked and 2 otherwise.
-                val channelCount = if (canaryUnlocked) 3 else 2
+                // Two channels, Stable and Nightly. On a nightly build the stored choice is
+                // overridden (see effectiveUpdateChannel), so Nightly shows as active and Stable
+                // is disabled — its releases would only ever be a versionCode downgrade here.
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     SegmentedButton(
                         selected = updateChannel == UpdateChannel.STABLE,
                         onClick = onStableSelected,
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = channelCount),
+                        enabled = !isNightlyBuild,
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                         icon = {},
                     ) {
                         Text(text = stringResource(R.string.channel_stable))
@@ -1302,21 +1251,18 @@ private fun UpdatePreferencesPanel(
                     SegmentedButton(
                         selected = updateChannel == UpdateChannel.NIGHTLY,
                         onClick = onNightlySelected,
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = channelCount),
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
                         icon = {},
                     ) {
                         Text(text = stringResource(R.string.channel_nightly))
                     }
-                    if (canaryUnlocked) {
-                        SegmentedButton(
-                            selected = updateChannel == UpdateChannel.CANARY,
-                            onClick = onCanarySelected,
-                            shape = SegmentedButtonDefaults.itemShape(index = 2, count = channelCount),
-                            icon = {},
-                        ) {
-                            Text(text = stringResource(R.string.channel_canary))
-                        }
-                    }
+                }
+                if (isNightlyBuild) {
+                    Text(
+                        text = stringResource(R.string.updates_stable_locked_on_nightly),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
             }
         }

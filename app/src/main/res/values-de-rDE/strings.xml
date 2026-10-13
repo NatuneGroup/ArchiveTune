@@ -809,7 +809,7 @@
     <string name="onboarding_gms_variant">GMS-Edition</string>
     <string name="onboarding_foss_variant">FOSS-Edition</string>
     <string name="onboarding_permission_device_audio_capture_title">Musikerkennung auf dem Gerät</string>
-    <string name="channel_canary">Canary</string>
+    <string name="updates_stable_locked_on_nightly">Nightly-Builds folgen immer dem Nightly-Kanal, daher ist der Stable-Kanal nicht verfügbar.</string>
     <string name="library_top_mixes_no_recent_history_title">Noch kein aktueller Hör-Mix</string>
     <string name="widget_listening_time_empty">Noch keine Hörzeit</string>
     <string name="widget_no_recent_songs">Noch keine aktuellen Songs</string>

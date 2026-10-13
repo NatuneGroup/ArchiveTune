@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.constants.EnableUpdateNotificationKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.defaultUpdateChannel
+import moe.rukamori.archivetune.effectiveUpdateChannel
 
 class UpdateCheckWorker(
     context: Context,
@@ -36,22 +37,13 @@ class UpdateCheckWorker(
 
             val updateChannel =
                 dataStore.data
-                    .map { UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel) }
-                    .first()
+                    .map {
+                        effectiveUpdateChannel(
+                            UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel),
+                        )
+                    }.first()
 
             when (updateChannel) {
-                UpdateChannel.CANARY -> {
-                    Updater.getLatestCanaryVersionName().onSuccess { latestVersion ->
-                        if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                            UpdateNotificationManager.notifyIfNewVersion(
-                                applicationContext,
-                                latestVersion,
-                                updateChannel,
-                            )
-                        }
-                    }
-                }
-
                 UpdateChannel.NIGHTLY -> {
                     Updater.getLatestNightlyVersionName().onSuccess { latestVersion ->
                         if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {

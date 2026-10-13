@@ -92,7 +92,8 @@ enum class PillBackdrop {
 }
 
 private val NavigationBarStyle.floats: Boolean
-    get() = this == NavigationBarStyle.FLOATING || this == NavigationBarStyle.APPLE_MUSIC
+    get() = this == NavigationBarStyle.FLOATING || this == NavigationBarStyle.APPLE_MUSIC ||
+        this == NavigationBarStyle.SUKISU
 
 val NavigationBarStyle.pillHorizontalInset: Dp
     get() = if (floats) FloatingNavigationBarHorizontalPadding else NavigationBarHorizontalPadding
@@ -134,7 +135,7 @@ class PillStyle(
     val isDocked: Boolean get() = navigationStyle == NavigationBarStyle.DEFAULT
     val tonalElevation: Dp get() = NavigationBarDefaults.Elevation
     val shadowElevation: Dp
-        get() = if (navigationStyle == NavigationBarStyle.FLOATING) 8.dp else NavigationBarDefaults.Elevation
+        get() = if (floats) 8.dp else NavigationBarDefaults.Elevation
     val border: BorderStroke? = borderColor?.let { BorderStroke(PillBorderWidth, it) }
 
     /**
@@ -317,6 +318,7 @@ fun rememberPillStyle(
                     // pill that three labelled tabs cannot fit in.
                     NavigationBarStyle.APPLE_MUSIC -> widthPreference.coerceIn(0.5f, 1f)
                     NavigationBarStyle.FLOATING -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
+                    NavigationBarStyle.SUKISU -> widthPreference.coerceIn(0.5f, 1f) * (if (useCompactPills) 0.9f else 1f)
                     NavigationBarStyle.DEFAULT -> if (useCompactPills) 0.88f else 1f
                 },
             containerColor = containerColor,

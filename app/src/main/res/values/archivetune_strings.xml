@@ -343,6 +343,7 @@
     <string name="liquid_glass_nav_bar">Liquid Glass navigation bar</string>
     <string name="liquid_glass_nav_bar_desc">Use the Liquid Glass effect for the bottom navigation bar</string>
     <string name="liquid_glass_nav_bar_disabled">Turn on Liquid Glass effects in Appearance first</string>
+    <string name="navigation_bar_style_sukisu">SukiSU liquid glass</string>
     <string name="compact_controls_stock_color">Stock colours instead of Liquid Glass</string>
     <string name="compact_controls_stock_color_desc">Draw the navigation bar, round buttons and mini player in plain theme colours with no glass effect</string>
     <string name="navigation_bar_glass_glow">Glass glow</string>

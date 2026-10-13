@@ -349,6 +349,8 @@ import moe.rukamori.archivetune.ui.component.pillHorizontalInset
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
+import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBar
+import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBarHeight
 import moe.rukamori.archivetune.ui.component.splash.SplashConfig
 import moe.rukamori.archivetune.ui.component.splash.SplashOverlay
 import moe.rukamori.archivetune.ui.component.splash.SplashSlots
@@ -1646,14 +1648,22 @@ class MainActivity : ComponentActivity() {
                     // Every consumer below (collapsed player anchor, slide distance, insets, FAB
                     // padding) derives from these two values so the styles stay in sync.
                     val isFloatingNavBar = navigationBarStyle == NavigationBarStyle.FLOATING
+                    val isSukisuNavBar = navigationBarStyle == NavigationBarStyle.SUKISU
                     val floatingBarsBottomPadding = navigationBarStyle.pillBottomInset
                     // Task 6: respect the user's navigation bar height multiplier so the bottom
-                    // sheet anchor and the rendered bar stay aligned.
+                    // sheet anchor and the rendered bar stay aligned. The SukiSU bar fixes its
+                    // own height instead (its sliders are disabled in settings), so the chrome
+                    // reserves exactly the bar, no more.
                     val (navBarHeightMultiplier) = rememberPreference(
                         moe.rukamori.archivetune.constants.NavigationBarHeightKey,
                         defaultValue = moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT,
                     )
-                    val navVisibleHeight = NavigationBarHeight * navBarHeightMultiplier
+                    val navVisibleHeight =
+                        if (isSukisuNavBar) {
+                            SukisuLiquidNavBarHeight
+                        } else {
+                            NavigationBarHeight * navBarHeightMultiplier
+                        }
                     val navBarHorizontalPadding = navigationBarStyle.pillHorizontalInset
 
                     // Frosted backdrop (nav bar + mini player + tablet rail). Recording the whole
@@ -3327,6 +3337,7 @@ class MainActivity : ComponentActivity() {
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
+                                                        isSukisuNavBar ||
                                                         navigationBarStyle == NavigationBarStyle.YUMA_PLAYER ||
                                                         navigationBarStyle == NavigationBarStyle.APPLE_MUSIC
                                                     ) {
@@ -3394,41 +3405,72 @@ class MainActivity : ComponentActivity() {
                                                         alpha = 1f - bottomUiCompactFractionState.value * 0.9f
                                                     },
                                         ) {
-                                            FloatingNavigationToolbar(
-                                                items = navigationItems,
-                                                pureBlack = pureBlack,
-                                                miniPlayerProximityProvider = navigationProximityProvider,
-                                                style = navigationBarStyle,
-                                                frostedBlur = navigationBarFrostedBlur,
-                                                tintFrostedBlur = navigationBarTintFrostedBlur,
-                                                frostedBackdrop = navBarFrostedBackdrop,
-                                                liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !compactControlsStockColor,
-                                                liquidGlassBackdrop = liquidGlassBackdrop,
-                                                glowStrength = navGlassStrength,
-                                                modifier =
-                                                    Modifier
-                                                        .align(Alignment.BottomCenter)
-                                                        .padding(
-                                                            start = navBarHorizontalPadding,
-                                                            end = navBarHorizontalPadding,
-                                                            bottom = bottomInset + floatingBarsBottomPadding,
-                                                        ).height(navVisibleHeight),
-                                                isSelected = { screen ->
-                                                    // Optimistic selection: the tapped or pending tab is
-                                                    // highlighted from the tap frame; otherwise the real
-                                                    // back-stack hierarchy decides.
-                                                    optimisticTabRoute?.let { it == screen.route }
-                                                        ?: (
-                                                            navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
-                                                                true
-                                                            )
-                                                },
-                                                onItemClick = handlePrimaryNavigationClick,
-                                                onSearchItemDoubleClick = {
-                                                    searchSource = SearchSource.ONLINE
-                                                    openSearch()
-                                                },
-                                            )
+                                            if (isSukisuNavBar) {
+                                                // The SukiSU liquid glass bar renders in this same
+                                                // container (slide/hide, compact fade, insets), with the
+                                                // same footprint as the floating pill, and goes through
+                                                // the same coalescing click handler. It falls back to a
+                                                // solid pill when Liquid Glass is off or pre-S.
+                                                SukisuLiquidNavBar(
+                                                    items = navigationItems,
+                                                    backdrop = liquidGlassBackdrop,
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                start = navBarHorizontalPadding,
+                                                                end = navBarHorizontalPadding,
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ).height(navVisibleHeight),
+                                                    isSelected = { screen ->
+                                                        // Optimistic selection: the tapped or pending tab is
+                                                        // highlighted from the tap frame; otherwise the real
+                                                        // back-stack hierarchy decides.
+                                                        optimisticTabRoute?.let { it == screen.route }
+                                                            ?: (
+                                                                navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                                    true
+                                                                )
+                                                    },
+                                                    onItemClick = handlePrimaryNavigationClick,
+                                                )
+                                            } else {
+                                                FloatingNavigationToolbar(
+                                                    items = navigationItems,
+                                                    pureBlack = pureBlack,
+                                                    miniPlayerProximityProvider = navigationProximityProvider,
+                                                    style = navigationBarStyle,
+                                                    frostedBlur = navigationBarFrostedBlur,
+                                                    tintFrostedBlur = navigationBarTintFrostedBlur,
+                                                    frostedBackdrop = navBarFrostedBackdrop,
+                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !compactControlsStockColor,
+                                                    liquidGlassBackdrop = liquidGlassBackdrop,
+                                                    glowStrength = navGlassStrength,
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                start = navBarHorizontalPadding,
+                                                                end = navBarHorizontalPadding,
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ).height(navVisibleHeight),
+                                                    isSelected = { screen ->
+                                                        // Optimistic selection: the tapped or pending tab is
+                                                        // highlighted from the tap frame; otherwise the real
+                                                        // back-stack hierarchy decides.
+                                                        optimisticTabRoute?.let { it == screen.route }
+                                                            ?: (
+                                                                navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                                    true
+                                                                )
+                                                    },
+                                                    onItemClick = handlePrimaryNavigationClick,
+                                                    onSearchItemDoubleClick = {
+                                                        searchSource = SearchSource.ONLINE
+                                                        openSearch()
+                                                    },
+                                                )
+                                            }
                                         }
 
                                         // The round buttons share the slim mini player's centre line. Animated so
@@ -3454,8 +3496,11 @@ class MainActivity : ComponentActivity() {
                                         if (compactRowVisible) {
                                             // The circles stand in for the tab bar, so they are glass only when the
                                             // tab bar would be; otherwise they are solid Material 3 surfaces.
+                                            // The SukiSU style is a glass bar by definition, so its circles qualify too.
                                             val compactBackdrop =
-                                                liquidGlassBackdrop.takeIf { liquidGlassNavBarEnabled && !compactControlsStockColor }
+                                                liquidGlassBackdrop.takeIf {
+                                                    (liquidGlassNavBarEnabled || isSukisuNavBar) && !compactControlsStockColor
+                                                }
                                             val compactGlow = if (compactBackdrop != null) navGlassStrength else 0f
                                             Box(
                                                 modifier =

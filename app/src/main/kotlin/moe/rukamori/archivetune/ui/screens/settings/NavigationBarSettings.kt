@@ -248,6 +248,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                         stringResource(R.string.navigation_bar_style_yuma_player)
                                     NavigationBarStyle.APPLE_MUSIC ->
                                         stringResource(R.string.navigation_bar_style_apple_music)
+                                    NavigationBarStyle.SUKISU ->
+                                        stringResource(R.string.navigation_bar_style_sukisu)
                                 }
                             },
                         )
@@ -456,7 +458,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -481,7 +484,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -506,7 +510,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -531,7 +536,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -556,7 +562,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -581,7 +588,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -609,7 +617,9 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                             onNavigationBarLabelSpacingChange(NAVIGATION_BAR_LABEL_SPACING_DEFAULT)
                             onNavigationBarCornerRadiusChange(NAVIGATION_BAR_CORNER_RADIUS_DEFAULT)
                         },
-                        enabled = !allDefaults && !liquidGlassNavBarEnabled,
+                        enabled =
+                            !allDefaults && !liquidGlassNavBarEnabled &&
+                                navigationBarStyle != NavigationBarStyle.SUKISU,
                         shapes = ButtonDefaults.shapes(),
                         modifier = Modifier
                             .fillMaxWidth()

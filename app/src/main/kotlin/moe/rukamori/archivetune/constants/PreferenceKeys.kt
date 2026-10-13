@@ -1323,13 +1323,16 @@ enum class MiniPlayerBackgroundStyle {
 }
 
 // Bottom navigation bar look: DEFAULT keeps the docked full-width bar; FLOATING detaches it into
-// a pill with larger margins that never pairs with the mini player.
+// a pill with larger margins that never pairs with the mini player. SUKISU renders the SukiSU
+// liquid glass bar (ui/component/sukisu/), which fixes its own dimensions and ignores the bar
+// customization sliders; without Liquid Glass effects it falls back to a solid pill.
 enum class NavigationBarStyle {
     DEFAULT,
     FLOATING,
 
     YUMA_PLAYER,
     APPLE_MUSIC,
+    SUKISU,
 }
 
 val NavigationBarStyleKey = stringPreferencesKey("navigationBarStyle")

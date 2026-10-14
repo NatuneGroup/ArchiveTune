@@ -241,7 +241,9 @@ internal object LyricsPayload {
 
     private fun isTtmlDocument(value: String): Boolean {
         val trimmed = value.trimStart()
-        return trimmed.startsWith("<tt", ignoreCase = true) ||
+        if (trimmed.startsWith("<tt", ignoreCase = true)) return true
+        // A JSON envelope can quote the TTML namespace too; only XML-leading text is a document.
+        return trimmed.startsWith("<") &&
             trimmed.contains("http://www.w3.org/ns/ttml", ignoreCase = true)
     }
 

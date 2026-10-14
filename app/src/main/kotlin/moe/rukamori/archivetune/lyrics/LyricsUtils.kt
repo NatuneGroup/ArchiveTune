@@ -853,7 +853,7 @@ object LyricsUtils {
                 .replace(INVISIBLE_CHARS_REGEX, "")
                 .trim { it.isWhitespace() || it == NBSP }
 
-        val unwrapped = stripCodeFence(raw)
+        val unwrapped = unwrapJsonEnvelope(stripCodeFence(raw))
         val normalized =
             if (isEscapedTtml(unwrapped)) {
                 unwrapped
@@ -895,6 +895,17 @@ object LyricsUtils {
     fun lyricsOrNotFound(lyrics: String): String {
         val normalized = normalizeLyricsText(lyrics)
         return normalized.takeIf(::hasMeaningfulLyricsContent) ?: LyricsEntity.LYRICS_NOT_FOUND
+    }
+
+    // Older caches can hold a provider's JSON envelope verbatim; unwrap it so the TTML inside renders.
+    private fun unwrapJsonEnvelope(value: String): String {
+        val first = value.firstOrNull() ?: return value
+        if (first != '{' && first != '[') return value
+        // LRC text also starts with '[', so only a document that actually parses as JSON is an envelope.
+        if (LyricsProviderHttp.parseJson(value) == null) return value
+        val inner = runCatching { LyricsPayload.unwrap(value) }.getOrNull() ?: return value
+        if (inner.isBlank()) return value
+        return inner.trim { it.isWhitespace() || it == NBSP }
     }
 
     private fun stripCodeFence(lyrics: String): String {

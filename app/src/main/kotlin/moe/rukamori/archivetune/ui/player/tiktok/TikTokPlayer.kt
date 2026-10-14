@@ -35,7 +35,6 @@
 
 package moe.rukamori.archivetune.ui.player.tiktok
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -102,6 +101,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.metadata
@@ -348,12 +348,12 @@ fun TikTokPlayerContent(
     var immersive by rememberSaveable { mutableStateOf(false) }
     // Back exits inline lyrics first, immersive mode next; the separate
     // lyrics page (if something else opened it) keeps its own back handling.
-    BackHandler(enabled = lyricsOpen && !lyricsVisible) { lyricsOpen = false }
-    BackHandler(enabled = immersive && !lyricsVisible) { immersive = false }
+    PlayerInlinePageBackHandler(enabled = lyricsOpen && !lyricsVisible) { lyricsOpen = false }
+    PlayerInlinePageBackHandler(enabled = immersive && !lyricsVisible) { immersive = false }
     // Registered last so it wins the back dispatch while the queue is open —
     // back closes the queue before anything else (the lyrics/immersive
     // handlers are mutually exclusive with it by construction anyway).
-    BackHandler(enabled = queueOpen && !lyricsVisible) { queueOpen = false }
+    PlayerInlinePageBackHandler(enabled = queueOpen && !lyricsVisible) { queueOpen = false }
     // Reset both when the player sheet collapses so re-expanding always
     // shows the full feed chrome, and when the lyrics page opens.
     LaunchedEffect(state.isExpanded, lyricsVisible) {

@@ -365,10 +365,9 @@ fun AppleMusicPlayerContent(
         lyricsOpen = !lyricsOpen
     }
 
-    // Back handler: when the in-place queue or lyrics is open, back closes
-    // it first (before the outer player-collapse BackHandler in Player.kt).
+    // When the in-place queue or lyrics is open, back closes it before the player collapses.
     val morphOpen = queueOpen || lyricsOpen
-    androidx.activity.compose.BackHandler(enabled = morphOpen) {
+    moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler(enabled = morphOpen) {
         if (lyricsOpen) lyricsOpen = false
         if (queueOpen) queueOpen = false
     }

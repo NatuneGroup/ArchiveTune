@@ -214,7 +214,9 @@ import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.PlayerBackController
+import moe.rukamori.archivetune.ui.component.LocalPlayerInlinePageBack
 import moe.rukamori.archivetune.ui.component.PlayerBackTarget
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackRegistry
 import moe.rukamori.archivetune.ui.component.PredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
@@ -1141,21 +1143,22 @@ fun BottomSheetPlayer(
     // a back request through this epoch when the shared controller routes back to them.
     val stylePageBackRequests = remember { mutableIntStateOf(0) }
     var anyStylePageOverlayOpen by remember { mutableStateOf(false) }
+    val inlinePageBack = remember { PlayerInlinePageBackRegistry() }
 
     // Which surface owns the next back press. Published once per composition into the shared
     // controller; MainActivity's two player back handlers (composed after the NavHost, so they
     // register after every handler in here) route the gesture to it. Without this the generic
     // collapse handler won by registration order and back collapsed the whole player while the
-    // queue was open. SUB_PAGE covers the shared queue, the standalone lyrics screen and player
-    // style pages. isInlineLyricsOpen is deliberately absent: Apple Music's lyrics morph reports
-    // that flag but owns no downward sync, so its own in-place back handler (which registers
-    // after the shields' last re-registration) must keep closing it, as it does today.
+    // queue was open. SUB_PAGE covers the shared queue, the standalone lyrics screen, player
+    // style pages and the styles' in-place pages (inlinePageBack): a style's own BackHandler
+    // registers before the shields and cannot outrank them by toggling enabled.
     val publishedBackTarget =
         when {
             aodModeEnabled -> PlayerBackTarget.NONE
             !state.isExpandedOrExpanding && !queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.NONE
             queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.SUB_PAGE
             isLyricsScreenVisible || anyStylePageOverlayOpen -> PlayerBackTarget.SUB_PAGE
+            backController != null && inlinePageBack.hasOpenPage -> PlayerBackTarget.SUB_PAGE
             else -> PlayerBackTarget.SHEET
         }
 
@@ -1169,6 +1172,7 @@ fun BottomSheetPlayer(
                     // onLyricsVisibilityChange), so the page epoch must be consulted first.
                     anyStylePageOverlayOpen && state.isExpandedOrExpanding -> stylePageBackRequests.intValue++
                     queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
+                    state.isExpandedOrExpanding && inlinePageBack.backTopmost() -> Unit
                     state.isExpandedOrExpanding -> state.collapseSoft()
                 }
             }
@@ -1236,6 +1240,7 @@ fun BottomSheetPlayer(
         LocalVideoAvailableHeights provides videoAvailableHeights,
         LocalVideoSelectedHeight provides videoSelectedHeight,
         LocalVideoPlaybackFailed provides videoPlaybackFailed,
+        LocalPlayerInlinePageBack provides inlinePageBack.takeIf { backController != null },
     ) {
     Box(modifier = Modifier.fillMaxSize()) {
     BottomSheet(

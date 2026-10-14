@@ -3788,6 +3788,7 @@ class MainActivity : ComponentActivity() {
                                         homeScrollConnection = homeScrollBehavior.nestedScrollConnection,
                                         searchScrollConnection = searchScrollBehavior.nestedScrollConnection,
                                         onlineSearchSort = { onlineSearchSort },
+                                        backAnimationStyle = { backAnimationStyle },
                                     )
                                 }
                             }

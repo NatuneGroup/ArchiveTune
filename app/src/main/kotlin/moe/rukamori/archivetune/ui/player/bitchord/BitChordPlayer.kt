@@ -48,7 +48,6 @@ import android.provider.Settings
 import android.view.View
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
-import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -140,6 +139,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.playback.smart.TrackAnalysisState
 import moe.rukamori.archivetune.playback.smart.SmartFadeRuntimeState
 import moe.rukamori.archivetune.R
@@ -582,7 +582,7 @@ fun BitChordPlayerContent(
     // Back out of the lyrics panel to the player, and only from the player
     // itself out to the mini player. The sheet the player is drawn in keeps
     // its own back handling while no panel is open (predictive-back shrink).
-    BackHandler(enabled = lyricsOpen) { lyricsOpen = false }
+    PlayerInlinePageBackHandler(enabled = lyricsOpen) { lyricsOpen = false }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val view = LocalView.current
         DisposableEffect(view, lyricsOpen) {

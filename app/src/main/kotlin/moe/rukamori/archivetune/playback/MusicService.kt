@@ -4136,6 +4136,14 @@ class MusicService :
             player.currentMediaItem?.mediaId,
             target.mediaId,
         )
+        // An out-of-band promotion (manual Next, a listener) must retire the fade loop: on its
+        // next tick it would see the promoted song as a changed outgoing item and cancel the
+        // transition this promotion schedules.
+        val callerJob = kotlinx.coroutines.currentCoroutineContext()[Job]
+        crossfadeJob?.takeIf { it !== callerJob }?.let { fadeLoop ->
+            fadeLoop.cancel()
+            crossfadeJob = null
+        }
         val promoted = promoteIncomingCrossfadePlayer(target, incomingPlayer, targetIndex)
         Timber.tag("PlaybackDiagnostics").i(
             "Crossfade promotion success=%s playWhenReady=%s state=%d positionMs=%d gain=%.3f focusHeld=%s",
@@ -4245,13 +4253,15 @@ class MusicService :
                     incomingCurrentIndex = incomingPlayer.currentMediaItemIndex,
                 )
             if (syncPlan != null) {
-                if (syncPlan.afterIds.isNotEmpty()) {
+                // A changed range whose live contents are empty is applied too (as a removal),
+                // or items removed from the live queue would reappear after the promotion.
+                if (syncPlan.afterIds != null) {
                     val afterItems =
                         (liveTargetIndex + 1 until oldSessionPlayer.mediaItemCount).map { oldSessionPlayer.getMediaItemAt(it) }
                     // After-range first: the replacement does not shift indices before it.
                     incomingPlayer.replaceMediaItems(syncPlan.incomingCurrentIndex + 1, incomingPlayer.mediaItemCount, afterItems)
                 }
-                if (syncPlan.beforeIds.isNotEmpty()) {
+                if (syncPlan.beforeIds != null) {
                     val beforeItems = (0 until liveTargetIndex).map { oldSessionPlayer.getMediaItemAt(it) }
                     incomingPlayer.replaceMediaItems(0, syncPlan.incomingCurrentIndex, beforeItems)
                 }
@@ -4317,7 +4327,14 @@ class MusicService :
             // 6. Queue/metadata state. The incoming player's transition into the target item
             // happened before it was the service player, so the bookkeeping is replayed
             // manually now that ownership has moved.
-            val promotedItem = incomingPlayer.getMediaItemAt(targetIndex)
+            // The before-range sync shifts the playing item, so targetIndex (resolved before the
+            // sync) can be stale; the player's own current item is authoritative.
+            val promotedIndex =
+                incomingPlayer.currentMediaItemIndex
+                    .takeIf { it in 0 until incomingPlayer.mediaItemCount && incomingPlayer.getMediaItemAt(it).mediaId == target.mediaId }
+                    ?: resolveCrossfadeTargetIndex(target, incomingPlayer).takeIf { it != C.INDEX_UNSET }
+                    ?: targetIndex
+            val promotedItem = incomingPlayer.getMediaItemAt(promotedIndex)
             currentMediaMetadata.value = promotedItem.metadata
             onMediaItemTransition(promotedItem, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
 
@@ -4424,19 +4441,29 @@ class MusicService :
         if (crossfadeSkipCommitInFlight) return true
         val incomingPlayer = secondaryCrossfadePlayer ?: return false
         val target = secondaryCrossfadeTarget ?: return false
-        if (!crossfadePlaybackRequested) return false
         if (!CrossfadeHandoffPolicy.isPromotableIncoming(crossfadeIncomingStateOf(incomingPlayer))) return false
         if (incomingPlayer.currentMediaItem?.mediaId != target.mediaId) return false
         val targetIndex = resolveCrossfadeTargetIndex(target, player)
         if (targetIndex == C.INDEX_UNSET || targetIndex != player.nextMediaItemIndex) return false
-        if (crossfadeProgress >= CrossfadeHandoffPolicy.COMMIT_PROGRESS) {
+        // Next resumes playback like a normal skip does. A paused fade cannot run its ramp out
+        // in the loop, so a paused Next promotes right away whatever the progress.
+        val resumeFromPause = !crossfadePlaybackRequested
+        if (resumeFromPause || crossfadeProgress >= CrossfadeHandoffPolicy.COMMIT_PROGRESS) {
             // Past the commit point the incoming song is already the dominant voice: promote
-            // it right away instead of waiting for the loop to finish the ramp.
+            // it right away instead of waiting for the loop to finish the ramp. The fade loop
+            // is retired first: left running, its next tick would see the promoted song as a
+            // changed outgoing item and cancel the transition the promotion schedules.
+            crossfadeJob?.cancel()
+            crossfadeJob = null
+            crossfadePlaybackRequested = true
             crossfadeSkipCommitInFlight = true
             scope.launch {
                 try {
                     runCatching { incomingPlayer.playWhenReady = true }
                     finishCrossfade(target, incomingPlayer, crossfadeGeneration.get())
+                    if (resumeFromPause && player.currentMediaItem?.mediaId == target.mediaId && !player.playWhenReady) {
+                        player.play()
+                    }
                 } finally {
                     crossfadeSkipCommitInFlight = false
                 }
@@ -4582,6 +4609,7 @@ class MusicService :
         reason: String,
         stallElapsedMs: Long = 0L,
         fallbackAction: CrossfadeHandoffAction? = null,
+        incomingUnusable: Boolean = false,
     ): CrossfadeHandoffAction? {
         val incomingPlayer = secondaryCrossfadePlayer ?: return null
         val target = secondaryCrossfadeTarget ?: return null
@@ -4596,19 +4624,27 @@ class MusicService :
                 playbackRequested = crossfadePlaybackRequested,
                 outgoingRanOut = outgoingSongHasRunOut(),
                 progress = crossfadeProgress,
-                incomingState = crossfadeIncomingStateOf(incomingPlayer),
+                // A source rejected by the authenticity check leaves a healthy player whose
+                // audio must not continue: it is treated like a terminal one so the commit rule
+                // carries its heard position through the normal source chain.
+                incomingState =
+                    if (incomingUnusable) CrossfadeIncomingState.ERROR else crossfadeIncomingStateOf(incomingPlayer),
                 incomingItemMatchesTarget = incomingPlayer.currentMediaItem?.mediaId == target.mediaId,
                 incomingHeardMs = (incomingPositionMs - crossfadeCueMs.coerceAtLeast(0L)).coerceAtLeast(0L),
                 stallElapsedMs = stallElapsedMs,
             )
-        var action =
-            CrossfadeHandoffPolicy.decide(
-                snapshot,
-                uncommittedStallGraceMs = CrossfadeHandoffPolicy.uncommittedStallGraceMs(
-                    crossfadeIncomingIsStreamedOrDrm(incomingPlayer),
-                ),
+        val action =
+            CrossfadeHandoffPolicy.resolveFallback(
+                decided =
+                    CrossfadeHandoffPolicy.decide(
+                        snapshot,
+                        uncommittedStallGraceMs = CrossfadeHandoffPolicy.uncommittedStallGraceMs(
+                            crossfadeIncomingIsStreamedOrDrm(incomingPlayer),
+                        ),
+                    ),
+                fallback = fallbackAction,
+                snapshot = snapshot,
             )
-        if (action == CrossfadeHandoffAction.CONTINUE && fallbackAction != null) action = fallbackAction
         val logKey = action.name to reason
         if (action != CrossfadeHandoffAction.CONTINUE || crossfadeLastHandoffLog != logKey) {
             Timber.tag("PlaybackDiagnostics").i(
@@ -11506,8 +11542,11 @@ class MusicService :
 
             if (isSecondaryPlayer) {
                 evictAudioAuthenticityRejectedSource(result.playbackKey, source)
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "authenticity_rejected")
-                scheduleCrossfade()
+                // Through the hand-off policy, not a bare cancel: past the commit point the
+                // heard position is carried to the primary player, which re-resolves the song
+                // through the source chain without the rejected source; before it the outgoing
+                // song is restored and the transition is retried.
+                handleCrossfadeHandoff(reason = "authenticity_rejected", incomingUnusable = true)
                 return@launch
             }
 

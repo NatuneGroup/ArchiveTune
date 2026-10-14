@@ -480,7 +480,9 @@ fun TikTokPlayerContent(
                 Modifier
                     .fillMaxSize()
                     .let { base ->
-                        if (feedBlur > 0.dp) base.blur(feedBlur) else base
+                        // canBlurFeed is checked here too so a policy-off does not let the
+                        // blur finish its exit animation.
+                        if (canBlurFeed && feedBlur > 0.dp) base.blur(feedBlur) else base
                     },
             // One page either side is pre-composed so the incoming page is fully
             // rendered before it slides in; nothing beyond that is composed,

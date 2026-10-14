@@ -532,6 +532,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                         displayName = accountDisplayName,
                         username = activeDiscordUsername,
                         avatarUrl = activeDiscordAvatarUrl.takeIf { it.isNotBlank() },
+                        imagesReady = openingTransitionFinished,
                         isLoggedIn = isLoggedIn,
                         authorizationUiMode = authorizationUiMode,
                         authorizationMessage = authorizationMessage,
@@ -861,6 +862,7 @@ private fun DiscordAccountGroupCard(
     displayName: String,
     username: String,
     avatarUrl: String?,
+    imagesReady: Boolean,
     isLoggedIn: Boolean,
     authorizationUiMode: DiscordAuthorizationUiMode,
     authorizationMessage: String?,
@@ -890,11 +892,12 @@ private fun DiscordAccountGroupCard(
             }
         }
 
-    LaunchedEffect(avatarUrl, isLoggedIn) {
+    LaunchedEffect(avatarUrl, isLoggedIn, imagesReady) {
         if (!isLoggedIn || avatarUrl.isNullOrBlank()) {
             extractedGlowColor = Color.Transparent
             return@LaunchedEffect
         }
+        if (!imagesReady) return@LaunchedEffect
 
         val bitmap =
             runCatching {
@@ -999,7 +1002,7 @@ private fun DiscordAccountGroupCard(
                                 tint = MaterialTheme.colorScheme.onSecondaryContainer,
                             )
 
-                            avatarImageRequest?.let {
+                            avatarImageRequest?.takeIf { imagesReady }?.let {
                                 AsyncImage(
                                     model = it,
                                     contentDescription = displayName,

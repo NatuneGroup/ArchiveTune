@@ -70,7 +70,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.constants.LibraryStyle
-import moe.rukamori.archivetune.ui.component.rememberLibraryStyle
+import moe.rukamori.archivetune.ui.component.libraryStyle
 import moe.rukamori.archivetune.ui.component.rememberInterfaceStyle
 import moe.rukamori.archivetune.constants.HideSearchChromeWhileScrollingKey
 import moe.rukamori.archivetune.constants.InterfaceStyle
@@ -92,6 +92,7 @@ import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.ChipSortTypeKey
 import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
+import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.constants.CustomFontNameKey
 import moe.rukamori.archivetune.constants.CustomFontUriKey
 import moe.rukamori.archivetune.constants.DarkModeKey
@@ -122,9 +123,9 @@ import moe.rukamori.archivetune.constants.HomeSource
 import moe.rukamori.archivetune.ui.screens.HomeScreensDialog
 import moe.rukamori.archivetune.ui.screens.labelResId
 import moe.rukamori.archivetune.ui.screens.parseHomeSources
-import moe.rukamori.archivetune.ui.screens.rememberActiveHomeSources
-import moe.rukamori.archivetune.ui.screens.rememberHomeSourceAvailable
-import moe.rukamori.archivetune.ui.screens.rememberQqHomeSourceAvailable
+import moe.rukamori.archivetune.ui.screens.activeHomeSources
+import moe.rukamori.archivetune.ui.screens.homeSourceAvailable
+import moe.rukamori.archivetune.ui.screens.qqHomeSourceAvailable
 import moe.rukamori.archivetune.constants.MinimalHomeModeKey
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
@@ -336,7 +337,7 @@ private fun AppearanceThemeSection(
     val (darkMode, onDarkModeChange) = prefs.enumState(DarkModeKey, defaultValue = DarkMode.AUTO)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
         prefs.state(LiquidGlassEnabledKey, defaultValue = false)
-    val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle()
+    val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle(prefs)
     val (pureBlack, onPureBlackChange) = prefs.state(PureBlackKey, defaultValue = false)
     val (disableBlur, onDisableBlurChange) = prefs.state(DisableBlurKey, defaultValue = false)
     val (disableAnimations, onDisableAnimationsChange) =
@@ -800,6 +801,8 @@ private fun AppearancePlayerSection(
     // The ArchiveTune Canvas artwork toggle lives in Player Settings → Artwork.
     val (cropThumbnailToSquare, onCropThumbnailToSquareChange) =
         prefs.state(CropThumbnailToSquareKey, defaultValue = false)
+    val (thumbnailCornerRadius, onThumbnailCornerRadiusChange) =
+        prefs.state(ThumbnailCornerRadiusKey, defaultValue = 16f)
     val (playerBackground, onPlayerBackgroundChange) =
         prefs.enumState(PlayerBackgroundStyleKey, defaultValue = PlayerBackgroundStyle.DEFAULT)
     val (configuredLyricsBackground, onLyricsBackgroundChange) =
@@ -809,17 +812,17 @@ private fun AppearancePlayerSection(
     val (compactMiniPlayer, onCompactMiniPlayerChange) = prefs.state(CompactMiniPlayerKey, defaultValue = false)
     val (liquidGlassEnabled) = prefs.state(LiquidGlassEnabledKey, defaultValue = false)
     val (disableBlur) = prefs.state(DisableBlurKey, defaultValue = false)
-    val (libraryStyle, setLibraryStyle) = rememberLibraryStyle()
-    val (interfaceStyle) = rememberInterfaceStyle()
+    val (libraryStyle, setLibraryStyle) = prefs.libraryStyle()
+    val (interfaceStyle) = rememberInterfaceStyle(prefs)
     val (albumCanvasEnabled, onAlbumCanvasEnabledChange) =
         prefs.state(AlbumCanvasEnabledKey, defaultValue = true)
     val (playerButtonsStyle, onPlayerButtonsStyleChange) =
         prefs.enumState(PlayerButtonsStyleKey, defaultValue = PlayerButtonsStyle.DEFAULT)
     val (sliderStyle, onSliderStyleChange) = prefs.enumState(SliderStyleKey, defaultValue = SliderStyle.Standard)
-    val spotifySignedIn = rememberHomeSourceAvailable()
-    val qqSignedIn = rememberQqHomeSourceAvailable()
+    val spotifySignedIn = prefs.homeSourceAvailable()
+    val qqSignedIn = prefs.qqHomeSourceAvailable()
     val (activeHomeSourcesRaw, setActiveHomeSources) = prefs.state(ActiveHomeSourcesKey, "")
-    val activeHomeSources = rememberActiveHomeSources()
+    val activeHomeSources = prefs.activeHomeSources()
     // What the picker shows and edits: the stored set when there is one, otherwise the resolved
     // default. Reading the stored set (not the resolved one) keeps the checkboxes and the summary
     // agreeing with the CSV — a page parked while signed out still reads as selected.
@@ -1254,6 +1257,25 @@ private fun AppearancePlayerSection(
                             MiniPlayerBackgroundStyle.LIQUID_GLASS -> stringResource(R.string.liquid_glass)
                         }
                     },
+                    isValueEnabled = { style ->
+                        !disableBlur ||
+                            (
+                                style != MiniPlayerBackgroundStyle.FROSTED &&
+                                    style != MiniPlayerBackgroundStyle.LIQUID_GLASS
+                            )
+                    },
+                    valueDescription = { style ->
+                        if (disableBlur &&
+                            (
+                                style == MiniPlayerBackgroundStyle.FROSTED ||
+                                    style == MiniPlayerBackgroundStyle.LIQUID_GLASS
+                            )
+                        ) {
+                            stringResource(R.string.blur_setting_overridden)
+                        } else {
+                            ""
+                        }
+                    },
                 )
                 // Pre-Android 12 warning: frosted mini player uses RenderEffect (API 31+).
                 // On pre-S the FROSTED style is silently downgraded to THEME — surface a
@@ -1329,7 +1351,8 @@ private fun AppearancePlayerSection(
 
         item {
             ThumbnailCornerRadiusSelectorButton(
-                onRadiusSelected = {},
+                thumbnailCornerRadius = thumbnailCornerRadius,
+                onThumbnailCornerRadiusChange = onThumbnailCornerRadiusChange,
             )
         }
 

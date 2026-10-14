@@ -48,6 +48,8 @@ import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
+import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -190,6 +192,28 @@ fun rememberNavigationBarCompactBehavior(): Pair<NavigationBarCompactBehavior, (
         }
     return behavior to { selected: NavigationBarCompactBehavior -> setStored(selected.name) }
 }
+
+/** [rememberNavigationBarCompactBehavior] read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.navigationBarCompactBehavior(): Pair<NavigationBarCompactBehavior, (NavigationBarCompactBehavior) -> Unit> {
+    val hideOnScroll = this[NavigationBarHideOnScrollKey, false]
+    val (stored, setStored) = state(NavigationBarCompactBehaviorKey, defaultValue = "")
+    val behavior =
+        if (navigationPillStyle() == NavigationBarStyle.APPLE_MUSIC) {
+            NavigationBarCompactBehavior.ALWAYS_COMPACT
+        } else {
+            NavigationBarCompactBehavior.entries.firstOrNull { it.name == stored }
+                ?: if (hideOnScroll) NavigationBarCompactBehavior.ADAPTIVE else NavigationBarCompactBehavior.ALWAYS_EXPANDED
+        }
+    return behavior to { selected: NavigationBarCompactBehavior -> setStored(selected.name) }
+}
+
+/** [rememberNavigationPillStyle] read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.navigationPillStyle(): NavigationBarStyle =
+    if (this[AppleMusicExperienceKey, false]) {
+        NavigationBarStyle.APPLE_MUSIC
+    } else {
+        enumState(NavigationBarStyleKey, defaultValue = NavigationBarStyle.DEFAULT).value
+    }
 
 @Composable
 fun rememberNavigationPillStyle(): NavigationBarStyle {

@@ -65,6 +65,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
@@ -95,8 +96,7 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.SwitchPreference
-import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
-import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
+import moe.rukamori.archivetune.ui.component.navigationBarCompactBehavior
 import moe.rukamori.archivetune.ui.component.NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT
 import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowIntensityKey
 import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowKey
@@ -118,8 +118,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
     val (compactControlsStockColor, onCompactControlsStockColorChange) =
         prefs.state(CompactControlsStockColorKey, defaultValue = false)
     val (navigationBarCompactBehavior, onNavigationBarCompactBehaviorChange) =
-        rememberNavigationBarCompactBehavior()
-    val appleMusicExperience = rememberAppleMusicExperience()
+        prefs.navigationBarCompactBehavior()
+    val appleMusicExperience = prefs[AppleMusicExperienceKey, false]
     val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
         prefs.state(NavigationBarFrostedBlurKey, defaultValue = false)
     val (navigationBarTintFrostedBlur, onNavigationBarTintFrostedBlurChange) =

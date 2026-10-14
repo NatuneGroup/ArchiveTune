@@ -139,6 +139,7 @@ internal object SettingsSearch {
                                         scrollKey = child.scrollKey,
                                         onClick = item.onClick,
                                         restartPending = child.restartPending,
+                                        blurOverridden = child.blurOverridden,
                                         switchControl = child.switchControl,
                                     ),
                             )

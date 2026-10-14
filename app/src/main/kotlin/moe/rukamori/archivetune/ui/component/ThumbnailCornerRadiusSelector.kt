@@ -33,21 +33,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
-import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.roundToInt
 
 @Composable
 fun ThumbnailCornerRadiusSelectorButton(
+    thumbnailCornerRadius: Float,
+    onThumbnailCornerRadiusChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
-    onRadiusSelected: (Float) -> Unit,
+    onRadiusSelected: (Float) -> Unit = {},
 ) {
-    val (thumbnailCornerRadius, onThumbnailCornerRadiusChange) =
-        rememberPreference(
-            ThumbnailCornerRadiusKey,
-            defaultValue = 16f,
-        )
-
     var showDialog by remember { mutableStateOf(false) }
 
     PreferenceEntry(

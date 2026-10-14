@@ -411,6 +411,7 @@ fun <T> ListPreference(
     valueDescription: (@Composable (T) -> String)? = null,
     onValueSelected: (T) -> Unit,
     isEnabled: Boolean = true,
+    isValueEnabled: ((T) -> Boolean)? = null,
 ) {
     var showBottomSheet by remember {
         mutableStateOf(false)
@@ -426,6 +427,7 @@ fun <T> ListPreference(
             selectedValue = selectedValue,
             valueText = valueText,
             valueDescription = valueDescription,
+            isValueEnabled = isValueEnabled,
             sheetState = sheetState,
             onDismiss = { showBottomSheet = false },
             onValueSelected = { value ->
@@ -472,6 +474,8 @@ inline fun <reified T : Enum<T>> EnumListPreference(
     noinline valueText: @Composable (T) -> String,
     noinline onValueSelected: (T) -> Unit,
     isEnabled: Boolean = true,
+    noinline valueDescription: (@Composable (T) -> String)? = null,
+    noinline isValueEnabled: ((T) -> Boolean)? = null,
 ) {
     val values = remember { enumValues<T>().toList() }
 
@@ -483,8 +487,10 @@ inline fun <reified T : Enum<T>> EnumListPreference(
         selectedValue = selectedValue,
         values = values,
         valueText = valueText,
+        valueDescription = valueDescription,
         onValueSelected = onValueSelected,
         isEnabled = isEnabled,
+        isValueEnabled = isValueEnabled,
     )
 }
 
@@ -499,6 +505,7 @@ internal fun <T> PreferenceSelectionBottomSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onValueSelected: (T) -> Unit,
+    isValueEnabled: ((T) -> Boolean)? = null,
 ) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -565,14 +572,16 @@ internal fun <T> PreferenceSelectionBottomSheet(
                         val shape = segmentedPreferenceItemShape(index, values.size)
                         val position = yumaSegmentPosition(index, values.size)
                         val isLast = index == values.lastIndex
+                        val enabled = isValueEnabled?.invoke(value) ?: true
                         PreferenceSelectionOption(
                             text = valueText(value),
-                            description = valueDescription?.invoke(value),
+                            description = valueDescription?.invoke(value)?.takeIf { it.isNotEmpty() },
                             selected = value == selectedValue,
                             shape = shape,
                             position = position,
+                            enabled = enabled,
                             modifier = Modifier.padding(bottom = if (isLast) 0.dp else SettingsDimensions.SegmentedItemGap),
-                            onClick = { onValueSelected(value) },
+                            onClick = { if (enabled) onValueSelected(value) },
                         )
                     }
                 }
@@ -589,6 +598,7 @@ private fun PreferenceSelectionOption(
     shape: Shape,
     position: YumaSegmentPosition = YumaSegmentPosition.Single,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     val colors = LocalYumaColors.current
@@ -606,7 +616,13 @@ private fun PreferenceSelectionOption(
         modifier =
             modifier
                 .fillMaxWidth()
-                .yumaClickable(pressedScale = 0.96f, onClick = onClick)
+                .then(
+                    if (enabled) {
+                        Modifier.yumaClickable(pressedScale = 0.96f, onClick = onClick)
+                    } else {
+                        Modifier.alpha(0.38f)
+                    },
+                )
                 .yumaGlassCard(
                     shape = shape,
                     backgroundColor = backgroundColor,

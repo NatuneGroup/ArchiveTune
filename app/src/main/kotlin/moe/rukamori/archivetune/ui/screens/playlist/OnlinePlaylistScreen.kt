@@ -854,12 +854,13 @@ fun OnlinePlaylistScreen(
         // Top App Bar — hidden when the Liquid Glass header buttons are visible
         // (matches LocalPlaylistScreen pattern). The Liquid Glass back button and
         // search+more pill handle navigation/actions when the hero is visible.
-        // The TopAppBar is only rendered during selection mode and search mode,
-        // where it provides the selection count / search TextField. Rendering the
+        // With glass active the TopAppBar is only rendered during selection mode and
+        // search mode, where it provides the selection count / search TextField; without
+        // glass (off, or overridden by Disable blur) it is the plain header. Rendering the
         // TopAppBar on top of the Liquid Glass buttons (even when transparent and
         // with empty actions) causes it to intercept pointer events in the top
         // area, making the Liquid Glass buttons unclickable.
-        if (selection || isSearching) {
+        if (!liquidGlassHeaderActive || selection || isSearching) {
             val topAppBarColors =
                 if (transparentAppBar) {
                     TopAppBarDefaults.topAppBarColors(
@@ -921,7 +922,7 @@ fun OnlinePlaylistScreen(
                 // not in selection mode, not scrolled). In selection / searching
                 // / scrolled state, the floating button has scrolled out of
                 // view so we need the TopAppBar's own back/close icon.
-                if (isSearching || selection || showTopBarTitle) {
+                if (isSearching || selection || showTopBarTitle || !liquidGlassHeaderActive) {
                     IconButton(
                         onClick = {
                             if (isSearching) {
@@ -1005,7 +1006,7 @@ fun OnlinePlaylistScreen(
                     // scrolled). Once scrolled, the floating pill has
                     // scrolled out of view, so the TopAppBar's own actions
                     // take over.
-                    if (showTopBarTitle) {
+                    if (showTopBarTitle || !liquidGlassHeaderActive) {
                         IconButton(onClick = { isSearching = true }, onLongClick = {}) {
                             Icon(
                                 painter = painterResource(R.drawable.search),
@@ -1039,7 +1040,7 @@ fun OnlinePlaylistScreen(
                 }
             },
         )
-        } // end if (selection || isSearching)
+        } // end if (!liquidGlassHeaderActive || selection || isSearching)
 
         SnackbarHost(
             hostState = snackbarHostState,

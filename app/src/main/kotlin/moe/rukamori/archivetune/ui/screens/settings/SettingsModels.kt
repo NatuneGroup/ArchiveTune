@@ -57,6 +57,8 @@ data class SettingsChild(
     val keywords: List<String> = emptyList(),
     /** Set on restart-scoped settings: which [PendingRestart] flag this row's switch can raise. */
     val restartPending: ((PendingRestart) -> Boolean)? = null,
+    /** Set on blur-dependent rows that Disable blur effects overrides. */
+    val blurOverridden: Boolean = false,
     val switchControl: (@Composable () -> Unit)? = null,
 )
 
@@ -75,5 +77,7 @@ data class SearchResultItem(
     val scrollKey: String?,
     val onClick: () -> Unit,
     val restartPending: ((PendingRestart) -> Boolean)? = null,
+    /** Set on blur-dependent rows that Disable blur effects overrides. */
+    val blurOverridden: Boolean = false,
     val switchControl: (@Composable () -> Unit)? = null,
 )

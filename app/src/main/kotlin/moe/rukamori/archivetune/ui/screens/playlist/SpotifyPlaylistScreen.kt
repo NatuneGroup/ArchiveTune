@@ -643,13 +643,14 @@ fun SpotifyPlaylistScreen(
 
         // Top App Bar — hidden when the Liquid Glass header buttons are visible
         // (matches LocalPlaylistScreen pattern). The Liquid Glass back button and
-        // search pill handle navigation when the hero is visible. The TopAppBar is
-        // only rendered during search mode (search TextField) and loading state
-        // (back navigation while playlist loads). Rendering the TopAppBar on top of
+        // search pill handle navigation when the hero is visible. With glass active the
+        // TopAppBar is only rendered during search mode (search TextField) and loading
+        // state (back navigation while playlist loads); without glass (off, or overridden
+        // by Disable blur) it is the plain header. Rendering the TopAppBar on top of
         // the Liquid Glass buttons (even when transparent and with empty actions)
         // causes it to intercept pointer events in the top area, making the Liquid
         // Glass buttons unclickable.
-        if (isSearching || playlist == null) {
+        if (!liquidGlassHeaderActive || isSearching || playlist == null) {
         TopAppBar(
             colors = topAppBarColors,
             windowInsets =
@@ -694,7 +695,7 @@ fun SpotifyPlaylistScreen(
                 // Hide the back arrow when the SimpMusic-style floating liquid
                 // glass back button is visible (artwork shown, not searching,
                 // not scrolled).
-                if (isSearching || showTopBarTitle) {
+                if (isSearching || showTopBarTitle || !liquidGlassHeaderActive) {
                     IconButton(
                         onClick = {
                             if (isSearching) {
@@ -719,7 +720,7 @@ fun SpotifyPlaylistScreen(
                 }
             },
             actions = {
-                if (!isSearching && showTopBarTitle) {
+                if (!isSearching && (showTopBarTitle || !liquidGlassHeaderActive)) {
                     IconButton(
                         onClick = { isSearching = true },
                         onLongClick = {},
@@ -733,7 +734,7 @@ fun SpotifyPlaylistScreen(
             },
             scrollBehavior = scrollBehavior,
         )
-        } // end if (isSearching || playlist == null)
+        } // end if (!liquidGlassHeaderActive || isSearching || playlist == null)
 
         SnackbarHost(
             hostState = snackbarHostState,

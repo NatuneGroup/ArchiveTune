@@ -239,7 +239,7 @@ internal object LyricsPayload {
         return text.trim().takeIf { it.isNotEmpty() }
     }
 
-    private fun isTtmlDocument(value: String): Boolean {
+    internal fun isTtmlDocument(value: String): Boolean {
         val trimmed = value.trimStart()
         if (trimmed.startsWith("<tt", ignoreCase = true)) return true
         // A JSON envelope can quote the TTML namespace too; only XML-leading text is a document.

@@ -42,6 +42,7 @@ import moe.rukamori.archivetune.ui.component.PreferenceMultiSelectBottomSheet
 import moe.rukamori.archivetune.ui.component.PreferenceSelectionBottomSheet
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.dataStore
 
@@ -67,6 +68,21 @@ fun rememberQqHomeSourceAvailable(): Boolean {
     val musicKey by rememberPreference(QqMusicMusickeyKey, defaultValue = "")
     return uin.isNotBlank() && musicKey.isNotBlank()
 }
+
+/** [rememberHomeSourceAvailable] read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.homeSourceAvailable(): Boolean = this[SpotifySpDcKey, ""].isNotBlank()
+
+/** [rememberQqHomeSourceAvailable] read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.qqHomeSourceAvailable(): Boolean =
+    this[QqMusicUinKey, ""].isNotBlank() && this[QqMusicMusickeyKey, ""].isNotBlank()
+
+/** [rememberActiveHomeSources] read from a page's [PreferenceSnapshot]. */
+fun PreferenceSnapshot.activeHomeSources(): List<HomeSource> =
+    resolveActiveHomeSources(
+        stored = parseHomeSources(this[ActiveHomeSourcesKey, ""]),
+        spotifyAvailable = homeSourceAvailable(),
+        qqAvailable = qqHomeSourceAvailable(),
+    )
 
 /** Whether [this] page can be shown right now. YouTube is the app's own home and always can. */
 private fun HomeSource.isAvailable(
@@ -113,6 +129,14 @@ fun rememberActiveHomeSources(): List<HomeSource> {
     val spotifyAvailable = rememberHomeSourceAvailable()
     val qqAvailable = rememberQqHomeSourceAvailable()
     val stored = remember(raw) { parseHomeSources(raw) }
+    return resolveActiveHomeSources(stored, spotifyAvailable, qqAvailable)
+}
+
+private fun resolveActiveHomeSources(
+    stored: List<HomeSource>,
+    spotifyAvailable: Boolean,
+    qqAvailable: Boolean,
+): List<HomeSource> {
     val base =
         if (stored.isEmpty()) {
             buildList {

@@ -21,6 +21,7 @@ import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.StyleBeforeAppleMusicKey
 import moe.rukamori.archivetune.extensions.toEnum
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -41,6 +42,17 @@ fun rememberLibraryStyle(): Pair<LibraryStyle, (LibraryStyle) -> Unit> {
     val (legacyEnabled) = rememberPreference(AppleMusicExperienceKey, defaultValue = false)
     val (style, setStyle) =
         rememberEnumPreference(
+            LibraryStyleKey,
+            defaultValue = if (legacyEnabled) LibraryStyle.APPLE_MUSIC else LibraryStyle.DEFAULT,
+        )
+    return style to setStyle
+}
+
+/** [rememberLibraryStyle] read from a page's [PreferenceSnapshot] instead of its own collectors. */
+fun PreferenceSnapshot.libraryStyle(): Pair<LibraryStyle, (LibraryStyle) -> Unit> {
+    val legacyEnabled = this[AppleMusicExperienceKey, false]
+    val (style, setStyle) =
+        enumState(
             LibraryStyleKey,
             defaultValue = if (legacyEnabled) LibraryStyle.APPLE_MUSIC else LibraryStyle.DEFAULT,
         )
@@ -104,5 +116,17 @@ fun rememberInterfaceStyle(): Pair<InterfaceStyle, (InterfaceStyle) -> Unit> {
     val appleMusic = rememberAppleMusicExperience()
     val setAppleMusic = rememberAppleMusicExperienceToggle()
     val style = if (appleMusic) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE
+    return style to { selected -> setAppleMusic(selected == InterfaceStyle.APPLE_MUSIC) }
+}
+
+/**
+ * [rememberInterfaceStyle] read from a page's [PreferenceSnapshot]; the write still goes through the
+ * coordinated experience transaction.
+ */
+@Composable
+fun rememberInterfaceStyle(prefs: PreferenceSnapshot): Pair<InterfaceStyle, (InterfaceStyle) -> Unit> {
+    val setAppleMusic = rememberAppleMusicExperienceToggle()
+    val style =
+        if (prefs[AppleMusicExperienceKey, false]) InterfaceStyle.APPLE_MUSIC else InterfaceStyle.MATERIAL_EXPRESSIVE
     return style to { selected -> setAppleMusic(selected == InterfaceStyle.APPLE_MUSIC) }
 }

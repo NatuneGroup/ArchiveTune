@@ -3754,6 +3754,16 @@ private fun V9TransportButton(
     }
 }
 
+/**
+ * Without blur, Blur falls back to the artwork-colour gradient it would otherwise blur toward.
+ * Blur-gradient keeps its style and draws only the gradient, without the blurred image.
+ */
+internal fun effectivePlayerBackground(
+    playerBackground: PlayerBackgroundStyle,
+    blurOff: Boolean,
+): PlayerBackgroundStyle =
+    if (blurOff && playerBackground == PlayerBackgroundStyle.BLUR) PlayerBackgroundStyle.GRADIENT else playerBackground
+
 @Composable
 fun PlayerBackground(
     playerBackground: PlayerBackgroundStyle,
@@ -3779,9 +3789,7 @@ fun PlayerBackground(
     val blurOff = disableBlur || !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val styleAppliesBlur =
         !blurOff && effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
-    // Without blur, Blur falls back to the artwork-colour gradient it would otherwise blur toward.
-    val effectiveBackground =
-        if (blurOff && playerBackground == PlayerBackgroundStyle.BLUR) PlayerBackgroundStyle.GRADIENT else playerBackground
+    val effectiveBackground = effectivePlayerBackground(playerBackground, blurOff)
     Box(modifier = Modifier.fillMaxSize()) {
         when (effectiveBackground) {
             PlayerBackgroundStyle.BLUR -> {

@@ -14,8 +14,6 @@ class ObserveCastStateUseCase(
     operator fun invoke() = repository.screenState
 }
 
-class SelectCastRouteUseCase
-
 class DisconnectCastSessionUseCase(
     private val repository: CastPlaybackRepository,
 ) {

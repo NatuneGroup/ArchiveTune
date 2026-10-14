@@ -1704,13 +1704,6 @@ val AppleMusicQualityKey = stringPreferencesKey("appleMusicQuality")
  */
 val AppleMusicSourceEnabledKey = booleanPreferencesKey("appleMusicSourceEnabled")
 
-val TidalAudioQualityOptions =
-    listOf(
-        TidalAudioQuality.AAC_320,
-        TidalAudioQuality.FLAC,
-        TidalAudioQuality.HI_RES_LOSSLESS,
-    )
-
 // Streaming/playback only (like Tidal): the app never bundles endpoints — the user pastes their own
 // proxy instance URLs. Each instance exposes get-music (search) + download-music (stream URL).
 val QobuzEnabledKey = booleanPreferencesKey("qobuzEnabled")
@@ -1749,13 +1742,6 @@ enum class QobuzAudioQuality {
     HI_RES,
     MAX,
 }
-
-val QobuzAudioQualityOptions =
-    listOf(
-        QobuzAudioQuality.FLAC,
-        QobuzAudioQuality.HI_RES,
-        QobuzAudioQuality.MAX,
-    )
 
 val QobuzAudioQualityKey = stringPreferencesKey("qobuzAudioQuality")
 

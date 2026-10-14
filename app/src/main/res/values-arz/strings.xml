@@ -90,10 +90,6 @@
         <item quantity="one">ولا أغنية</item>
         <item quantity="other">أغنية واحدة</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">ولا فنان</item>
-        <item quantity="other">فنان واحد</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">ولا ألبوم</item>
         <item quantity="other">ألبوم واحد</item>
@@ -171,8 +167,6 @@
     <string name="custom_order">ترتيب مخصص</string>
     <string name="list_view">عرض كقائمة</string>
     <string name="grid_view">عرض كشبكة</string>
-    <string name="personal_label">شخصي</string>
-    <string name="youtube_synced">متزامن مع يوتيوب</string>
     <string name="options_label">خيارات</string>
     <string name="top_artist_badge">الفنان الأفضل</string>
     <string name="no_artist_yet">مفيش فنانين لسه</string>
@@ -232,7 +226,6 @@
     <string name="delete">حذف</string>
     <string name="hide_playlist">إخفاء البلاي ليست</string>
     <string name="unhide_playlist">إظهار البلاي ليست</string>
-    <string name="show_hidden_playlists">عرض المخفي</string>
     <string name="hide_playlist_confirm">إخفاء \"%1$s\" من المكتبة؟</string>
     <string name="removed_n_songs_from_queue">تم إزالة %d أغنية من الدور</string>
     <string name="search_online">بحث أونلاين</string>
@@ -408,7 +401,6 @@
     <string name="palette_neon_pink">نيون بينك</string>
     <string name="palette_neon_blue">نيون بلو</string>
     <string name="palette_neon_orange">نيون برتقالي</string>
-    <string name="palette_cyberpunk">سايبربانك</string>
     <string name="palette_synthwave">سينثويف</string>
     <string name="palette_ocean">المحيط</string>
     <string name="palette_forest">أعماق الغابة</string>
@@ -418,8 +410,6 @@
     <string name="palette_summer">الصيف</string>
     <string name="palette_twilight">الشفق</string>
     <string name="palette_aurora">أورورا</string>
-    <string name="palette_candy">حلوى</string>
-    <string name="palette_rainbow">قوس قزح</string>
     <string name="dark_theme">السمة الداكنة</string>
     <string name="dark_theme_on">مفعل</string>
     <string name="dark_theme_off">غير مفعل</string>
@@ -440,7 +430,6 @@
     <string name="disable_animations">تعطيل الرسوم المتحركة</string>
     <string name="disable_animations_desc">تعطيل معظم الرسوم المتحركة. يُنصح به للأجهزة الضعيفة</string>
     <string name="force_high_refresh_rate">فرض معدل تحديث شاشة عالي</string>
-    <string name="max_supported_refresh_rate">أقصى حد مدعوم: %1$d هرتز</string>
     <string name="blur_intensity">قوة الضبابية</string>
     <string name="blur_intensity_value">%1$d dp</string>
     <string name="player">المشغل</string>
@@ -462,7 +451,6 @@
     <string name="lyrics_line_spacing">تباعد أسطر الكلمات</string>
     <string name="content">المحتوى</string>
     <string name="action_logout">تسجيل الخروج</string>
-    <string name="action_login">تسجيل الدخول</string>
     <string name="login">تسجيل الدخول</string>
     <string name="not_logged_in">غير مسجل الدخول</string>
     <string name="playback_confirmation_required">مطلوب تأكيد التشغيل</string>
@@ -493,7 +481,6 @@
     <string name="proxy_password">كلمة المرور</string>
     <string name="test_proxy_connection">اختبار اتصال البروكسي</string>
     <string name="testing_proxy_connection">جاري اختبار اتصال البروكسي</string>
-    <string name="proxy_connection_success">اتصال البروكسي نجح!</string>
     <string name="proxy_connection_failed">اتصال البروكسي فشل: %s</string>
     <string name="proxy_connection_invalid_configuration">مضيف أو منفذ البروكسي غير صالح</string>
     <string name="ip_rotation">تبديل الـ IP</string>
@@ -620,7 +607,6 @@
     <string name="restore_success">تم استعادة النسخة الاحتياطية بنجاح</string>
     <string name="restore_failed">فشلنا في استعادة النسخة الاحتياطية</string>
     <string name="discord_integration">الربط مع ديسكورد</string>
-    <string name="account_integrations_summary">ديسكورد، Last.fm، Libre.fm، ListenBrainz</string>
     <string name="discord_login_description">اربط حساب ديسكورد بتاعك عبر OAuth عشان ArchiveTune يقدر ينشر نشاط استماعك (Rich Presence).</string>
     <string name="discord_open_authorization">فتح مصادقة ديسكورد</string>
     <string name="discord_waiting_for_authorization">في انتظار مصادقة ديسكورد…</string>
@@ -654,9 +640,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">مخصص</string>
     <string name="lastfm_custom_endpoint">نقطة اتصال مخصصة</string>
-    <string name="lastfm_api_credentials">بيانات اعتماد الـ API</string>
-    <string name="lastfm_api_credentials_default">استخدام بيانات الاعتماد الافتراضية</string>
-    <string name="lastfm_api_credentials_custom">استخدام بيانات اعتماد مخصصة</string>
     <string name="lastfm_api_credentials_hint">سيب الحقول دي فاضية للخدمات المتوافقة اللي بتقبل أي مفتاح API ورقم سري مشترك.</string>
     <string name="lastfm_api_key_override">مفتاح API</string>
     <string name="lastfm_secret_override">رقم سري مشترك</string>

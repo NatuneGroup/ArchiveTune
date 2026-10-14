@@ -33,11 +33,6 @@ object AppleMusicVirtualStream {
         val headerSize: Int,
     )
 
-    private class ParsedPlaylistInfo(
-        val mediaUrl: String,
-        val durationsSec: List<Double>,
-    )
-
     /** Result of [build]: the virtual stream bytes plus the raw DRM URI (Apple's `uri` field). */
     class Built(
         val bytes: ByteArray,

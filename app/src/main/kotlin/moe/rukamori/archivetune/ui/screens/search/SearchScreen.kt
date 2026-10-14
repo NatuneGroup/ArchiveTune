@@ -40,7 +40,6 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -82,7 +81,6 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
@@ -90,7 +88,6 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
@@ -105,7 +102,6 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -122,12 +118,10 @@ import moe.rukamori.archivetune.db.entities.SearchHistory
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.innertube.models.AlbumItem
 import moe.rukamori.archivetune.innertube.models.ArtistItem
-import moe.rukamori.archivetune.innertube.models.BrowseEndpoint
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
-import moe.rukamori.archivetune.search.SearchDiscoveryUiModel
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.LocalNavigationBarHiddenByScroll
 import moe.rukamori.archivetune.ui.component.PillRole
@@ -138,8 +132,6 @@ import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.SearchSourcePicker
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
-import moe.rukamori.archivetune.ui.screens.rememberMoodAndGenresArtworkModel
-import moe.rukamori.archivetune.ui.screens.rememberMoodAndGenresArtworkUrl
 import moe.rukamori.archivetune.viewmodels.SearchDiscoveryScreenState
 import moe.rukamori.archivetune.viewmodels.SearchDiscoveryTab
 import moe.rukamori.archivetune.viewmodels.SearchDiscoveryViewModel
@@ -151,7 +143,6 @@ import moe.rukamori.archivetune.ui.component.rememberPillStyle
 
 private val SearchHorizontalPadding = 24.dp
 private val SearchSectionSpacing = 28.dp
-private val SearchCardCornerRadius = 18.dp
 private val SearchSegmentedCornerRadius = 28.dp
 private val ExpressiveSearchBarHeight = 58.dp
 private val ExpressiveSearchBarCornerRadius = 28.dp
@@ -887,130 +878,6 @@ private fun RecentSearchMonogram(query: String) {
             style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
-        )
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun BasedOnWhatYouLikeGrid(
-    data: SearchDiscoveryUiModel,
-    navController: NavController,
-    modifier: Modifier = Modifier,
-) {
-    val columns = 2
-    val rows = (data.moodAndGenres.size + columns - 1) / columns
-
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .padding(horizontal = SearchHorizontalPadding),
-    ) {
-        data.moodAndGenres.chunked(columns).forEach { rowItems ->
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                rowItems.forEach { item ->
-                    MoodCard(
-                        title = item.title,
-                        stripeColor = item.stripeColor,
-                        endpoint = item.endpoint,
-                        onClick = {
-                            navController.navigate(
-                                "youtube_browse/${item.endpoint.browseId}?params=${item.endpoint.params}",
-                            )
-                        },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-                // Pad the last row so cards stay equal width.
-                if (rowItems.size < columns) {
-                    repeat(columns - rowItems.size) {
-                        Spacer(Modifier.weight(1f))
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-    }
-}
-
-@Composable
-private fun MoodCard(
-    title: String,
-    stripeColor: Long,
-    endpoint: BrowseEndpoint,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val base = remember(stripeColor) { Color(stripeColor) }
-    val surface = MaterialTheme.colorScheme.surface
-    val scrim = MaterialTheme.colorScheme.scrim
-    // Reuse the same artwork cache as the MoodAndGenres screen so tiles that
-    // were already resolved there appear instantly here too. The artwork is
-    // loaded async from YouTube browse (the gradient remains as a graceful
-    // placeholder while the thumbnail loads or if it never resolves).
-    val artworkUrl = rememberMoodAndGenresArtworkUrl(endpoint)
-    val artworkModel = rememberMoodAndGenresArtworkModel(endpoint = endpoint, artworkUrl = artworkUrl)
-    val cardBrush =
-        remember(base, surface) {
-            Brush.linearGradient(
-                colors =
-                    listOf(
-                        base.copy(alpha = 0.55f),
-                        surface.copy(alpha = 0.92f),
-                    ),
-            )
-        }
-    val textScrimBrush =
-        remember(scrim) {
-            Brush.verticalGradient(
-                colors =
-                    listOf(
-                        Color.Transparent,
-                        scrim.copy(alpha = 0.7f),
-                    ),
-            )
-        }
-
-    Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .aspectRatio(1.6f)
-                .clip(RoundedCornerShape(SearchCardCornerRadius))
-                .background(cardBrush)
-                .clickable(onClick = onClick),
-    ) {
-        // Artwork thumbnail — fills the card, cropped.
-        if (artworkModel != null) {
-            AsyncImage(
-                model = artworkModel,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
-            )
-        }
-        // Bottom gradient for title legibility.
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxSize()
-                    .background(textScrimBrush),
-        )
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium.copy(fontSize = 18.sp),
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
         )
     }
 }

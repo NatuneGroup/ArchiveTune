@@ -18,14 +18,11 @@
 
 package moe.rukamori.archivetune.ui.screens
 
-import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,16 +55,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawOutline
-import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -403,66 +396,6 @@ fun BitChordCompactTrackRow(
     }
 }
 
-private const val BitChordShimmerPeriodMs = 1400
-
-@Composable
-private fun BitChordShimmerBox(
-    modifier: Modifier = Modifier,
-    shape: RoundedCornerShape = RoundedCornerShape(6.dp),
-) {
-    val base = MaterialTheme.colorScheme.surfaceVariant
-    val highlight =
-        MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.16f).compositeOver(base)
-    val transition = rememberInfiniteTransition(label = "BitChordShimmer")
-    val sweep by
-        transition.animateFloat(
-            initialValue = 0f,
-            targetValue = 1f,
-            animationSpec = infiniteRepeatable(tween(BitChordShimmerPeriodMs, easing = LinearEasing)),
-            label = "sweep",
-        )
-    Box(
-        modifier
-            .clip(shape)
-            .drawWithCache {
-                val band = size.width * 0.5f
-                // Built once at the origin and moved with translate, so a frame allocates nothing;
-                // outside the band the clamped gradient was plain `base` anyway.
-                val bandBrush = Brush.horizontalGradient(listOf(base, highlight, base), 0f, band)
-                val bandSize = Size(band, size.height)
-                // sweep is read only in the draw block so the animation does not rebuild this cache every frame.
-                onDrawBehind {
-                    val startX = -band + sweep * (size.width + band * 2f)
-                    drawRect(base)
-                    translate(left = startX) { drawRect(bandBrush, size = bandSize) }
-                }
-            },
-    )
-}
-
-@Composable
-fun BitChordShelfSkeleton(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.padding(horizontal = BitChordPageGutter),
-        horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
-    ) {
-        repeat(3) {
-            Column(Modifier.width(BitChordShelfCardWidth)) {
-                BitChordShimmerBox(
-                    Modifier
-                        .size(BitChordShelfCardWidth)
-                        .clip(RoundedCornerShape(BitChordShelfCardCorner)),
-                    RoundedCornerShape(BitChordShelfCardCorner),
-                )
-                Spacer(Modifier.height(10.dp))
-                BitChordShimmerBox(Modifier.fillMaxWidth().height(14.dp))
-                Spacer(Modifier.height(6.dp))
-                BitChordShimmerBox(Modifier.size(width = 90.dp, height = 11.dp))
-            }
-        }
-    }
-}
-
 private enum class BitChordRecentsView { LIST, GRID }
 
 @Composable
@@ -571,23 +504,6 @@ fun BitChordRecentsShelf(
         }
     }
     Spacer(Modifier.height(BitChordShelfBottomSpacing))
-}
-
-@Composable
-fun <T> BitChordShelf(
-    items: List<T>,
-    itemId: (T) -> String,
-    itemContent: @Composable (T) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    if (items.isEmpty()) return
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = BitChordPageGutter),
-        horizontalArrangement = Arrangement.spacedBy(BitChordShelfCardSpacing),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        items(items, key = itemId) { item -> itemContent(item) }
-    }
 }
 
 fun Song.artistLine(): String = artists.joinToString { it.name }

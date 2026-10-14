@@ -11,8 +11,6 @@ package moe.rukamori.archivetune.ui.screens
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
@@ -34,7 +32,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PageSize
 import androidx.compose.foundation.pager.rememberPagerState
@@ -56,7 +53,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
@@ -64,11 +60,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
@@ -93,26 +85,18 @@ import moe.rukamori.archivetune.innertube.models.AlbumItem
 import moe.rukamori.archivetune.innertube.models.ArtistItem
 import moe.rukamori.archivetune.innertube.models.PlaylistItem
 import moe.rukamori.archivetune.innertube.models.SongItem
-import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.innertube.pages.HomePage
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.SimilarRecommendation
-import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.playback.queues.ListQueue
-import moe.rukamori.archivetune.playback.queues.YouTubeQueue
-import moe.rukamori.archivetune.ui.component.ItemThumbnail
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.component.SpeedDialGridItem
 import moe.rukamori.archivetune.ui.menu.AlbumMenu
 import moe.rukamori.archivetune.ui.menu.ArtistMenu
 import moe.rukamori.archivetune.ui.menu.PlaylistMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
-import moe.rukamori.archivetune.ui.menu.YouTubeAlbumMenu
-import moe.rukamori.archivetune.ui.menu.YouTubeArtistMenu
-import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
-import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -1010,210 +994,6 @@ fun HomePageSectionTitle(
 // ============================================================
 // Apple Music–style Home Redesign Components
 // ============================================================
-
-/**
- * Personalized greeting header — "Good morning/afternoon/evening, [name]".
- *
- * Mirrors the Apple Music / Muzo-style home header: a single line with a
- * large bold greeting and the user's name highlighted in the primary accent
- * color. The time-of-day prefix is computed from the system clock at
- * composition time so it stays correct without needing to observe a flow.
- */
-@Composable
-fun HomeGreetingHeader(
-    accountName: String,
-    modifier: Modifier = Modifier,
-) {
-    val hour = remember {
-        java.util.Calendar
-            .getInstance()
-            .get(java.util.Calendar.HOUR_OF_DAY)
-    }
-    val greetingRes =
-        when (hour) {
-            in 5..11 -> R.string.greeting_morning
-            in 12..16 -> R.string.greeting_afternoon
-            in 17..21 -> R.string.greeting_evening
-            else -> R.string.greeting_night
-        }
-    val greeting = stringResource(greetingRes)
-    val displayName = accountName.ifBlank { stringResource(R.string.greeting_default_name) }
-    val accent = MaterialTheme.colorScheme.primary
-    val foreground = MaterialTheme.colorScheme.onSurface
-
-    val text =
-        remember(greeting, displayName, accent, foreground) {
-            buildAnnotatedString {
-                withStyle(SpanStyle(color = foreground, fontWeight = FontWeight.Bold)) {
-                    append("$greeting, ")
-                }
-                withStyle(SpanStyle(color = accent, fontWeight = FontWeight.Bold)) {
-                    append(displayName)
-                }
-            }
-        }
-
-    Text(
-        text = text,
-        // BitChord displayLarge (2026-09-03 redesign): 34sp W800 with tight
-        // -0.8 tracking — the page-title scale the big in-list header owns.
-        fontSize = 34.sp,
-        fontWeight = FontWeight.W800,
-        letterSpacing = (-0.8).sp,
-        color = foreground,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .padding(horizontal = HomeFeedGutter)
-                .padding(vertical = 8.dp),
-    )
-}
-
-/**
- * "Jump back in" hero shelf — the BitChord lead-shelf treatment (2026-09-03 redesign):
- * near-page-width cards (70% of the row, capped at 320dp, 0.92 aspect, 18dp corners) that page
- * sideways, with the title/artist caption laid over a scrim on the artwork itself.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun JumpBackInHeroSection(
-    recentlyPlayed: List<Song>,
-    mediaMetadata: MediaMetadata?,
-    isPlaying: Boolean,
-    navController: NavController,
-    playerConnection: PlayerConnection,
-    menuState: MenuState,
-    haptic: HapticFeedback,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    if (recentlyPlayed.isEmpty()) return
-
-    // Queues the whole shelf from the tapped song, so Next walks that shelf in order rather
-    // than starting a per-song radio.
-    //
-    // Build the queue from the entire hero list with the tapped song as the
-    // startIndex, so Next/Previous walks the shelf in order.
-    fun playFromSection(startIndex: Int) {
-        if (recentlyPlayed.isEmpty()) return
-        val safeStart = startIndex.coerceIn(0, recentlyPlayed.lastIndex)
-        playerConnection.playQueue(
-            ListQueue(
-                title = context.getString(R.string.home_jump_back_in_badge),
-                items = recentlyPlayed.map { it.toMediaItem() },
-                startIndex = safeStart,
-            ),
-        )
-    }
-
-    Column(modifier = modifier.fillMaxWidth()) {
-        HomeFeedSectionHeader(title = stringResource(R.string.home_jump_back_in_badge))
-        // Measured rather than taken as a share of the parent, because the
-        // card has a ceiling as well as a fraction — see homeHeroCardWidth().
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            val cardWidth = homeHeroCardWidth(maxWidth)
-            LazyRow(
-                state = rememberLazyListState(),
-                contentPadding = PaddingValues(horizontal = HomeFeedGutter),
-                horizontalArrangement = Arrangement.spacedBy(HomeShelfCardSpacing),
-            ) {
-                itemsIndexed(
-                    items = recentlyPlayed,
-                    key = { index, song -> "hero_${song.id}_$index" },
-                    contentType = { _, _ -> "hero_song" },
-                ) { index, song ->
-                    HomeFeedHeroCard(
-                        thumbnailUrl = song.song.thumbnailUrl,
-                        title = song.song.title,
-                        subtitle = song.artists.joinToString { it.name },
-                        isActive = song.id == mediaMetadata?.id,
-                        isPlaying = isPlaying,
-                        onClick = {
-                            if (song.id == mediaMetadata?.id) {
-                                playerConnection.player.togglePlayPause()
-                            } else {
-                                playFromSection(index)
-                            }
-                        },
-                        onLongClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            menuState.show {
-                                SongMenu(
-                                    originalSong = song,
-                                    navController = navController,
-                                    onDismiss = menuState::dismiss,
-                                )
-                            }
-                        },
-                        modifier = Modifier.width(cardWidth),
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * "Recently Played" section — the BitChord compact shelf (2026-09-03
- * redesign): a single row of square 150dp cards, 12dp corners, hairline
- * thumbnail border, with the title and artist beneath the artwork. Tap plays
- * from a queue built over the whole section; hold opens the song menu.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun RecentlyPlayedSection(
-    recentlyPlayed: List<Song>,
-    mediaMetadata: MediaMetadata?,
-    isPlaying: Boolean,
-    navController: NavController,
-    playerConnection: PlayerConnection,
-    menuState: MenuState,
-    haptic: HapticFeedback,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val distinctSongs = remember(recentlyPlayed) { recentlyPlayed.distinctBy { it.id } }
-    if (distinctSongs.isEmpty()) return
-
-    // Queues the whole shelf from the tapped song, so Next walks that shelf in order rather
-    // than starting a per-song radio.
-    fun playFromSection(startIndex: Int) {
-        if (distinctSongs.isEmpty()) return
-        val safeStart = startIndex.coerceIn(0, distinctSongs.lastIndex)
-        playerConnection.playQueue(
-            ListQueue(
-                title = context.getString(R.string.recently_played),
-                items = distinctSongs.map { it.toMediaItem() },
-                startIndex = safeStart,
-            ),
-        )
-    }
-
-    LazyRow(
-        contentPadding = PaddingValues(horizontal = HomeFeedGutter),
-        horizontalArrangement = Arrangement.spacedBy(HomeShelfCardSpacing),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        itemsIndexed(
-            items = distinctSongs,
-            key = { _, song -> "recent_${song.id}" },
-            contentType = { _, _ -> "recent_song" },
-        ) { index, song ->
-            HomeFeedSongCard(
-                song = song,
-                mediaMetadata = mediaMetadata,
-                isPlaying = isPlaying,
-                navController = navController,
-                playerConnection = playerConnection,
-                menuState = menuState,
-                haptic = haptic,
-                onPlayFromSection = { playFromSection(index) },
-            )
-        }
-    }
-}
 
 /**
  * Helper that renders the small neutral glyph used as the leading icon for

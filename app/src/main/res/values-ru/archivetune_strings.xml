@@ -108,8 +108,6 @@
     <string name="general">Общее</string>
     <string name="proxy">Прокси</string>
     <string name="default_lib_chips">Изменить вкладку библиотеки по умолчанию</string>
-    <string name="set_quick_picks">Установить быстрый выбор</string>
-    <string name="last_song_listened">На основе последней прослушанной песни</string>
     <string name="app_language">Язык приложения</string>
     <string name="open_supported_links">Открывать поддерживаемую ссылку по умолчанию</string>
     <string name="set_first_lyrics_provider">Предпочтительный поставщик текстов песен</string>
@@ -138,7 +136,6 @@
     <string name="not_logged_in_youtube">Не авторизован в YouTube</string>
     <string name="default_links">Открыть поддерживаемые ссылки</string>
     <string name="open_app_settings_error">Не удалось открыть настройки приложения</string>
-    <string name="release_notes">Примечание к релизу</string>
     <string name="all_time">Всё время</string>
     <string name="past_24_hours">Последние 24 часа</string>
     <string name="past_week">Последняя неделя</string>
@@ -314,7 +311,6 @@
     <string name="news_no_results_desc">Попробуйте ввести другой поисковый запрос.</string>
     <string name="news_important_badge">Важно</string>
     <string name="news_tooltip_title">Новые объявления</string>
-    <string name="news_tooltip_body">У вас есть непрочитанные объявления от разработчиков.</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="one">%d статья</item>

@@ -8,32 +8,12 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.compose.foundation.layout.WindowInsets
 import android.os.SystemClock
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
 
 /** Deep links from settings search to an individual preference on a sub-screen. */
 object SettingsAnchorRequest {
@@ -183,111 +163,3 @@ private val HighlightInset = 1.dp
 private const val HighlightFadeInMs = 220
 private const val HighlightHoldMs = 1100L
 private const val HighlightFadeOutMs = 450
-
-/**
- * Tracks the anchor a settings screen was asked to reveal, scrolls to it, and drives the
- * highlight fade.
- *
- * Positions are measured in root coordinates rather than parent coordinates because
- * preferences are nested two levels deep (scrolling Column > PreferenceGroup's Column >
- * inner Column), so a parent-relative offset would be measured against the wrong container.
- */
-@Stable
-class SettingsAnchorState internal constructor(
-    internal val target: String?,
-    highlightColor: Color,
-    val scrollState: ScrollState,
-) {
-    /**
-     * Kept updated from composition rather than captured once. Appearance settings is one of the
-     * screens with anchors, so the theme can change while a highlight is on screen.
-     */
-    internal var highlightColor: Color by mutableStateOf(highlightColor)
-    private var containerTop: Float? by mutableStateOf(null)
-    private var anchorTop: Float? by mutableStateOf(null)
-
-    /** Fade progress, read at draw time so a change repaints without recomposing. */
-    private var highlightAlpha: Float by mutableFloatStateOf(0f)
-
-    /**
-     * Scroll offset of the target row inside the scrolling content, or null until both the
-     * container and the row have been measured. Both are latched on first measurement, so this
-     * settles on one value instead of retriggering the scroll on every layout pass.
-     */
-    internal val scrollTarget: Int?
-        get() {
-            if (target == null) return null
-            val container = containerTop ?: return null
-            val anchor = anchorTop ?: return null
-            return (scrollState.value + (anchor - container)).roundToInt().coerceAtLeast(0)
-        }
-
-    /** Apply to the scrolling container so row offsets can be resolved against it. */
-    val containerModifier: Modifier
-        get() =
-            Modifier.onGloballyPositioned { coordinates ->
-                if (target != null && containerTop == null) {
-                    containerTop = coordinates.positionInRoot().y
-                }
-            }
-
-    internal suspend fun runHighlight() {
-        animate(0f, 1f, animationSpec = tween(HighlightFadeInMs)) { value, _ -> highlightAlpha = value }
-        delay(HighlightHoldMs)
-        animate(1f, 0f, animationSpec = tween(HighlightFadeOutMs)) { value, _ -> highlightAlpha = value }
-    }
-
-    /**
-     * Marks a preference as the row identified by [key].
-     *
-     * The tint is drawn *over* the row, not behind it: preference rows are Cards with an opaque
-     * container colour, so anything drawn behind them is painted over and invisible.
-     */
-    fun anchor(key: String): Modifier =
-        Modifier
-            .onGloballyPositioned { coordinates ->
-                if (key == target && anchorTop == null) {
-                    anchorTop = coordinates.positionInRoot().y
-                }
-            }.drawWithContent {
-                drawContent()
-                val progress = if (key == target) highlightAlpha else 0f
-                if (progress <= 0f) return@drawWithContent
-                val inset = HighlightInset.toPx()
-                drawRoundRect(
-                    color = highlightColor.copy(alpha = highlightColor.alpha * progress),
-                    topLeft = Offset(inset, inset),
-                    size = Size(size.width - inset * 2, size.height - inset * 2),
-                    cornerRadius = CornerRadius(HighlightCornerRadius.toPx()),
-                )
-            }
-}
-
-/**
- * Creates the anchor state for [screen] and consumes any pending request aimed at it.
- *
- * Returns a state whose [SettingsAnchorState.scrollState] must be used for the screen's
- * `verticalScroll`, so the scroll position and the measured offsets agree.
- */
-@Composable
-fun rememberSettingsAnchorState(screen: String): SettingsAnchorState {
-    val scrollState = rememberScrollState()
-    val highlightColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-    val state =
-        remember(screen) {
-            SettingsAnchorState(
-                target = SettingsAnchorRequest.consume(screen),
-                highlightColor = highlightColor,
-                scrollState = scrollState,
-            )
-        }
-    state.highlightColor = highlightColor
-
-    val scrollTarget = state.scrollTarget
-    LaunchedEffect(state, scrollTarget) {
-        if (scrollTarget == null) return@LaunchedEffect
-        state.scrollState.animateScrollTo(scrollTarget)
-        state.runHighlight()
-    }
-    return state
-}

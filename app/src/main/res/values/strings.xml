@@ -20,13 +20,6 @@
     <string name="similar_to">Similar to</string>
     <string name="new_release_albums">New Releases</string>
     <string name="integration">Integration</string>
-    <string name="integration_accounts">Accounts</string>
-    <string name="youtube_music_account">YouTube Music</string>
-    <string name="account_connected">Connected</string>
-    <string name="account_not_connected">Not connected</string>
-    <string name="account_signed_in_as">Signed in as %1$s</string>
-    <string name="account_card_pin">Pin to top</string>
-    <string name="account_card_unpin">Unpin</string>
     <string name="today">Today</string>
     <string name="yesterday">Yesterday</string>
     <string name="this_week">This week</string>
@@ -34,7 +27,6 @@
     <string name="most_played_songs">Most played songs</string>
     <string name="search">Search</string>
     <string name="search_settings">Search settings</string>
-    <string name="search_settings_empty">No settings match \u201c%1$s\u201d</string>
     <string name="clear_search">Clear search</string>
     <string name="search_yt_music">Search YouTube Music</string>
     <string name="search_library">Search library</string>
@@ -99,8 +91,6 @@
     <string name="custom_order">Custom order</string>
     <string name="list_view">List View</string>
     <string name="grid_view">Grid View</string>
-    <string name="personal_label">Personal</string>
-    <string name="youtube_synced">YouTube synced</string>
     <string name="options_label">Options</string>
     <string name="top_artist_badge">TOP ARTIST</string>
     <string name="no_artist_yet">No Artist Yet</string>
@@ -148,7 +138,6 @@
     <string name="details">Details</string>
     <string name="edit">Edit</string>
     <string name="start_radio">Start radio</string>
-    <string name="start_mix">Start mix</string>
     <string name="play">Play</string>
     <string name="widget_pause">Pause</string>
     <string name="widget_previous">Previous</string>
@@ -175,7 +164,6 @@
     <string name="downloading">Downloading</string>
     <string name="remove_download">Remove download</string>
     <string name="download_progress_percent">%1$d%%</string>
-    <string name="export_to_folder">Export to folder…</string>
     <string name="export">Export</string>
     <string name="export_all_songs">Export all songs</string>
     <string name="download_source_title">Download source priority</string>
@@ -190,13 +178,7 @@
     <string name="cover_save_no_artwork">No artwork available for this song</string>
     <string name="cover_saving">Saving cover…</string>
     <string name="export_to_downloads_success">Exported to Downloads folder</string>
-    <string name="export_to_folder_success">Exported to selected folder</string>
     <string name="export_to_folder_failed">Export failed. Make sure the song is fully downloaded and the folder is writable.</string>
-    <string name="export_songs_to_local">Export songs to local storage</string>
-    <string name="export_songs_to_local_description">Copy downloads to a folder, in their original format.</string>
-    <string name="export_all_songs_progress">Exporting songs… (%1$d of %2$d)</string>
-    <string name="export_all_songs_complete">Exported %1$d song(s) successfully%2$s</string>
-    <string name="export_all_songs_no_downloads">No downloaded songs to export</string>
     <string name="import_playlist">Import playlist</string>
     <string name="import_failed">Import failed</string>
     <string name="update_button">Update</string>
@@ -232,8 +214,6 @@
     <string name="save_canvas_loading">Finding available canvas sources…</string>
     <string name="save_canvas_no_sources">No downloadable canvas sources found for this song.</string>
     <string name="save_canvas_loading_failed">Couldn\'t fetch canvas sources. Check your network and try again.</string>
-    <string name="save_canvas_source_label">Source</string>
-    <string name="save_canvas_url_label">URL</string>
     <string name="save_canvas_variant_regular">Regular</string>
     <string name="save_canvas_variant_vertical">Vertical</string>
     <string name="save_canvas_variant_unavailable">Unavailable</string>
@@ -255,7 +235,6 @@
     <string name="delete">Delete</string>
     <string name="hide_playlist">Hide playlist</string>
     <string name="unhide_playlist">Unhide playlist</string>
-    <string name="show_hidden_playlists">Show hidden</string>
     <string name="hide_playlist_confirm">Hide \u0022%1$s\u0022 from library?</string>
     <string name="remove_from_history">Remove from history</string>
     <string name="remove_from_playlist">Remove from playlist</string>
@@ -322,10 +301,6 @@
     <plurals name="n_song">
         <item quantity="one">%d song</item>
         <item quantity="other">%d songs</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d artist</item>
-        <item quantity="other">%d artists</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="one">%d album</item>
@@ -476,7 +451,6 @@
     <string name="palette_neon_pink">Neon Pink</string>
     <string name="palette_neon_blue">Neon Blue</string>
     <string name="palette_neon_orange">Neon Orange</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Ocean</string>
     <string name="palette_forest">Deep Forest</string>
@@ -486,8 +460,6 @@
     <string name="palette_summer">Summer</string>
     <string name="palette_twilight">Twilight</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Candy</string>
-    <string name="palette_rainbow">Rainbow</string>
     <string name="dark_theme">Dark theme</string>
     <string name="dark_theme_on">On</string>
     <string name="dark_theme_off">Off</string>
@@ -561,7 +533,6 @@
     <string name="splash_overlay_enabled">Splash screen animation</string>
     <string name="splash_overlay_enabled_desc">Show animated splash screen on app launch</string>
     <string name="force_high_refresh_rate">Force high refresh rate</string>
-    <string name="max_supported_refresh_rate">Max supported: %1$d Hz</string>
     <string name="blur_intensity">Blur intensity</string>
     <string name="blur_intensity_value">%1$d dp</string>
     <string name="album_backdrop">Backdrop blur</string>
@@ -587,7 +558,6 @@
     <string name="navigation_bar_layout">Bottom pills layout</string>
     <string name="navigation_bar_layout_desc">Choose the standard or compact layout for navigation, search, and the mini-player</string>
     <string name="compact_bottom_pills">Compact bottom pills</string>
-    <string name="compact_bottom_pills_desc">Use narrower, rounder navigation, search, and mini-player pills</string>
     <string name="navigation_bar_hide_on_scroll">Hide while scrolling</string>
     <string name="navigation_bar_hide_on_scroll_desc">Slides the navigation bar away when scrolling down a tab and lowers the mini player into its place; scrolling up brings it back</string>
     <string name="navigation_bar_style_default">Default</string>
@@ -611,7 +581,6 @@
     <string name="lyrics_line_spacing">Lyrics line spacing</string>
     <string name="content">Content</string>
     <string name="action_logout">Log out</string>
-    <string name="action_login">Log in</string>
     <string name="login">Login</string>
     <string name="playback_login_po_token">Login PO Token</string>
     <string name="not_logged_in">Not logged in</string>
@@ -646,7 +615,6 @@
     <string name="proxy_password">Password</string>
     <string name="test_proxy_connection">Test proxy connection</string>
     <string name="testing_proxy_connection">Testing proxy connection</string>
-    <string name="proxy_connection_success">Proxy connection successful!</string>
     <string name="proxy_connection_failed">Proxy connection failed: %s</string>
     <string name="proxy_connection_invalid_configuration">Invalid proxy host or port</string>
     <string name="ip_rotation">IP Rotation</string>
@@ -777,8 +745,6 @@
     <string name="export_downloaded_songs">Export</string>
     <string name="export_downloaded_songs_description">Save a copy of all downloaded songs to a chosen folder in their original audio format</string>
     <string name="export_downloaded_songs_pick_folder">Pick export folder</string>
-    <string name="export_downloaded_songs_select_all">Select all</string>
-    <string name="export_downloaded_songs_deselect_all">Deselect all</string>
     <string name="export_downloaded_songs_selected_count">%1$d of %2$d selected</string>
     <string name="export_downloaded_songs_empty">No downloaded songs to export</string>
     <string name="export_downloaded_songs_pick_folder_first">Select at least one song and pick a folder</string>
@@ -860,8 +826,6 @@
     <string name="restore_success">Backup restored successfully</string>
     <string name="restore_failed">Failed to restore backup</string>
     <!-- Multi-source audio framework -->
-    <string name="audio_sources">Audio Sources</string>
-    <string name="audio_sources_description">Choose which services to stream from, and in what order.</string>
     <string name="catalog_sources">Catalog sources</string>
     <string name="default_metadata_source">Default metadata source</string>
     <string name="default_metadata_source_desc">Choose which catalog supplies titles, artists, albums and artwork when available.</string>
@@ -878,10 +842,8 @@
     <string name="search_spotify">Search Spotify</string>
     <string name="search_source_picker">Choose search source</string>
     <string name="spotify_track_unavailable">Spotify track could not be mapped to a playable source.</string>
-    <string name="audio_search_source">Preferred source</string>
     <string name="audio_source_enabled">Enabled</string>
     <string name="audio_source_disabled">Disabled — enable it in its section below</string>
-    <string name="audio_source_youtube_fallback">YouTube is tried last if no other source can resolve a track and the YouTube source is enabled.</string>
     <string name="source_youtube_enable_description">Use YouTube as a resolution source. When off, ArchiveTune will not fall back to YouTube if no other source matches.</string>
     <string name="source_tidal">Tidal</string>
     <string name="source_apple_music">Apple Music</string>
@@ -894,10 +856,7 @@
     <string name="download_source_search">Search songs</string>
     <string name="download_source_search_hint">Search by title, artist, or album</string>
     <string name="preferred_sources">Preferred sources</string>
-    <string name="preferred_sources_summary">Top of the list is tried first</string>
     <string name="set_source_priority">Drag to set source priority</string>
-    <string name="source_priority_description">The topmost enabled source wins. Anything after YouTube is never reached.</string>
-    <string name="youtube_source_note">YouTube always works and needs no setup. Place a lossless source above it to override YouTube playback.</string>
     <string name="tidal_specific">Tidal</string>
     <string name="qobuz_specific">Qobuz</string>
     <string name="manage_in_integration">Log in, tokens &amp; instances — in Integration</string>
@@ -906,8 +865,6 @@
 
     <!-- Tidal music source integration -->
     <string name="music_sources">Music Sources</string>
-    <string name="streaming_sources">Streaming sources</string>
-    <string name="streaming_sources_description">Configure Tidal and Qobuz lossless sources and priority</string>
     <string name="tidal_integration">Tidal</string>
     <string name="tidal_integration_description">Log in and manage Tidal HiFi instances</string>
     <string name="tidal_enable">Enable Tidal source</string>
@@ -923,20 +880,15 @@
     <string name="tidal_animated_covers">Animated covers</string>
     <string name="tidal_animated_covers_description">Show Tidal video/canvas covers when available</string>
     <string name="tidal_account">Account (optional)</string>
-    <string name="tidal_account_description">Optional. Improves matching and gives access to your library.</string>
-    <string name="tidal_set_cookie">Set Tidal cookie</string>
     <string name="tidal_account_connected">Connected: %1$s</string>
     <string name="tidal_disconnect">Disconnect Tidal account</string>
     <!-- Tidal HiFi instances -->
     <string name="tidal_instances">HiFi instances</string>
-    <string name="tidal_instances_description">Public mirrors used when no pool account can stream a track. Yours are tried first.</string>
     <string name="tidal_add_instance">Add instance</string>
     <string name="tidal_instance_url_hint">https://instance.example.com</string>
     <string name="tidal_instance_invalid_url">Enter a valid http(s) URL</string>
     <string name="tidal_instance_duplicate">That instance is already in the list</string>
-    <string name="tidal_remove_instance">Remove instance</string>
     <string name="tidal_reset_instances">Clear all instances</string>
-    <string name="tidal_no_instances">No instances configured. Add one or reset to defaults.</string>
     <string name="tidal_check_instances">Test instances</string>
     <string name="tidal_checking_instances">Testing…</string>
     <string name="tidal_instance_healthy">Online — %1$d ms</string>
@@ -963,7 +915,6 @@
     <string name="qobuz_quality_max">Hi-Res Max (up to 192 kHz)</string>
     <string name="qobuz_manage_instances">Manage Qobuz instances</string>
     <string name="qobuz_instances">Qobuz instances</string>
-    <string name="qobuz_instances_description">Qobuz-DL proxy instances. None are bundled — add your own or Qobuz stays off.</string>
     <string name="qobuz_add_instance">Add instance</string>
     <string name="qobuz_reset_instances">Clear all instances</string>
     <string name="qobuz_check_instances">Test instances</string>
@@ -971,7 +922,6 @@
 
     <!-- Qobuz account tokens (direct API) -->
     <string name="qobuz_tokens">Qobuz account tokens</string>
-    <string name="qobuz_tokens_description">Sign in or paste tokens. Direct tokens stream at full fidelity, before proxies.</string>
     <string name="qobuz_login_web">Sign in with Qobuz (web)</string>
     <string name="qobuz_login">Sign in to Qobuz</string>
     <string name="qobuz_login_success">Added Qobuz account</string>
@@ -987,9 +937,6 @@
     <string name="qobuz_reset_tokens">Clear all tokens</string>
     <string name="qobuz_manage_accounts">Manage accounts</string>
     <string name="qobuz_token_subtitle">%1$s · id %2$s</string>
-    <string name="qobuz_token_status_ok">Online</string>
-    <string name="qobuz_token_status_preview">Deprecated</string>
-    <string name="qobuz_token_status_invalid">Failed</string>
     <string name="qobuz_token_status_unknown">Not tested</string>
     <string name="qobuz_status_deprecated_info_title">Why deprecated?</string>
     <string name="qobuz_status_deprecated_info">This account is reachable but can only stream 30-second previews or lower-quality audio — it most likely has no active premium subscription, so lossless playback is unavailable.</string>
@@ -1010,31 +957,20 @@
     <string name="source_nothing_to_do">Run a test first — nothing matched</string>
 
     <!-- Listening history sync -->
-    <string name="listening_history">Listening history</string>
-    <string name="sync_youtube_history">Report plays to YouTube history</string>
-    <string name="sync_youtube_history_description">Add plays to your YouTube history even when audio comes from another source.</string>
 
     <!-- Tidal account login / premium -->
     <string name="tidal_login">Sign in to Tidal</string>
-    <string name="tidal_login_start">Start sign-in</string>
-    <string name="tidal_login_instructions">Open %1$s and enter code %2$s, then return here.</string>
-    <string name="tidal_login_open">Open activation page</string>
-    <string name="tidal_login_waiting">Waiting for authorization…</string>
-    <string name="tidal_login_cancel">Cancel sign-in</string>
     <string name="tidal_login_success">Signed in to Tidal</string>
-    <string name="tidal_login_failed">Tidal sign-in failed or timed out</string>
     <string name="tidal_account_checking">Checking subscription…</string>
     <string name="tidal_account_premium">HiFi / Premium subscription active</string>
     <string name="tidal_account_free">Free account — lossless playback may not work</string>
     <string name="tidal_account_free_warning">This Tidal account is not HiFi/Premium. Lossless playback through Tidal may fail; the app will fall back to YouTube.</string>
     <string name="tidal_login_web">Sign in with Tidal (web)</string>
     <string name="tidal_login_webplayer_fallback">Couldn\'t complete the standard sign-in; opening the Tidal web player instead. Just log in and playback will connect automatically.</string>
-    <string name="tidal_login_code">Sign in with a device code</string>
     <string name="tidal_reconnect">Reconnect Tidal account</string>
     <string name="tidal_account_active">Active</string>
     <string name="tidal_account_relogin_required">Re-login required</string>
     <string name="discord_integration">Discord Integration</string>
-    <string name="account_integrations_summary">Discord, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="discord_login_description">Link your Discord account with OAuth. This alone does not enable Rich Presence.</string>
     <string name="discord_open_authorization">Open Discord authorization</string>
     <string name="discord_waiting_for_authorization">Waiting for Discord authorization...</string>
@@ -1066,19 +1002,10 @@
     <string name="lastfm_sign_in_required">Sign in to Last.fm</string>
     <string name="lastfm_sign_in_required_desc">Connect your Last.fm account to view your listening dashboard, recent tracks, and top tracks.</string>
     <string name="lastfm_sign_in_button">Sign in to Last.fm</string>
-    <string name="lastfm_recent_tracks">Recent tracks</string>
-    <string name="lastfm_top_tracks">Top tracks</string>
     <string name="lastfm_no_recent_tracks">No recent tracks to show.</string>
     <string name="lastfm_no_top_tracks">No top tracks to show.</string>
-    <string name="lastfm_load_failed">Could not load your Last.fm dashboard.</string>
-    <string name="lastfm_retry">Retry</string>
-    <string name="lastfm_refresh">Refresh Last.fm stats</string>
     <string name="lastfm_playcount">%1$d scrobbles</string>
-    <string name="lastfm_playcount_short">%1$d plays</string>
     <string name="lastfm_scrobbles">Scrobbles</string>
-    <string name="lastfm_stat_playlists">Playlists</string>
-    <string name="lastfm_stat_registered">Since</string>
-    <string name="lastfm_stat_country">Country</string>
     <string name="enable_scrobbling">Enable Scrobbling</string>
     <string name="lastfm_now_playing">Now playing</string>
     <string name="lastfm_prefer_yt_thumbnails">Prefer YouTube thumbnails</string>
@@ -1097,9 +1024,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">Custom</string>
     <string name="lastfm_custom_endpoint">Custom endpoint</string>
-    <string name="lastfm_api_credentials">API credentials</string>
-    <string name="lastfm_api_credentials_default">Using default credentials</string>
-    <string name="lastfm_api_credentials_custom">Using custom credentials</string>
     <string name="lastfm_api_credentials_hint">Leave credentials blank for compatible services that accept arbitrary API keys and shared secrets.</string>
     <string name="lastfm_api_key_override">API key</string>
     <string name="lastfm_secret_override">Shared secret</string>
@@ -1235,13 +1159,11 @@
     <string name="sources_tidal_token_verified">Tidal token verified — account connected.</string>
     <string name="sources_tidal_token_failed">Tidal could not refresh that token — it may be expired or revoked.</string>
     <string name="pool_refresh_title">Refresh from pool</string>
-    <string name="pool_refresh_description">Pull the latest shared accounts and instances from the community source pool</string>
     <string name="pool_refreshing">Refreshing from pool…</string>
     <string name="pool_refresh_done">Pool refreshed: %1$d Tidal, %2$d Qobuz, %3$d Deezer account(s)</string>
     <string name="pool_refresh_up_to_date">Already up to date — the pool is only fetched every few hours, so nothing was requested just now.</string>
     <string name="pool_refresh_failed">Couldn\'t reach the source pool. Check your connection and try again.</string>
     <string name="use_pool_accounts">Use pool accounts</string>
-    <string name="use_pool_accounts_desc">Use shared Tidal, Qobuz, Deezer, and Apple Music accounts from the community source pool. When off, only manually-added accounts are used.</string>
     <string name="nerd_stats">Nerd Stats</string>
     <string name="track_label">Track</string>
     <string name="no_track_playing">No track playing</string>
@@ -1466,21 +1388,11 @@
     <string name="scheduled_backup_load_failed">Scheduled backup settings could not be loaded</string>
     <string name="scheduled_backup_update_failed">Scheduled backup settings could not be saved</string>
     <string name="google_drive_sync">Cloud storage sync</string>
-    <string name="google_drive_sync_description">Automatically upload backups to your cloud storage provider.</string>
     <string name="google_drive_sync_enabled">Enable cloud sync</string>
     <string name="google_drive_sync_enabled_description_on">Auto-sync to Google Drive is active.</string>
     <string name="google_drive_sync_enabled_description_off">Auto-sync to Google Drive is paused.</string>
-    <string name="google_drive_sync_sign_in">Sign in with Google</string>
-    <string name="google_drive_sync_sign_in_description">Pick a Google account to host your backups.</string>
-    <string name="google_drive_sync_signed_in_as">Signed in as %1$s</string>
-    <string name="google_drive_sync_sign_out">Sign out</string>
-    <string name="google_drive_sync_pick_account">Choose account</string>
-    <string name="google_drive_sync_no_accounts">No Google accounts found on this device.</string>
-    <string name="google_drive_sync_account_required">Sign in with a Google account to enable Drive sync.</string>
     <string name="google_drive_sync_remote_folder">Drive folder</string>
     <string name="google_drive_sync_remote_folder_description">Choose a Drive folder, or use My Drive root.</string>
-    <string name="google_drive_sync_remote_folder_root">My Drive (root)</string>
-    <string name="google_drive_sync_remote_folder_pick">Pick a folder</string>
     <string name="google_drive_sync_remote_folder_not_set">Not set — tap to pick a Drive folder</string>
     <string name="google_drive_sync_remote_folder_default_name">Drive folder</string>
     <string name="google_drive_sync_clear_folder">Clear folder</string>
@@ -1494,24 +1406,9 @@
     <string name="google_drive_sync_never_synced">Never synced</string>
     <string name="google_drive_sync_load_failed">Google Drive sync settings could not be loaded</string>
     <string name="google_drive_sync_update_failed">Google Drive sync settings could not be saved</string>
-    <string name="google_drive_sync_permission_required">Grant the contacts/accounts permission so ArchiveTune can access your Google account.</string>
-    <string name="google_drive_sync_pick_folder_title">Pick a Google Drive folder</string>
-    <string name="google_drive_sync_pick_folder_hint">New backups will be uploaded to the folder you pick. Existing files in the folder are never touched.</string>
-    <string name="google_drive_sync_pick_folder_use_root">Use My Drive root</string>
-    <string name="google_drive_sync_pick_folder_paste">Or paste a folder ID</string>
-    <string name="google_drive_sync_pick_folder_paste_hint">Open the folder in Drive, copy the last path segment from its URL, or paste the URL here.</string>
     <string name="google_drive_sync_succeeded">Backup uploaded to Google Drive.</string>
     <string name="google_drive_sync_failed_transient">Sync failed — will retry automatically.</string>
     <string name="google_drive_sync_failed_permanent">Sync failed. The folder may have been removed or access revoked — try re-picking the folder.</string>
-    <string name="google_drive_sync_manual_upload_channel">Manual Drive upload</string>
-    <string name="google_drive_sync_manual_upload_channel_desc">Notifications shown when automatic Drive upload isn\'t possible and a manual save is required.</string>
-    <string name="google_drive_sync_manual_upload_title">Save backup to Google Drive</string>
-    <string name="google_drive_sync_manual_upload_text">Tap to save your backup to Drive via the share sheet.</string>
-    <string name="google_drive_sync_manual_upload_big_text">Automatic upload to Google Drive isn\'t available for this app (the project isn\'t registered on Google Cloud Console). Tap to save the backup file to Drive (or anywhere else) via the system share sheet — Drive will ask you where to save it.</string>
-    <string name="google_drive_sync_manual_upload_sheet_title">Save backup manually</string>
-    <string name="google_drive_sync_manual_upload_sheet_message">Automatic upload to Google Drive failed because this app isn\'t registered on Google Cloud Console for the Drive scope. Your backup is ready — tap below to save it to Drive (or anywhere else) via the system share sheet.</string>
-    <string name="google_drive_sync_manual_upload_sheet_button">Save with share sheet</string>
-    <string name="google_drive_sync_manual_upload_sheet_dismiss">Not now</string>
     <string name="google_drive_sync_pick_folder_help_title">Pick a backup folder</string>
     <string name="google_drive_sync_pick_folder_help_message">The system folder picker will open. To back up to Google Drive, install the Google Drive app first, then tap the menu (three lines) in the top-left corner and select \"Drive\". You can also pick any other cloud folder (Dropbox, Nextcloud, OneDrive) or a folder on your device.</string>
     <string name="google_drive_sync_pick_folder_help_open">Open picker</string>
@@ -1542,7 +1439,6 @@
     <string name="language_pack_installed_size">Installed · %1$s</string>
     <string name="language_pack_remove">Remove</string>
     <string name="language_pack_required">Download the Japanese language pack first</string>
-    <string name="settings_language_packs_subtitle">Optional language data and downloads</string>
     <string name="language_pack_base_language">Base language</string>
     <string name="language_pack_optional_data">Optional language data</string>
     <string name="language_pack_other_romanization">Korean, Chinese, Hindi, and other romanization</string>
@@ -1557,7 +1453,6 @@
     <string name="telegram_logged_in_as">Signed in as %1$s</string>
     <string name="telegram_logout">Sign out</string>
     <string name="telegram_logout_confirm">Sign out of Telegram? The on-device session and file cache will be removed.</string>
-    <string name="telegram_phone_number">Phone number (international format)</string>
     <string name="telegram_phone_number_short">Phone number</string>
     <string name="telegram_country_code">Code</string>
     <string name="telegram_code">Login code</string>
@@ -1599,24 +1494,15 @@
     <string name="telegram_error">Telegram error: %1$s</string>
     <string name="telegram_error_generic">Couldn\'t open this Telegram channel</string>
     <!-- Download quality / export format pickers (AudioQualityDialogs.kt) -->
-    <string name="download_quality_title">Download quality</string>
     <string name="download_quality_max">Max</string>
-    <string name="download_quality_max_description">Best the source offers, up to 24-bit/192 kHz</string>
     <string name="download_quality_hi_res">Hi-Res</string>
-    <string name="download_quality_hi_res_description">24-bit, usually 96 kHz</string>
     <string name="download_quality_lossless">Lossless</string>
-    <string name="download_quality_lossless_description">CD quality, 16-bit/44.1 kHz</string>
-    <string name="download_quality_remember">Remember this choice and stop asking</string>
-    <string name="export_format_title">Export format</string>
     <string name="export_format_flac">FLAC</string>
     <string name="export_format_wav">WAV</string>
     <string name="export_format_m4a">M4A (AAC)</string>
     <string name="export_format_webm">WebM (Opus)</string>
     <string name="export_format_ogg">Ogg</string>
     <string name="export_format_mp3">MP3</string>
-    <string name="export_format_unavailable_lossy_source">Source is lossy — exporting as FLAC would not add quality</string>
-    <string name="export_format_redownload_lossless">Re-download as lossless, then export</string>
-    <string name="export_format_redownload_lossless_description">Fetches a real lossless file from Qobuz or Tidal first</string>
     <string name="spotify_canvas">Spotify Canvas</string>
     <string name="spotify_canvas_desc">Play the official looping Canvas video for the current song.</string>
     <string name="hide_status_bar">Hide status bar</string>
@@ -1626,18 +1512,11 @@
     <string name="ui_scale_value">%1$d%%</string>
     <string name="tablet_mode">Tablet mode</string>
     <string name="tablet_mode_desc">Use the two-pane layout with a side rail on every screen size.</string>
-    <string name="sleep_timer_off">Off</string>
-    <string name="sleep_timer_set_for">Sleep timer: %1$s</string>
     <string name="sleep_timer_end_of_song">End of song</string>
     <string name="sleep_timer_cancel_timer">Turn off timer</string>
     <string name="sleep_timer_remaining">%1$s remaining</string>
     <string name="sleep_timer_pick_a_time">Pick a time for the sleep timer</string>
     <string name="sleep_timer_custom">Custom</string>
-    <string name="greeting_morning">Good morning</string>
-    <string name="greeting_afternoon">Good afternoon</string>
-    <string name="greeting_evening">Good evening</string>
-    <string name="greeting_night">Good night</string>
-    <string name="greeting_default_name">there</string>
     <string name="home_jump_back_in_badge">Jump back in</string>
     <string name="home_recently_played">Recently Played</string>
     <string name="navigation_bar_tint_frosted_blur">Tint frosted navigation bar</string>
@@ -1669,7 +1548,6 @@
     <string name="telegram_bots_title">Telegram bots</string>
     <string name="telegram_bots_summary">Paste a bot once, then send it song links to fetch lossless files.</string>
     <string name="telegram_bots_empty">No bots added yet — tap + and paste a bot link like @SongBot or t.me/SongBot.</string>
-    <string name="telegram_bots_add">Add bot</string>
     <string name="telegram_bots_add_hint">@username or t.me/…</string>
     <string name="telegram_bots_add_invalid">That doesn\'t look like a Telegram bot. Paste a @username or a t.me/&lt;bot&gt; link.</string>
     <string name="telegram_bots_resolve_failed">Couldn\'t find that bot. Make sure the username is correct and the bot hasn\'t been blocked.</string>
@@ -1678,7 +1556,6 @@
     <string name="telegram_bots_remove_confirm">Remove @%1$s from your bots?</string>
     <string name="telegram_bot_chat_title">@%1$s</string>
     <string name="telegram_bot_chat_hint">Paste a song link (Spotify, YouTube, SoundCloud…)</string>
-    <string name="telegram_bot_send">Send to bot</string>
     <string name="telegram_bot_waiting">Bot is fetching your song…</string>
     <string name="telegram_bot_no_reply">The bot didn\'t reply with an audio file within 60 seconds. Try another link or another bot.</string>
     <string name="telegram_bot_results">%1$d track(s) returned</string>
@@ -1690,8 +1567,6 @@
     <string name="telegram_bot_forward_to_channel_summary">Also forward the original message when adding to a channel playlist.</string>
     <string name="telegram_bot_forwarded">Forwarded to your channel</string>
     <string name="telegram_bot_forward_failed">Couldn\'t forward to your channel: %1$s</string>
-    <string name="telegram_bot_added_to_playlist">Added to \"%1$s\"</string>
-    <string name="telegram_bot_choose_option">Bot needs your choice — pick an option below:</string>
     <string name="paste">Paste</string>
     <string name="home_switch_to_yt">Open YouTube Music</string>
     <string name="spotify_because_you_like">Because you like %1$s</string>
@@ -1745,7 +1620,6 @@
     <!-- Listen Together (ported from vivi-music beta) -->
     <string name="listen_together">Listen Together</string>
     <string name="setting_listen_together_desc">Listen with friends</string>
-    <string name="listen_together_desc">Listen to music with friends in real-time</string>
     <string name="listen_together_server_url">Server URL</string>
     <string name="listen_together_choose_server">Choose server</string>
     <string name="listen_together_custom_server">Custom server</string>
@@ -1761,10 +1635,6 @@
     <string name="listen_together_join_room">Join room</string>
     <string name="listen_together_request_in_progress">Another room request is still in progress. Open the invite again in a moment.</string>
     <string name="listen_together_room_code">Room code</string>
-    <string name="listen_together_leave_room">Leave room</string>
-    <string name="listen_together_you_are_host">You are the host</string>
-    <string name="listen_together_you_are_guest">You are a guest</string>
-    <string name="listen_together_users">%d users in room</string>
     <string name="listen_together_join_requests">Join requests</string>
     <string name="listen_together_view_logs">View logs</string>
     <string name="listen_together_view_logs_desc">Debug connection and messages</string>
@@ -1776,8 +1646,6 @@
     <string name="listen_together_sync_volume_desc">Guests follow the host volume level</string>
     <string name="listen_together_smart_resync">Smart Network Resync</string>
     <string name="listen_together_smart_resync_desc">Automatically catch up with the host after a connection drop</string>
-    <string name="listen_together_in_top_bar">Listen Together in top bar</string>
-    <string name="listen_together_in_top_bar_desc">Show Listen Together in top app bar instead of navigation bar</string>
     <string name="listen_together_description">Listen to music with your friends in real-time. Create a room to be the host or join an existing room with a code.</string>
     <string name="listen_together_background_disconnect_note">Note: You may get disconnected if you create a room while no music is playing and then switch to another app, or if you connect to the server but remain idle without joining a room for 15 minutes.</string>
     <string name="listen_together_not_configured">Listen Together is not configured. Please set up the server URL in Settings → Integrations → Listen Together.</string>
@@ -1796,7 +1664,6 @@
     <string name="listen_together_chat_unpin">Unpin</string>
     <string name="listen_together_chat_edited">edited</string>
     <string name="listen_together_chat_typing">typing…</string>
-    <string name="listen_together_chat_pinned_banner">Pinned</string>
     <string name="listen_together_chat_all_emojis">All emojis</string>
     <string name="listen_together_chat_edit_message">Edit message</string>
     <string name="listen_together_chat_message_copied">Message copied</string>
@@ -1807,10 +1674,7 @@
     <string name="listen_together_chat_play_song">Play song in the room</string>
     <string name="listen_together_chat_nothing_playing">Nothing is playing right now</string>
     <string name="listen_together_chat_unsupported_server">Chat is not supported by this server</string>
-    <string name="listen_together_chat_pinned_count">%d pinned</string>
     <string name="listen_together_chat_pinned_position">%1$d of %2$d</string>
-    <string name="listen_together_chat_pinned_show_all">Show all</string>
-    <string name="listen_together_chat_pinned_show_less">Show less</string>
     <string name="listen_together_chat_pick_song_title">Share a song</string>
     <string name="listen_together_chat_pick_song_hint">Search songs to share</string>
     <string name="listen_together_chat_pick_song_no_results">No results found</string>

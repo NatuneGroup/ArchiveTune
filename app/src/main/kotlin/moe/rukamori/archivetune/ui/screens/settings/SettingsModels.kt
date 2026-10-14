@@ -10,19 +10,9 @@ package moe.rukamori.archivetune.ui.screens.settings
 
 import moe.rukamori.archivetune.utils.PendingRestart
 import androidx.annotation.DrawableRes
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
-
-@Immutable
-data class SettingsProfileState(
-    val isLoading: Boolean,
-    val isLoggedIn: Boolean,
-    val accountName: String,
-    val accountEmail: String,
-    val accountImageUrl: String?,
-)
 
 @Immutable
 data class SettingsGroup(

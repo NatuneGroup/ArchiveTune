@@ -113,12 +113,6 @@
         <item quantity="many">%d песен</item>
         <item quantity="other">%d песен</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d исполнитель</item>
-        <item quantity="few">%d исполнителя</item>
-        <item quantity="many">%d исполнителей</item>
-        <item quantity="other">%d исполнителей</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d альбом</item>
         <item quantity="few">%d альбома</item>
@@ -248,7 +242,6 @@
     <string name="palette_neon_pink">Неоновый розовый</string>
     <string name="palette_neon_blue">Неоновый синий</string>
     <string name="palette_neon_orange">Неоновый оранжевый</string>
-    <string name="palette_cyberpunk">Киберпанк</string>
     <string name="palette_synthwave">Синтвейв</string>
     <string name="palette_ocean">Океан</string>
     <string name="palette_forest">Глубокий лес</string>
@@ -258,8 +251,6 @@
     <string name="palette_summer">Лето</string>
     <string name="palette_twilight">Сумерки</string>
     <string name="palette_aurora">Аврора</string>
-    <string name="palette_candy">Конфета</string>
-    <string name="palette_rainbow">Радуга</string>
     <string name="dark_theme">Тёмная тема</string>
     <string name="dark_theme_on">Вкл</string>
     <string name="dark_theme_off">Выкл</string>
@@ -295,7 +286,6 @@
     <string name="lyrics_line_spacing">Интервал между строк</string>
     <string name="content">Контент</string>
     <string name="action_logout">Выйти</string>
-    <string name="action_login">Войти</string>
     <string name="login">Вход</string>
     <string name="not_logged_in">Вход не выполнен</string>
     <string name="content_language">Язык контента по умолчанию</string>
@@ -587,7 +577,6 @@
     <string name="proxy_password">Пароль</string>
     <string name="test_proxy_connection">Проверить подключение прокси</string>
     <string name="testing_proxy_connection">Проверка подключения прокси…</string>
-    <string name="proxy_connection_success">Подключение прокси прошло успешно!</string>
     <string name="proxy_connection_failed">Подключение прокси провалилось: %s</string>
     <string name="wakelock">Держать ЦП в состоянии бодрствования во время воспроизведения</string>
     <string name="wakelock_desc">Не даёт системе прервать музыку блокируя бодрствование процессора</string>

@@ -84,8 +84,6 @@
     <string name="custom_order">カスタム順</string>
     <string name="list_view">リスト表示</string>
     <string name="grid_view">グリッド表示</string>
-    <string name="personal_label">個人用</string>
-    <string name="youtube_synced">YouTube同期済み</string>
     <string name="options_label">オプション</string>
     <string name="top_artist_badge">トップアーティスト</string>
     <string name="no_artist_yet">アーティストはまだない</string>
@@ -173,7 +171,6 @@
     <string name="delete">削除</string>
     <string name="hide_playlist">プレイリストを隠す</string>
     <string name="unhide_playlist">プレイリストを再表示</string>
-    <string name="show_hidden_playlists">非表示を表示</string>
     <string name="hide_playlist_confirm">「%1$s」をライブラリから隠す？</string>
     <string name="remove_from_history">履歴から削除</string>
     <string name="remove_from_playlist">プレイリストから削除</string>
@@ -232,10 +229,6 @@
     <plurals name="n_song">
         <item quantity="one">%d曲</item>
         <item quantity="other">%d曲</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d組のアーティスト</item>
-        <item quantity="other">%d組のアーティスト</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="one">%d枚のアルバム</item>
@@ -377,7 +370,6 @@
     <string name="palette_neon_pink">ネオンピンク</string>
     <string name="palette_neon_blue">ネオンブルー</string>
     <string name="palette_neon_orange">ネオンオレンジ</string>
-    <string name="palette_cyberpunk">サイバーパンク</string>
     <string name="palette_synthwave">シンセウェーブ</string>
     <string name="palette_ocean">オーシャン</string>
     <string name="palette_forest">ディープフォレスト</string>
@@ -387,8 +379,6 @@
     <string name="palette_summer">夏</string>
     <string name="palette_twilight">トワイライト</string>
     <string name="palette_aurora">オーロラ</string>
-    <string name="palette_candy">キャンディ</string>
-    <string name="palette_rainbow">レインボー</string>
     <string name="dark_theme">ダークテーマ</string>
     <string name="dark_theme_on">オン</string>
     <string name="dark_theme_off">オフ</string>
@@ -419,7 +409,6 @@
     <string name="disable_animations">アニメーションを無効化</string>
     <string name="disable_animations_desc">ほとんどのアプリアニメーションを無効化。低スペック端末におすすめ</string>
     <string name="force_high_refresh_rate">高リフレッシュレートを強制</string>
-    <string name="max_supported_refresh_rate">最大対応: %1$d Hz</string>
     <string name="blur_intensity">ぼかし強度</string>
     <string name="blur_intensity_value">%1$d dp</string>
     <string name="album_backdrop">背景ぼかし</string>
@@ -445,7 +434,6 @@
     <string name="lyrics_line_spacing">歌詞の行間</string>
     <string name="content">コンテンツ</string>
     <string name="action_logout">ログアウト</string>
-    <string name="action_login">ログイン</string>
     <string name="login">ログイン</string>
     <string name="not_logged_in">未ログイン</string>
     <string name="playback_confirmation_required">再生確認が必要</string>
@@ -476,7 +464,6 @@
     <string name="proxy_password">パスワード</string>
     <string name="test_proxy_connection">プロキシ接続をテスト</string>
     <string name="testing_proxy_connection">プロキシ接続をテスト中</string>
-    <string name="proxy_connection_success">プロキシ接続に成功！</string>
     <string name="proxy_connection_failed">プロキシ接続に失敗: %s</string>
     <string name="proxy_connection_invalid_configuration">プロキシホストまたはポートが無効</string>
     <string name="ip_rotation">IPローテーション</string>
@@ -603,7 +590,6 @@
     <string name="restore_success">バックアップを復元した</string>
     <string name="restore_failed">バックアップの復元に失敗</string>
     <string name="discord_integration">Discord連携</string>
-    <string name="account_integrations_summary">Discord、Last.fm、Libre.fm、ListenBrainz</string>
     <string name="discord_login_description">OAuthでDiscordアカウントを接続すると、ArchiveTuneがRich Presenceを公開できる。</string>
     <string name="discord_open_authorization">Discord認証を開く</string>
     <string name="discord_waiting_for_authorization">Discord認証を待機中...</string>
@@ -637,9 +623,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">カスタム</string>
     <string name="lastfm_custom_endpoint">カスタムエンドポイント</string>
-    <string name="lastfm_api_credentials">API認証情報</string>
-    <string name="lastfm_api_credentials_default">デフォルトの認証情報を使用中</string>
-    <string name="lastfm_api_credentials_custom">カスタム認証情報を使用中</string>
     <string name="lastfm_api_credentials_hint">任意のAPIキーと共有シークレットを受け入れる互換サービスでは、認証情報を空のままにしてね。</string>
     <string name="lastfm_api_key_override">APIキー</string>
     <string name="lastfm_secret_override">共有シークレット</string>

@@ -83,8 +83,6 @@
         <item quantity="other">נבחרו %d פריטים</item>
     </plurals>
     <string name="grid_view">תצוגת רשת</string>
-    <string name="personal_label">אישי</string>
-    <string name="youtube_synced">YouTube מסונכרן</string>
     <string name="options_label">אפשרויות</string>
     <string name="top_artist_badge">אמן מוביל</string>
     <string name="no_artist_yet">אין עדיין אמן</string>
@@ -179,7 +177,6 @@
     <string name="equalizer">אקולייזר</string>
     <string name="misc">מגוון</string>
     <string name="disable_animations">השבתת הנפשות</string>
-    <string name="palette_cyberpunk">סייברפאנק</string>
     <string name="added_n_songs_to_n_playlists">נוספו %1$d שירים ל%2$d פלייליסטים</string>
     <string name="playback_requires_youtube_music_confirmation">אשר את ההפעלה ב- YouTube Music, ולאחר מכן חזור אל ArchiveTune.</string>
     <string name="proxy_connection_failed">חיבור הפרוקסי נכשל: %s</string>
@@ -236,11 +233,6 @@
     <string name="show_button">הצג כפתור</string>
     <string name="edit_playlist">עריכת פלייליסט</string>
     <string name="proxy_port">פורט הפרוקסי</string>
-    <plurals name="n_artist">
-        <item quantity="one">אמן אחד</item>
-        <item quantity="two">שני אמנים</item>
-        <item quantity="other">%d אמנים</item>
-    </plurals>
     <string name="eq_open_system_equalizer">פתיחת אקולייזר מערכת</string>
     <string name="delete">מחיקה</string>
     <string name="palette_graphite">גרפיט</string>
@@ -299,7 +291,6 @@
     <string name="featured_album_badge">אלבום מומלץ</string>
     <string name="palette_coffee">קפה</string>
     <string name="contrast">ניגודיות</string>
-    <string name="palette_rainbow">קשת בענן</string>
     <string name="external_downloader_package_desc">שם החבילה של אפליקציית ההורדה החיצונית (לדוגמה com.deniscerri.ytdl)</string>
     <string name="external_downloader_not_configured">אין מוריד חיצוני מוגדר. הגדר אחד בהגדרות נגן.</string>
     <string name="ok_button">אוקיי</string>
@@ -460,13 +451,11 @@
     <string name="aod_mode">מצב AOD</string>
     <string name="customized_background">רקע מותאם אישית</string>
     <string name="custom">מותאם אישית</string>
-    <string name="action_login">התחבר</string>
     <string name="palette_rose_quartz">ורד</string>
     <string name="external_downloader_desc">הורדת שירים דרך אפליקציה חיצונית לפי שם חבילה</string>
     <string name="audio_quality_high">גבוהה</string>
     <string name="palette_pastel_purple">סגול פסטל</string>
     <string name="custom_font_desc">בחר גופן מסוג ttf</string>
-    <string name="proxy_connection_success">חיבור הפרוקסי הצליח!</string>
     <string name="skip_duplicates">דלג כפילויות</string>
     <string name="internet_warning_proxy">אנא השתמשו רק בשרתי פרוקסי (Proxies) שאתם בטוחים שהם בטוחים לשימוש. שרתּי פרוקסי חינמיים הם אמנם נוחים, אך לא תמיד בטוחים, לכן היזהרו. הוזהרתם, ואנו לא נישא באחריות לאבטחה שלכם.</string>
     <string name="clear_all_downloads">נקה את כל ההורדות</string>
@@ -476,7 +465,6 @@
     <string name="play_next">הפעל הבא</string>
     <string name="palette_neon_green">ירוק ניאון</string>
     <string name="sort_order_ascending">סדר עולה</string>
-    <string name="palette_candy">סוכריה</string>
     <string name="eq_import_success">%1$d פרופילים מיובאים</string>
     <string name="error_unknown">שגיאה לא ידועה</string>
     <string name="playback_requires_youtube_music_login_refresh">רענן את פרטי ההתחברות שלך ל- YouTube Music, ולאחר מכן חזור אל ArchiveTune.</string>
@@ -557,7 +545,6 @@
     <string name="restore_success">הגיבוי שוחזר בהצלחה</string>
     <string name="restore_failed">שחזור הגיבוי נכשל</string>
     <string name="discord_integration">חיבור עם דיסקורד</string>
-    <string name="account_integrations_summary">דיסקורד, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="discord_login_description">חבר את חשבון הדיסקורד שלך עם OAuth כדי ש-ArchiveTune יוכל לפרסם את Rich Presence.</string>
     <string name="discord_open_authorization">הרשאת פתיחת דיסקורד</string>
     <string name="discord_waiting_for_authorization">מחכה לאישור דיסקורד...</string>
@@ -588,9 +575,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">מותאם אישית</string>
     <string name="lastfm_custom_endpoint">נקודת קצה מותאמת אישית</string>
-    <string name="lastfm_api_credentials">אישורי API</string>
-    <string name="lastfm_api_credentials_default">שימוש באישורי ברירת מחדל</string>
-    <string name="lastfm_api_credentials_custom">שימוש באישורים מותאמים אישית</string>
     <string name="lastfm_api_credentials_hint">השאר את פרטי הגישה ריקים עבור שירותים תואמים המקבלים מפתחות API שרירותיים וסודות משותפים.</string>
     <string name="lastfm_api_key_override">מפתח API</string>
     <string name="lastfm_secret_override">סוד משותף</string>
@@ -837,7 +821,6 @@
     <string name="no_playlists_yet">אין עדיין פלייליסטים</string>
     <string name="hide_playlist">הסתרת פלייליסט</string>
     <string name="unhide_playlist">ביטול הסתרת פלייליסט</string>
-    <string name="show_hidden_playlists">הצגת מוסתרים</string>
     <string name="hide_playlist_confirm">להסתיר את \"%1$s\" מהספרייה?</string>
     <string name="playback_error_code">קוד</string>
     <string name="playback_error_http">HTTP</string>

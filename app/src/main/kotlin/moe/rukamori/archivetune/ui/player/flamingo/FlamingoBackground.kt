@@ -59,9 +59,6 @@ object FlamingoPage {
     const val Lyric = "Lyric"
 }
 
-private const val FlamingoMovingBlurSpeedDpPerSecond = 44f
-private const val FlamingoMovingBlurMinLegMs = 3_500f
-private const val FlamingoMovingBlurMaxLegMs = 11_000f
 private const val FlamingoMovingBlurScale = 1.35f
 
 @Composable

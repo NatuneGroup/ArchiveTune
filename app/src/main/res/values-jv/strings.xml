@@ -128,9 +128,6 @@
     <plurals name="n_song">
         <item quantity="other">%d lagu</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="other">%d artis</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="other">%d album</item>
     </plurals>
@@ -240,7 +237,6 @@
     <string name="palette_neon_pink">Neon Pink</string>
     <string name="palette_neon_blue">Neon Biru</string>
     <string name="palette_neon_orange">Neon Oranye</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Lautan</string>
     <string name="palette_forest">Hutan Dalam</string>
@@ -250,8 +246,6 @@
     <string name="palette_summer">Musim Panas</string>
     <string name="palette_twilight">Senja</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Permen</string>
-    <string name="palette_rainbow">Pelangi</string>
     <string name="dark_theme">Tema gelap</string>
     <string name="dark_theme_on">Nyala</string>
     <string name="dark_theme_off">Mati</string>
@@ -301,7 +295,6 @@
     <string name="lyrics_line_spacing">Jarak baris lirik</string>
     <string name="content">Konten</string>
     <string name="action_logout">Metu</string>
-    <string name="action_login">Mlebu</string>
     <string name="login">Mlebu</string>
     <string name="not_logged_in">Belum Mlebu</string>
     <string name="playback_confirmation_required">Konfirmasi pemutaran diperlukan</string>
@@ -328,7 +321,6 @@
     <string name="proxy_password">Kata sandi</string>
     <string name="test_proxy_connection">Uji koneksi proksi</string>
     <string name="testing_proxy_connection">Menguji koneksi proksi…</string>
-    <string name="proxy_connection_success">Koneksi proksi berhasil!</string>
     <string name="proxy_connection_failed">Koneksi proksi gagal: %s</string>
     <string name="ip_rotation">Rotasi IP</string>
     <string name="ip_rotation_desc">Rotasikan IP saat ini ketika terjadi masalah pemutaran atau konten.</string>

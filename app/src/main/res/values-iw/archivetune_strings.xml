@@ -76,7 +76,6 @@
     <string name="news_no_results_desc">נסה מונח חיפוש אחר.</string>
     <string name="news_important_badge">חשוב</string>
     <string name="news_tooltip_title">הכרזות חדשות</string>
-    <string name="news_tooltip_body">יש לך הודעות שלא נקראו ממפתחים.</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="one">כתבה אחת</item>
@@ -288,9 +287,6 @@
     <string name="lyrics_romanize_chinese">בצע \"רומניזיציה\" למילות שיר סיניות</string>
     <string name="lyrics_romanize_hindi">בצע \"רומניזיציה\" למילות שיר הודיות</string>
     <string name="lyrics_romanize_other_languages">בצע \"רומניזציה\" למילות שיר של שפות אחרות שאינן לטיניות (כמו עברית וערבית)</string>
-    <string name="quick_picks_display_mode">מצב תצוגה של בחירות מהירות</string>
-    <string name="quick_picks_display_mode_card">כרטיס</string>
-    <string name="quick_picks_display_mode_list">רשימה</string>
     <string name="discord">דיסקורד</string>
     <string name="advanced_login">התחבר עם טוקן</string>
     <string name="token_hidden">הקש כדי להציג טוקן</string>
@@ -303,8 +299,6 @@
     <string name="general">כללי</string>
     <string name="proxy">פרוקסי</string>
     <string name="default_lib_chips">שנה את שבב הספרייה המוגדר כברירת מחדל</string>
-    <string name="set_quick_picks">הגדר בחירות מהירות</string>
-    <string name="last_song_listened">בהתבסס על השיר האחרון שהאזנתי לו</string>
     <string name="dont_show">אל תציג</string>
     <string name="app_language">שפת האפליקציה</string>
     <string name="open_supported_links">פתח קישור נתמך כברירת מחדל</string>
@@ -352,7 +346,6 @@
     <string name="not_logged_in_youtube">לא מחובר ל-YouTube</string>
     <string name="default_links">פתח קישורים נתמכים</string>
     <string name="open_app_settings_error">לא ניתן היה לפתוח את הגדרות האפליקציה</string>
-    <string name="release_notes">הערות שחרור</string>
     <string name="all_time">כל הזמנים</string>
     <string name="past_24_hours">ביממה האחרונה</string>
     <string name="past_week">בשבוע האחרון</string>

@@ -59,8 +59,6 @@ import androidx.media3.common.C
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AodAccentStyle
 import moe.rukamori.archivetune.constants.AodAccentStyleKey

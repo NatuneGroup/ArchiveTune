@@ -109,10 +109,6 @@
         <item quantity="one">%d şarkı</item>
         <item quantity="other">%d şarkı</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d sanatçı</item>
-        <item quantity="other">%d sanatçı</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d albüm</item>
         <item quantity="other">%d albüm</item>
@@ -224,7 +220,6 @@
     <string name="palette_neon_pink">Neon Pembe</string>
     <string name="palette_neon_blue">Neon Mavisi</string>
     <string name="palette_neon_orange">Neon Turuncu</string>
-    <string name="palette_cyberpunk">Siberpunk</string>
     <string name="palette_synthwave">Sentetik dalga</string>
     <string name="palette_ocean">Okyanus</string>
     <string name="palette_forest">Derin Orman</string>
@@ -234,8 +229,6 @@
     <string name="palette_summer">Yaz</string>
     <string name="palette_twilight">Alacakaranlık</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Şeker</string>
-    <string name="palette_rainbow">Gökkuşağı</string>
     <string name="dark_theme">Koyu tema</string>
     <string name="dark_theme_on">Açık</string>
     <string name="dark_theme_off">Kapalı</string>
@@ -268,7 +261,6 @@
     <string name="lyrics_line_spacing">Şarkı sözleri satır aralığı</string>
     <string name="content">İçerik</string>
     <string name="action_logout">Oturumu kapat</string>
-    <string name="action_login">Giriş yap</string>
     <string name="login">Giriş yap</string>
     <string name="not_logged_in">Giriş yapılmadı</string>
     <string name="content_language">Varsayılan içerik dili</string>

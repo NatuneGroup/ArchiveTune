@@ -85,8 +85,6 @@
     <string name="custom_order">Volgorde op maat</string>
     <string name="list_view">Lijstweergave</string>
     <string name="grid_view">Rasterweergave</string>
-    <string name="personal_label">Persoonlijk</string>
-    <string name="youtube_synced">YouTube gesynchroniseerd</string>
     <string name="options_label">Opties</string>
     <string name="top_artist_badge">TOPARTIESTEN</string>
     <string name="no_artist_yet">Nog geen artiest</string>
@@ -174,7 +172,6 @@
     <string name="delete">Verwijderen</string>
     <string name="hide_playlist">Afspeellijst verbergen</string>
     <string name="unhide_playlist">Afspeellijst weergeven</string>
-    <string name="show_hidden_playlists">Verborgen weergeven</string>
     <string name="hide_playlist_confirm">“%1$s” verbergen in de bibliotheek?</string>
     <string name="remove_from_history">Verwijderen uit geschiedenis</string>
     <string name="remove_from_playlist">Verwijderen uit afspeellijst</string>

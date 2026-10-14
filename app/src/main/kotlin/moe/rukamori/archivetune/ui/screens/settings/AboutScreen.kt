@@ -84,7 +84,6 @@ import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import moe.rukamori.archivetune.ui.component.preferenceGroup
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.viewmodels.AboutContributorUiCollection
 import moe.rukamori.archivetune.viewmodels.AboutContributorsUiState
 import moe.rukamori.archivetune.viewmodels.AboutDependencyLicenseUiCollection
 import moe.rukamori.archivetune.viewmodels.AboutDependencyLicensesUiState

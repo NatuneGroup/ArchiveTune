@@ -644,15 +644,6 @@ private fun HomeContent(
     }
 }
 
-private fun androidx.compose.foundation.lazy.LazyListScope.sectionSpacer(key: String) {
-    item(
-        key = "home_section_spacer_$key",
-        contentType = "section_spacer",
-    ) {
-        Spacer(Modifier.height(HomeSectionSpacing))
-    }
-}
-
 @Composable
 internal fun HomeSkeletonFeed(
     modifier: Modifier = Modifier,

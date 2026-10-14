@@ -73,8 +73,6 @@
     <string name="custom_order">Thứ tự tùy chỉnh</string>
     <string name="list_view">Xem dạng danh sách</string>
     <string name="grid_view">Xem dạng lưới</string>
-    <string name="personal_label">Cá nhân</string>
-    <string name="youtube_synced">Đã đồng bộ YouTube</string>
     <string name="options_label">Tùy chọn</string>
     <string name="top_artist_badge">NGHỆ SĨ HÀNG ĐẦU</string>
     <string name="no_artist_yet">Chưa có nghệ sĩ</string>
@@ -163,9 +161,6 @@
     <string name="duplicates_description_multiple">%d bài hát đã có trong danh sách phát của bạn</string>
     <plurals name="n_song">
         <item quantity="other">%d bài hát</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="other">%d nghệ sĩ</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="other">%d album</item>
@@ -274,7 +269,6 @@
     <string name="palette_neon_pink">Hồng Neon</string>
     <string name="palette_neon_blue">Xanh dương Neon</string>
     <string name="palette_neon_orange">Cam Neon</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Đại dương</string>
     <string name="palette_forest">Rừng sâu</string>
@@ -284,8 +278,6 @@
     <string name="palette_summer">Mùa hè</string>
     <string name="palette_twilight">Chạng vạng</string>
     <string name="palette_aurora">Cực quang</string>
-    <string name="palette_candy">Kẹo</string>
-    <string name="palette_rainbow">Cầu vồng</string>
     <string name="dark_theme">Giao diện tối</string>
     <string name="dark_theme_on">Bật</string>
     <string name="dark_theme_off">Tắt</string>
@@ -320,7 +312,6 @@
     <string name="lyrics_line_spacing">Khoảng cách dòng lời bài hát</string>
     <string name="content">Nội dung</string>
     <string name="action_logout">Đăng xuất</string>
-    <string name="action_login">Đăng nhập</string>
     <string name="login">Đăng nhập</string>
     <string name="not_logged_in">Chưa đăng nhập</string>
     <string name="content_language">Ngôn ngữ nội dung mặc định</string>
@@ -343,7 +334,6 @@
     <string name="proxy_password">Mật khẩu</string>
     <string name="test_proxy_connection">Kiểm tra kết nối proxy</string>
     <string name="testing_proxy_connection">Đang kiểm tra kết nối proxy</string>
-    <string name="proxy_connection_success">Kết nối proxy thành công!</string>
     <string name="proxy_connection_failed">Kết nối proxy thất bại: %s</string>
     <string name="enable_betterlyrics">Bật BetterLyrics</string>
     <string name="enable_simpmusic_lyrics">Bật lời bài hát SimpMusic</string>
@@ -744,7 +734,6 @@
     <string name="custom_font">Phông chữ tùy chỉnh</string>
     <string name="custom_font_desc">Chọn tệp phông .ttf</string>
     <string name="custom_font_invalid">Chọn tệp phông .ttf</string>
-    <string name="account_integrations_summary">Discord, Last.fm, ListenBrainz</string>
     <string name="device_mute_recovery_volume">Tăng âm lượng từ 0</string>
     <string name="device_mute_recovery_volume_disabled">Đã tắt</string>
     <string name="device_volume_zero_playback_paused">Phát nhạc đã tạm dừng vì âm lượng thiết bị là 0. Tăng âm lượng để tiếp tục.</string>
@@ -754,7 +743,6 @@
     <string name="youtube_channels">Kênh YouTube</string>
     <string name="hide_playlist">Ẩn danh sách phát</string>
     <string name="unhide_playlist">Bỏ ẩn danh sách phát</string>
-    <string name="show_hidden_playlists">Hiện ẩn</string>
     <string name="hide_playlist_confirm">Ẩn \u0022%1$s\u0022 khỏi thư viện?</string>
     <string name="hidden_playlists">Danh sách phát đã ẩn</string>
     <string name="hidden_playlists_description">Danh sách phát đã ẩn khỏi thư viện sẽ xuất hiện tại đây</string>
@@ -794,9 +782,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">Tùy chỉnh</string>
     <string name="lastfm_custom_endpoint">Điểm cuối tùy chỉnh</string>
-    <string name="lastfm_api_credentials">Thông tin API</string>
-    <string name="lastfm_api_credentials_default">Đang dùng thông tin mặc định</string>
-    <string name="lastfm_api_credentials_custom">Đang dùng thông tin tùy chỉnh</string>
     <string name="lastfm_api_credentials_hint">Để trống thông tin cho các dịch vụ tương thích chấp nhận khóa API và mã bí mật tùy ý.</string>
     <string name="lastfm_api_key_override">Khóa API</string>
     <string name="lastfm_secret_override">Mã bí mật</string>
@@ -896,7 +881,6 @@
     <string name="app_icon_load_failed">Không thể tải biểu tượng ứng dụng</string>
     <string name="app_icon_change_failed">Không thể đổi biểu tượng ứng dụng</string>
     <string name="force_high_refresh_rate">Ép tần số quét cao</string>
-    <string name="max_supported_refresh_rate">Cao nhất được hỗ trợ: %1$d Hz</string>
     <string name="view_debug_logs_description">Xem và lọc nhật ký ứng dụng</string>
     <string name="resume_logs">Tiếp tục nhật ký</string>
     <string name="jump_to_latest_log">Nhảy đến nhật ký mới nhất</string>

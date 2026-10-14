@@ -76,7 +76,6 @@
     <string name="app_language">Rakenduse keel</string>
     <string name="open_supported_links">Vaikimisi vaid toetatud link</string>
     <string name="set_first_lyrics_provider">Laulusõnade eelistatud teenusepakkuja</string>
-    <string name="release_notes">Versiooniteave</string>
     <string name="all_time">Kogu ajavahemik</string>
     <string name="past_24_hours">Viimased 24 tundi</string>
     <string name="past_week">Möödunud nädalal</string>
@@ -141,8 +140,6 @@
     <string name="more_content">Täiendav sisu</string>
     <string name="general">Üldist</string>
     <string name="proxy">Proksi</string>
-    <string name="set_quick_picks">Määra kiirvalikud</string>
-    <string name="last_song_listened">Põhineb viimatikuulatud lool</string>
     <string name="percentage_format">%d%%</string>
     <string name="import_online">Impordi „m3u“ tüüpi eristusloendeid</string>
     <string name="import_csv">Impordi „csv“ tüüpi eristusloendeid</string>

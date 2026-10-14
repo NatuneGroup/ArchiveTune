@@ -125,9 +125,6 @@
     <plurals name="n_song">
         <item quantity="other">%d곡</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="other">아티스트 %d명</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="other">%d 앨범</item>
     </plurals>
@@ -237,7 +234,6 @@
     <string name="palette_neon_pink">네온 핑크</string>
     <string name="palette_neon_blue">네온 블루</string>
     <string name="palette_neon_orange">네온 오렌지</string>
-    <string name="palette_cyberpunk">사이버펑크</string>
     <string name="palette_synthwave">신스웨이브</string>
     <string name="palette_ocean">바다</string>
     <string name="palette_forest">깊은 숲</string>
@@ -247,8 +243,6 @@
     <string name="palette_summer">여름</string>
     <string name="palette_twilight">트와일라잇</string>
     <string name="palette_aurora">오로라</string>
-    <string name="palette_candy">캔디</string>
-    <string name="palette_rainbow">무지개</string>
     <string name="dark_theme">어두운 테마</string>
     <string name="dark_theme_on">켜짐</string>
     <string name="dark_theme_off">꺼짐</string>
@@ -298,7 +292,6 @@
     <string name="lyrics_line_spacing">가사 줄 간격</string>
     <string name="content">콘텐츠</string>
     <string name="action_logout">로그아웃</string>
-    <string name="action_login">로그인</string>
     <string name="login">로그인</string>
     <string name="not_logged_in">로그인되지 않음</string>
     <string name="playback_confirmation_required">재생 승인 필요</string>
@@ -325,7 +318,6 @@
     <string name="proxy_password">비밀번호</string>
     <string name="test_proxy_connection">프록시 연결 테스트</string>
     <string name="testing_proxy_connection">프록시 서버 연결 유효성을 테스트하는 중</string>
-    <string name="proxy_connection_success">프록시 연결에 성공했습니다!</string>
     <string name="proxy_connection_failed">프록시 연결에 실패했습니다: %s</string>
     <string name="ip_rotation">접속 주소(IP) 자동 변경</string>
     <string name="ip_rotation_desc">버퍼링이 너무 심하거나 무한 로딩 오류가 자주 일어날 때, 현재 가상 접속 주소를 강제로 변경해 우회하도록 합니다.</string>
@@ -668,10 +660,8 @@
     <string name="discord_url_source_song">곡 URL</string>
     <string name="discord_refresh_success">Discord Rich Presence를 새로고침했습니다.</string>
     <string name="app_icon">앱 아이콘</string>
-    <string name="youtube_synced">YouTube 동기화됨</string>
     <string name="your_collection">내 컬렉션</string>
     <string name="discord_login_description">내 Discord 계정을 안전하게 연동하여 내가 듣고 있는 음악 정보를 프로필 상태 메시지에 실시간으로 보여줍니다.</string>
-    <string name="personal_label">개인용</string>
     <string name="most_played_badge">최다 재생</string>
     <string name="discord_platform_ios">iOS</string>
     <string name="font_preference_custom">사용자 지정 글꼴 (.ttf)</string>
@@ -711,7 +701,6 @@
     <string name="total_label">총</string>
     <string name="list_view">목록 보기</string>
     <string name="player_background_style_v8_v9_desc">V8 및 V9 플레이어 스타일에서는 사용할 수 없습니다.</string>
-    <string name="account_integrations_summary">Discord, Last.fm, ListenBrainz</string>
     <string name="all_artists_filter">모든 아티스트</string>
     <string name="sort_artist">아티스트</string>
     <string name="custom_font">사용자 지정 글꼴</string>
@@ -782,7 +771,6 @@
     <string name="no_playlists_yet">재생목록이 아직 없습니다.</string>
     <string name="hide_playlist">재생목록 숨기기</string>
     <string name="unhide_playlist">재생목록 숨기기 취소</string>
-    <string name="show_hidden_playlists">숨겨진 재생목록 표시</string>
     <string name="hide_playlist_confirm">%1$s 재생목록을 정말로 숨기시겠습니까?</string>
     <string name="lyrics_search_plain_badge">일반 가사</string>
     <string name="lyrics_searching_providers">가사 제공업체에서 검색하는 중...</string>
@@ -803,9 +791,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">사용자 정의</string>
     <string name="lastfm_custom_endpoint">사용자 정의 엔드포인트</string>
-    <string name="lastfm_api_credentials">API 자격 증명</string>
-    <string name="lastfm_api_credentials_default">기본 자격 증명</string>
-    <string name="lastfm_api_credentials_custom">사용자 정의 자격 증명</string>
     <string name="lastfm_api_credentials_hint">사용자 정의 API 자격 증명을 입력해 주세요.</string>
     <string name="lastfm_api_key_override">API 키 재정의</string>
     <string name="lastfm_secret_override">Secret(보안 비밀) 재정의</string>

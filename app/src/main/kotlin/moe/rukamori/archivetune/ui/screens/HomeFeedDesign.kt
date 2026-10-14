@@ -62,14 +62,12 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.db.entities.Album
@@ -473,94 +471,6 @@ fun HomeFeedShelfCard(
     }
 }
 
-/**
- * The big card the lead shelf pages sideways (BitChord HeroCard): artwork with
- * the caption laid over a scrim, as on Listen Now. The whole card toggles
- * play/pause when the track is the active one, matching the fork's hero
- * behaviour.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun HomeFeedHeroCard(
-    thumbnailUrl: String?,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null,
-    isActive: Boolean = false,
-    isPlaying: Boolean = false,
-) {
-    Box(
-        modifier =
-            modifier
-                .aspectRatio(HomeHeroCardRatio)
-                .clip(RoundedCornerShape(HomeHeroCardCorner))
-                .homeFeedThumbnailBorder(RoundedCornerShape(HomeHeroCardCorner))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .let { m ->
-                    if (onLongClick != null) {
-                        m.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                    } else {
-                        m.combinedClickable(onClick = onClick)
-                    }
-                },
-    ) {
-        AsyncImage(
-            model = thumbnailUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomStart)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)),
-                        ),
-                    )
-                    .padding(start = 16.dp, end = 16.dp, top = 34.dp, bottom = 14.dp),
-        ) {
-            Text(
-                text = title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.W700,
-                letterSpacing = (-0.3).sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
-                Text(
-                    text = subtitle,
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.72f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        // Active / playing indicator — small dot at top-right (kept from the
-        // fork's hero so the current track stays findable at a glance).
-        if (isActive) {
-            Box(
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                        ),
-            )
-        }
-    }
-}
-
 // ============================================================================
 // Typed cards — map the fork's data types onto the generic cards above while
 // preserving every existing interaction (section queue playback, navigation,
@@ -843,9 +753,6 @@ fun HomePullRefreshLine(
  * 88 is as short as it goes before the ramp starts to be findable.
  */
 private val HomeTopFadeRun = 88.dp
-
-/** How much blur the fade reaches at its outer edge — short of all of it. */
-private const val HomeTopFadePeak = 0.75f
 
 /**
  * How dark the readability scrim starts, at the very top of the strip.

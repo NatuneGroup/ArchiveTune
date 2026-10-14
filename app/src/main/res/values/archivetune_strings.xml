@@ -103,7 +103,6 @@
     <string name="news_no_results_desc">Try a different search term.</string>
     <string name="news_important_badge">Important</string>
     <string name="news_tooltip_title">New Announcements</string>
-    <string name="news_tooltip_body">You have unread announcements from developers.</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="one">%d article</item>
@@ -160,13 +159,11 @@
     <string name="aod_customize_show_lyrics_desc">Display the current lyric line beneath the title while music plays.</string>
     <string name="aod_customize_lyrics">Lyrics</string>
     <string name="aod_customize_auto_timer">Auto-enter AOD</string>
-    <string name="aod_customize_auto_timer_desc">Seconds of inactivity before AOD mode turns on automatically. Set to 0 to disable.</string>
     <string name="aod_customize_auto_timer_off">Off</string>
     <string name="aod_customize_auto_timer_seconds">%1$d s</string>
     <string name="aod_customize_auto_on_screen_dim">Enter AOD when screen dims</string>
     <string name="aod_customize_auto_on_screen_dim_desc">Holds the screen on past the system screen-off timeout and switches to AOD mode 2 seconds before the screen would have turned off. Useful while driving — AOD appears while the screen is still lit, so you can see what\'s playing without waking the device.</string>
     <string name="aod_lyrics_loading">Loading lyrics…</string>
-    <string name="aod_lyrics_unavailable">No lyrics available</string>
     <string name="aod_shape_rounded">Rounded</string>
     <string name="aod_shape_square">Square</string>
     <string name="aod_shape_circle">Circle</string>
@@ -248,7 +245,6 @@
     <string name="lyrics_share_style_vivid_glow">Vivid glow</string>
     <string name="lyrics_share_text_color">Lyrics text color</string>
     <string name="lyrics_share_text_color_default">Style default</string>
-    <string name="lyrics_share_text_color_custom">Custom</string>
     <string name="lyrics_share_text_color_white">White</string>
     <string name="lyrics_share_text_color_black">Black</string>
     <string name="lyrics_share_text_color_cream">Cream</string>
@@ -263,14 +259,7 @@
     <string name="lyrics_share_text_color_rose">Rose</string>
     <string name="lyrics_share_export_failed">Failed to create image: %1$s</string>
     <string name="lyrics_share_export_not_supported">Image sharing requires Android 6.0 or newer</string>
-    <string name="lyrics_share_options">Options</string>
-    <string name="lyrics_share_aspect_ratio">Aspect ratio</string>
-    <string name="lyrics_share_style">Style</string>
-    <string name="lyrics_share_advanced">Advanced</string>
-    <string name="lyrics_share_show_advanced">Show advanced options</string>
-    <string name="lyrics_share_hide_advanced">Hide advanced options</string>
     <string name="more_options">More options</string>
-    <string name="lyrics_share_less_options">Less options</string>
     <string name="remove_from_cache">Remove from cache</string>
     <string name="select">Select all</string>
     <string name="manage_tags">Manage Tags</string>
@@ -331,7 +320,6 @@
     <string name="lyrics_background_moving_blur">Moving Blur</string>
     <string name="mini_player_background_style">Mini player background style</string>
     <string name="compact_mini_player">Compact mini player</string>
-    <string name="compact_mini_player_desc">Use smaller artwork and transport controls in the mini player</string>
     <string name="mini_player_layout">Mini player layout</string>
     <string name="mini_player_layout_desc">Choose standard or compact artwork and transport control sizing</string>
     <string name="compact_layout">Compact</string>
@@ -403,7 +391,6 @@
     <string name="apple_music_track_unavailable">Apple Music track could not be mapped to a playable source.</string>
     <string name="simpmusic_move_down">Move down</string>
     <string name="simpmusic_lyrics">SimpMusic lyrics</string>
-    <string name="simpmusic_lyrics_desc">Use SimpMusic’s lyrics view instead of Enhanced.</string>
     <string name="player_design_apple_music">Apple Music</string>
     <string name="player_background_blur">Blur</string>
     <string name="coloring">Coloring</string>
@@ -424,9 +411,6 @@
     <string name="lyrics_romanize_chinese">Romanize chinese lyrics</string>
     <string name="lyrics_romanize_hindi">Romanize hindi lyrics</string>
     <string name="lyrics_romanize_other_languages">Romanize other non-latin lyrics</string>
-    <string name="quick_picks_display_mode">Quick Picks display mode</string>
-    <string name="quick_picks_display_mode_card">Card</string>
-    <string name="quick_picks_display_mode_list">List</string>
     <string name="discord">Discord</string>
     <string name="advanced_login">Login with token</string>
     <string name="token_hidden">Tap to show token</string>
@@ -439,8 +423,6 @@
     <string name="general">General</string>
     <string name="proxy">Proxy</string>
     <string name="default_lib_chips">Change default library chip</string>
-    <string name="set_quick_picks">Set quick picks</string>
-    <string name="last_song_listened">Based on last song listened</string>
     <string name="dont_show">Dont Show</string>
     <string name="app_language">App language</string>
     <string name="open_supported_links">Open supported link by default</string>
@@ -450,10 +432,7 @@
     <!-- Inline music video player controls -->
     <string name="video_fullscreen">Enter fullscreen</string>
     <string name="video_exit_fullscreen">Exit fullscreen</string>
-    <string name="video_captions">Toggle captions</string>
-    <string name="video_captions_off">Captions off</string>
     <string name="video_quality">Video quality</string>
-    <string name="video_quality_auto">Auto (highest available)</string>
     <!-- Video quality bottom sheet -->
     <string name="video_quality_mode_auto">Auto</string>
     <string name="video_quality_mode_auto_desc">Adjusts to your connection, up to 1080p</string>
@@ -484,10 +463,7 @@
     <string name="video_aspect_crop">Crop</string>
     <string name="video_aspect_stretch">Stretch</string>
     <string name="video_aspect_fill">Fill screen</string>
-    <string name="video_aspect_selected">Currently selected</string>
     <!-- Fullscreen video overlay gesture feedback -->
-    <string name="video_gesture_brightness">Brightness</string>
-    <string name="video_gesture_volume">Volume</string>
     <string name="video_gesture_seek_forward">+10 seconds</string>
     <string name="video_gesture_seek_backward">-10 seconds</string>
     <!-- Enable video playback setting (Player & audio settings) -->
@@ -548,7 +524,6 @@
     <string name="not_logged_in_youtube">Not logged in to YouTube</string>
     <string name="default_links">Open supported links</string>
     <string name="open_app_settings_error">Couldn\'t open app settings</string>
-    <string name="release_notes">Release notes</string>
     <string name="all_time">All time</string>
     <string name="past_24_hours">Past 24 hours</string>
     <string name="past_week">Past week</string>
@@ -602,7 +577,6 @@
     <string name="crossfade_gapless_title">Skip gapless albums</string>
     <string name="crossfade_gapless_description">Do not crossfade consecutive songs from the same album.</string>
     <string name="auto_choose_playback_client">Auto choose playback client</string>
-    <string name="auto_choose_playback_client_desc">Try the fastest compatible YouTube client and fall back quickly when a client fails or times out.</string>
     <string name="auto_choose_playback_client_enabled_note">ArchiveTune chooses a compatible client using recent success, latency and failures.</string>
     <string name="auto_choose_playback_client_disabled_note">Only the selected playback client is used. Failures are reported without automatic client fallback.</string>
     <string name="player_stream_client">Playback client</string>
@@ -651,7 +625,6 @@
     <string name="settings_stats_subtitle">Your top songs, artists, and playback history</string>
     <string name="similar_content">Similar content</string>
     <string name="top_songs">Top Songs</string>
-    <string name="top_albums">Top Albums</string>
     <string name="year_in_music">Year in Music</string>
     <string name="total_listening_time">Total Listening Time</string>
     <string name="top_artists">Top Artists</string>
@@ -748,7 +721,6 @@
     <string name="backup_category_account">Account Details</string>
     <string name="backup_category_account_desc">YouTube, Spotify, Last.fm, Libre.fm, Discord &amp; proxy credentials</string>
     <string name="internal_service">Internal Service</string>
-    <string name="external_service">External Service</string>
     <string name="restore_invalid_file">The selected file is not a valid backup archive.</string>
     <string name="restore_missing_content">The backup archive does not contain any restorable data.</string>
     <string name="restore_corrupted">The backup file appears to be corrupted and could not be read.</string>
@@ -864,50 +836,15 @@
     <!-- Search redesign -->
     <string name="search_recent_searches">Recent Searches</string>
     <string name="search_recent_label">Recent</string>
-    <string name="search_based_on_what_you_like">Based on what you like</string>
     <string name="search_trending_searches">Trending Searches</string>
     <string name="search_recommended_artists">Recommended Artists</string>
     <string name="search_recommended_albums">Recommended Albums</string>
     <string name="search_recommended_songs">Recommended Songs</string>
-    <string name="ytdlp_settings_title">yt-dlp runtime</string>
-    <string name="ytdlp_settings_description">Manage the primary playback and download resolver</string>
-    <string name="ytdlp_loading_runtime">Loading yt-dlp runtime status…</string>
-    <string name="ytdlp_next_update_check">Next automatic update check</string>
-    <string name="ytdlp_runtime_section">Runtime</string>
-    <string name="ytdlp_update_section">Updates</string>
-    <string name="ytdlp_status">Runtime status</string>
-    <string name="ytdlp_status_ready">Ready</string>
-    <string name="ytdlp_status_checking">Checking for updates</string>
-    <string name="ytdlp_status_restart_required">Restart required</string>
-    <string name="ytdlp_status_failed">Last update check failed</string>
-    <string name="ytdlp_active_version">Active version</string>
-    <string name="ytdlp_bundled_version">Bundled version</string>
-    <string name="ytdlp_pending_version">Pending version</string>
-    <string name="ytdlp_last_checked">Last checked</string>
-    <string name="ytdlp_last_updated">Last updated</string>
-    <string name="ytdlp_never_checked">Never checked</string>
-    <string name="ytdlp_bundled_runtime">Using bundled runtime</string>
-    <string name="ytdlp_check_for_updates">Check for updates</string>
-    <string name="ytdlp_check_now">Check now</string>
-    <string name="ytdlp_updates_remaining">%1$d manual checks remaining</string>
-    <string name="ytdlp_rate_limit_countdown">Available again in %1$s</string>
-    <string name="ytdlp_automatic_updates">Automatic updates</string>
-    <string name="ytdlp_automatic_updates_description">ArchiveTune securely checks for stable yt-dlp releases every 24 hours.</string>
-    <string name="ytdlp_update_downloaded">yt-dlp update downloaded. Restart ArchiveTune to activate it.</string>
-    <string name="ytdlp_up_to_date">yt-dlp is up to date</string>
-    <string name="ytdlp_update_failed">Could not update yt-dlp</string>
-    <string name="ytdlp_rate_limited">Manual update limit reached</string>
-    <string name="ytdlp_update_due">Due now</string>
-    <string name="ytdlp_empty_title">No yt-dlp runtime</string>
-    <string name="ytdlp_empty_description">Connect to the internet to restore the primary playback runtime.</string>
-    <string name="ytdlp_error_title">yt-dlp unavailable</string>
-    <string name="ytdlp_runtime_load_failed">The yt-dlp runtime could not be loaded. Native playback remains available as fallback.</string>
 
     <!-- YouTube sign-in: the browser (cookie) route and the OAuth device-code route. -->
     <string name="yt_browser_sign_in">Sign in with browser</string>
     <string name="yt_browser_sign_in_desc">Full account: library, playlists, uploads and personalised browse.</string>
     <string name="yt_oauth_sign_in">Sign in with a code</string>
-    <string name="yt_oauth_sign_in_desc">Type a short code at google.com/device. No browser sign-in needed.</string>
     <string name="tiktok_feed_fullscreen">Full screen</string>
     <string name="tiktok_feed_exit_fullscreen">Exit full screen</string>
     <string name="yt_oauth_sign_out">Sign out of the code session</string>
@@ -1022,8 +959,6 @@
     <string name="android_auto_app_permissions">App permissions</string>
     <string name="android_auto_settings_load_failed">Could not load Android Auto settings</string>
     <string name="android_auto_settings_update_failed">Could not update Android Auto settings</string>
-    <string name="media_info_empty">No information available</string>
-    <string name="media_info_load_error">Couldn’t load this information</string>
     <string name="media_info_itag" translatable="false">Itag</string>
     <string name="playing_from">Playing from %1$s</string>
     <string name="remaining_time" translatable="false">-%1$s</string>
@@ -1052,7 +987,6 @@
     <string name="bit_perfect_usb_default_device">USB DAC</string>
     <string name="bit_perfect_usb_reason_no_mode">%1$s offers no bit-perfect mode at %2$s / %3$s</string>
     <string name="bit_perfect_usb_reason_refused">Android refused bit-perfect mode for this device</string>
-    <string name="audio_engines_experimental_title">Experimental audio engines</string>
     <string name="tryptify_audio_processing_title">Tryptify DSP engine</string>
     <string name="tryptify_audio_processing_desc">Experimental. Runs playback through Tryptify\'s 32-bit float chain (mix bus, AutoEQ, parametric EQ). Starts on the next song. Turns off LastWave.</string>
     <string name="lastwave_audio_processing_title">LastWave DSP engine</string>

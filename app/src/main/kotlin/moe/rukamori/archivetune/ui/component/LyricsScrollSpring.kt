@@ -18,7 +18,6 @@
 
 package moe.rukamori.archivetune.ui.component
 
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.gestures.animateScrollBy
@@ -123,7 +122,3 @@ suspend fun LazyListState.intervalAdaptiveScrollTo(
         animateScrollToItem(index, scrollOffset)
     }
 }
-
-/** Framework default kept for reference; used when the toggle is OFF. */
-@Suppress("unused")
-val DefaultScrollStiffness: Float = Spring.StiffnessMediumLow

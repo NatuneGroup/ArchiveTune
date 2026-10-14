@@ -1287,51 +1287,6 @@ private fun discordLargeTextSourceLabel(value: String): String =
     }
 
 @Composable
-fun EditablePreference(
-    title: String,
-    iconRes: Int,
-    value: String,
-    defaultValue: String,
-    onValueChange: (String) -> Unit,
-    description: String? = null,
-) {
-    var showDialog by remember { mutableStateOf(false) }
-    PreferenceEntry(
-        title = { Text(title) },
-        description = description ?: if (value.isEmpty()) defaultValue else value,
-        icon = { Icon(painterResource(iconRes), null) },
-        trailingContent = {
-            TextButton(onClick = { showDialog = true }, shapes = ButtonDefaults.shapes()) { Text("Edit") }
-        },
-    )
-    if (showDialog) {
-        var text by remember { mutableStateOf(value) }
-        AlertDialog(
-            onDismissRequest = { showDialog = false },
-            confirmButton = {
-                TextButton(onClick = {
-                    onValueChange(if (text.isBlank()) "" else text)
-                    showDialog = false
-                }, shapes = ButtonDefaults.shapes()) { Text("Save") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDialog = false }, shapes = ButtonDefaults.shapes()) { Text("Cancel") }
-            },
-            title = { Text("Edit $title") },
-            text = {
-                TextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    placeholder = { Text(defaultValue) },
-                    singleLine = true,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            },
-        )
-    }
-}
-
-@Composable
 fun RichPresence(
     song: Song?,
     currentPlaybackTimeMillis: Long = 0L,

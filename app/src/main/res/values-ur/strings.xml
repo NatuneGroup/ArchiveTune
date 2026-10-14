@@ -85,8 +85,6 @@
     <string name="custom_order">حسب ضرورت تربیب</string>
     <string name="list_view">لسٹ ویو</string>
     <string name="grid_view">گرڈ ویو</string>
-    <string name="personal_label">زاتی</string>
-    <string name="youtube_synced">یوٹیوب سے ہم عہد ہوا</string>
     <string name="options_label">انتخاب</string>
     <string name="top_artist_badge">سب سے اوپر کا کلاکار</string>
     <string name="no_artist_yet">اب تک کوئ کلاکار نہیں</string>
@@ -174,7 +172,6 @@
     <string name="delete">حڈف</string>
     <string name="hide_playlist">مجموعہ گیت کو پوشیدہ کریں</string>
     <string name="unhide_playlist">مجموعہ گیت کو غیر پوشیدہ کریں</string>
-    <string name="show_hidden_playlists">پوشیدہ کردہ دکھائیں</string>
     <string name="hide_playlist_confirm">\"%1$s\" کو فہرست سے پوشیدہ کریں؟</string>
     <string name="remove_from_history">سرگزشت سے ہرج کریں</string>
     <string name="remove_from_playlist">مجموعہ گیت سے ہرج کریں</string>
@@ -232,10 +229,6 @@
     <plurals name="n_song">
         <item quantity="one">‫%d گانا</item>
         <item quantity="other">‫%d گانے</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d کلاکار</item>
-        <item quantity="other">%d کلاکار</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="one">%d البم</item>
@@ -360,7 +353,6 @@
     <string name="palette_neon_pink">روشناس پنک</string>
     <string name="palette_neon_blue">روشناس نیلا</string>
     <string name="palette_neon_orange">روشناس نارنجی</string>
-    <string name="palette_cyberpunk">سائبرپنک</string>
     <string name="palette_synthwave">سنتھ وہو</string>
     <string name="palette_ocean">سمندری</string>
     <string name="palette_forest">گہرا جنگل</string>
@@ -370,8 +362,6 @@
     <string name="palette_summer">گرمی</string>
     <string name="palette_twilight">شفق</string>
     <string name="palette_aurora">اورورا</string>
-    <string name="palette_candy">قند</string>
-    <string name="palette_rainbow">قوس قزح</string>
     <string name="dark_theme">اندھیری بناوٹ</string>
     <string name="dark_theme_on">کھلی ہوئ</string>
     <string name="dark_theme_off">بند</string>
@@ -428,7 +418,6 @@
     <string name="lyrics_line_spacing">بول کی سطروں کا فاصلہ</string>
     <string name="content">مواد</string>
     <string name="action_logout">لاگ آؤٹ</string>
-    <string name="action_login">لاگ ان</string>
     <string name="login">لاگن</string>
     <string name="not_logged_in">لاگ ان لردہ نہیں</string>
     <string name="playback_confirmation_required">نشر کی تصدیق ضروری ہے</string>
@@ -459,7 +448,6 @@
     <string name="proxy_password">خفیہ لفظ</string>
     <string name="test_proxy_connection">ربطِ پروکسی جانچیں</string>
     <string name="testing_proxy_connection">ربطِ پروکسی کو جانچا جا رحہا ہے</string>
-    <string name="proxy_connection_success">ربطِ پروکسی کامیاب!</string>
     <string name="proxy_connection_failed">ربطِ پروکسی ناکام: %s</string>
     <string name="proxy_connection_invalid_configuration">پروکسی میزبان یا بندرگاہ ٹھیک نہیں</string>
     <string name="discord_connection_settings">رابطہ</string>
@@ -603,7 +591,6 @@
     <string name="restore_success">کامیابی سے ذخیرے کو محفوظ کیا گیا</string>
     <string name="restore_failed">ذخیرے کو بحال کرنے میں ناکام</string>
     <string name="discord_integration">ڈسکورڈ کا انضمام</string>
-    <string name="account_integrations_summary">ڈسکورڈ، Last.fm، Libre.fm،ListenBrainz</string>
     <string name="discord_login_description">اپنے ڈسکورڈ اکاؤنٹ کو OAuth کے ذریعے سے وصل میں لائیں تاکہ آرکائوٹیون رچ پریزنس کو شائع کر سکے۔</string>
     <string name="discord_open_authorization">ڈسکورڈ سے اجازت لیں</string>
     <string name="discord_waiting_for_authorization">ڈسکورڈ کی اجازت ملنے کا انتظار کر رہا ہے...</string>
@@ -637,9 +624,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">حسب ضرورت</string>
     <string name="lastfm_custom_endpoint">حسب ضرورت اینڈپوآئنٹ</string>
-    <string name="lastfm_api_credentials">API کی سند</string>
-    <string name="lastfm_api_credentials_default">ّڈیفالٹ سند استعمال کی جا رہی ہے</string>
-    <string name="lastfm_api_credentials_custom">حسب ضرورت سند استعمال کی جا رہی ہے</string>
     <string name="lastfm_api_credentials_hint">سند کو خالی چھوڑ دیں ان مطابق خدمات کے لئے جو بے ڈھنگ API کی چابیاں اور مشترکہ راز قبول کرتی ہیں۔</string>
     <string name="lastfm_api_key_override">API کی چابی</string>
     <string name="lastfm_secret_override">مشترکہ راز</string>
@@ -665,7 +649,6 @@
     <string name="show_player_volume_bar">حجم آواز کی سنٹی کو دکھایا جائے</string>
     <string name="player_volume_bar_v7_v8_only">‫صرف V7 اور V8 والے پخش کننده کے اسلوب میں دستیاب ہے</string>
     <string name="force_high_refresh_rate">تازہ کرنے کی رفتار کو زبردستی بڑھائیں</string>
-    <string name="max_supported_refresh_rate">‫زیادہ سے زیادہ ممکن : Hz %1$d‬</string>
     <string name="discord_activity_button_1_url">‫پہلے بٹن کی URL کا مصدر</string>
     <string name="discord_activity_button_2_url">‫دوسرے بٹن کی URL کا مصدر</string>
     <string name="discord_activity_button1_label">پہلے بٹن کا عنوان</string>

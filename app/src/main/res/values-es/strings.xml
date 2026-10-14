@@ -114,11 +114,6 @@
         <item quantity="many">%d canciones</item>
         <item quantity="other">%d canciones</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d artista</item>
-        <item quantity="many">%d artistas</item>
-        <item quantity="other">%d artistas</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d álbum</item>
         <item quantity="many">%d álbumes</item>
@@ -240,7 +235,6 @@
     <string name="palette_neon_pink">Rosa Neón</string>
     <string name="palette_neon_blue">Azul Neón</string>
     <string name="palette_neon_orange">Naranja Neón</string>
-    <string name="palette_cyberpunk">Ciberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Océano</string>
     <string name="palette_forest">Bosque Profundo</string>
@@ -250,8 +244,6 @@
     <string name="palette_summer">Verano</string>
     <string name="palette_twilight">Crepúsculo</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Dulce</string>
-    <string name="palette_rainbow">Arco Iris</string>
     <string name="dark_theme">Tema oscuro</string>
     <string name="dark_theme_on">Encendido</string>
     <string name="dark_theme_off">Apagado</string>
@@ -286,7 +278,6 @@
     <string name="lyrics_line_spacing">Espaciado entre líneas de la letra</string>
     <string name="content">Contenido</string>
     <string name="action_logout">Cerrar sesión</string>
-    <string name="action_login">Iniciar sesión</string>
     <string name="login">Acceder</string>
     <string name="not_logged_in">No has iniciado sesión</string>
     <string name="content_language">Idioma por defecto del contenido</string>
@@ -602,7 +593,6 @@
     <string name="proxy_password">Contraseña</string>
     <string name="test_proxy_connection">Comprobar la conexión del proxy</string>
     <string name="testing_proxy_connection">Comprobando la conexión del proxy</string>
-    <string name="proxy_connection_success">¡Conexión a través del proxy realizada correctamente!</string>
     <string name="proxy_connection_failed">Error en la conexión al servidor proxy: %s</string>
     <string name="enable_paxsenix_lyrics">Activar la letra de Paxsenix</string>
     <string name="clear_lyrics_cache">Borrar la caché de las letras</string>
@@ -661,8 +651,6 @@
     <string name="custom_order">Orden personalizado</string>
     <string name="list_view">Vista de la lista</string>
     <string name="grid_view">Vista en cuadrícula</string>
-    <string name="personal_label">Personal</string>
-    <string name="youtube_synced">Sincronizado con YouTube</string>
     <string name="options_label">Opciones</string>
     <string name="top_artist_badge">ARTISTA DESTACADO</string>
     <string name="no_artist_yet">Aún no hay artista</string>
@@ -720,7 +708,6 @@
     <string name="recent_requests">Peticiones recientes</string>
     <string name="display">Pantalla</string>
     <string name="romanization">Alfabeto latino</string>
-    <string name="account_integrations_summary">Discord, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="discord_login_description">Conecta tu cuenta de Discord mediante OAuth para que ArchiveTune pueda publicar información de presencia enriquecida.</string>
     <string name="discord_open_authorization">Conéctate a Discord</string>
     <string name="discord_waiting_for_authorization">Esperando la autorización de Discord...</string>
@@ -803,7 +790,6 @@
     <string name="language_pack_installed_size">Instalado · %1$s</string>
     <string name="language_pack_remove">Eliminar</string>
     <string name="language_pack_required">Descarga primero el paquete de japonés</string>
-    <string name="settings_language_packs_subtitle">Datos de idioma y descargas opcionales</string>
     <string name="language_pack_base_language">Idioma base</string>
     <string name="language_pack_optional_data">Datos de idioma opcionales</string>
     <string name="language_pack_other_romanization">Romanización coreana, china, hindi y de otros idiomas</string>
@@ -836,12 +822,10 @@
     <string name="no_playlists_yet">Sin listas de reproducción</string>
     <string name="hide_playlist">Ocultar lista de reproducción</string>
     <string name="unhide_playlist">Mostrar la lista de reproducción</string>
-    <string name="show_hidden_playlists">Mostrar listas de reproducción ocultas</string>
     <string name="hide_playlist_confirm">¿Ocultar \"%1$s\" de la biblioteca?</string>
     <string name="lyrics_search_plain_badge">Sin formato</string>
     <string name="lyrics_search_still_searching">Aún buscando</string>
     <string name="discord_reauthorize_required_description">Para mantener tu conexión a Discord, debes volver a autenticarte.</string>
-    <string name="lastfm_api_credentials_custom">Utilizando credenciales personalizadas</string>
     <string name="lastfm_secret_override">Clave compartida</string>
     <string name="lastfm_endpoint_invalid">Introduzca una dirección HTTP o HTTPS válida.</string>
     <string name="lastfm_login_missing_credentials">Introduce nombre de usuario y contraseña.</string>
@@ -858,7 +842,6 @@
     <string name="lyrics_search_result_stats">%1$d líneas, %2$d caracteres</string>
     <string name="unsupported_language">Idioma no soportado: %1$s</string>
     <string name="force_high_refresh_rate">Forzar una alta frecuencia de actualización</string>
-    <string name="max_supported_refresh_rate">Máximo soportado: %1$d Hz</string>
     <string name="playback_error_code">Código</string>
     <string name="playback_error_http">HTTP</string>
     <string name="playback_error_message">Mensaje</string>
@@ -871,8 +854,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">Personalizado</string>
     <string name="lastfm_custom_endpoint">Endpoint personalizado</string>
-    <string name="lastfm_api_credentials">Credenciales API</string>
-    <string name="lastfm_api_credentials_default">Utilizando credenciales predeterminadas</string>
     <string name="lastfm_api_credentials_hint">Deje las credenciales en blanco para los servicios compatibles que aceptan claves API arbitrarias y secretos compartidos.</string>
     <string name="lastfm_api_key_override">Clave API</string>
     <string name="lastfm_service_not_configured">Configure el servicio de registro de actividad antes de iniciar sesión.</string>

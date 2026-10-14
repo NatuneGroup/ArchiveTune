@@ -181,7 +181,6 @@
     <string name="palette_neon_pink">电波粉</string>
     <string name="palette_neon_blue">电光蓝</string>
     <string name="palette_neon_orange">高压橙</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_ocean">海洋蓝</string>
     <string name="palette_forest">森林绿</string>
     <string name="palette_autumn">深秋红</string>
@@ -303,12 +302,9 @@
     <string name="palette_summer">夏日黄</string>
     <string name="palette_twilight">暮光紫</string>
     <string name="palette_aurora">极光绿</string>
-    <string name="palette_candy">糖果粉</string>
-    <string name="palette_rainbow">七彩红</string>
     <string name="lyrics_line_spacing">歌词行距</string>
     <string name="content">内容</string>
     <string name="action_logout">登出</string>
-    <string name="action_login">登录</string>
     <string name="login">登录</string>
     <string name="not_logged_in">未登录</string>
     <string name="content_language">默认内容语言</string>
@@ -438,9 +434,6 @@
     <string name="duplicates_description_multiple">%d 首歌曲在你的播放列表已就绪</string>
     <plurals name="n_song">
         <item quantity="other">%d 首歌曲</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="other">%d 名艺术家</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="other">%d 张专辑</item>

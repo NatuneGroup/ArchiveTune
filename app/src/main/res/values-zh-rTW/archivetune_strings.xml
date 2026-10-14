@@ -77,7 +77,6 @@
     <string name="news_no_results_desc">嘗試使用其他關鍵字。</string>
     <string name="news_important_badge">重要</string>
     <string name="news_tooltip_title">最新公告</string>
-    <string name="news_tooltip_body">您有來自開發者的未讀公告。</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="other">%d 篇文章</item>

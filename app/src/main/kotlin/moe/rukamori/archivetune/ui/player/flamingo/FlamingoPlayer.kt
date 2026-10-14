@@ -69,7 +69,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -391,11 +390,6 @@ private val FlamingoAlbumOverlayShape =
         largeRadius = 8.dp,
         largeSize = 400.dp,
     )
-
-private data class QueueReorderTarget(
-    val nextInQueue: Boolean,
-    val index: Int,
-)
 
 private fun formatTime(seconds: Long): String {
     val minutes = seconds / 60

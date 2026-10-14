@@ -92,8 +92,6 @@
     <string name="general">Général</string>
     <string name="proxy">Proxy</string>
     <string name="default_lib_chips">Choix de la bibliothèque par défaut</string>
-    <string name="set_quick_picks">Choix des sélections rapides</string>
-    <string name="last_song_listened">Basé sur le dernier titre écouté</string>
     <string name="app_language">Langue de l\'application</string>
     <string name="open_supported_links">Ouvrir les liens supportés par défaut</string>
     <string name="set_first_lyrics_provider">Fournisseur de paroles préférées</string>
@@ -113,7 +111,6 @@
     <string name="not_logged_in_youtube">Non connecté à YouTube</string>
     <string name="default_links">Ouvrir les liens supportés</string>
     <string name="open_app_settings_error">Impossible d\'ouvrir les paramètres de l\'application</string>
-    <string name="release_notes">Notes de version</string>
     <string name="all_time">Tout le temps</string>
     <string name="past_24_hours">Dernières 24 heures</string>
     <string name="past_week">Semaine dernière</string>
@@ -280,9 +277,6 @@
     <string name="local_songs_no_matches_desc">Essayez un autre titre, artiste ou nom d\'album.</string>
     <string name="sort_by_album">Album</string>
     <string name="lyrics_line_blur">Lignes de paroles floues</string>
-    <string name="quick_picks_display_mode">Mode d\'affichage « Sélection Rapide »</string>
-    <string name="quick_picks_display_mode_card">Fiche</string>
-    <string name="quick_picks_display_mode_list">Liste</string>
     <string name="stats_favourite_artist">Votre Artiste Préféré</string>
     <string name="stats_favourite_song">Ton Titre Préféré</string>
     <string name="stats_total_time_listened">Durée Totale d\'Écoute</string>
@@ -401,7 +395,6 @@
     <string name="storage_folder_selected_restart">Le dossier de stockage a été enregistré. L\'application redémarrera dans 3 secondes.</string>
     <string name="aod_customize_vertical_spacing">Espacement vertical</string>
     <string name="player_design_v8">Immersion prolongée</string>
-    <string name="news_tooltip_body">Vous avez des annonces non lues de la part des développeurs.</string>
     <string name="spotify_playlists">Playlist Spotify</string>
     <string name="aod_shape_sunny">Ensoleillé</string>
     <string name="import_m3u_format">Playlist audio M3U</string>
@@ -544,7 +537,6 @@
     <string name="aod_customize_show_thumbnail">Afficher la miniature</string>
     <string name="settings_behavior_title">Comportement</string>
     <string name="aod_shape_rounded">Arrondi</string>
-    <string name="external_service">Service externe</string>
     <string name="aod_customize_percent_value">%1$d%%</string>
     <string name="storage_cache_clear_failed">Impossible de vider le cache. Vérifiez l\'accès à la carte SD.</string>
     <string name="news_tooltip_title">Nouvelles annonces</string>
@@ -568,7 +560,6 @@
     <string name="storage_cache_clear_warning">Laissez ArchiveTune ouvert pendant la suppression des fichiers de cache.</string>
     <string name="history_duration_desc">Durée minimale d\'écoute pour qu\'un morceau soit considéré comme écouté</string>
     <string name="history_duration_seconds">%1$s s</string>
-    <string name="top_albums">Meilleurs Albums</string>
     <string name="theme_import_failed_title">Impossible d\'importer le thème</string>
     <string name="theme_applied">Thème appliqué</string>
     <string name="theme_export_success">Thème exporté</string>

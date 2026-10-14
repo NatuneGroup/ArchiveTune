@@ -56,7 +56,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -74,7 +73,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
@@ -549,35 +547,6 @@ fun ArtistListItem(
     modifier = modifier,
 )
 
-@Composable
-fun ArtistGridItem(
-    artist: Artist,
-    modifier: Modifier = Modifier,
-    badges: @Composable RowScope.() -> Unit = {
-        if (artist.artist.bookmarkedAt != null) {
-            Icon.Favorite()
-        }
-    },
-    fillMaxWidth: Boolean = false,
-) = GridItem(
-    title = artist.artist.name,
-    subtitle = pluralStringResource(R.plurals.n_song, artist.songCount, artist.songCount),
-    badges = badges,
-    thumbnailContent = {
-        ItemThumbnail(
-            thumbnailUrl = artist.artist.thumbnailUrl,
-            isActive = false,
-            isPlaying = false,
-            shape = RoundedCornerShape(GridThumbnailCornerRadius),
-            contentScale = ContentScale.Crop,
-            maxSizePx = 544,
-            modifier = Modifier.fillMaxSize(),
-        )
-    },
-    fillMaxWidth = fillMaxWidth,
-    modifier = modifier,
-)
-
 // Shared by AlbumListItem and AlbumGridItem: an album's download state has to be derived from
 // its songs' individual download states (there's no single row for it), so both collect the
 // album's songs once and then re-derive STATE_COMPLETED/STATE_DOWNLOADING/STATE_STOPPED whenever
@@ -753,59 +722,6 @@ fun PlaylistListItem(
 )
 
 @Composable
-fun PlaylistGridItem(
-    playlist: Playlist,
-    modifier: Modifier = Modifier,
-    autoPlaylist: Boolean = false,
-    badges: @Composable RowScope.() -> Unit = {},
-    fillMaxWidth: Boolean = false,
-) = GridItem(
-    title = {
-        Text(
-            text = playlist.playlist.name,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.basicMarquee().fillMaxWidth(),
-        )
-    },
-    subtitle = {
-        Text(
-            text = playlistCountText(playlist = playlist, autoPlaylist = autoPlaylist),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    },
-    badges = badges,
-    thumbnailContent = {
-        val width = maxWidth
-        PlaylistThumbnail(
-            thumbnails = playlist.thumbnails,
-            size = width,
-            placeHolder = {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    Icon(
-                        painter = painterResource(playlistPlaceholderIcon(playlist, autoPlaylist)),
-                        contentDescription = null,
-                        tint = LocalContentColor.current.copy(alpha = 0.8f),
-                        modifier = Modifier.size(width / 2),
-                    )
-                }
-            },
-            shape = RoundedCornerShape(GridThumbnailCornerRadius),
-        )
-    },
-    fillMaxWidth = fillMaxWidth,
-    modifier = modifier,
-)
-
-@Composable
 private fun playlistCountText(
     playlist: Playlist,
     autoPlaylist: Boolean,
@@ -837,75 +753,6 @@ private fun playlistPlaceholderIcon(
         stringResource(R.string.cached_playlist) -> R.drawable.cached
         else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.queue_music
     }
-
-@Composable
-fun LibraryPinnedCollectionTile(
-    title: String,
-    @DrawableRes iconRes: Int,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    accentColor: Color = MaterialTheme.colorScheme.primary,
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = modifier,
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors =
-                                listOf(
-                                    accentColor.copy(alpha = 0.28f),
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    MaterialTheme.colorScheme.surfaceContainerLow,
-                                ),
-                        ),
-                    ),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-                    shape = CircleShape,
-                ) {
-                    Icon(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    subtitle?.takeIf { it.isNotBlank() }?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 private val LibraryCardThumbnailSize = 72.dp
 private val LibraryCardGlowElevation = 34.dp

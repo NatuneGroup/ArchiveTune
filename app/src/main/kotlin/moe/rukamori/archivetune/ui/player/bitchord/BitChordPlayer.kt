@@ -279,20 +279,8 @@ internal const val LYRIC_FADE_FRACTION = 0.28f
 internal const val LYRIC_FADE_MIN_MS = 160f
 internal const val LYRIC_FADE_MAX_MS = 700f
 
-/**
- * How far back the part of the playing line that hasn't been sung yet is held.
- * The strip above the scrubber gets less of a gap than the full panel.
- */
-internal const val UNSUNG_ALPHA = 0.45f
 internal const val UNSUNG_ALPHA_STRIP = 0.55f
 
-/**
- * The bloom behind the line being sung, at its very strongest. Kept well under
- * half strength: the halo is drawn from the same white as the text, so at full
- * alpha it stops reading as light and starts reading as a second, badly
- * printed copy of the words.
- */
-internal const val GLOW_ALPHA = 0.62f
 internal val GLOW_RADIUS = 9.dp
 
 /**
@@ -301,29 +289,6 @@ internal val GLOW_RADIUS = 9.dp
  */
 internal val GLOW_TRAIL = 62.dp
 internal const val GLOW_TRAIL_FLOOR = 0.55f
-
-/**
- * Room reserved inside each copy of a line for the halo to spread into. Every
- * copy carries the same inset so they still lay out identically.
- */
-internal val GLOW_ROOM = 10.dp
-
-/**
- * How the answering vocal is drawn: smaller than the lead and a shade behind
- * it, the way Apple Music hangs a backing line under the one it answers.
- */
-internal val BACKING_FONT_SIZE = 19.sp
-internal val BACKING_LINE_HEIGHT = 24.sp
-internal const val BACKING_ALPHA = 0.72f
-
-/**
- * How the romanisation and translation voices are drawn (ArchiveTune
- * addition): a step below the answering vocal — smaller and dimmer still — so
- * the three tiers of a row read as lead, echo, gloss.
- */
-internal val AUX_FONT_SIZE = 16.sp
-internal val AUX_LINE_HEIGHT = 20.sp
-internal const val AUX_ALPHA = 0.6f
 
 /** Stands in for an instrumental stretch on the strip. */
 internal const val INSTRUMENTAL_MARK = "Instrumental"

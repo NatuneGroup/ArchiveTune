@@ -1790,11 +1790,6 @@ enum class NavigationTab {
     LIBRARY,
 }
 
-enum class PlayerTextAlignment {
-    SIDED,
-    CENTER,
-}
-
 enum class LyricsPosition {
     LEFT,
     CENTER,

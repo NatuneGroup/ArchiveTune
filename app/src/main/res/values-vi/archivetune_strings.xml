@@ -104,8 +104,6 @@
     <string name="general">Chung</string>
     <string name="proxy">Proxy</string>
     <string name="default_lib_chips">Thay đổi chip thư viện mặc định</string>
-    <string name="set_quick_picks">Đặt lựa chọn nhanh</string>
-    <string name="last_song_listened">Dựa trên bài hát nghe gần nhất</string>
     <string name="app_language">Ngôn ngữ ứng dụng</string>
     <string name="open_supported_links">Mở liên kết được hỗ trợ theo mặc định</string>
     <string name="set_first_lyrics_provider">Nhà cung cấp lời bài hát ưa thích</string>
@@ -125,7 +123,6 @@
     <string name="not_logged_in_youtube">Chưa đăng nhập YouTube</string>
     <string name="default_links">Mở liên kết được hỗ trợ</string>
     <string name="open_app_settings_error">Không thể mở cài đặt ứng dụng</string>
-    <string name="release_notes">Ghi chú phát hành</string>
     <string name="all_time">Tất cả thời gian</string>
     <string name="past_24_hours">24 giờ qua</string>
     <string name="past_week">Tuần trước</string>
@@ -274,9 +271,6 @@
     <string name="local_songs_no_matches_desc">Hãy thử một bài hát, nghệ sĩ hoặc tên album khác.</string>
     <string name="sort_by_album">Album</string>
     <string name="lyrics_line_blur">Làm mờ lời bài hát</string>
-    <string name="quick_picks_display_mode">Chế độ hiển thị chọn nhanh</string>
-    <string name="quick_picks_display_mode_card">Thẻ</string>
-    <string name="quick_picks_display_mode_list">Danh sách</string>
     <string name="stats_favourite_artist">Nghệ sĩ yêu thích của bạn</string>
     <string name="stats_favourite_song">Bài hát yêu thích của bạn</string>
     <string name="stats_total_time_listened">Tổng thời gian đã nghe</string>
@@ -315,7 +309,6 @@
     <string name="news_no_results_desc">Hãy thử một cụm từ tìm kiếm khác.</string>
     <string name="news_important_badge">Quan trọng</string>
     <string name="news_tooltip_title">Thông báo mới</string>
-    <string name="news_tooltip_body">Bạn có thông báo chưa đọc từ nhà phát triển.</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="other">%d bài viết</item>
@@ -509,7 +502,6 @@
     <string name="import_m3u_format">Danh sách phát âm thanh M3U</string>
     <string name="import_csv_format">Tệp danh sách phát CSV</string>
     <string name="internal_service">Dịch vụ nội bộ</string>
-    <string name="external_service">Dịch vụ bên ngoài</string>
     <string name="restore_invalid_file">Tệp đã chọn không phải là tệp sao lưu hợp lệ.</string>
     <string name="restore_missing_content">Tệp sao lưu không chứa dữ liệu có thể khôi phục.</string>
     <string name="restore_corrupted">Tệp sao lưu có vẻ bị hỏng và không thể đọc được.</string>
@@ -560,7 +552,6 @@
     <string name="theme_export_success">Đã xuất giao diện</string>
     <string name="theme_export_failed">Xuất thất bại</string>
     <string name="theme_import_failed_title">Không thể nhập giao diện</string>
-    <string name="top_albums">Album hàng đầu</string>
     <string name="about_position_developers">Nhà phát triển | Nhóm</string>
     <string name="about_position_yuki">dummy reze | admin</string>
 </resources>

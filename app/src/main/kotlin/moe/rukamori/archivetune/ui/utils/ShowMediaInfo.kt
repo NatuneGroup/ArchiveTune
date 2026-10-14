@@ -108,7 +108,6 @@ import moe.rukamori.archivetune.audiosource.CurrentStreamInfo
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.codecLabel
-import moe.rukamori.archivetune.db.entities.isLossless
 import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime
@@ -129,17 +128,6 @@ private enum class MediaInfoTab(
     Details(R.string.details, R.drawable.solar_ruler),
     Numbers(R.string.numbers, R.drawable.solar_hertz),
 }
-
-private fun creditIconFor(label: String): Int =
-    when {
-        label.equals("Song", ignoreCase = true) -> R.drawable.solar_music_note
-        label.contains("artist", true) || label.contains("perform", true) -> R.drawable.solar_users
-        label.contains("album", true) -> R.drawable.solar_album_linear
-        label.contains("writ", true) || label.contains("compos", true) ||
-            label.contains("lyricis", true) -> R.drawable.edit
-        label.contains("licen", true) -> R.drawable.solar_bookmark_linear
-        else -> R.drawable.solar_text
-    }
 
 private fun extractTrailingWrittenBy(lyrics: String?): String {
     if (lyrics.isNullOrBlank()) return ""

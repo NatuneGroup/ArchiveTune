@@ -344,8 +344,13 @@ object Updater {
     private fun preferredReleaseVersionNameOrNull(release: ReleaseInfo): String? =
         parseReleaseSemVerOrNull(release)?.normalizedName()
 
-    internal fun getReleaseVersionName(release: ReleaseInfo): String =
-        preferredReleaseVersionNameOrNull(release) ?: release.name.ifBlank { release.tagName }
+    // A manifest-mapped stable release carries its versionCode; appending it as "(build n)" routes
+    // the decision through the strict build-number comparison in [isUpdateAvailable], so a
+    // same-SemVer rebuild is still offered and a SemVer bump with a non-greater code is not.
+    internal fun getReleaseVersionName(release: ReleaseInfo): String {
+        val name = preferredReleaseVersionNameOrNull(release) ?: release.name.ifBlank { release.tagName }
+        return release.versionCode?.let { "$name (build $it)" } ?: name
+    }
 
     private fun parseReleasesJson(
         json: String,

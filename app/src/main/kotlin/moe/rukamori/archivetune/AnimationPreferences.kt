@@ -47,14 +47,24 @@ data class BlurPolicy(
     val userEnabled: Boolean,
 ) {
     /** Platform RenderEffect blur: allowed only when the user has not disabled it, and only on S+. */
-    val renderEffect: Boolean get() = userEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val renderEffect: Boolean get() = blurRenderEffectAllowed(userEnabled, Build.VERSION.SDK_INT)
 
     /** CPU stack-blur fallbacks (rememberPreBlurredBitmap, ImageBlurUtils): the pre-S complement. */
-    val cpuFallback: Boolean get() = userEnabled && Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+    val cpuFallback: Boolean get() = blurCpuFallbackAllowed(userEnabled, Build.VERSION.SDK_INT)
 
     /** May anything in the app blur, by any technique. */
     val any: Boolean get() = userEnabled
 }
+
+internal fun blurRenderEffectAllowed(
+    userEnabled: Boolean,
+    sdkInt: Int,
+): Boolean = userEnabled && sdkInt >= Build.VERSION_CODES.S
+
+internal fun blurCpuFallbackAllowed(
+    userEnabled: Boolean,
+    sdkInt: Int,
+): Boolean = userEnabled && sdkInt < Build.VERSION_CODES.S
 
 val LocalBlurPolicy = staticCompositionLocalOf { BlurPolicy(userEnabled = true) }
 

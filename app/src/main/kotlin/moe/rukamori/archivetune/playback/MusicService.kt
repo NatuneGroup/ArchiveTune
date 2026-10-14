@@ -918,8 +918,8 @@ class MusicService :
                     if (handled == null) {
                         // No active fade to hand off (the error landed after a cancel): keep
                         // the failure bookkeeping so repeated attempts stay throttled.
-                        val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
-                        if (!retryAllowed) {
+                        val retryDecision = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
+                        if (retryDecision == CrossfadeRetryDecision.HARD_CUT) {
                             Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
                         }
                     }
@@ -4158,6 +4158,9 @@ class MusicService :
             fadeLoop.cancel()
             crossfadeJob = null
         }
+        // Captured before the promotion rebuilds the session player: this is the outgoing
+        // song of the completed transition.
+        val outgoingMediaId = player.currentMediaItem?.mediaId
         val promoted = promoteIncomingCrossfadePlayer(target, incomingPlayer, targetIndex)
         Timber.tag("PlaybackDiagnostics").i(
             "Crossfade promotion success=%s playWhenReady=%s state=%d positionMs=%d gain=%.3f focusHeld=%s",
@@ -4178,6 +4181,10 @@ class MusicService :
             cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "promotion_failed")
             return
         }
+        // Once-per-transition: this (outgoing, incoming) pair has handed off, so a re-armed
+        // scheduler can never fade the same pair again (the promotion's own replayed
+        // transition event ran before this, so the record survives it).
+        crossfadeFailureTracker.registerSuccess(outgoingMediaId, target.mediaId)
 
         // Smart-blend cleanup: the promoted player's filter must finish wide
         // open, the beat-match stretch must give way to the user's speed, and
@@ -4546,7 +4553,7 @@ class MusicService :
     }
 
     private fun recoverCrossfadeFailure(
-        retryAllowed: Boolean = false,
+        retryDecision: CrossfadeRetryDecision = CrossfadeRetryDecision.HARD_CUT,
         reason: String = "unspecified",
         target: CrossfadeTarget? = null,
     ) {
@@ -4563,17 +4570,32 @@ class MusicService :
                 // The parked outgoing player would auto-advance on play() and start the
                 // incoming song at 0 (the restart bug this whole hand-off exists for). Enter
                 // the target at the blend's cue instead — for a classic fade that is the
-                // song's start, which is correct there.
-                val resolvedIndex =
-                    target?.let { resolveCrossfadeTargetIndex(it, player) }
-                        ?.takeIf { it != C.INDEX_UNSET }
-                        ?: player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
-                if (resolvedIndex != null) {
-                    player.seekTo(resolvedIndex, crossfadeCueMs.coerceAtLeast(0L))
+                // song's start, which is correct there. The pure rule never rewinds the
+                // already-played song and never applies a stale cue to a different one; when
+                // nothing valid resolves this is a plain hard cut to the next item at 0.
+                val liveIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                val restoreSeek =
+                    target?.let {
+                        CrossfadeHandoffPolicy.restoreSeek(
+                            targetMediaId = it.mediaId,
+                            plannedTargetIndex = it.index,
+                            liveIds = liveIds,
+                            currentIndex = player.currentMediaItemIndex,
+                            repeatOne = player.repeatMode == REPEAT_MODE_ONE,
+                            cueMs = crossfadeCueMs.coerceAtLeast(0L),
+                            unsetIndex = C.INDEX_UNSET,
+                        )
+                    }
+                if (restoreSeek != null) {
+                    player.seekTo(restoreSeek.index, restoreSeek.positionMs)
+                } else {
+                    player.nextMediaItemIndex
+                        .takeIf { it != C.INDEX_UNSET }
+                        ?.let { player.seekTo(it, 0L) }
                 }
             }
             player.play()
-        } else if (retryAllowed) {
+        } else if (retryDecision == CrossfadeRetryDecision.RETRY_FADE) {
             scheduleCrossfade()
         }
     }
@@ -4686,11 +4708,11 @@ class MusicService :
                 carryIncomingPositionToPrimary(target, incomingPlayer)
             }
             CrossfadeHandoffAction.RESTORE_OUTGOING -> {
-                val retryAllowed = crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
-                if (!retryAllowed) {
+                val retryDecision = crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                if (retryDecision == CrossfadeRetryDecision.HARD_CUT) {
                     Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
                 }
-                recoverCrossfadeFailure(retryAllowed = retryAllowed, reason = "restore:$reason", target = target)
+                recoverCrossfadeFailure(retryDecision = retryDecision, reason = "restore:$reason", target = target)
             }
             CrossfadeHandoffAction.CONTINUE -> {}
         }
@@ -7290,15 +7312,26 @@ class MusicService :
                     suppressAutoPlayback = suppressAutoPlayback,
                 )
             ) {
-                if (endedDuringCrossfade && endedCueMs > 0L) {
+                if (endedDuringCrossfade) {
                     // A smart blend was torn down mid-handoff: the natural advance must enter
-                    // the next song at its cue, not at 0.
-                    val resolvedIndex =
-                        endedTarget?.let { resolveCrossfadeTargetIndex(it, player) }
-                            ?.takeIf { it != C.INDEX_UNSET }
-                            ?: player.nextMediaItemIndex.takeIf { it != C.INDEX_UNSET }
-                    if (resolvedIndex != null) {
-                        player.seekTo(resolvedIndex, endedCueMs)
+                    // the next song at its cue, not at 0 — through the pure no-rewind rule, so
+                    // a stale cue never repositions a different song and a finished song is
+                    // never rewound. An unresolved target is a plain hard cut to the next item.
+                    val liveIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                    val restoreSeek =
+                        endedTarget?.let {
+                            CrossfadeHandoffPolicy.restoreSeek(
+                                targetMediaId = it.mediaId,
+                                plannedTargetIndex = it.index,
+                                liveIds = liveIds,
+                                currentIndex = player.currentMediaItemIndex,
+                                repeatOne = player.repeatMode == REPEAT_MODE_ONE,
+                                cueMs = endedCueMs.coerceAtLeast(0L),
+                                unsetIndex = C.INDEX_UNSET,
+                            )
+                        }
+                    if (restoreSeek != null) {
+                        player.seekTo(restoreSeek.index, restoreSeek.positionMs)
                     } else {
                         player.seekToNextMediaItem()
                     }

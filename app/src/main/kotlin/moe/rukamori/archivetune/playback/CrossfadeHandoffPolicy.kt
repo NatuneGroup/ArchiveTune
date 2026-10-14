@@ -182,6 +182,44 @@ internal object CrossfadeHandoffPolicy {
             }
         return incomingPositionMs.coerceIn(0L, upperMs)
     }
+
+    /**
+     * No-rewind rule for the restore-after-failure seek: where the primary player should
+     * enter the faded song when the outgoing one has run out.
+     *
+     * The blend's cue belongs to the [targetMediaId] song and only applies while the resolved
+     * item still IS that song — a stale cue must never reposition a different song into its
+     * middle. The resolved index is never the already-played outgoing copy: for a repeated
+     * id the first occurrence strictly after the current item wins, so a finished song is
+     * never rewound to its cue (repeat-one is the exception — replaying the same item IS the
+     * requested mode). Returns null when nothing valid resolves: the caller then makes a
+     * plain hard cut to the next item.
+     */
+    fun restoreSeek(
+        targetMediaId: String?,
+        plannedTargetIndex: Int,
+        liveIds: List<String>,
+        currentIndex: Int,
+        repeatOne: Boolean,
+        cueMs: Long,
+        unsetIndex: Int,
+    ): CrossfadeRestoreSeek? {
+        if (targetMediaId == null) return null
+        val plannedUsable =
+            plannedTargetIndex != unsetIndex &&
+                plannedTargetIndex in liveIds.indices &&
+                liveIds[plannedTargetIndex] == targetMediaId &&
+                // The planner never targets the current item for a non-repeat fade; a stale
+                // plan that now points at the playing copy must not be entered at the cue.
+                (repeatOne || plannedTargetIndex != currentIndex)
+        if (plannedUsable) return CrossfadeRestoreSeek(plannedTargetIndex, cueMs)
+        val searchFrom =
+            (if (repeatOne) currentIndex else currentIndex + 1).coerceAtLeast(0)
+        for (index in searchFrom..liveIds.lastIndex) {
+            if (liveIds[index] == targetMediaId) return CrossfadeRestoreSeek(index, cueMs)
+        }
+        return null
+    }
 }
 
 /**
@@ -199,6 +237,14 @@ internal object CrossfadeListenerPolicy {
     ): CrossfadeSecondaryCommand =
         if (crossfading && !handoffInProgress && isPlaying) CrossfadeSecondaryCommand.PLAY else CrossfadeSecondaryCommand.NONE
 }
+
+/** Result of [CrossfadeHandoffPolicy.restoreSeek]: where a restore enters the faded song. */
+internal data class CrossfadeRestoreSeek(
+    /** Queue index of the song to enter. */
+    val index: Int,
+    /** Position to enter it at: the blend's cue (0 for a classic fade). */
+    val positionMs: Long,
+)
 
 /** Result of [CrossfadeQueueSync.plan]: the two replacement ranges for the incoming player's queue. */
 internal data class CrossfadeQueueSyncPlan(

@@ -77,6 +77,7 @@ import moe.rukamori.archivetune.ui.component.PillBackdrop
 import moe.rukamori.archivetune.ui.component.PillFrostBlurRadiusPx
 import moe.rukamori.archivetune.ui.component.PillFrostOverlayAlpha
 import moe.rukamori.archivetune.ui.component.PillRole
+import moe.rukamori.archivetune.ui.component.liquidGlassEligible
 import moe.rukamori.archivetune.ui.component.liquidGlass
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberPillStyle
@@ -460,11 +461,11 @@ private fun MiniPlayerBackground(
         MiniPlayerBackgroundStyle.LIQUID_GLASS -> {
             val liquidGlassBackdrop = LocalLiquidGlassBackdrop.current
             val baseColor = themeColor
-            if (liquidGlassBackdrop != null) {
+            if (liquidGlassEligible(liquidGlassBackdrop)) {
                 Box(
                     modifier =
                         modifier.liquidGlass(
-                            backdrop = liquidGlassBackdrop,
+                            backdrop = liquidGlassBackdrop!!,
                             shape = shape,
                             interactive = false,
                             baseColor = baseColor,

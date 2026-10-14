@@ -48,11 +48,11 @@ fun HeaderCircleButton(
 ) {
     val base = MaterialTheme.colorScheme.surfaceContainerHigh
     val surface =
-        if (backdrop != null) {
+        if (liquidGlassEligible(backdrop)) {
             Modifier.liquidGlass(
-                backdrop = backdrop,
+                backdrop = backdrop!!,
                 shape = CircleShape,
-                interactive = false,
+                interactive = true,
                 baseColor = base,
             )
         } else {

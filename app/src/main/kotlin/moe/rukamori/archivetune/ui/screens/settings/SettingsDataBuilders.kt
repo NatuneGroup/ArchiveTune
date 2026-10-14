@@ -78,7 +78,10 @@ import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
 import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.ShowHomeCategoryChipsKey
 import moe.rukamori.archivetune.constants.ShowLyricsKey
-import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
+import moe.rukamori.archivetune.constants.PlayerDesignStyle
+import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.SmartTrimmerKey
@@ -206,10 +209,10 @@ fun buildSettingsGroups(
                 SettingsChild("Mini player layout", "compact_mini_player", listOf("compact mini player", "small mini player", "mini player layout")),
                 SettingsChild("Player buttons style", "player_buttons_style", listOf("player buttons", "button style", "controls style")),
                 SettingsChild("Player slider style", "player_slider_style", listOf("player slider", "slider style", "progress bar")),
-                SettingsChild("Show player volume bar", "show_player_volume_bar", listOf("volume bar", "player volume", "volume slider")) { SearchResultSwitch(ShowPlayerVolumeBarKey, true) },
+                SettingsChild("Show player volume bar", "show_player_volume_bar", listOf("volume bar", "player volume", "volume slider")) { SearchPlayerVolumeVisibilitySwitch() },
                 SettingsChild("Hide player thumbnail", "hide_player_thumbnail", listOf("hide thumbnail", "player thumbnail", "hide artwork")) { SearchResultSwitch(HidePlayerThumbnailKey, false) },
-                SettingsChild("Swipe to song", "swipe_to_song", listOf("swipe to song", "swipe next", "swipe track")) { SearchResultSwitch(SwipeToSongKey, true) },
-                SettingsChild("Swipe sensitivity", "swipe_sensitivity", listOf("swipe", "gesture", "sensitivity")),
+                SettingsChild("Swipe to song", "swipe_to_song", listOf("swipe to song", "swipe add to queue", "queue insertion")) { SearchResultSwitch(SwipeToSongKey, true) },
+                SettingsChild("Mini player swipe sensitivity", "swipe_sensitivity", listOf("mini player", "gesture", "sensitivity")),
                 SettingsChild("Disable animations", "disable_animations", listOf("animation", "disable animations", "no animations", "performance")) { SearchResultSwitch(DisableAnimationsKey, false) },
                 SettingsChild("Splash screen animation", "splash_overlay_enabled", listOf("splash", "splash screen", "opening animation", "launch animation", "startup animation", "particles")) { SearchResultSwitch(SplashOverlayEnabledKey, true) },
                 SettingsChild("Hide status bar", "hide_status_bar", listOf("status bar", "hide status", "immersive", "fullscreen", "hide bar")) { SearchResultSwitch(HideStatusBarKey, false) },
@@ -1189,4 +1192,12 @@ fun buildSettingsGroups(
                 },
         ),
     )
+}
+
+@Composable
+private fun SearchPlayerVolumeVisibilitySwitch() {
+    val prefs = rememberPreferenceSnapshot()
+    val (style) = prefs.enumState(PlayerDesignStyleKey, PlayerDesignStyle.Default)
+    val (visible, setVisible) = prefs.playerVolumeVisibility(style)
+    Switch(checked = visible, onCheckedChange = setVisible, enabled = style.hasVolumeRow)
 }

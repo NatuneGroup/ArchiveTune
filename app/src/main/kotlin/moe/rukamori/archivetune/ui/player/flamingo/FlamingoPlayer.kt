@@ -45,6 +45,7 @@ import androidx.compose.animation.core.TweenSpec
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -188,7 +189,6 @@ import moe.rukamori.archivetune.constants.AutoAiRomanizeLyricsKey
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
-import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity
@@ -202,7 +202,13 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import android.graphics.Bitmap
 import moe.rukamori.archivetune.ui.component.BottomSheetState
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.LocalDeviceMusicVolumeController
+import moe.rukamori.archivetune.ui.player.volumeDisplayFraction
+import moe.rukamori.archivetune.ui.player.rememberVolumeSliderInteractions
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassTuning
 import moe.rukamori.archivetune.ui.component.LocalMenuState
@@ -383,14 +389,6 @@ private class FlamingoAdaptiveCornerShape(
     }
 }
 
-private val FlamingoAlbumOverlayShape =
-    FlamingoAdaptiveCornerShape(
-        smallRadius = 5.dp,
-        smallSize = 69.dp,
-        largeRadius = 8.dp,
-        largeSize = 400.dp,
-    )
-
 private fun formatTime(seconds: Long): String {
     val minutes = seconds / 60
     val secs = seconds % 60
@@ -448,7 +446,12 @@ fun FlamingoPlayerContent(
 
         val player = playerConnection.player
 
-        val (showVolumeBar) = rememberPreference(FlamingoShowVolumeBarKey, defaultValue = true)
+        val presentation = LocalPlayerPresentation.current
+        val showVolumeBar = presentation.showVolume
+        val albumRadius = presentation.radius(8.dp)
+        val albumOverlayShape = remember(albumRadius) {
+            FlamingoAdaptiveCornerShape(5.dp, 69.dp, albumRadius, 400.dp)
+        }
         val (backgroundEffect) = rememberPreference(FlamingoBackgroundEffectKey, defaultValue = false)
 
         val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
@@ -470,7 +473,7 @@ fun FlamingoPlayerContent(
             !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
         val canvasVisualActive = canvasActive && !videoShowing && !isPreS
         // Without blur the frost band (a baked blur of the canvas) is never baked or revealed.
-        val canvasFrostAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
+        val canvasFrostAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any && !presentation.sharedBackground
 
         // The frost bake. The captured still arrives through the stage's frame callback (video
         // canvases; one per URL and per stage re-attach when a page round-trip recreates the
@@ -485,7 +488,7 @@ fun FlamingoPlayerContent(
 
         val canvasBackdropReveal by animateFloatAsState(
             targetValue = if (canvasVisualActive && canvasFrostAllowed && canvasFrostBake != null) 1f else 0f,
-            animationSpec = tween(durationMillis = 650, easing = FastOutSlowInEasing),
+            animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 650, easing = FastOutSlowInEasing),
             label = "flamingo-canvas-backdrop-reveal",
         )
 
@@ -627,7 +630,7 @@ fun FlamingoPlayerContent(
 
         val overlayArtworkReveal by animateFloatAsState(
             targetValue = if (pageMorphRunning || nowPage != FlamingoPage.Album) 1f else 0f,
-            animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+            animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 280, easing = FastOutSlowInEasing),
             label = "flamingo-overlay-artwork-reveal",
         )
 
@@ -641,7 +644,7 @@ fun FlamingoPlayerContent(
                 !landscape
         val canvasSurfacesAlpha by animateFloatAsState(
             targetValue = if (pageTakesBackdrop) 0f else 1f,
-            animationSpec = tween(
+            animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(
                 durationMillis = FlamingoCanvasPageFadeMs,
                 easing = FastOutSlowInEasing,
             ),
@@ -958,7 +961,7 @@ fun FlamingoPlayerContent(
                                     backgroundSizePx = it.size
                                 },
                         ) {
-                            FlamingoFloatingLight(
+                            if (!presentation.sharedBackground) FlamingoFloatingLight(
                                 albumUrl = { artworkUrl },
                                 isPlaying = { isPlayingStatusLambda.value },
                                 modifier = Modifier.fillMaxSize(),
@@ -1019,7 +1022,7 @@ fun FlamingoPlayerContent(
                                             .graphicsLayer {
                                                 alpha = canvasSurfacesAlpha * canvasBackdropReveal
                                             }
-                                            .background(FlamingoCanvasScrimBrush),
+                                            .then(if (presentation.sharedBackground) Modifier else Modifier.background(FlamingoCanvasScrimBrush)),
                                 )
 
                                 // The flight geometry rides on the stage's own
@@ -1145,7 +1148,7 @@ fun FlamingoPlayerContent(
                                                 }
                                             }
                                             .graphicsLayer {
-                                                alpha = canvasFlightOverlayAlpha
+                                                alpha = if (presentation.hideSleeve) 0f else canvasFlightOverlayAlpha
                                                 shape = RoundedCornerShape(
                                                     FlamingoCanvasFlightCornerDp * canvasFlightCornerT(canvasFlightAnim.value),
                                                 )
@@ -1187,12 +1190,11 @@ fun FlamingoPlayerContent(
                                                 .fillMaxWidth()
                                                 .weight(1f),
                                             label = "FlamingoLyricsRender",
-                                        ) { renderKey ->
-                                            val (showTranslationLines, showRomanization, _) = renderKey
+                                        ) { _ ->
                                             CompositionLocalProvider(
                                                 LocalLyricsScrollListener provides lyricsControlsPoke,
                                             ) {
-                                                LyricsEnhanced(
+                                                SelectedLyrics(
                                                     sliderPositionProvider = lyricsPosProvider,
                                                     lyricsSyncOffset = lyricsSyncOffset,
                                                     textColorOverride = Color.White,
@@ -1339,12 +1341,11 @@ fun FlamingoPlayerContent(
                                             },
                                             modifier = Modifier.fillMaxSize(),
                                             label = "FlamingoLandscapeLyricsRender",
-                                        ) { renderKey ->
-                                            val (showTranslationLines, showRomanization, _) = renderKey
+                                        ) { _ ->
                                             CompositionLocalProvider(
                                                 LocalLyricsScrollListener provides lyricsControlsPoke,
                                             ) {
-                                                LyricsEnhanced(
+                                                SelectedLyrics(
                                                     sliderPositionProvider = lyricsPosProvider,
                                                     lyricsSyncOffset = lyricsSyncOffset,
                                                     textColorOverride = Color.White,
@@ -1481,7 +1482,7 @@ fun FlamingoPlayerContent(
                                 val albumSharedBounds = Modifier.sharedBounds(
                                     sharedContentState = rememberSharedContentState(key = ShareAlbumKey),
                                     animatedVisibilityScope = pageBoundsScope,
-                                    clipInOverlayDuringTransition = OverlayClip(FlamingoAlbumOverlayShape),
+                                    clipInOverlayDuringTransition = OverlayClip(albumOverlayShape),
                                     boundsTransform = BoundsTransform { _, _ ->
                                         spring(
                                             dampingRatio = Spring.DampingRatioNoBouncy,
@@ -1592,7 +1593,7 @@ fun FlamingoPlayerContent(
                                                             key = ShareAlbumKey,
                                                         ),
                                                         animatedVisibilityScope = pageBoundsScope,
-                                                        clipInOverlayDuringTransition = OverlayClip(FlamingoAlbumOverlayShape),
+                                                        clipInOverlayDuringTransition = OverlayClip(albumOverlayShape),
                                                         boundsTransform = BoundsTransform { _, _ ->
                                                             spring(
                                                                 dampingRatio = Spring.DampingRatioNoBouncy,
@@ -1631,7 +1632,7 @@ fun FlamingoPlayerContent(
                                                             key = ShareAlbumKey,
                                                         ),
                                                         animatedVisibilityScope = pageBoundsScope,
-                                                        clipInOverlayDuringTransition = OverlayClip(FlamingoAlbumOverlayShape),
+                                                        clipInOverlayDuringTransition = OverlayClip(albumOverlayShape),
                                                         boundsTransform = BoundsTransform { _, _ ->
                                                             spring(
                                                                 dampingRatio = Spring.DampingRatioNoBouncy,
@@ -2289,7 +2290,7 @@ private fun FlamingoArtistPickerSheet(
         onDismiss()
     }
 
-    val (artistSeparators) = rememberPreference(ArtistSeparatorsKey, defaultValue = "")
+    val (artistSeparators) = rememberPreference(ArtistSeparatorsKey, defaultValue = ",;/&")
 
     data class SplitArtist(
         val name: String,
@@ -2485,6 +2486,8 @@ private fun ColumnScope.FlamingoAlbum(
     videoShowing: Boolean,
     overlayArtworkReveal: Float,
 ) {
+    val presentation = LocalPlayerPresentation.current
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     if (videoShowing) {
         Box(
             Modifier
@@ -2544,7 +2547,7 @@ private fun ColumnScope.FlamingoAlbum(
 
         val scale = animateFloatAsState(
             targetValue = if (isPlaying()) 0f else 1f,
-            animationSpec = if (isPlaying()) springSpec else tweenSpec,
+            animationSpec = if (animationsDisabled) snap() else if (isPlaying()) springSpec else tweenSpec,
             visibilityThreshold = 0.001f,
         )
 
@@ -2559,7 +2562,9 @@ private fun ColumnScope.FlamingoAlbum(
                         compositingStrategy = CompositingStrategy.ModulateAlpha
                     }
                     .padding(start = dp, end = dp, bottom = dp)
-                    .then(modifier),
+                    .then(modifier)
+                    .ordinarySleeve(presentation.hideSleeve),
+                cornerRadius = presentation.radius(8.dp),
                 imageQuality = ImageQuality.RAW,
                 shadowOverlay = true,
             )
@@ -2585,7 +2590,7 @@ private fun FlamingoCanvasStage(
     }
     val staticBaseAlpha by animateFloatAsState(
         targetValue = if (canvasFrameReady) 0f else 1f,
-        animationSpec = tween(durationMillis = 450, easing = FastOutSlowInEasing),
+        animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 450, easing = FastOutSlowInEasing),
         label = "flamingo-canvas-static-base",
     )
 
@@ -2649,6 +2654,8 @@ private fun FlamingoLandscapeStage(
     artworkSize: Dp?,
     modifier: Modifier = Modifier,
 ) {
+    val presentation = LocalPlayerPresentation.current
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val hasCanvas = !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
 
     Box(modifier = modifier) {
@@ -2658,7 +2665,7 @@ private fun FlamingoLandscapeStage(
             }
             val staticBaseAlpha by animateFloatAsState(
                 targetValue = if (canvasRendering) 0f else 1f,
-                animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+                animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 280, easing = FastOutSlowInEasing),
                 label = "flamingoLandscapeStaticCrossfade",
             )
 
@@ -2708,7 +2715,7 @@ private fun FlamingoLandscapeStage(
             }
             val scale = animateFloatAsState(
                 targetValue = if (isPlaying) 0f else 1f,
-                animationSpec = if (isPlaying) springSpec else tweenSpec,
+                animationSpec = if (animationsDisabled) snap() else if (isPlaying) springSpec else tweenSpec,
                 visibilityThreshold = 0.001f,
             )
             Box(
@@ -2722,10 +2729,12 @@ private fun FlamingoLandscapeStage(
                         contentDescription = null,
                         modifier = Modifier
                             .size(artworkSize ?: 220.dp)
+                            .ordinarySleeve(presentation.hideSleeve)
                             .graphicsLayer {
                                 compositingStrategy = CompositingStrategy.ModulateAlpha
                             }
                             .padding(start = dp, end = dp, bottom = dp),
+                        cornerRadius = presentation.radius(8.dp),
                         imageQuality = ImageQuality.RAW,
                         shadowOverlay = true,
                     )
@@ -3783,6 +3792,7 @@ private fun FlamingoPlayingBar(
             contentDescription = null,
             modifier = modifier
                 .size(69.dp)
+                .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                 .onGloballyPositioned { coordinates ->
                     onArtworkSlotPositioned?.invoke(
                         Rect(
@@ -4190,7 +4200,7 @@ private fun FlamingoPlayerControl(
                             )
                         }
 
-                        FlamingoQualityIndicator(
+                        if (LocalPlayerPresentation.current.showCodec) FlamingoQualityIndicator(
                             currentFormat = currentFormat,
                             onQualityClick = onQualityClick,
                         )
@@ -4411,17 +4421,11 @@ private fun FlamingoVolumeSlider(
     onSlider: () -> Unit,
 ) {
     val context = LocalContext.current
-    val sliderPosition =
-        remember("FlamingoVolumeSlider_sliderPosition") { mutableFloatStateOf(volume) }
-    val sliding = remember("FlamingoVolumeSlider_sliding") {
-        mutableStateOf(false)
-    }
-
-    LaunchedEffect(volume) {
-        if (!sliding.value) {
-            sliderPosition.floatValue = volume
-        }
-    }
+    val controller = LocalDeviceMusicVolumeController.current
+    val interactions = rememberVolumeSliderInteractions(controller)
+    val sliding by interactions.collectIsDraggedAsState()
+    val displayedVolume = if (controller != null) volumeDisplayFraction(controller) else volume
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -4439,30 +4443,21 @@ private fun FlamingoVolumeSlider(
         )
 
         FlamingoWrapper {
-            val animatedProgress = if (sliding.value) {
-                sliderPosition
-            } else {
-                animateFloatAsState(
-                    targetValue = sliderPosition.floatValue,
-                    animationSpec = androidx.compose.material3.ProgressIndicatorDefaults.ProgressAnimationSpec,
-                    visibilityThreshold = 0.0001f,
-                )
-            }
             val volumeEngage by animateFloatAsState(
-                targetValue = if (sliding.value) 1f else 0f,
-                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                targetValue = if (sliding) 1f else 0f,
+                animationSpec = if (animationsDisabled) snap() else tween(durationMillis = 180, easing = FastOutSlowInEasing),
                 label = "flamingoVolumeEngage",
             )
 
             Slider(
-                value = animatedProgress.value,
+                value = displayedVolume,
                 onValueChange = { newValue ->
-                    sliding.value = true
-                    sliderPosition.floatValue = newValue
+                    controller?.startInteraction()
                     onVolumeChange(newValue)
                     onSlider()
                 },
                 valueRange = 0f..1f,
+                interactionSource = interactions,
                 colors = SliderDefaults.colors(
                     activeTrackColor = Color.White,
                     inactiveTrackColor = Color(0x0DFFFFFF),
@@ -4475,14 +4470,14 @@ private fun FlamingoVolumeSlider(
                 },
                 track = { _ ->
                     FlamingoTrack(
-                        activeFraction = animatedProgress.value.coerceIn(0f, 1f),
-                        height = 7.dp + 4.dp * volumeEngage,
-                        engage = volumeEngage,
+                        activeFraction = displayedVolume.coerceIn(0f, 1f),
+                        height = 7.dp + 4.dp * (if (animationsDisabled) { if (sliding) 1f else 0f } else volumeEngage),
+                        engage = if (animationsDisabled) { if (sliding) 1f else 0f } else volumeEngage,
                     )
                 },
                 onValueChangeFinished = {
                     FlamingoHaptics.longClick(context)
-                    sliding.value = false
+                    controller?.finishInteraction()
                 },
             )
         }

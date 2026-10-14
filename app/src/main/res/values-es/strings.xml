@@ -863,7 +863,6 @@
     <string name="updates_channel_warning_stable_title">Versiones estables</string>
     <string name="updates_channel_warning_stable_desc">Estas versiones han sido probadas y se recomiendan para la mayoría de los usuarios.</string>
     <string name="show_player_volume_bar">Mostrar barra de volumen</string>
-    <string name="player_volume_bar_v7_v8_only">Disponible únicamente con los estilos de reproductor V7 y V8</string>
     <string name="view_debug_logs_description">Visualiza y filtra los registros de la aplicación</string>
     <string name="resume_logs">Resumen de los registros</string>
     <string name="jump_to_latest_log">Ir al registro más reciente</string>

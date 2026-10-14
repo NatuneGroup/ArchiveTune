@@ -88,7 +88,7 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
             modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(4.dp))
-        if (animated) {
+        if (animated && !moe.rukamori.archivetune.LocalAnimationsDisabled.current) {
             ShimmerText(text = text)
         } else {
             Text(

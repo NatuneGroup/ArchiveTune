@@ -116,6 +116,7 @@ import moe.rukamori.archivetune.ui.player.AppleMusicQueueSheet
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.LocalVideoFullscreenState
 import moe.rukamori.archivetune.ui.player.MeshBackdrop
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.utils.resize
@@ -459,10 +460,10 @@ fun TikTokPlayerContent(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(TIKTOK_EMPTY_BACKDROP)
+                .then(if (LocalPlayerPresentation.current.sharedBackground) Modifier else Modifier.background(TIKTOK_EMPTY_BACKDROP))
                 .onGloballyPositioned { rootBounds = it.boundsInRoot() },
     ) {
-        MeshBackdrop(
+        if (!LocalPlayerPresentation.current.sharedBackground) MeshBackdrop(
             palette = meshPalette,
             trackKey = backdropMetadata.id,
             reduceAnimation = LocalAnimationsDisabled.current,

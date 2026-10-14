@@ -134,7 +134,7 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
@@ -526,12 +526,11 @@ internal fun SimpMusicFullscreenLyricsSheet(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         } else {
-                            LyricsEnhanced(
+                            SelectedLyrics(
                                 sliderPositionProvider = { if (isScrubbing) sliderPosition else null },
                                 lyricsSyncOffset = lyricsSyncOffset,
                                 modifier = Modifier.fillMaxSize(),
                                 textColorOverride = Color.White,
-                                spotifyStyle = lyricsMode == LyricsMode.SPOTIFY,
                             )
                         }
                     } else {

@@ -85,6 +85,10 @@ class Haptics internal constructor(context: Context) {
     private val app = context.applicationContext
 
     fun play(haptic: Haptic) {
+        if (moe.rukamori.archivetune.utils.PreferenceStore.get(
+                moe.rukamori.archivetune.constants.EnableHapticFeedbackKey,
+            ) == false
+        ) return
         HapticDevice.of(app)?.play(haptic)
     }
 }

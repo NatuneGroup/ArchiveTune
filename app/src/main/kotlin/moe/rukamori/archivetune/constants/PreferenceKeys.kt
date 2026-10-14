@@ -1255,9 +1255,8 @@ val SpotifyHistorySyncEnabledKey = booleanPreferencesKey("spotifyHistorySyncEnab
  * @property nativeBackground the backdrop the style draws for itself, or null when it has no
  *   opinion and simply renders whatever the reader picked. A style with one still renders that
  *   backdrop when the reader has expressed no preference.
- * @property supportsBackgroundChoice whether the picker is offered at all. False for styles whose
- *   backdrop is the look — Apple Music without its blurred cover is not Apple Music — and for
- *   TikTok, whose full-bleed pages cover the backdrop so completely that changing it does nothing.
+ * @property supportsBackgroundChoice whether the picker is offered at all. Native media can still cover a selected background; decorative native
+ *   backdrops yield to an explicit choice without changing stored preferences.
  * @property forcesMonochromeChrome whether the controls are pinned white-on-black instead of
  *   following the theme. True for the styles that sit on a full-bleed black-backed sleeve, where
  *   theme-coloured chrome would be illegible over the artwork half the time.
@@ -1282,7 +1281,7 @@ enum class PlayerDesignStyle(
     V9(nativeBackground = PlayerBackgroundStyle.DEFAULT, supportsBackgroundChoice = false),
 
     /** The blurred, expanded cover is the whole look. */
-    APPLE_MUSIC(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+    APPLE_MUSIC(nativeBackground = PlayerBackgroundStyle.BLUR),
     V10,
 
     /**
@@ -1291,11 +1290,11 @@ enum class PlayerDesignStyle(
      * ones under another name — BitChord and TikTok both draw MeshBackdrop, which is the animated
      * glow, and SimpMusic draws a diagonal palette wash, which is the gradient.
      */
-    BITCHORD(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED, supportsBackgroundChoice = false),
+    BITCHORD(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED),
 
     /** The vertical pager sits on top of the backdrop, so a different one would never be seen. */
-    TIKTOK(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED, supportsBackgroundChoice = false),
-    SIMPMUSIC(nativeBackground = PlayerBackgroundStyle.GRADIENT, supportsBackgroundChoice = false),
+    TIKTOK(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED),
+    SIMPMUSIC(nativeBackground = PlayerBackgroundStyle.GRADIENT),
 
     /**
      * The SpatialFlow player (github.com/MythicalSHUB/SpatialFlow, GPL-3.0) — artwork pager, pill
@@ -1303,7 +1302,7 @@ enum class PlayerDesignStyle(
      * Its backdrop is a blurred, expanded sleeve, so it declares BLUR rather than drawing something
      * only it understands.
      */
-    SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+    SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR),
 
     /**
      * The Looper player (4nx3b/ArchiveTune dev) — typography-forward layout, its own slider and
@@ -1318,12 +1317,40 @@ enum class PlayerDesignStyle(
      * is a blurred sleeve drawn edge to edge, so it declares BLUR: that also zeroes the shared queue
      * peek, which Flamingo does not need because its own queue page replaces the sheet.
      */
-    FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+    FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
     ;
 
-    /** What to actually render: the reader's pick where it is offered, the style's own otherwise. */
+    /** DEFAULT preserves the native recipe; explicit choices never rewrite storage. */
     fun resolveBackground(stored: PlayerBackgroundStyle): PlayerBackgroundStyle =
-        if (supportsBackgroundChoice) stored else nativeBackground ?: stored
+        when {
+            !supportsBackgroundChoice -> nativeBackground ?: stored
+            stored == PlayerBackgroundStyle.DEFAULT -> nativeBackground ?: stored
+            else -> stored
+        }
+
+    val supportsSharedButtons: Boolean
+        get() = this in SharedTransportStyles
+
+    val supportsSharedSeekStyle: Boolean
+        get() = this in SharedTransportStyles
+
+    val hasVolumeRow: Boolean
+        get() = this in VolumeRowStyles
+
+    val hasOrdinarySleeve: Boolean
+        get() = this in OrdinarySleeveStyles
+
+    val hasHorizontalArtworkSkip: Boolean
+        get() = this in HorizontalArtworkSkipStyles
+
+    val hasArtworkCanvasSurface: Boolean
+        get() = this in ArtworkCanvasStyles
+
+    fun usesSharedBackground(stored: PlayerBackgroundStyle): Boolean =
+        supportsBackgroundChoice && stored != PlayerBackgroundStyle.DEFAULT
+
+    fun rendersSharedBackground(stored: PlayerBackgroundStyle): Boolean =
+        usesSharedBackground(stored) || this in SharedBackgroundHosts
 
     /**
      * Whether the style paints its own artwork-driven backdrop rather than a neutral one.
@@ -1340,6 +1367,13 @@ enum class PlayerDesignStyle(
         get() = nativeBackground != null && nativeBackground != PlayerBackgroundStyle.DEFAULT
 
     companion object {
+        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V5, V6, V7, V10)
+        private val VolumeRowStyles = setOf(V7, V8, BITCHORD, APPLE_MUSIC, FLAMINGO)
+        private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
+        private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
+        private val ArtworkCanvasStyles = setOf(APPLE_MUSIC, SPATIALFLOW, LOOPER, FLAMINGO)
+        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER)
+
         /**
          * What a fresh install opens with. Seven readers — the player, its thumbnail, the queue, the
          * menu, the Apple Music experience toggle, MainActivity and the appearance screen — each

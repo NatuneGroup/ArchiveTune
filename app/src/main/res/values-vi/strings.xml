@@ -863,7 +863,6 @@
     <string name="onboarding_community_telegram_desc">Trò chuyện với cộng đồng và nhận cập nhật.</string>
     <string name="onboarding_community_donate_desc">Hỗ trợ phát triển liên tục.</string>
     <string name="show_player_volume_bar">Hiện thanh âm lượng</string>
-    <string name="player_volume_bar_v7_v8_only">Chỉ khả dụng với kiểu trình phát V7 và V8</string>
     <string name="app_icon_description">Chọn biểu tượng trình khởi động</string>
     <string name="app_icon_default">Mặc định</string>
     <string name="app_icon_subtitle">Cá nhân hoá trình khởi động của bạn</string>

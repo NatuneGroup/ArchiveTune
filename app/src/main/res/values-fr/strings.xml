@@ -893,7 +893,6 @@
     <string name="app_icon_load_failed">Impossible de charger les icônes des applications</string>
     <string name="app_icon_change_failed">Impossible de modifier l\'icône de l\'application</string>
     <string name="show_player_volume_bar">Afficher la barre de volume</string>
-    <string name="player_volume_bar_v7_v8_only">Disponible uniquement avec les modèles de lecteurs V7 et V8</string>
     <string name="force_high_refresh_rate">Forcer un taux de rafraîchissement élevé</string>
     <string name="view_debug_logs_description">Afficher et filtrer les journaux d\'application</string>
     <string name="resume_logs">Reprendre les journaux</string>

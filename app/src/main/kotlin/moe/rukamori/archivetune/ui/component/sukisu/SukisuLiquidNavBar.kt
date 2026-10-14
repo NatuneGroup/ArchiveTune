@@ -516,7 +516,15 @@ fun SukisuLiquidNavBar(
                         ShortNavigationBarItem(
                             selected = selected,
                             onClick = { activateTab(index) },
-                            colors = if (index == displayIndex) transparentItemColors else itemColors,
+                            // Only the glass path draws a replacement glyph/label (the accent ghost
+                            // row refracted by the pill); the solid fallback pill draws none, so
+                            // hiding the item there would leave an empty slot.
+                            colors =
+                                if (combinedBackdrop != null && index == displayIndex) {
+                                    transparentItemColors
+                                } else {
+                                    itemColors
+                                },
                             modifier =
                                 Modifier
                                     .weight(1f)

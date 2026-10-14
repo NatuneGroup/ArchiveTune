@@ -592,184 +592,194 @@ private fun AboutSuccessContent(
     val moreTitle = stringResource(R.string.more)
     val versionLine = formatVersionName()
 
-    LazyColumn(
-        state = listState,
+    // The whole list is capped and centred, not just its header and labels: preferenceGroup rows
+    // only fill the width they are given, so they would otherwise span wide tablet/TV screens.
+    Box(
         modifier = modifier,
-        contentPadding = contentPadding,
+        contentAlignment = Alignment.TopCenter,
     ) {
-        item(key = "header", contentType = "about_header") {
-            AboutContentContainer {
-                AboutHeaderCard(
-                    model = model,
-                    channel = effectiveChannel,
-                    modifier =
-                        Modifier
-                            .padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)
-                            .fillMaxWidth(),
-                )
+        LazyColumn(
+            state = listState,
+            modifier =
+                Modifier
+                    .widthIn(max = AboutDimensions.ScreenContentMaxWidth)
+                    .fillMaxSize(),
+            contentPadding = contentPadding,
+        ) {
+            item(key = "header", contentType = "about_header") {
+                AboutContentContainer {
+                    AboutHeaderCard(
+                        model = model,
+                        channel = effectiveChannel,
+                        modifier =
+                            Modifier
+                                .padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)
+                                .fillMaxWidth(),
+                    )
+                }
             }
-        }
 
-        AboutLabelItem(appSectionTitle)
+            AboutLabelItem(appSectionTitle)
 
-        preferenceGroup {
-            item {
-                PreferenceEntry(
-                    title = { Text(versionTitle) },
-                    description = versionLine,
-                    icon = { Icon(painterResource(R.drawable.info), null) },
-                )
-            }
-            item {
-                PreferenceEntry(
-                    title = { Text(changelogTitle) },
-                    icon = { Icon(painterResource(R.drawable.history), null) },
-                    onClick = { onNavigateToChangelog(effectiveChannel) },
-                )
-            }
-            item(visible = BuildConfig.UPDATER_AVAILABLE) {
-                PreferenceEntry(
-                    title = { Text(updatesTitle) },
-                    icon = { Icon(painterResource(R.drawable.sync), null) },
-                    onClick = onNavigateToUpdates,
-                )
-            }
-            item {
-                PreferenceEntry(
-                    title = { Text(licensesTitle) },
-                    icon = { Icon(painterResource(R.drawable.solar_info), null) },
-                    onClick = onOpenDependencyLicenses,
-                )
-            }
-        }
-
-        AboutLabelItem(communitySectionTitle)
-
-        preferenceGroup {
-            repeat(model.primaryLinks.size) { index ->
-                val link = model.primaryLinks[index]
+            preferenceGroup {
                 item {
                     PreferenceEntry(
-                        title = { Text(stringResource(link.labelResId)) },
-                        description = link.url.removePrefix("https://"),
-                        icon = { Icon(painterResource(link.iconResId), null) },
-                        onClick = { onOpenUri(link.url) },
+                        title = { Text(versionTitle) },
+                        description = versionLine,
+                        icon = { Icon(painterResource(R.drawable.info), null) },
                     )
                 }
-            }
-        }
-
-        AboutLabelItem(leadDeveloperTitle)
-
-        preferenceGroup {
-            repeat(model.leadDevelopers.size) { index ->
                 item {
-                    AboutMemberRow(
-                        member = model.leadDevelopers[index],
-                        index = index,
-                        count = model.leadDevelopers.size,
-                        onOpenUri = onOpenUri,
+                    PreferenceEntry(
+                        title = { Text(changelogTitle) },
+                        icon = { Icon(painterResource(R.drawable.history), null) },
+                        onClick = { onNavigateToChangelog(effectiveChannel) },
                     )
                 }
-            }
-        }
-
-        AboutLabelItem(teamTitle)
-
-        preferenceGroup {
-            repeat(model.collaborators.size) { index ->
+                item(visible = BuildConfig.UPDATER_AVAILABLE) {
+                    PreferenceEntry(
+                        title = { Text(updatesTitle) },
+                        icon = { Icon(painterResource(R.drawable.sync), null) },
+                        onClick = onNavigateToUpdates,
+                    )
+                }
                 item {
-                    AboutMemberRow(
-                        member = model.collaborators[index],
-                        index = index,
-                        count = model.collaborators.size,
-                        onOpenUri = onOpenUri,
+                    PreferenceEntry(
+                        title = { Text(licensesTitle) },
+                        icon = { Icon(painterResource(R.drawable.solar_info), null) },
+                        onClick = onOpenDependencyLicenses,
                     )
                 }
             }
-        }
 
-        AboutLabelItem(acknowledgementsTitle)
+            AboutLabelItem(communitySectionTitle)
 
-        preferenceGroup {
-            repeat(model.respecters.size) { index ->
-                item {
-                    AboutMemberRow(
-                        member = model.respecters[index],
-                        index = index,
-                        count = model.respecters.size,
-                        onOpenUri = onOpenUri,
-                    )
-                }
-            }
-        }
-
-        AboutLabelItem(translatorsTitle)
-
-        preferenceGroup {
-            item {
-                PreferenceEntry(
-                    title = { Text(translationTitle) },
-                    icon = { Icon(painterResource(R.drawable.translate), null) },
-                    onClick = onOpenTranslationContributors,
-                )
-            }
-        }
-
-        AboutLabelItem(contributorsTitle)
-
-        preferenceGroup {
-            when (val contributorsState = model.contributorsState) {
-                AboutContributorsUiState.Loading -> {
+            preferenceGroup {
+                repeat(model.primaryLinks.size) { index ->
+                    val link = model.primaryLinks[index]
                     item {
-                        AboutContributorsStatusSegment(
-                            message = stringResource(R.string.loading),
-                            showRetry = false,
-                            onRetry = onRetryContributors,
+                        PreferenceEntry(
+                            title = { Text(stringResource(link.labelResId)) },
+                            description = link.url.removePrefix("https://"),
+                            icon = { Icon(painterResource(link.iconResId), null) },
+                            onClick = { onOpenUri(link.url) },
                         )
                     }
                 }
+            }
 
-                AboutContributorsUiState.Empty -> {
+            AboutLabelItem(leadDeveloperTitle)
+
+            preferenceGroup {
+                repeat(model.leadDevelopers.size) { index ->
                     item {
-                        AboutContributorsStatusSegment(
-                            message = stringResource(R.string.no_results_found),
-                            showRetry = true,
-                            onRetry = onRetryContributors,
+                        AboutMemberRow(
+                            member = model.leadDevelopers[index],
+                            index = index,
+                            count = model.leadDevelopers.size,
+                            onOpenUri = onOpenUri,
                         )
                     }
                 }
+            }
 
-                is AboutContributorsUiState.Error -> {
+            AboutLabelItem(teamTitle)
+
+            preferenceGroup {
+                repeat(model.collaborators.size) { index ->
                     item {
-                        AboutContributorsStatusSegment(
-                            message = stringResource(contributorsState.messageResId),
-                            showRetry = true,
-                            onRetry = onRetryContributors,
+                        AboutMemberRow(
+                            member = model.collaborators[index],
+                            index = index,
+                            count = model.collaborators.size,
+                            onOpenUri = onOpenUri,
                         )
                     }
                 }
+            }
 
-                is AboutContributorsUiState.Success -> {
-                    val contributors = contributorsState.contributors
-                    repeat(contributors.size) { index ->
+            AboutLabelItem(acknowledgementsTitle)
+
+            preferenceGroup {
+                repeat(model.respecters.size) { index ->
+                    item {
+                        AboutMemberRow(
+                            member = model.respecters[index],
+                            index = index,
+                            count = model.respecters.size,
+                            onOpenUri = onOpenUri,
+                        )
+                    }
+                }
+            }
+
+            AboutLabelItem(translatorsTitle)
+
+            preferenceGroup {
+                item {
+                    PreferenceEntry(
+                        title = { Text(translationTitle) },
+                        icon = { Icon(painterResource(R.drawable.translate), null) },
+                        onClick = onOpenTranslationContributors,
+                    )
+                }
+            }
+
+            AboutLabelItem(contributorsTitle)
+
+            preferenceGroup {
+                when (val contributorsState = model.contributorsState) {
+                    AboutContributorsUiState.Loading -> {
                         item {
-                            AboutContributorRow(
-                                login = contributors[index].login,
-                                avatarUrl = contributors[index].avatarUrl,
-                                profileUrl = contributors[index].profileUrl,
-                                index = index,
-                                count = contributors.size + 1,
-                                onOpenProfile = onOpenUri,
+                            AboutContributorsStatusSegment(
+                                message = stringResource(R.string.loading),
+                                showRetry = false,
+                                onRetry = onRetryContributors,
                             )
                         }
                     }
-                    item {
-                        PreferenceEntry(
-                            title = { Text(moreTitle) },
-                            icon = { Icon(painterResource(R.drawable.add_circle), null) },
-                            onClick = { onOpenUri(model.contributorsReadMoreUrl) },
-                        )
+
+                    AboutContributorsUiState.Empty -> {
+                        item {
+                            AboutContributorsStatusSegment(
+                                message = stringResource(R.string.no_results_found),
+                                showRetry = true,
+                                onRetry = onRetryContributors,
+                            )
+                        }
+                    }
+
+                    is AboutContributorsUiState.Error -> {
+                        item {
+                            AboutContributorsStatusSegment(
+                                message = stringResource(contributorsState.messageResId),
+                                showRetry = true,
+                                onRetry = onRetryContributors,
+                            )
+                        }
+                    }
+
+                    is AboutContributorsUiState.Success -> {
+                        val contributors = contributorsState.contributors
+                        repeat(contributors.size) { index ->
+                            item {
+                                AboutContributorRow(
+                                    login = contributors[index].login,
+                                    avatarUrl = contributors[index].avatarUrl,
+                                    profileUrl = contributors[index].profileUrl,
+                                    index = index,
+                                    count = contributors.size + 1,
+                                    onOpenProfile = onOpenUri,
+                                )
+                            }
+                        }
+                        item {
+                            PreferenceEntry(
+                                title = { Text(moreTitle) },
+                                icon = { Icon(painterResource(R.drawable.add_circle), null) },
+                                onClick = { onOpenUri(model.contributorsReadMoreUrl) },
+                            )
+                        }
                     }
                 }
             }

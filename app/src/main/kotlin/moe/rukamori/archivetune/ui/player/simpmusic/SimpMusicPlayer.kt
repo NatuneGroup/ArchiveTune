@@ -44,7 +44,7 @@
 
 package moe.rukamori.archivetune.ui.player.simpmusic
 
-import androidx.activity.compose.BackHandler
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import androidx.compose.ui.graphics.luminance
 import moe.rukamori.archivetune.ui.player.viewportEdgeFade
@@ -311,13 +311,13 @@ fun SimpMusicPlayerContent(
     }
 
     var queueOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = queueOpen) { queueOpen = false }
+    PlayerInlinePageBackHandler(enabled = queueOpen) { queueOpen = false }
 
     // SimpMusic reads its lyrics on its own full-screen sheet rather than the shared LyricsScreen,
     // so the style stays self-contained the way bitchord/ and tiktok/ do.
     var lyricsFullscreenOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(mediaMetadata.id) { lyricsFullscreenOpen = false }
-    BackHandler(enabled = lyricsFullscreenOpen) { lyricsFullscreenOpen = false }
+    PlayerInlinePageBackHandler(enabled = lyricsFullscreenOpen) { lyricsFullscreenOpen = false }
 
     // Measured, not guessed — see the file header. Held in dp so the gap survives a rotation.
     // Only the two rows whose height depends on their CONTENT are measured; the artwork is derived

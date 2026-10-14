@@ -9,6 +9,8 @@
 package moe.rukamori.archivetune.ui.screens
 
 import android.net.Uri
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,6 +27,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import moe.rukamori.archivetune.constants.BackAnimationStyle
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.HomeScreenStyle
 import moe.rukamori.archivetune.constants.HomeScreenStyleKey
@@ -148,6 +151,7 @@ fun NavGraphBuilder.navigationBuilder(
     // so a by-value sort would be frozen at graph-build time. Reading the provider inside the
     // destination content keeps the sort live.
     onlineSearchSort: () -> OnlineSearchSort = { OnlineSearchSort.DEFAULT },
+    backAnimationStyle: () -> BackAnimationStyle = { BackAnimationStyle.PREDICTIVE },
 ) {
     composable(Screens.Home.route) {
         // Three separate home pages behind one tab, picked by HomeSourceKey and switched from the
@@ -303,9 +307,16 @@ fun NavGraphBuilder.navigationBuilder(
                     defaultValue = moe.rukamori.archivetune.constants.SearchProvider.YOUTUBE.name
                 },
             ),
+        // PREDICTIVE uses the NavHost's pushed-screen slides (scrubbed by the back gesture);
+        // ORIGINAL keeps this route's fades.
         enterTransition = {
             if (disableAnimations) {
                 fadeIn(tween(0))
+            } else if (backAnimationStyle() == BackAnimationStyle.PREDICTIVE) {
+                slideInHorizontally(
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    initialOffsetX = { it },
+                ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
             } else {
                 fadeIn(tween(250))
             }
@@ -331,6 +342,11 @@ fun NavGraphBuilder.navigationBuilder(
         popExitTransition = {
             if (disableAnimations) {
                 fadeOut(tween(0))
+            } else if (backAnimationStyle() == BackAnimationStyle.PREDICTIVE) {
+                slideOutHorizontally(
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    targetOffsetX = { it },
+                ) + fadeOut(tween(280, easing = LinearOutSlowInEasing))
             } else {
                 fadeOut(tween(200))
             }

@@ -29,7 +29,6 @@
 package moe.rukamori.archivetune.ui.player.spatialflow
 
 import android.content.Intent
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -56,6 +55,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
@@ -306,7 +306,7 @@ fun SpatialFlowPlayerContent(
             }
         }
 
-    BackHandler(enabled = lyricsModeEnabled || queueExpanded) {
+    PlayerInlinePageBackHandler(enabled = lyricsModeEnabled || queueExpanded) {
         if (lyricsModeEnabled) {
             lyricsModeEnabled = false
         } else if (queueExpanded) {

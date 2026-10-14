@@ -117,9 +117,9 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ needs.check.outputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ needs.check.outputs.version_code }}
       NIGHTLY_BUILD_HASH: ${{ github.sha }}
-      # Marks the APK as a Canary build. Drives the default update
-      # channel and the build-number-based canary update comparison.
-      IS_CANARY_BUILD: 'true'
+      # Final Canary build: it is compiled as a Nightly build so that installs from it follow the
+      # Nightly channel from now on (the Canary channel no longer exists in the app).
+      IS_NIGHTLY_BUILD: 'true'
     strategy:
       fail-fast: false
       # No x86 or x86_64 here. They are emulator ABIs that no phone installs, and they were the two
@@ -410,6 +410,8 @@ jobs:
             echo "# Canary build"
             echo ""
             echo "Automated Canary build from the canary branch. Not intended for production use."
+            echo ""
+            echo "Final Canary build — this install now follows the Nightly channel."
             echo ""
             # Machine-readable monotonic build number read by the in-app updater to compare canary
             # builds (the display versionName is fixed, so the updater compares this instead).

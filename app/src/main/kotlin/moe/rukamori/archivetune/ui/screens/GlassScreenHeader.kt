@@ -9,7 +9,6 @@
 
 package moe.rukamori.archivetune.ui.screens
 
-import android.os.Build
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.RowScope
@@ -21,15 +20,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.LocalBlurPolicy
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
@@ -62,11 +60,11 @@ fun rememberGlassScreenHeader(): GlassScreenHeader {
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
     val surfaceColor = MaterialTheme.colorScheme.surface
 
-    val backdrop = rememberBackdrop(surfaceColor)
     val active =
         liquidGlassEnabled &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            LocalBlurPolicy.current.renderEffect &&
             !lyricsFullScreen
+    val backdrop = if (active) rememberBackdrop(surfaceColor) else null
     return GlassScreenHeader(
         liquidGlassActive = active,
         backdrop = if (active) backdrop else null,
@@ -118,7 +116,7 @@ fun BoxScope.GlassScreenHeaderOverlay(
             Icon(
                 painter = painterResource(R.drawable.arrow_back),
                 contentDescription = title,
-                tint = Color.White,
+                tint = MaterialTheme.colorScheme.onSurface,
             )
         }
 
@@ -128,7 +126,7 @@ fun BoxScope.GlassScreenHeaderOverlay(
             text = title,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(end = 12.dp),
@@ -155,7 +153,7 @@ fun BoxScope.GlassScreenHeaderOverlay(
                         Icon(
                             painter = painterResource(R.drawable.search),
                             contentDescription = stringResource(R.string.search),
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                         )
                     }
                 }

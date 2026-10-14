@@ -113,16 +113,16 @@ fun CompactControlCircle(
     modifier: Modifier = Modifier,
     tint: Color = Color.Unspecified,
 ) {
-    val useGlass = backdrop != null
+    val useGlass = liquidGlassEligible(backdrop)
     if (useGlass) {
         Box(
             modifier =
                 modifier
                     .size(CompactControlSize)
                     .liquidGlass(
-                        backdrop = backdrop,
+                        backdrop = backdrop!!,
                         shape = CircleShape,
-                        interactive = false,
+                        interactive = true,
                         baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     )
                     .glassGlowOverlay(glowStrength, CircleShape)

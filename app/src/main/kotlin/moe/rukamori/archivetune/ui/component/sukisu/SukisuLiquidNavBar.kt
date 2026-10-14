@@ -48,6 +48,7 @@ import androidx.compose.material3.ShortNavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -82,12 +83,11 @@ import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberCombinedBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.shadow.Shadow as KyantShadow
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.ui.component.LiquidGlassRole
+import moe.rukamori.archivetune.ui.component.liquidGlassMaterial
+import moe.rukamori.archivetune.ui.component.liquidGlassEligible
 import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.scaleAwareSpring
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
@@ -121,6 +121,7 @@ fun SukisuLiquidNavBar(
     onItemClick: (Screens) -> Unit,
 ) {
     if (items.isEmpty()) return
+    val glassActive = liquidGlassEligible(backdrop)
 
     val (hideLabels) = rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     val (disableAnimations) = rememberPreference(DisableAnimationsKey, defaultValue = false)
@@ -135,7 +136,7 @@ fun SukisuLiquidNavBar(
     val accentColor = MaterialTheme.colorScheme.primary
     val tabContentColor = MaterialTheme.colorScheme.onSurface
     val containerColor =
-        if (backdrop != null) {
+        if (glassActive) {
             MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
         } else {
             MaterialTheme.colorScheme.surfaceContainer
@@ -256,8 +257,9 @@ fun SukisuLiquidNavBar(
     // Remembered once: the position lambda reads tabWidthPx/panelOffset through their state
     // delegates, so it stays live without rebuilding the Animatables (and the AGSL shader)
     // every time the width changes.
+    val highlightMotion = glassActive && !disableAnimations && !LocalAnimationsDisabled.current && animationScale > 0f
     val interactiveHighlight =
-        remember(animationScope, dampedDragAnimation) {
+        if (highlightMotion) remember(animationScope, dampedDragAnimation) {
             SukisuInteractiveHighlight(
                 animationScope = animationScope,
                 position = { size, _ ->
@@ -271,20 +273,24 @@ fun SukisuLiquidNavBar(
                     )
                 },
             )
-        }
+        } else null
+
+    DisposableEffect(interactiveHighlight) {
+        onDispose { interactiveHighlight?.cancel() }
+    }
 
     val barHighlight by rememberSukisuSpecularHighlight(SukisuBarHighlightExtraDegrees)
     val pillHighlight by rememberSukisuSpecularHighlight(SukisuPillHighlightExtraDegrees)
 
     val combinedBackdrop =
-        if (backdrop != null) {
-            rememberCombinedBackdrop(backdrop, tabsBackdrop)
+        if (glassActive) {
+            rememberCombinedBackdrop(backdrop!!, tabsBackdrop)
         } else {
             null
         }
     val tabScaleProvider =
-        remember(dampedDragAnimation) {
-            { lerp(1f, 1.2f, dampedDragAnimation.pressProgress) }
+        remember(dampedDragAnimation, highlightMotion) {
+            { lerp(1f, 1.2f, (if (highlightMotion) dampedDragAnimation.pressProgress else 0f)) }
         }
 
     val glassSelectedColor =
@@ -371,7 +377,7 @@ fun SukisuLiquidNavBar(
                     .height(SukisuLiquidNavBarHeight),
             contentAlignment = Alignment.CenterStart,
         ) {
-            if (backdrop != null) {
+            if (glassActive) {
                 Row(
                     modifier =
                         Modifier
@@ -380,22 +386,12 @@ fun SukisuLiquidNavBar(
                             .alpha(0f)
                             .layerBackdrop(tabsBackdrop)
                             .graphicsLayer { translationX = panelOffset }
-                            .drawBackdrop(
+                            .liquidGlassMaterial(
                                 backdrop = backdrop,
-                                shape = { pillShape },
-                                effects = {
-                                    vibrancy()
-                                    blur(4.dp.toPx())
-                                    lens(
-                                        // Clamped so a small pill can't fold the refraction
-                                        // band over itself (dark stripe in light mode).
-                                        refractionHeight = minOf(24.dp.toPx(), size.minDimension / 2f),
-                                        refractionAmount = 24.dp.toPx(),
-                                    )
-                                },
+                                shape = pillShape,
+                                role = LiquidGlassRole.NavigationBar,
                                 onDrawSurface = { drawRect(containerColor) },
                             )
-                            .then(interactiveHighlight.modifier)
                             .height(SukisuPillHeight)
                             .padding(horizontal = SukisuItemPadding),
                     verticalAlignment = Alignment.CenterVertically,
@@ -435,35 +431,19 @@ fun SukisuLiquidNavBar(
                     }
                     .graphicsLayer { translationX = panelOffset }
                     .then(
-                        if (backdrop != null) {
-                            Modifier.drawBackdrop(
+                        if (glassActive) {
+                            Modifier.liquidGlassMaterial(
                                 backdrop = backdrop,
-                                shape = { pillShape },
-                                effects = {
-                                    padding = maxOf(padding, 40.dp.toPx())
-                                    vibrancy()
-                                    blur(4.dp.toPx())
-                                    lens(
-                                        // Same clamp as the ghost pill above.
-                                        refractionHeight = minOf(24.dp.toPx(), size.minDimension / 2f),
-                                        refractionAmount = 24.dp.toPx(),
-                                    )
-                                },
+                                shape = pillShape,
+                                role = LiquidGlassRole.NavigationBar,
                                 highlight = { barHighlight.copy(alpha = 0.75f) },
-                                shadow = {
-                                    KyantShadow(
-                                        radius = 10.dp,
-                                        color = Color.Black,
-                                        alpha = if (glassIsNight) 0.2f else 0.1f,
-                                    )
-                                },
                                 layerBlock = {
                                     val width = size.width.coerceAtLeast(1f)
                                     val s =
                                         lerp(
                                             1f,
                                             1f + 16.dp.toPx() / width,
-                                            dampedDragAnimation.pressProgress,
+                                            (if (highlightMotion) dampedDragAnimation.pressProgress else 0f),
                                         )
                                     scaleX = s
                                     scaleY = s
@@ -475,7 +455,7 @@ fun SukisuLiquidNavBar(
                         },
                     )
                     .then(
-                        if (backdrop != null) {
+                        if (interactiveHighlight != null) {
                             interactiveHighlight.modifier.then(interactiveHighlight.gestureModifier)
                         } else {
                             Modifier
@@ -495,7 +475,7 @@ fun SukisuLiquidNavBar(
                         // pop mid-flight instead of jumping the icon back (same as the M3 bar).
                         val iconScale = remember(screen) { Animatable(1f) }
                         LaunchedEffect(selected, disableAnimations, animationScale) {
-                            if (disableAnimations) {
+                            if (disableAnimations || animationScale <= 0f) {
                                 iconScale.snapTo(1f)
                             } else if (selected) {
                                 iconScale.animateTo(
@@ -578,32 +558,23 @@ fun SukisuLiquidNavBar(
                                         -progressOffset + panelOffset
                                     }
                             }
-                            .drawBackdrop(
+                            .liquidGlassMaterial(
                                 backdrop = combinedBackdrop,
-                                shape = { pillShape },
-                                effects = {
-                                    val progress = dampedDragAnimation.pressProgress
-                                    lens(
-                                        refractionHeight = minOf(10.dp.toPx() * progress, size.minDimension / 2f),
-                                        refractionAmount = 14.dp.toPx() * progress,
-                                        depthEffect = true,
-                                        chromaticAberration = true,
-                                    )
-                                },
-                                highlight = {
-                                    pillHighlight.copy(alpha = dampedDragAnimation.pressProgress)
-                                },
+                                shape = pillShape,
+                                role = LiquidGlassRole.SelectionLens,
+                                progress = { (if (highlightMotion) dampedDragAnimation.pressProgress else 0f) },
+                                highlight = { pillHighlight.copy(alpha = (if (highlightMotion) dampedDragAnimation.pressProgress else 0f)) },
                                 layerBlock = {
-                                    scaleX = dampedDragAnimation.scaleX
-                                    scaleY = dampedDragAnimation.scaleY
+                                    scaleX = if (highlightMotion) dampedDragAnimation.scaleX else 1f
+                                    scaleY = if (highlightMotion) dampedDragAnimation.scaleY else 1f
                                     // Velocity squash/stretch: the pill elongates along its travel
                                     // and contracts across it, from the drag animation's velocity.
-                                    val velocity = dampedDragAnimation.velocity / 10f
+                                    val velocity = if (highlightMotion) dampedDragAnimation.velocity / 10f else 0f
                                     scaleX /= 1f - (velocity * 0.75f).fastCoerceIn(-0.2f, 0.2f)
                                     scaleY *= 1f - (velocity * 0.25f).fastCoerceIn(-0.2f, 0.2f)
                                 },
                                 onDrawSurface = {
-                                    val progress = dampedDragAnimation.pressProgress
+                                    val progress = (if (highlightMotion) dampedDragAnimation.pressProgress else 0f)
                                     drawRect(
                                         color =
                                             if (!glassIsNight) {
@@ -617,11 +588,11 @@ fun SukisuLiquidNavBar(
                                 },
                             )
                             .innerShadow(shape = pillShape) {
-                                if (dampedDragAnimation.pressProgress > 0f) {
+                                if ((if (highlightMotion) dampedDragAnimation.pressProgress else 0f) > 0f) {
                                     InnerShadow(
-                                        radius = 8.dp * dampedDragAnimation.pressProgress,
+                                        radius = 8.dp * (if (highlightMotion) dampedDragAnimation.pressProgress else 0f),
                                         color = Color.Black.copy(alpha = 0.15f),
-                                        alpha = dampedDragAnimation.pressProgress,
+                                        alpha = (if (highlightMotion) dampedDragAnimation.pressProgress else 0f),
                                     )
                                 } else {
                                     null

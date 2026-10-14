@@ -117,11 +117,6 @@ import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.utils.rememberPreference
 import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
-import com.kyant.backdrop.shadow.Shadow as KyantShadow
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -196,7 +191,7 @@ fun FloatingNavigationToolbar(
     // liquid glass surface tints itself with `surfaceContainerHigh`, so it stays
     // visible even when the rest of the UI is pitch black, and the user explicitly
     // opted in via the Liquid Glass toggle.
-    val canLiquidGlass = liquidGlass && liquidGlassBackdrop != null && !isPreS
+    val canLiquidGlass = liquidGlass && liquidGlassEligible(liquidGlassBackdrop) && !isPreS
     val resolvedBarHeight =
         if (canLiquidGlass) SukiSUBarHeight else NavigationBarHeight * navBarHeightMultiplier
     // SukiSU-Ultra: when the Liquid Glass nav bar is active, the items Row uses
@@ -233,6 +228,7 @@ fun FloatingNavigationToolbar(
     // scale-aware spring reshapes itself below 1x so the bounce never has to be crammed into
     // the frames that are left. Snap at 0, like everything else.
     val animationScale = LocalAnimationScale.current
+    val glassMotion = !disableAnimations && animationScale > 0f
     val (hideNavigationBarLabelsPreference) =
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     // Apple Music's tab bar is icon + label by definition, so the style wins over the global
@@ -551,8 +547,9 @@ fun FloatingNavigationToolbar(
                     }
                     .then(
                         if (canLiquidGlass && liquidGlassBackdrop != null) {
-                            Modifier.liquidGlass(
+                            Modifier.liquidGlassMaterial(
                                 backdrop = liquidGlassBackdrop,
+                                role = LiquidGlassRole.NavigationBar,
                                 shape = navigationShape,
                                 interactive = false,
                                 baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -891,44 +888,19 @@ fun FloatingNavigationToolbar(
                                 // Velocity-stretch: the pill squishes horizontally when
                                 // flung (a physical "rubber" feel). The asymmetry (0.75 ×
                                 // horizontal, 0.25 × vertical) preserves area roughly.
-                                val pressScale = lerp(1f, 78f / 56f, dragAnim.pressProgress)
-                                val velocityStretch = (dragAnim.velocity / 10f).fastCoerceIn(-0.2f, 0.2f)
+                                val pressScale = lerp(1f, 78f / 56f, (if (glassMotion) dragAnim.pressProgress else 0f))
+                                val velocityStretch = if (glassMotion) (dragAnim.velocity / 10f).fastCoerceIn(-0.2f, 0.2f) else 0f
                                 scaleX = pressScale / (1f - velocityStretch * 0.75f)
                                 scaleY = pressScale * (1f - velocityStretch * 0.25f)
                             }
-                            .drawBackdrop(
+                            .liquidGlassMaterial(
                                 backdrop = liquidGlassBackdrop,
-                                effects = {
-                                    vibrancy()
-                                    blur(4f.dp.toPx())
-                                    lens(
-                                        // Clamped so a small pill can't fold the refraction
-                                        // band over itself (dark stripe in light mode).
-                                        refractionHeight = minOf(24f.dp.toPx(), size.minDimension / 2f),
-                                        refractionAmount = size.minDimension / 4f,
-                                        chromaticAberration = false,
-                                    )
-                                },
-                                // A drop shadow lifts the pill off a dark bar; on a light one it
-                                // reads as a grey smudge.
-                                shadow = { if (isDark) KyantShadow.Default else null },
-                                onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
-                                shape = { pillShape },
-                                // Fallback surface drawn UNDER the backdrop sample.
-                                // When the backdrop has content (album art, page content
-                                // behind the nav bar), the backdrop sample covers this
-                                // and you see the liquid glass refraction. When the
-                                // backdrop is EMPTY (e.g. bottom of a short page with
-                                // nothing behind the nav bar), the backdrop sample is
-                                // transparent and this opaque surface shows through —
-                                // matching the existing pattern used by the bar Surface
-                                // (baseColor = surfaceContainerHigh) and the Frosted nav
-                                // bar variant (opaque surface + 30% alpha overlay).
-                                onDrawBehind = {
-                                    drawRect(pillFallbackColor)
-                                },
+                                shape = pillShape,
+                                role = LiquidGlassRole.SelectionLens,
+                                progress = { (if (glassMotion) dragAnim.pressProgress else 0f) },
+                                baseColor = pillFallbackColor,
                                 onDrawSurface = {
-                                    val progress = dragAnim.pressProgress
+                                    val progress = (if (glassMotion) dragAnim.pressProgress else 0f)
                                     drawRect(
                                         color = if (isDark) Color.Black else Color.White,
                                         alpha = (if (isDark) 0.28f else 0.1f) * (1f - progress),
@@ -940,11 +912,11 @@ fun FloatingNavigationToolbar(
                                 // Inner shadow only appears during press — radius + alpha
                                 // both scale with pressProgress. This is the "glass lifted
                                 // off the bar" feel.
-                                if (dragAnim.pressProgress > 0f) {
+                                if ((if (glassMotion) dragAnim.pressProgress else 0f) > 0f) {
                                     InnerShadow(
-                                        radius = 8.dp * dragAnim.pressProgress,
+                                        radius = 8.dp * (if (glassMotion) dragAnim.pressProgress else 0f),
                                         color = Color.Black.copy(alpha = 0.15f),
-                                        alpha = dragAnim.pressProgress,
+                                        alpha = (if (glassMotion) dragAnim.pressProgress else 0f),
                                     )
                                 } else {
                                     null
@@ -965,7 +937,7 @@ fun FloatingNavigationToolbar(
                                 Modifier.graphicsLayer {
                                     // SukiSU LocalFloatingBottomBarTabScale: the
                                     // icon scales up to 1.2× during press.
-                                    val scale = lerp(1f, 1.2f, dragAnim.pressProgress)
+                                    val scale = lerp(1f, 1.2f, (if (glassMotion) dragAnim.pressProgress else 0f))
                                     scaleX = scale
                                     scaleY = scale
                                 },

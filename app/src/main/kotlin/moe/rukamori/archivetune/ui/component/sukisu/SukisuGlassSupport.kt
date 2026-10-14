@@ -11,19 +11,12 @@
 
 package moe.rukamori.archivetune.ui.component.sukisu
 
-import android.content.Context
-import android.hardware.Sensor
-import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
-import android.hardware.SensorManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -35,7 +28,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ShaderBrush
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastCoerceIn
 import com.kyant.backdrop.RuntimeShader
@@ -43,98 +35,17 @@ import com.kyant.backdrop.asComposeShader
 import com.kyant.backdrop.highlight.Highlight
 import com.kyant.backdrop.highlight.HighlightStyle
 import com.kyant.backdrop.isRuntimeShaderSupported
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.ui.input.pointer.PointerEventPass
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import moe.rukamori.archivetune.ui.component.inspectDragGestures
-import kotlin.math.PI
-import kotlin.math.atan2
-import kotlin.math.roundToInt
 
-// Below this squared gravity magnitude the reading is noise, not a direction: fall back to the
-// device lying flat (gravity pointing up through the screen), where the specular has no bias.
-private const val SukisuGravityDirThresholdSq = 0.01f
-
-// Quantize the specular angle to 3-degree steps so the highlight does not shimmer with every
-// sensor jitter — it snaps between 120 discrete directions instead of rotating continuously.
-private const val SukisuGravityAngleStepRad = (3.0 * PI / 180.0).toFloat()
-
-private class SukisuDeviceTilt internal constructor(
-    val gravityX: Float,
-    val gravityY: Float,
-)
-
+/** Static shared lighting avoids per-surface sensors and background/0x sensor work. */
 @Composable
-private fun rememberSukisuDeviceTilt(): State<SukisuDeviceTilt> {
-    val context = LocalContext.current
-    val tilt =
-        remember {
-            mutableStateOf(SukisuDeviceTilt(gravityX = 0f, gravityY = -1f))
-        }
-    DisposableEffect(context) {
-        val sensorManager =
-            context.getSystemService(Context.SENSOR_SERVICE) as? SensorManager
-        val sensor =
-            sensorManager?.getDefaultSensor(Sensor.TYPE_GRAVITY)
-                ?: sensorManager?.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        if (sensorManager == null || sensor == null) {
-            onDispose { }
-        } else {
-            val listener =
-                object : SensorEventListener {
-                    override fun onSensorChanged(event: SensorEvent) {
-                        if (event.values.size < 2) return
-                        tilt.value =
-                            SukisuDeviceTilt(
-                                gravityX = event.values[0],
-                                gravityY = event.values[1],
-                            )
-                    }
-
-                    override fun onAccuracyChanged(
-                        sensor: Sensor?,
-                        accuracy: Int,
-                    ) {}
-                }
-            sensorManager.registerListener(listener, sensor, SensorManager.SENSOR_DELAY_UI)
-            onDispose { sensorManager.unregisterListener(listener) }
-        }
-    }
-    return tilt
-}
-
-@Composable
-private fun rememberSukisuGravityAngleRad(): State<Float> {
-    val tilt = rememberSukisuDeviceTilt()
-    return remember(tilt) {
-        derivedStateOf {
-            val magnitudeSquared =
-                tilt.value.gravityX * tilt.value.gravityX + tilt.value.gravityY * tilt.value.gravityY
-            if (magnitudeSquared > SukisuGravityDirThresholdSq) {
-                val raw = atan2(tilt.value.gravityY, tilt.value.gravityX)
-                (raw / SukisuGravityAngleStepRad).roundToInt() * SukisuGravityAngleStepRad
-            } else {
-                (-PI / 2).toFloat()
-            }
-        }
-    }
-}
-
-/**
- * The tilt-driven specular highlight: the device's gravity direction, quantized to 3-degree steps
- * and biased by [extraDegrees] (bar and pill are lit from different directions), as a [Highlight]
- * that the glass draw reads per frame.
- */
-@Composable
-fun rememberSukisuSpecularHighlight(extraDegrees: Float): State<Highlight> {
-    val gravityAngleRad = rememberSukisuGravityAngleRad()
-    return remember(gravityAngleRad, extraDegrees) {
-        derivedStateOf {
-            val angleDegrees =
-                -(Math.toDegrees(gravityAngleRad.value.toDouble())).toFloat() - extraDegrees
-            sukisuSpecularHighlight(angleDegrees)
-        }
-    }
-}
+fun rememberSukisuSpecularHighlight(extraDegrees: Float): State<Highlight> =
+    remember(extraDegrees) { mutableStateOf(sukisuSpecularHighlight(90f - extraDegrees)) }
 
 private fun sukisuSpecularHighlight(angleDegrees: Float): Highlight =
     Highlight(
@@ -168,6 +79,32 @@ class SukisuInteractiveHighlight(
         Animatable(Offset.Zero, Offset.VectorConverter, Offset.VisibilityThreshold)
 
     private var startPosition = Offset.Zero
+    private var disposed = false
+    private var pressJob: Job? = null
+    private var positionJob: Job? = null
+
+    fun cancel() {
+        disposed = true
+        pressJob?.cancel()
+        positionJob?.cancel()
+    }
+
+    private fun press(target: Float) {
+        if (disposed) return
+        pressJob?.cancel()
+        pressJob = animationScope.launch {
+            pressProgressAnimation.animateTo(target, pressProgressAnimationSpec)
+        }
+    }
+
+    private fun move(target: Offset, release: Boolean = false) {
+        if (disposed) return
+        positionJob?.cancel()
+        positionJob = animationScope.launch {
+            if (release) positionAnimation.animateTo(target, positionAnimationSpec)
+            else positionAnimation.snapTo(target)
+        }
+    }
 
     val modifier: Modifier =
         Modifier.drawWithContent {
@@ -210,30 +147,26 @@ class SukisuInteractiveHighlight(
             drawContent()
         }
 
+    // Observe Initial pass only; never consume changes or install clickable/focus semantics.
     val gestureModifier: Modifier =
-        Modifier.pointerInput(animationScope) {
-            inspectDragGestures(
-                onDragStart = { down ->
+        Modifier.pointerInput(this) {
+            try {
+                awaitEachGesture {
+                    val down = awaitFirstDown(false, PointerEventPass.Initial)
                     startPosition = down.position
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.snapTo(startPosition) }
-                    }
-                },
-                onDragEnd = {
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
-                },
-                onDragCancel = {
-                    animationScope.launch {
-                        launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-                        launch { positionAnimation.animateTo(startPosition, positionAnimationSpec) }
-                    }
-                },
-            ) { change, _ ->
-                animationScope.launch { positionAnimation.snapTo(change.position) }
+                    move(startPosition)
+                    press(1f)
+                    do {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val pointer = event.changes.firstOrNull { it.id == down.id }
+                        if (pointer != null && pointer.pressed) move(pointer.position)
+                        val held = pointer?.pressed == true
+                    } while (held)
+                    press(0f)
+                    move(startPosition, release = true)
+                }
+            } finally {
+                press(0f)
             }
         }
 

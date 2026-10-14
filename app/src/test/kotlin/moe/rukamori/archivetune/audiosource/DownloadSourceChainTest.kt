@@ -14,6 +14,7 @@ import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -153,6 +154,56 @@ class DownloadSourceChainTest {
                 pinnedSource = AudioSourceType.YOUTUBE,
                 playbackEnabled = setOf(AudioSourceType.TIDAL),
             ),
+        )
+    }
+
+    @Test
+    fun downloadCacheKeysFollowTheGatedChainThenYouTube() {
+        // Regression: a complete qobuz:<id> cache entry used to be copied into the download after
+        // Qobuz was switched off, and cache hits ignored the download order.
+        val enabled = setOf(AudioSourceType.TIDAL, AudioSourceType.DEEZER, AudioSourceType.YOUTUBE)
+
+        assertEquals(
+            listOf("deezer:id1", "tidal:id1", "id1"),
+            DownloadSourceConfig.downloadCacheKeys("DEEZER,QOBUZ,TIDAL,YOUTUBE_MUSIC,JIOSAAVN", null, enabled, "id1"),
+        )
+    }
+
+    @Test
+    fun downloadCacheKeysBelowYoutubeMusicAreNotReused() {
+        val enabled = setOf(AudioSourceType.TIDAL, AudioSourceType.YOUTUBE)
+
+        assertEquals(
+            listOf("id1"),
+            DownloadSourceConfig.downloadCacheKeys("YOUTUBE_MUSIC,TIDAL", null, enabled, "id1"),
+        )
+    }
+
+    @Test
+    fun disabledYouTubeBlocksTheTerminalFallbackAndItsCacheKey() {
+        val enabled = setOf(AudioSourceType.TIDAL)
+
+        assertFalse(DownloadSourceConfig.youTubeFallbackAllowed(enabled))
+        assertTrue(DownloadSourceConfig.youTubeFallbackAllowed(enabled + AudioSourceType.YOUTUBE))
+        assertTrue(DownloadSourceConfig.youTubeFallbackAllowed(null))
+        assertEquals(
+            listOf("tidal:id1"),
+            DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC", null, enabled, "id1"),
+        )
+        assertTrue(DownloadSourceConfig.downloadCacheKeys("TIDAL,YOUTUBE_MUSIC", null, emptySet(), "id1").isEmpty())
+    }
+
+    @Test
+    fun downloadCacheKeysHonourAnEnabledPin() {
+        val enabled = setOf(AudioSourceType.TIDAL, AudioSourceType.QOBUZ, AudioSourceType.YOUTUBE)
+
+        assertEquals(
+            listOf("tidal:id1", "id1"),
+            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC", AudioSourceType.TIDAL, enabled, "id1"),
+        )
+        assertEquals(
+            listOf("id1"),
+            DownloadSourceConfig.downloadCacheKeys("QOBUZ,TIDAL,YOUTUBE_MUSIC", AudioSourceType.YOUTUBE, enabled, "id1"),
         )
     }
 }

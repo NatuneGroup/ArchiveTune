@@ -68,19 +68,19 @@ object PlaybackSourceChain {
     fun cacheShortCircuitAllowed(snapshot: PlaybackSourceSnapshot): Boolean = baseChain(snapshot).isEmpty()
 
     /**
-     * The cache keys to probe for [mediaId], in preference order: enabled sources in the user's
-     * order, YouTube's bare key last and only while YouTube is enabled. Sources without a cache
-     * key (Apple, Amazon, QQ, Spotify) contribute nothing. A disabled source's key is left out
-     * entirely — its player cache and its persistent downloads alike are not served, the same
-     * rule the download chain follows; re-enabling the source plays them again.
+     * The cache keys to probe for [mediaId], in preference order: the [baseChain] sources (so
+     * anything the user placed below YouTube is unreachable here too), then YouTube's bare key
+     * only while YouTube is enabled. Sources without a cache key (Apple, Amazon, QQ, Spotify)
+     * contribute nothing. A disabled source's key is left out entirely — its player cache and its
+     * persistent downloads alike are not served, the same rule the download chain follows;
+     * re-enabling the source plays them again.
      */
     fun cacheKeyOrder(
         snapshot: PlaybackSourceSnapshot,
         mediaId: String,
     ): List<String> =
-        snapshot.order
-            .filter { it in snapshot.enabled }
-            .mapNotNull { source -> cacheProbeKey(source, mediaId) }
+        baseChain(snapshot).mapNotNull { source -> cacheProbeKey(source, mediaId) } +
+            listOfNotNull(mediaId.takeIf { AudioSourceType.YOUTUBE in snapshot.enabled })
 
     /**
      * The cache key [source]'s bytes are probed under, or null when the source has none. The

@@ -263,4 +263,74 @@ class CrossfadeHandoffDecisionTest {
             }
         }
     }
+
+    @Test
+    fun committedFallbackRestoreOnHealthyIncoming_promotesInstead() {
+        // Regression: at the smart tail a CONTINUE from a healthy incoming player was
+        // overridden by the call site's RESTORE fallback, releasing the incoming song and
+        // later restarting it from its cue.
+        val committed = snapshot(progress = 1f, incomingHeardMs = 6_000L)
+        val decided = CrossfadeHandoffPolicy.decide(committed)
+        assertEquals(CrossfadeHandoffAction.CONTINUE, decided)
+        assertEquals(
+            CrossfadeHandoffAction.PROMOTE,
+            CrossfadeHandoffPolicy.resolveFallback(decided, CrossfadeHandoffAction.RESTORE_OUTGOING, committed),
+        )
+    }
+
+    @Test
+    fun uncommittedFallbackRestoreIsApplied() {
+        val early = snapshot(progress = 0.2f)
+        assertEquals(
+            CrossfadeHandoffAction.RESTORE_OUTGOING,
+            CrossfadeHandoffPolicy.resolveFallback(
+                CrossfadeHandoffPolicy.decide(early),
+                CrossfadeHandoffAction.RESTORE_OUTGOING,
+                early,
+            ),
+        )
+    }
+
+    @Test
+    fun fallbackNeverOverridesANonContinueDecision() {
+        val committedTerminal =
+            snapshot(progress = 0.8f, incomingState = CrossfadeIncomingState.ERROR, incomingHeardMs = 5_000L)
+        val decided = CrossfadeHandoffPolicy.decide(committedTerminal)
+        assertEquals(CrossfadeHandoffAction.CARRY_TO_PRIMARY, decided)
+        assertEquals(
+            CrossfadeHandoffAction.CARRY_TO_PRIMARY,
+            CrossfadeHandoffPolicy.resolveFallback(decided, CrossfadeHandoffAction.RESTORE_OUTGOING, committedTerminal),
+        )
+        assertEquals(
+            CrossfadeHandoffAction.CONTINUE,
+            CrossfadeHandoffPolicy.resolveFallback(CrossfadeHandoffAction.CONTINUE, null, committedTerminal),
+        )
+    }
+
+    @Test
+    fun fallbackPromoteIsKeptWhenUncommitted() {
+        val early = snapshot(progress = 0.1f)
+        assertEquals(
+            CrossfadeHandoffAction.PROMOTE,
+            CrossfadeHandoffPolicy.resolveFallback(CrossfadeHandoffAction.CONTINUE, CrossfadeHandoffAction.PROMOTE, early),
+        )
+    }
+
+    @Test
+    fun committedAuthenticityRejection_carriesThePosition() {
+        // A rejected source is dispatched as an unusable (ERROR) incoming player: past the commit
+        // point its heard time is carried, before it the outgoing song is restored.
+        assertEquals(
+            CrossfadeHandoffAction.CARRY_TO_PRIMARY,
+            CrossfadeHandoffPolicy.decide(
+                snapshot(progress = 0.6f, incomingState = CrossfadeIncomingState.ERROR, incomingHeardMs = 4_000L),
+            ),
+        )
+        assertEquals(
+            CrossfadeHandoffAction.RESTORE_OUTGOING,
+            CrossfadeHandoffPolicy.decide(
+                snapshot(progress = 0.3f, incomingState = CrossfadeIncomingState.ERROR, incomingHeardMs = 4_000L),
+            ),
+        )
+    }
 }

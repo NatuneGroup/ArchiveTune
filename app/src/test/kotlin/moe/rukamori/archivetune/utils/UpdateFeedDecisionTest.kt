@@ -74,6 +74,69 @@ class UpdateFeedDecisionTest {
         assertFalse(Updater.isUpdateAvailable(Updater.getPreReleaseVersionName(release), BuildConfig.VERSION_NAME))
     }
 
+    private fun stableReleaseFor(
+        tag: String,
+        versionCode: Long,
+    ): ReleaseInfo {
+        val json =
+            """
+            {
+              "schema": 1,
+              "channel": "stable",
+              "tag": "$tag",
+              "versionName": "${tag.removePrefix("v")}",
+              "versionCode": $versionCode,
+              "publishedAt": "2026-10-13T15:30:00Z",
+              "assets": []
+            }
+            """.trimIndent()
+        val manifest = parseUpdateFeedManifest(json, expectedChannel = "stable")!!
+        return manifest.toReleaseInfo(assetUrl = null, releasesBaseUrl = "https://github.com/NatuneGroup/ArchiveTune/releases")
+    }
+
+    @Test
+    fun stableEqualVersionCodeReportsNoUpdate() {
+        val release = stableReleaseFor("v${BuildConfig.VERSION_NAME}", BuildConfig.VERSION_CODE.toLong())
+
+        assertFalse(Updater.isUpdateAvailable(Updater.getReleaseVersionName(release), BuildConfig.VERSION_NAME))
+    }
+
+    @Test
+    fun stableSameSemVerHigherVersionCodeReportsUpdate() {
+        val release = stableReleaseFor("v${BuildConfig.VERSION_NAME}", (BuildConfig.VERSION_CODE + 1).toLong())
+
+        assertTrue(Updater.isUpdateAvailable(Updater.getReleaseVersionName(release), BuildConfig.VERSION_NAME))
+    }
+
+    @Test
+    fun stableHigherSemVerLowerVersionCodeReportsNoUpdate() {
+        val release = stableReleaseFor("v999.0.0", (BuildConfig.VERSION_CODE - 1).coerceAtLeast(1).toLong())
+
+        assertFalse(Updater.isUpdateAvailable(Updater.getReleaseVersionName(release), BuildConfig.VERSION_NAME))
+    }
+
+    @Test
+    fun stableHigherSemVerEqualVersionCodeReportsNoUpdate() {
+        val release = stableReleaseFor("v999.0.0", BuildConfig.VERSION_CODE.toLong())
+
+        assertFalse(Updater.isUpdateAvailable(Updater.getReleaseVersionName(release), BuildConfig.VERSION_NAME))
+    }
+
+    @Test
+    fun stableApiReleaseWithoutVersionCodeKeepsSemVerName() {
+        val release =
+            ReleaseInfo(
+                tagName = "v999.0.0",
+                name = "999.0.0",
+                body = null,
+                publishedAt = "",
+                htmlUrl = "",
+                downloadUrl = null,
+            )
+
+        assertEquals("999.0.0", Updater.getReleaseVersionName(release))
+    }
+
     @Test
     fun mappedReleaseCarriesTagNotesAndSelectedAsset() {
         val release = releaseFor((BuildConfig.VERSION_CODE + 1).toLong())

@@ -39,8 +39,8 @@ class CrossfadeQueueSyncTest {
                 incomingCurrentIndex = 1,
             )
         assertEquals(1, result?.incomingCurrentIndex)
-        assertEquals(emptyList<String>(), result?.beforeIds)
-        assertEquals(emptyList<String>(), result?.afterIds)
+        assertNull(result?.beforeIds)
+        assertNull(result?.afterIds)
     }
 
     @Test
@@ -53,7 +53,7 @@ class CrossfadeQueueSyncTest {
                 incomingCurrentIndex = 1,
             )
         assertEquals(listOf("d"), result?.afterIds)
-        assertEquals(emptyList<String>(), result?.beforeIds)
+        assertNull(result?.beforeIds)
     }
 
     @Test
@@ -66,7 +66,7 @@ class CrossfadeQueueSyncTest {
                 incomingCurrentIndex = 1,
             )
         assertEquals(listOf("x", "a"), result?.beforeIds)
-        assertEquals(emptyList<String>(), result?.afterIds)
+        assertNull(result?.afterIds)
     }
 
     @Test
@@ -123,8 +123,8 @@ class CrossfadeQueueSyncTest {
                 incomingIds = listOf("a", "b", "c", "b", "d"),
                 incomingCurrentIndex = 3,
             )
-        // before range [a, b, c] unchanged; after range loses "d", gains "e"
-        assertEquals(emptyList<String>(), result?.beforeIds)
+        // before range [a, b, c] unchanged (null); after range loses "d", gains "e"
+        assertNull(result?.beforeIds)
         assertEquals(listOf("e"), result?.afterIds)
     }
 
@@ -138,5 +138,59 @@ class CrossfadeQueueSyncTest {
                 incomingCurrentIndex = 9,
             ),
         )
+    }
+
+    @Test
+    fun lastUpcomingItemRemoved_plansAnEmptyAfterRangeNotNoChange() {
+        // Regression: prepared [A, B, C] with incoming B; removing C during the fade left the
+        // desired after-range empty, which used to read as "unchanged" and C reappeared.
+        val result =
+            plan(
+                liveIds = listOf("a", "b"),
+                liveTargetIndex = 1,
+                incomingIds = listOf("a", "b", "c"),
+                incomingCurrentIndex = 1,
+            )
+        assertEquals(emptyList<String>(), result?.afterIds)
+        assertNull(result?.beforeIds)
+        assertEquals(1, result?.syncedCurrentIndex)
+    }
+
+    @Test
+    fun playedPrefixRemoved_plansAnEmptyBeforeRangeAndShiftsTheCurrentIndex() {
+        // Regression: prepared [P, A, B], incoming B at index 2; removing P leaves live [A, B]
+        // with B at 1. The promotion must read the playing item at the shifted index.
+        val result =
+            plan(
+                liveIds = listOf("a", "b"),
+                liveTargetIndex = 1,
+                incomingIds = listOf("p", "a", "b"),
+                incomingCurrentIndex = 2,
+            )
+        assertEquals(listOf("a"), result?.beforeIds)
+        assertEquals(1, result?.syncedCurrentIndex)
+
+        val emptied =
+            plan(
+                liveIds = listOf("b", "c"),
+                liveTargetIndex = 0,
+                incomingIds = listOf("p", "b", "c"),
+                incomingCurrentIndex = 1,
+            )
+        assertEquals(emptyList<String>(), emptied?.beforeIds)
+        assertNull(emptied?.afterIds)
+        assertEquals(0, emptied?.syncedCurrentIndex)
+    }
+
+    @Test
+    fun insertionBeforeTheTarget_shiftsTheSyncedCurrentIndexForward() {
+        val result =
+            plan(
+                liveIds = listOf("x", "a", "b", "c"),
+                liveTargetIndex = 2,
+                incomingIds = listOf("a", "b", "c"),
+                incomingCurrentIndex = 1,
+            )
+        assertEquals(2, result?.syncedCurrentIndex)
     }
 }

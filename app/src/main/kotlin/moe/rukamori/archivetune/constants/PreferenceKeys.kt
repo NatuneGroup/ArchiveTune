@@ -512,6 +512,30 @@ object DownloadSourceConfig {
         }
     }
 
+    /**
+     * Whether the terminal YouTube resolver may serve a download. It sits after every
+     * [resolutionChain] but is not part of it, so its playback toggle has to be checked here.
+     */
+    fun youTubeFallbackAllowed(playbackEnabled: Set<AudioSourceType>?): Boolean =
+        playbackEnabled == null || AudioSourceType.YOUTUBE in playbackEnabled
+
+    /**
+     * The already-cached keys a download may reuse for [mediaId], in the same order and under
+     * the same gates as a fresh resolution: the [resolutionChain] sources, then YouTube's bare key
+     * only while [youTubeFallbackAllowed]. A cache hit for any other source would hand the user
+     * bytes from a source they disabled or ranked below YouTube.
+     */
+    fun downloadCacheKeys(
+        rawOrder: String?,
+        pinnedSource: AudioSourceType?,
+        playbackEnabled: Set<AudioSourceType>?,
+        mediaId: String,
+    ): List<String> =
+        resolutionChain(rawOrder, pinnedSource, playbackEnabled)
+            .filterNot { it == DownloadSource.AUTO }
+            .map { "${it.name.lowercase(Locale.US)}:$mediaId" } +
+            listOfNotNull(mediaId.takeIf { youTubeFallbackAllowed(playbackEnabled) })
+
     /** The playback source serving the same catalogue as [source], null for [DownloadSource.AUTO]. */
     fun toAudioSource(source: DownloadSource): AudioSourceType? =
         when (source) {

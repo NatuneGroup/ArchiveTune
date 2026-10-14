@@ -171,6 +171,26 @@ class PlaybackSourceChainTest {
     }
 
     @Test
+    fun cacheKeyOrderIsCutAtYouTube() {
+        // Regression: a complete tidal:<id> cache entry used to play even though the user had
+        // placed Tidal below YouTube, where the playback chain can never reach it.
+        val prefs = snapshot("YOUTUBE,TIDAL,QOBUZ", AudioSourceType.YOUTUBE, AudioSourceType.TIDAL)
+
+        assertEquals(listOf("id1"), PlaybackSourceChain.cacheKeyOrder(prefs, "id1"))
+
+        val middle = snapshot("DEEZER,YOUTUBE,TIDAL", AudioSourceType.DEEZER, AudioSourceType.YOUTUBE, AudioSourceType.TIDAL)
+
+        assertEquals(listOf("deezer:id1", "id1"), PlaybackSourceChain.cacheKeyOrder(middle, "id1"))
+    }
+
+    @Test
+    fun cacheKeyOrderBelowDisabledYouTubeIsStillUnreachable() {
+        val prefs = snapshot("YOUTUBE,TIDAL", AudioSourceType.TIDAL)
+
+        assertTrue(PlaybackSourceChain.cacheKeyOrder(prefs, "id1").isEmpty())
+    }
+
+    @Test
     fun cacheProbeKeysMatchTheDownloadPrefixes() {
         // Drift guard: downloads write under DownloadSourceConfig's prefixes; the playback cache
         // probe must look under exactly the same names for the same source.

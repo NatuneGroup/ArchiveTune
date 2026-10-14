@@ -137,6 +137,24 @@ internal object CrossfadeHandoffPolicy {
     }
 
     /**
+     * Applies a call site's [fallback] when [decided] is CONTINUE but the site has no loop to
+     * return to. A committed hand-off is never turned into RESTORE_OUTGOING by the fallback:
+     * CONTINUE means the incoming player is still promotable, so it is promoted and keeps its
+     * position instead of being released and later restarted from its cue.
+     */
+    fun resolveFallback(
+        decided: CrossfadeHandoffAction,
+        fallback: CrossfadeHandoffAction?,
+        snapshot: CrossfadeHandoffSnapshot,
+    ): CrossfadeHandoffAction {
+        if (decided != CrossfadeHandoffAction.CONTINUE || fallback == null) return decided
+        if (fallback == CrossfadeHandoffAction.RESTORE_OUTGOING && isCommitted(snapshot)) {
+            return CrossfadeHandoffAction.PROMOTE
+        }
+        return fallback
+    }
+
+    /**
      * Position the primary player must resume the target song at when the incoming player
      * cannot be promoted. Returns null when there is nothing worth carrying (below the
      * minimum carry, or a nonsensical position): the caller then seeks to the cue instead,
@@ -186,11 +204,20 @@ internal object CrossfadeListenerPolicy {
 internal data class CrossfadeQueueSyncPlan(
     /** Index of the playing (target) item in the incoming player. Never replaced. */
     val incomingCurrentIndex: Int,
-    /** Ids to write into incoming[0 until incomingCurrentIndex]; empty leaves that range alone. */
-    val beforeIds: List<String>,
-    /** Ids to write into incoming[incomingCurrentIndex + 1 until count]; empty leaves it alone. */
-    val afterIds: List<String>,
-)
+    /**
+     * Ids to write into incoming[0 until incomingCurrentIndex]; null leaves that range alone,
+     * an empty list clears it.
+     */
+    val beforeIds: List<String>?,
+    /**
+     * Ids to write into incoming[incomingCurrentIndex + 1 until count]; null leaves it alone,
+     * an empty list clears it.
+     */
+    val afterIds: List<String>?,
+) {
+    /** Index of the playing item once the plan has been applied (the before-range shifts it). */
+    val syncedCurrentIndex: Int get() = beforeIds?.size ?: incomingCurrentIndex
+}
 
 /**
  * Pure queue-sync planning for the crossfade promotion: reshapes the incoming player's
@@ -221,8 +248,8 @@ internal object CrossfadeQueueSync {
         val afterUnchanged = afterIds == incomingIds.drop(incomingCurrentIndex + 1)
         return CrossfadeQueueSyncPlan(
             incomingCurrentIndex = incomingCurrentIndex,
-            beforeIds = if (beforeUnchanged) emptyList() else beforeIds,
-            afterIds = if (afterUnchanged) emptyList() else afterIds,
+            beforeIds = if (beforeUnchanged) null else beforeIds,
+            afterIds = if (afterUnchanged) null else afterIds,
         )
     }
 }

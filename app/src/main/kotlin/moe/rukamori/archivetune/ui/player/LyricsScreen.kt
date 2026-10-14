@@ -66,9 +66,11 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -130,8 +132,6 @@ import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
-import moe.rukamori.archivetune.constants.LyricsMode
-import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerCustomBlurKey
@@ -147,9 +147,6 @@ import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
-import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import androidx.compose.ui.layout.boundsInRoot
@@ -229,7 +226,6 @@ fun LyricsScreen(
     val currentSongLiked = currentSong?.song?.liked == true
 
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
-    val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
     val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
     val configuredLyricsBackground by rememberEnumPreference(LyricsBackgroundStyleKey, LyricsBackgroundStyle.DEFAULT)
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
@@ -243,11 +239,8 @@ fun LyricsScreen(
     val density = LocalDensity.current
     val swipeStartRegionPx = with(density) { LyricsSwipeStartRegion.toPx() }
     val swipeDismissThresholdPx = with(density) { LyricsSwipeDismissThreshold.toPx() }
-    // The lyrics controls never hide: the bar carries the scrubber, the quality badge and the
-    // lyrics provider, none of which is worth playing hide-and-seek with, and a control you have
-    // to poke the screen to see is worse than one that is simply there.
-    // isUserScrollingLyrics is still collected because LyricsEnhanced / LyricsV2 report it through
-    // LocalLyricsScrollListener; nothing downstream needs it now.
+    // Reported by LyricsEnhanced / LyricsV2 through LocalLyricsScrollListener; a scroll counts as
+    // interaction and holds the controls up until it ends.
     var isUserScrollingLyrics by remember { mutableStateOf(false) }
 
     val hapticClick =
@@ -561,9 +554,33 @@ fun LyricsScreen(
 
     val isLoading = playbackState == STATE_BUFFERING || sliderPosition != null
     val orientation = LocalConfiguration.current.orientation
-    // Always shown, always expanded — see the note on the controls bar above.
-    val controlsVisible = true
+    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsInteractionEpoch by remember { mutableIntStateOf(0) }
     val controlsExpanded = true
+    val onControlsInteraction: () -> Unit = {
+        controlsVisible = true
+        controlsInteractionEpoch++
+    }
+    val autoHideControls =
+        shouldAutoHideLyricsControls(
+            isPlaying = isPlaying,
+            userScrollingLyrics = isUserScrollingLyrics,
+            scrubbing = sliderPosition != null,
+            menuOpen = showAnchoredLyricsMenu,
+        )
+    // Keyed only on the gating state and explicit interactions, never on the position ticks, so
+    // the countdown is not restarted four times a second. Plain delay rather than scaledDelay:
+    // this is an idle timeout measured against playback, and an animator scale of 0 would
+    // otherwise hide the controls the instant they appeared.
+    LaunchedEffect(autoHideControls, controlsInteractionEpoch) {
+        if (!autoHideControls) {
+            controlsVisible = true
+            return@LaunchedEffect
+        }
+        delay(AppleMusicLyricsControlsAutoHideDelayMs)
+        controlsVisible = false
+    }
+    val currentOnControlsInteraction by rememberUpdatedState(onControlsInteraction)
     val onControlsPositionChange: (Long) -> Unit = {
         sliderPosition = it
     }
@@ -596,10 +613,11 @@ fun LyricsScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                // Root-level pointer handler for the edge-swipe dismiss. Sitting on the ROOT
-                // container makes it an ancestor of every hit path: Compose delivers pointer
-                // events to the hit node and its ancestors, so taps land here even when the
-                // lyrics LazyColumn consumes them for scrolling.
+                // Root-level pointer handler for the edge-swipe dismiss and for bringing the
+                // auto-hidden controls back. Sitting on the ROOT container makes it an ancestor
+                // of every hit path: Compose delivers pointer events to the hit node and its
+                // ancestors, so taps land here even when the lyrics LazyColumn consumes them
+                // for scrolling.
                 .pointerInput(
                     swipeStartRegionPx,
                     swipeDismissThresholdPx,
@@ -607,6 +625,7 @@ fun LyricsScreen(
                 ) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        currentOnControlsInteraction()
                         if (down.position.y <= swipeStartRegionPx) {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -694,7 +713,6 @@ fun LyricsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             AppleMusicLyricsPane(
-                                lyricsMode = lyricsMode,
                                 foregroundColor = foregroundColor,
                                 sliderPositionProvider = { sliderPosition },
                                 lyricsSyncOffset = lyricsSyncOffset,
@@ -726,7 +744,7 @@ fun LyricsScreen(
                                     onPreviousClick = onControlsPreviousClick,
                                     onPlayPauseClick = onControlsPlayPauseClick,
                                     onNextClick = onControlsNextClick,
-                                    onControlsInteraction = {},
+                                    onControlsInteraction = onControlsInteraction,
                                     foregroundColor = foregroundColor,
                                     currentFormat = currentFormat,
                                     lyricsProviderName = currentLyrics?.providerName.orEmpty(),
@@ -740,7 +758,6 @@ fun LyricsScreen(
                         }
                     } else {
                         AppleMusicLyricsPane(
-                            lyricsMode = lyricsMode,
                             foregroundColor = foregroundColor,
                             sliderPositionProvider = { sliderPosition },
                             lyricsSyncOffset = lyricsSyncOffset,
@@ -753,7 +770,6 @@ fun LyricsScreen(
                 }
             } else {
                 AppleMusicLyricsPane(
-                    lyricsMode = lyricsMode,
                     foregroundColor = foregroundColor,
                     sliderPositionProvider = { sliderPosition },
                     lyricsSyncOffset = lyricsSyncOffset,
@@ -787,7 +803,7 @@ fun LyricsScreen(
                         onPreviousClick = onControlsPreviousClick,
                         onPlayPauseClick = onControlsPlayPauseClick,
                         onNextClick = onControlsNextClick,
-                        onControlsInteraction = {},
+                        onControlsInteraction = onControlsInteraction,
                         foregroundColor = foregroundColor,
                         currentFormat = currentFormat,
                         lyricsProviderName = currentLyrics?.providerName.orEmpty(),
@@ -1362,21 +1378,19 @@ private fun AppleMusicHeaderIconButton(
 
 @Composable
 private fun AppleMusicLyricsPane(
-    lyricsMode: LyricsMode,
     foregroundColor: Color,
     sliderPositionProvider: () -> Long?,
     lyricsSyncOffset: Int,
     modifier: Modifier = Modifier,
 ) {
-    LyricsContent(
-        lyricsMode = lyricsMode,
+    SelectedLyrics(
         sliderPositionProvider = sliderPositionProvider,
         lyricsSyncOffset = lyricsSyncOffset,
         modifier =
             modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp),
-        textColor = foregroundColor,
+        textColorOverride = foregroundColor,
     )
 }
 
@@ -1461,7 +1475,6 @@ private fun AppleMusicControls(
             // width by a digit every time a minute rolls over, and a badge that shifts with the
             // clock reads as a glitch.
             LosslessOrStats(
-                isLoading = isLoading,
                 format = currentFormat,
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
             )
@@ -1692,52 +1705,4 @@ private fun AppleMusicSlider(
         // area and makes the slider impossible to drag.
         modifier = modifier,
     )
-}
-
-@Composable
-private fun LyricsContent(
-    lyricsMode: LyricsMode,
-    sliderPositionProvider: () -> Long?,
-    lyricsSyncOffset: Int,
-    textColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    when (lyricsMode) {
-        LyricsMode.V2 -> {
-            LyricsV2(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-
-        LyricsMode.ENHANCED -> {
-            LyricsEnhanced(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-
-        LyricsMode.SPOTIFY -> {
-            LyricsEnhanced(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-                spotifyStyle = true,
-            )
-        }
-
-        LyricsMode.SIMPMUSIC -> {
-            SimpMusicLyrics(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-    }
 }

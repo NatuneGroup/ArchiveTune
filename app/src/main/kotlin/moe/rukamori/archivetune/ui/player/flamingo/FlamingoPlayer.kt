@@ -192,8 +192,8 @@ import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
-import moe.rukamori.archivetune.db.entities.isLossless
+import moe.rukamori.archivetune.ui.player.label
+import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -4581,19 +4581,9 @@ private fun FlamingoQualityIndicator(
 ) {
     if (currentFormat == null) return
 
-    val musicBitrateKbps = currentFormat.bitrate / 1000
-    val musicSamplingRate = currentFormat.sampleRate ?: 0
-
-    val isLossless = currentFormat.isLossless() ||
-        (musicBitrateKbps >= 700 && musicSamplingRate >= 44100)
-    val isHiRes = musicBitrateKbps >= 2000 && musicSamplingRate >= 96000
-
-    val text =
-        when {
-            isHiRes -> stringResource(id = R.string.flamingo_quality_hires_lossless)
-            isLossless -> stringResource(id = R.string.flamingo_quality_lossless)
-            else -> currentFormat.codecLabel() ?: stringResource(id = R.string.flamingo_quality_lossless)
-        }
+    val quality = currentFormat.streamQuality()
+    val isLossless = quality.isLossless
+    val text = quality.label()
 
     Box(
         modifier = Modifier
@@ -4623,7 +4613,7 @@ private fun FlamingoQualityIndicator(
             ) {
                 Icon(
                     painter = painterResource(
-                        if (isHiRes || isLossless) {
+                        if (isLossless) {
                             R.drawable.flamingo_quality_lossless
                         } else {
                             R.drawable.player_graphic_eq
@@ -4631,7 +4621,7 @@ private fun FlamingoQualityIndicator(
                     ),
                     contentDescription = "quality_badge",
                     modifier = Modifier
-                        .height(if (isHiRes || isLossless) 9.dp else 10.dp)
+                        .height(if (isLossless) 9.dp else 10.dp)
                         .alpha(0.45f),
                 )
                 Spacer(modifier = Modifier.width(5.dp))

@@ -143,8 +143,6 @@ import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
-import moe.rukamori.archivetune.db.entities.isLossless
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -2382,12 +2380,9 @@ private fun AppleMusicQualityChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val label = remember(currentFormat.mimeType, currentFormat.codecs) {
-        currentFormat.codecLabel()
-    }
-    val lossless = remember(currentFormat.codecs, currentFormat.mimeType) {
-        currentFormat.isLossless()
-    }
+    val quality = remember(currentFormat) { currentFormat.streamQuality() }
+    val label = quality.label()
+    val lossless = quality.isLossless
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = Color.White.copy(alpha = 0.1f),

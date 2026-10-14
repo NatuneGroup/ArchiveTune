@@ -1874,6 +1874,8 @@ class MainActivity : ComponentActivity() {
 
                     var isPlayerLyricsFullScreen by remember { mutableStateOf(false) }
 
+                    // The lyrics page keeps the status bar like every other page; only the global
+                    // "Hide status bar" setting removes it there.
                     val shouldHideStatusBars =
                         hideStatusBar ||
                             isYearInMusicScreen ||
@@ -1881,8 +1883,7 @@ class MainActivity : ComponentActivity() {
                             (
                                 menuState.isVisible &&
                                     playerBottomSheetState.isExpandedOrExpanding
-                            ) ||
-                            (playerBottomSheetState.isExpandedOrExpanding && isPlayerLyricsFullScreen)
+                            )
 
                     LaunchedEffect(shouldHideStatusBars, menuState.isVisible, aodModeEnabled) {
                         if (aodModeEnabled) return@LaunchedEffect

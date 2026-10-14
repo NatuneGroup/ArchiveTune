@@ -185,12 +185,7 @@ import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.player.MeshBackdrop
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
-import moe.rukamori.archivetune.constants.LyricsMode
-import moe.rukamori.archivetune.constants.LyricsModeKey
-import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
-import moe.rukamori.archivetune.ui.component.LyricsV2
-import moe.rukamori.archivetune.utils.rememberEnumPreference
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.ui.player.LosslessOrStats
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import androidx.compose.material.icons.rounded.Close
@@ -1298,8 +1293,7 @@ fun BitChordPlayerContent(
 
                 if (lyricsOpen) {
                     // The app's own lyrics view, in whichever style the Lyrics settings select —
-                    // the same component every other player style opens.
-                    val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
+                    // the same component the shared lyrics page draws.
                     val panelModifier = Modifier
                         .fillMaxSize()
                         .padding(top = HEADER_HEIGHT + 10.dp)
@@ -1314,40 +1308,12 @@ fun BitChordPlayerContent(
                     // Null unless the user is scrubbing, matching LyricsScreen: the renderers run
                     // their own frame clock off the player, and a polled position would step.
                     val lyricsPositionProvider = remember { { null as Long? } }
-                    when (lyricsMode) {
-                        LyricsMode.ENHANCED ->
-                            LyricsEnhanced(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-
-                        LyricsMode.SPOTIFY ->
-                            LyricsEnhanced(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                                spotifyStyle = true,
-                            )
-
-                        LyricsMode.SIMPMUSIC ->
-                            SimpMusicLyrics(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-
-                        LyricsMode.V2 ->
-                            LyricsV2(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-                    }
+                    SelectedLyrics(
+                        sliderPositionProvider = lyricsPositionProvider,
+                        lyricsSyncOffset = lyricsSyncOffset,
+                        modifier = panelModifier,
+                        textColorOverride = Color.White,
+                    )
                 }
 
                 // Toggles and the queue arrive after the sleeve has finished
@@ -1463,7 +1429,6 @@ fun BitChordPlayerContent(
             BitChordScrubTimes(
                 shownFraction = shownFraction,
                 duration = duration,
-                isLoading = isLoading,
                 format = currentFormat,
                 // The slider's touch target extends well past the drawn
                 // bar, so pull the labels back up under it.
@@ -2084,7 +2049,6 @@ private object OverlayBack {
 private fun BitChordScrubTimes(
     shownFraction: () -> Float,
     duration: Long,
-    isLoading: Boolean,
     format: FormatEntity?,
     modifier: Modifier = Modifier,
 ) {
@@ -2096,7 +2060,6 @@ private fun BitChordScrubTimes(
             ScrubTime { formatTime((shownFraction() * duration).toLong()) }
         }
         LosslessOrStats(
-            isLoading = isLoading,
             format = format,
             modifier = Modifier.padding(horizontal = 8.dp),
         )

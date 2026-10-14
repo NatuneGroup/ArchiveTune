@@ -20,6 +20,18 @@ internal fun shouldAutoHideAppleMusicControls(
     enabled: Boolean,
 ): Boolean = enabled && (lyricsOpen || queueOpen)
 
+/**
+ * Whether the lyrics page may start its idle countdown to tuck the controls away. Paused playback
+ * keeps them up (there is nothing to read along to, and play is the next thing wanted), as does
+ * anything the user is in the middle of: scrolling the lyrics, scrubbing, or an open menu.
+ */
+internal fun shouldAutoHideLyricsControls(
+    isPlaying: Boolean,
+    userScrollingLyrics: Boolean,
+    scrubbing: Boolean,
+    menuOpen: Boolean,
+): Boolean = isPlaying && !userScrollingLyrics && !scrubbing && !menuOpen
+
 internal fun isAppleMusicLyricsDismissDrag(
     deltaX: Float,
     deltaY: Float,

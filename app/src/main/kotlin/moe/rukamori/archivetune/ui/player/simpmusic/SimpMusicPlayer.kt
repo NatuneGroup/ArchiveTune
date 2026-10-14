@@ -422,7 +422,6 @@ fun SimpMusicPlayerContent(
                             sliderPosition = sliderPosition,
                             position = position,
                             duration = duration,
-                            isLoading = isLoading,
                             currentFormat = currentFormat,
                             onSeek = onSeek,
                             onSeekFinished = onSeekFinished,
@@ -929,7 +928,6 @@ private fun SimpMusicProgressRow(
     sliderPosition: Long?,
     position: Long,
     duration: Long,
-    isLoading: Boolean,
     currentFormat: FormatEntity?,
     onSeek: (Long) -> Unit,
     onSeekFinished: () -> Unit,
@@ -985,7 +983,7 @@ private fun SimpMusicProgressRow(
             }
             // SimpMusic keeps this middle slot for its "Crossfading" shimmer. ArchiveTune knows
             // what it is actually streaming, so the slot carries that instead of sitting empty.
-            LosslessOrStats(isLoading = isLoading, format = currentFormat)
+            LosslessOrStats(format = currentFormat)
             Row(
                 modifier = Modifier.weight(1f),
                 horizontalArrangement = Arrangement.End,

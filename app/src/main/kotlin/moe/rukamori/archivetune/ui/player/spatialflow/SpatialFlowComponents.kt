@@ -74,7 +74,8 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
+import moe.rukamori.archivetune.ui.player.label
+import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
@@ -434,10 +435,7 @@ internal fun WavySliderWithLabels(
             }
 
             if (currentFormat != null) {
-                val label =
-                    remember(currentFormat.mimeType, currentFormat.codecs) {
-                        currentFormat.codecLabel()
-                    }
+                val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
                 Row(
                     modifier =
                         Modifier

@@ -1117,8 +1117,8 @@ fun BottomSheetPlayer(
     // LiquidGlass/Canvas GPU work competes with the sharedBounds morph and stutters.
     var isInlineLyricsOpen by rememberSaveable { mutableStateOf(false) }
 
-    // Report full-screen lyrics visibility upward so the status bar can be hidden for every player
-    // style while the lyrics overlay is showing, not only for the Immersive style.
+    // Report full-screen lyrics visibility upward so back-stack screens can suspend GPU work while
+    // the lyrics overlay is showing, for every player style.
     val lyricsFullScreenActive =
         (isLyricsScreenVisible || isInlineLyricsOpen) && state.isExpandedOrExpanding
     LaunchedEffect(lyricsFullScreenActive) {

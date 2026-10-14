@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.screens.playlist
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import android.annotation.SuppressLint
 import android.os.Build
 import androidx.activity.compose.BackHandler
@@ -100,7 +101,6 @@ import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.PlaylistEditLockKey
 import moe.rukamori.archivetune.constants.PlaylistSongSortType
-import moe.rukamori.archivetune.constants.SwipeToSongKey
 import moe.rukamori.archivetune.db.entities.PlaylistSong
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toMediaItem
@@ -184,7 +184,7 @@ fun LocalPlaylistScreen(
     val onSortTypeChange: (PlaylistSongSortType) -> Unit = { viewModel.updateSortPreference(it, sortDescending) }
     val onSortDescendingChange: (Boolean) -> Unit = { viewModel.updateSortPreference(sortType, it) }
     var locked by rememberPreference(PlaylistEditLockKey, defaultValue = true)
-    val swipeToSongEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
+    val swipeToSongEnabled = LocalItemPreferences.current.swipeToSongEnabled
     // Shared glass header: the master toggle, the Android 12+ RuntimeShader gate,
     // and the full-screen-lyrics suspension all live in rememberGlassScreenHeader().
     // The TopAppBar below stays gated on header.liquidGlassActive so rendering with

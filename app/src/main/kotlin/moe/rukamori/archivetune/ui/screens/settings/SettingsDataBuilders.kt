@@ -15,11 +15,9 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.stringResource
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.R
@@ -108,20 +106,20 @@ private fun SearchResultSwitch(
     )
 }
 
-@Composable
 fun buildSettingsGroups(
     navController: NavController,
     isAndroid12OrLater: Boolean,
     hasUpdate: Boolean,
     context: Context,
+    colorScheme: ColorScheme,
 ): List<SettingsGroup> {
     val account =
         SettingsItem(
             key = "account",
-            icon = painterResource(R.drawable.ic_account),
-            title = stringResource(R.string.account),
-            subtitle = stringResource(R.string.settings_account_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.ic_account,
+            title = context.getString(R.string.account),
+            subtitle = context.getString(R.string.settings_account_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("account", "profile", "youtube", "sign in", "login", "logout", "token", "hidden", "playlist", "channels", "switch account"),
             onClick = { navController.navigate("settings/account") },
             children = listOf(
@@ -135,34 +133,34 @@ fun buildSettingsGroups(
     val stats =
         SettingsItem(
             key = "stats",
-            icon = painterResource(R.drawable.stats),
-            title = stringResource(R.string.settings_stats_title),
-            subtitle = stringResource(R.string.settings_stats_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.stats,
+            title = context.getString(R.string.settings_stats_title),
+            subtitle = context.getString(R.string.settings_stats_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("stats", "statistics", "listening", "history", "top", "most played", "time"),
             onClick = { navController.navigate("stats") },
         )
     val listenTogether =
         SettingsItem(
             key = "listen_together",
-            icon = painterResource(R.drawable.diversity_listen_together),
-            title = stringResource(R.string.listen_together),
-            subtitle = stringResource(R.string.setting_listen_together_desc),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.diversity_listen_together,
+            title = context.getString(R.string.listen_together),
+            subtitle = context.getString(R.string.setting_listen_together_desc),
+            accentColor = colorScheme.primary,
             keywords = listOf("listen together", "room", "shared playback", "sync playback", "listen party", "group listening", "chat", "friends"),
             onClick = { navController.navigate("listen_together") },
         )
     val appearance =
         SettingsItem(
             key = "appearance",
-            icon = painterResource(R.drawable.ic_palette),
-            title = stringResource(R.string.appearance),
-            subtitle = stringResource(R.string.settings_appearance_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.ic_palette,
+            title = context.getString(R.string.appearance),
+            subtitle = context.getString(R.string.settings_appearance_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("appearance", "theme", "dark", "light", "color", "palette", "style", "design"),
             onClick = { navController.navigate("settings/appearance") },
             children = listOf(
-                SettingsChild("Dynamic theme", "dynamic_theme", listOf("dynamic theme", "material you", "dynamic color")) { SearchResultSwitch(DynamicThemeKey, false) },
+                SettingsChild("Dynamic theme", "dynamic_theme", listOf("dynamic theme", "material you", "dynamic color")) { SearchResultSwitch(DynamicThemeKey, true) },
                 SettingsChild("Random theme on startup", "random_theme_on_startup", listOf("random theme", "random color", "shuffle theme")) { SearchResultSwitch(RandomThemeOnStartupKey, false) },
                 SettingsChild("Dark theme", "dark_theme", listOf("dark", "dark theme", "night", "amoled")),
                 SettingsChild("Pure black", "pure_black", listOf("pure black", "amoled", "oled", "black background")) { SearchResultSwitch(PureBlackKey, false) },
@@ -187,9 +185,9 @@ fun buildSettingsGroups(
                 SettingsChild("Mini player layout", "compact_mini_player", listOf("compact mini player", "small mini player", "mini player layout")),
                 SettingsChild("Player buttons style", "player_buttons_style", listOf("player buttons", "button style", "controls style")),
                 SettingsChild("Player slider style", "player_slider_style", listOf("player slider", "slider style", "progress bar")),
-                SettingsChild("Show player volume bar", "show_player_volume_bar", listOf("volume bar", "player volume", "volume slider")) { SearchResultSwitch(ShowPlayerVolumeBarKey, false) },
+                SettingsChild("Show player volume bar", "show_player_volume_bar", listOf("volume bar", "player volume", "volume slider")) { SearchResultSwitch(ShowPlayerVolumeBarKey, true) },
                 SettingsChild("Hide player thumbnail", "hide_player_thumbnail", listOf("hide thumbnail", "player thumbnail", "hide artwork")) { SearchResultSwitch(HidePlayerThumbnailKey, false) },
-                SettingsChild("Swipe to song", "swipe_to_song", listOf("swipe to song", "swipe next", "swipe track")) { SearchResultSwitch(SwipeToSongKey, false) },
+                SettingsChild("Swipe to song", "swipe_to_song", listOf("swipe to song", "swipe next", "swipe track")) { SearchResultSwitch(SwipeToSongKey, true) },
                 SettingsChild("Swipe sensitivity", "swipe_sensitivity", listOf("swipe", "gesture", "sensitivity")),
                 SettingsChild("Disable animations", "disable_animations", listOf("animation", "disable animations", "no animations", "performance")) { SearchResultSwitch(DisableAnimationsKey, false) },
                 SettingsChild("Splash screen animation", "splash_overlay_enabled", listOf("splash", "splash screen", "opening animation", "launch animation", "startup animation", "particles")) { SearchResultSwitch(SplashOverlayEnabledKey, true) },
@@ -229,10 +227,10 @@ fun buildSettingsGroups(
     val appearanceExtras =
         SettingsItem(
             key = "appearance_extras",
-            icon = painterResource(R.drawable.palette),
+            icon = R.drawable.palette,
             title = "Appearance extras",
             subtitle = "Home and library card visibility",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("extras", "appearance extras", "home cards", "hide cards", "library cards", "quick picks cards"),
             onClick = { navController.navigate("settings/appearance/extras") },
             hidden = true,
@@ -251,10 +249,10 @@ fun buildSettingsGroups(
     val aodCustomization =
         SettingsItem(
             key = "aod",
-            icon = painterResource(R.drawable.palette),
+            icon = R.drawable.palette,
             title = "AOD customization",
             subtitle = "Always-on display layout and style",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("aod", "always on display", "always-on display", "lockscreen", "screensaver", "idle screen", "ambient display"),
             onClick = { navController.navigate("settings/appearance/aod_customized") },
             hidden = true,
@@ -281,10 +279,10 @@ fun buildSettingsGroups(
     val navigationBar =
         SettingsItem(
             key = "navigation_bar",
-            icon = painterResource(R.drawable.palette),
+            icon = R.drawable.palette,
             title = "Navigation bar",
             subtitle = "Navigation bar style and dimensions",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("navigation bar", "nav bar", "bottom bar", "tab bar", "navbar"),
             onClick = { navController.navigate("settings/appearance/navigation_bar") },
             hidden = true,
@@ -306,10 +304,10 @@ fun buildSettingsGroups(
     val lyricsAnimations =
         SettingsItem(
             key = "lyrics_animations",
-            icon = painterResource(R.drawable.lyrics),
+            icon = R.drawable.lyrics,
             title = "Lyrics animations",
             subtitle = "Lyrics motion and transitions",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("lyrics animation", "lyrics animations", "lyrics motion", "lyrics transition", "karaoke animation"),
             onClick = { navController.navigate("settings/appearance/lyrics_animations") },
             hidden = true,
@@ -323,10 +321,10 @@ fun buildSettingsGroups(
     val playback =
         SettingsItem(
             key = "playback",
-            icon = painterResource(R.drawable.music_note),
-            title = stringResource(R.string.settings_playback_title),
-            subtitle = stringResource(R.string.settings_playback_subtitle),
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            icon = R.drawable.music_note,
+            title = context.getString(R.string.settings_playback_title),
+            subtitle = context.getString(R.string.settings_playback_subtitle),
+            accentColor = colorScheme.tertiary,
             keywords = listOf("playback", "player", "audio", "quality", "equalizer", "eq", "volume", "crossfade", "gapless", "flac", "lossless", "hi-res", "sample rate", "bitrate", "video", "music video", "video playback", "pip", "picture in picture", "floating", "minimize"),
             onClick = { navController.navigate("settings/player") },
             children = listOf(
@@ -388,10 +386,10 @@ fun buildSettingsGroups(
     val canvas =
         SettingsItem(
             key = "canvas",
-            icon = painterResource(R.drawable.motion_photos_on),
-            title = stringResource(R.string.archivetune_canvas),
-            subtitle = stringResource(R.string.canvas_settings_subtitle),
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            icon = R.drawable.motion_photos_on,
+            title = context.getString(R.string.archivetune_canvas),
+            subtitle = context.getString(R.string.canvas_settings_subtitle),
+            accentColor = colorScheme.tertiary,
             keywords = listOf("canvas", "animated artwork", "motion artwork", "live artwork", "video artwork", "wifi", "metered", "cache"),
             onClick = { navController.navigate("settings/canvas") },
         )
@@ -399,10 +397,10 @@ fun buildSettingsGroups(
     val jioSaavn =
         SettingsItem(
             key = "jiosaavn",
-            icon = painterResource(R.drawable.provider_tidal),
+            icon = R.drawable.provider_tidal,
             title = "JioSaavn",
             subtitle = "JioSaavn audio source",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("jiosaavn", "jio saavn", "saavn", "indian music", "bollywood", "vivimusic"),
             onClick = { navController.navigate("settings/jiosaavn") },
             hidden = true,
@@ -416,10 +414,10 @@ fun buildSettingsGroups(
     val amazon =
         SettingsItem(
             key = "amazon",
-            icon = painterResource(R.drawable.login),
+            icon = R.drawable.login,
             title = "Amazon Music",
             subtitle = "Amazon Music account and audio source",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("amazon", "amazon music", "amazon login", "amazon hd", "amazon ultra hd"),
             onClick = { navController.navigate("settings/amazon") },
             hidden = true,
@@ -435,10 +433,10 @@ fun buildSettingsGroups(
     val qqMusic =
         SettingsItem(
             key = "qqmusic",
-            icon = painterResource(R.drawable.ic_music),
+            icon = R.drawable.ic_music,
             title = "QQ Music",
             subtitle = "QQ Music account and audio source",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("qq", "qq music", "qqmusic", "tencent", "tme", "qr login", "sign in"),
             onClick = { navController.navigate("settings/qqmusic") },
             hidden = true,
@@ -453,10 +451,10 @@ fun buildSettingsGroups(
     val spotifyStreaming =
         SettingsItem(
             key = "spotify_streaming",
-            icon = painterResource(R.drawable.spotify_icon),
+            icon = R.drawable.spotify_icon,
             title = "Spotify streaming",
             subtitle = "Experimental audio source on a separate Spotify account",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("spotify", "spotify streaming", "spotify audio", "stopify", "echo", "streaming account", "sign in"),
             onClick = { navController.navigate("settings/spotify_streaming") },
             hidden = true,
@@ -471,10 +469,10 @@ fun buildSettingsGroups(
     val deezer =
         SettingsItem(
             key = "deezer",
-            icon = painterResource(R.drawable.provider_tidal),
+            icon = R.drawable.provider_tidal,
             title = "Deezer",
             subtitle = "Deezer account and audio source",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("deezer", "deezer account", "deezer login", "arl", "deezer premium", "flac"),
             onClick = { navController.navigate("settings/deezer") },
             hidden = true,
@@ -488,10 +486,10 @@ fun buildSettingsGroups(
     val sources =
         SettingsItem(
             key = "sources",
-            icon = painterResource(R.drawable.ic_music),
-            title = stringResource(R.string.source_settings),
-            subtitle = stringResource(R.string.source_settings_subtitle),
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            icon = R.drawable.ic_music,
+            title = context.getString(R.string.source_settings),
+            subtitle = context.getString(R.string.source_settings_subtitle),
+            accentColor = colorScheme.tertiary,
             keywords = listOf("source", "music source", "youtube music", "spotify", "metadata source", "search source", "tidal", "qobuz", "provider", "streaming", "telegram", "telegram channel", "flac", "lossless", "private channel"),
             onClick = { navController.navigate("settings/sources") },
             // Playback sub-page anchor, kept in the search index so existing search shortcuts
@@ -508,10 +506,10 @@ fun buildSettingsGroups(
     val lyrics =
         SettingsItem(
             key = "lyrics",
-            icon = painterResource(R.drawable.ic_lyrics),
-            title = stringResource(R.string.lyrics),
-            subtitle = stringResource(R.string.settings_lyrics_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.ic_lyrics,
+            title = context.getString(R.string.lyrics),
+            subtitle = context.getString(R.string.settings_lyrics_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("lyrics", "lyric", "subtitle", "text", "sing along", "lrc", "translation", "romanize", "karaoke"),
             onClick = { navController.navigate("settings/lyrics") },
             // Playback sub-page anchor, kept in the search index so existing search shortcuts
@@ -566,10 +564,10 @@ fun buildSettingsGroups(
     val lyricsProviders =
         SettingsItem(
             key = "lyrics_providers",
-            icon = painterResource(R.drawable.lyrics),
+            icon = R.drawable.lyrics,
             title = "Lyrics providers",
             subtitle = "Enable and prioritise lyrics sources",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("lyrics provider", "lyrics providers", "lyrics source", "lrclib", "kugou", "musixmatch", "betterlyrics", "paxsenix", "youlyplus", "unison", "simpmusic", "megalobiz"),
             onClick = { navController.navigate("settings/lyrics/providers") },
             hidden = true,
@@ -598,10 +596,10 @@ fun buildSettingsGroups(
     val lyricsRomanisation =
         SettingsItem(
             key = "lyrics_romanisation",
-            icon = painterResource(R.drawable.translate),
+            icon = R.drawable.translate,
             title = "Lyrics romanization",
             subtitle = "Transliterate non-Latin lyrics",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("romanization", "romanisation", "romanize", "romaji", "pinyin", "transliteration", "furigana", "hangul"),
             onClick = { navController.navigate("settings/lyrics/romanisation") },
             hidden = true,
@@ -616,10 +614,10 @@ fun buildSettingsGroups(
     val content =
         SettingsItem(
             key = "content",
-            icon = painterResource(R.drawable.language),
-            title = stringResource(R.string.content),
-            subtitle = stringResource(R.string.settings_content_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.language,
+            title = context.getString(R.string.content),
+            subtitle = context.getString(R.string.settings_content_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("content", "language", "locale", "country", "region", "app language", "explicit", "age restricted", "age", "mature", "video", "progressive", "quick picks"),
             onClick = { navController.navigate("settings/content") },
             children = listOf(
@@ -642,20 +640,20 @@ fun buildSettingsGroups(
     val languagePacks =
         SettingsItem(
             key = "language_packs",
-            icon = painterResource(R.drawable.translate),
-            title = stringResource(R.string.additional_downloads),
-            subtitle = stringResource(R.string.additional_downloads_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.translate,
+            title = context.getString(R.string.additional_downloads),
+            subtitle = context.getString(R.string.additional_downloads_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("additional downloads", "additional resources", "language pack", "translation", "translate", "localization", "i18n", "dictionary", "japanese", "fonts", "spatialflow font", "addons"),
             onClick = { navController.navigate("settings/language_packs") },
         )
     val behavior =
         SettingsItem(
             key = "behavior",
-            icon = painterResource(R.drawable.swipe),
-            title = stringResource(R.string.settings_behavior_title),
-            subtitle = stringResource(R.string.settings_behavior_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.swipe,
+            title = context.getString(R.string.settings_behavior_title),
+            subtitle = context.getString(R.string.settings_behavior_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("behavior", "privacy", "swipe", "gesture", "history", "cache", "data", "screenshot", "haptic", "vibrate"),
             onClick = { navController.navigate("settings/privacy") },
             children = listOf(
@@ -676,10 +674,10 @@ fun buildSettingsGroups(
     val integration =
         SettingsItem(
             key = "integration",
-            icon = painterResource(R.drawable.auto_awesome),
-            title = stringResource(R.string.integration),
-            subtitle = stringResource(R.string.settings_integration_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.auto_awesome,
+            title = context.getString(R.string.integration),
+            subtitle = context.getString(R.string.settings_integration_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("integration", "lastfm", "last.fm", "libre.fm", "scrobble", "scrobbling", "discord", "listenbrainz", "spotify", "apple music"),
             onClick = { navController.navigate("settings/integration") },
             children = listOf(
@@ -741,10 +739,10 @@ fun buildSettingsGroups(
     val discordExperimental =
         SettingsItem(
             key = "discord_experimental",
-            icon = painterResource(R.drawable.auto_awesome),
+            icon = R.drawable.auto_awesome,
             title = "Discord experimental",
             subtitle = "Rich presence buttons and translation",
-            accentColor = MaterialTheme.colorScheme.secondary,
+            accentColor = colorScheme.secondary,
             keywords = listOf("discord experimental", "discord buttons", "rich presence buttons", "rpc buttons", "discord translator"),
             onClick = { navController.navigate("settings/discord/experimental") },
             hidden = true,
@@ -761,10 +759,10 @@ fun buildSettingsGroups(
     val tidalDetail =
         SettingsItem(
             key = "tidal",
-            icon = painterResource(R.drawable.provider_tidal),
+            icon = R.drawable.provider_tidal,
             title = "Tidal",
             subtitle = "Tidal account and instances",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("tidal", "tidal account", "tidal instances", "hifi", "mqa", "lossless", "flac", "tidal login"),
             onClick = { navController.navigate("settings/tidal") },
             hidden = true,
@@ -786,10 +784,10 @@ fun buildSettingsGroups(
     val qobuzDetail =
         SettingsItem(
             key = "qobuz",
-            icon = painterResource(R.drawable.provider_tidal),
+            icon = R.drawable.provider_tidal,
             title = "Qobuz",
             subtitle = "Qobuz account, tokens and instances",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("qobuz", "qobuz account", "qobuz tokens", "qobuz instances", "hi-res", "flac", "cd quality", "24 bit", "qobuz login"),
             onClick = { navController.navigate("settings/qobuz") },
             hidden = true,
@@ -813,10 +811,10 @@ fun buildSettingsGroups(
     val telegramDetail =
         SettingsItem(
             key = "telegram",
-            icon = painterResource(R.drawable.ic_telegram),
+            icon = R.drawable.ic_telegram,
             title = "Telegram",
             subtitle = "Telegram account and channels",
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            accentColor = colorScheme.tertiary,
             keywords = listOf("telegram", "telegram channel", "telegram login", "telegram music", "telegram bots", "channel sync"),
             onClick = { navController.navigate("settings/telegram") },
             hidden = true,
@@ -832,10 +830,10 @@ fun buildSettingsGroups(
     val androidAuto =
         SettingsItem(
             key = "android_auto",
-            icon = painterResource(R.drawable.directions_car),
-            title = stringResource(R.string.android_auto),
-            subtitle = stringResource(R.string.android_auto_settings_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.directions_car,
+            title = context.getString(R.string.android_auto),
+            subtitle = context.getString(R.string.android_auto_settings_subtitle),
+            accentColor = colorScheme.primary,
             keywords =
                 listOf(
                     "android auto", "car", "driving", "automotive", "projection", "car screen",
@@ -846,10 +844,10 @@ fun buildSettingsGroups(
     val aiIntegration =
         SettingsItem(
             key = "ai_integration",
-            icon = painterResource(R.drawable.ai),
-            title = stringResource(R.string.ai_integration),
-            subtitle = stringResource(R.string.ai_integration_desc),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.ai,
+            title = context.getString(R.string.ai_integration),
+            subtitle = context.getString(R.string.ai_integration_desc),
+            accentColor = colorScheme.secondary,
             keywords = listOf("ai", "artificial intelligence", "chatgpt", "openai", "gemini", "llm", "ai integration", "mix", "smart mix"),
             onClick = { navController.navigate("settings/ai_integration") },
             // Integration sub-page anchor, kept in the search index so existing search shortcuts
@@ -876,10 +874,10 @@ fun buildSettingsGroups(
     val internet =
         SettingsItem(
             key = "internet",
-            icon = painterResource(R.drawable.wifi_proxy),
-            title = stringResource(R.string.internet),
-            subtitle = stringResource(R.string.settings_internet_subtitle),
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            icon = R.drawable.wifi_proxy,
+            title = context.getString(R.string.internet),
+            subtitle = context.getString(R.string.settings_internet_subtitle),
+            accentColor = colorScheme.tertiary,
             keywords = listOf("internet", "proxy", "vpn", "network", "wifi", "connection", "traffic", "tor", "dns", "dns over https", "region", "country", "spoof", "geobypass", "geo bypass"),
             onClick = { navController.navigate("settings/internet") },
             children = listOf(
@@ -903,10 +901,10 @@ fun buildSettingsGroups(
     val poToken =
         SettingsItem(
             key = "po_token",
-            icon = painterResource(R.drawable.token),
-            title = stringResource(R.string.po_token_generation),
-            subtitle = stringResource(R.string.settings_po_token_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.token,
+            title = context.getString(R.string.po_token_generation),
+            subtitle = context.getString(R.string.settings_po_token_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("po token", "potoken", "botguard", "youtube token", "playability"),
             onClick = { navController.navigate(PO_TOKEN_ROUTE) },
             // Accounts sub-page anchor, kept in the search index so existing search shortcuts still
@@ -920,10 +918,10 @@ fun buildSettingsGroups(
     val storage =
         SettingsItem(
             key = "storage",
-            icon = painterResource(R.drawable.storage),
-            title = stringResource(R.string.storage),
-            subtitle = stringResource(R.string.settings_storage_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.storage,
+            title = context.getString(R.string.storage),
+            subtitle = context.getString(R.string.settings_storage_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("storage", "download", "cache", "disk", "space", "memory", "path", "location", "export", "export songs", "local storage", "save songs"),
             onClick = { navController.navigate("settings/storage") },
             children = listOf(
@@ -948,10 +946,10 @@ fun buildSettingsGroups(
     val downloads =
         SettingsItem(
             key = "downloads",
-            icon = painterResource(R.drawable.download),
-            title = stringResource(R.string.downloads),
-            subtitle = stringResource(R.string.settings_downloads_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.download,
+            title = context.getString(R.string.downloads),
+            subtitle = context.getString(R.string.settings_downloads_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("download", "downloader", "external downloader", "download source", "auto download", "export songs", "clear downloads", "offline"),
             onClick = { navController.navigate("settings/downloads") },
             children = listOf(
@@ -966,10 +964,10 @@ fun buildSettingsGroups(
     val backupRestore =
         SettingsItem(
             key = "backup_restore",
-            icon = painterResource(R.drawable.backup),
-            title = stringResource(R.string.backup_restore),
-            subtitle = stringResource(R.string.settings_backup_restore_subtitle),
-            accentColor = MaterialTheme.colorScheme.primary,
+            icon = R.drawable.backup,
+            title = context.getString(R.string.backup_restore),
+            subtitle = context.getString(R.string.settings_backup_restore_subtitle),
+            accentColor = colorScheme.primary,
             keywords = listOf("backup", "restore", "export", "import", "data", "save", "scheduled", "playlist", "csv", "m3u"),
             onClick = { navController.navigate("settings/backup_restore") },
             children = listOf(
@@ -994,10 +992,10 @@ fun buildSettingsGroups(
     val developerOptions =
         SettingsItem(
             key = "developer_options",
-            icon = painterResource(R.drawable.experiment),
-            title = stringResource(R.string.settings_developer_options_title),
-            subtitle = stringResource(R.string.settings_developer_options_subtitle),
-            accentColor = MaterialTheme.colorScheme.tertiary,
+            icon = R.drawable.experiment,
+            title = context.getString(R.string.settings_developer_options_title),
+            subtitle = context.getString(R.string.settings_developer_options_subtitle),
+            accentColor = colorScheme.tertiary,
             keywords = listOf("developer", "debug", "experimental", "advanced", "logcat", "dev", "changelog", "update"),
             onClick = { navController.navigate("settings/misc") },
             children = listOf(
@@ -1017,10 +1015,10 @@ fun buildSettingsGroups(
         if (isAndroid12OrLater) {
             SettingsItem(
                 key = "default_links",
-                icon = painterResource(R.drawable.link),
-                title = stringResource(R.string.default_links),
-                subtitle = stringResource(R.string.open_supported_links),
-                accentColor = MaterialTheme.colorScheme.secondary,
+                icon = R.drawable.link,
+                title = context.getString(R.string.default_links),
+                subtitle = context.getString(R.string.open_supported_links),
+                accentColor = colorScheme.secondary,
                 keywords = listOf("default links", "links", "urls", "deep link", "supported links"),
                 onClick = {
                     try {
@@ -1067,21 +1065,21 @@ fun buildSettingsGroups(
         if (BuildConfig.UPDATER_AVAILABLE) {
             SettingsItem(
                 key = "updates",
-                icon = painterResource(R.drawable.ic_refresh),
-                title = stringResource(R.string.updates),
+                icon = R.drawable.ic_refresh,
+                title = context.getString(R.string.updates),
                 keywords = listOf("update", "upgrade", "version", "new version", "release", "nightly", "stable"),
                 subtitle =
                     if (hasUpdate) {
-                        stringResource(R.string.new_version_available)
+                        context.getString(R.string.new_version_available)
                     } else {
-                        stringResource(R.string.settings_updates_subtitle)
+                        context.getString(R.string.settings_updates_subtitle)
                     },
                 showUpdateIndicator = hasUpdate,
                 accentColor =
                     if (hasUpdate) {
-                        MaterialTheme.colorScheme.tertiary
+                        colorScheme.tertiary
                     } else {
-                        MaterialTheme.colorScheme.primary
+                        colorScheme.primary
                     },
                 badge = if (hasUpdate) "v${BuildConfig.VERSION_NAME}" else BuildConfig.VERSION_NAME,
                 onClick = { navController.navigate("settings/update") },
@@ -1092,26 +1090,26 @@ fun buildSettingsGroups(
     val about =
         SettingsItem(
             key = "about",
-            icon = painterResource(R.drawable.ic_about),
-            title = stringResource(R.string.about),
-            subtitle = stringResource(R.string.settings_about_subtitle),
-            accentColor = MaterialTheme.colorScheme.secondary,
+            icon = R.drawable.ic_about,
+            title = context.getString(R.string.about),
+            subtitle = context.getString(R.string.settings_about_subtitle),
+            accentColor = colorScheme.secondary,
             keywords = listOf("about", "info", "version", "license", "credits", "contributors", "changelog"),
             onClick = { navController.navigate("settings/about") },
             children = listOf(
-                SettingsChild(stringResource(R.string.about_version), "about_version", listOf("version", "build")),
-                SettingsChild(stringResource(R.string.changelog), "about_changelog", listOf("changelog", "changes", "release notes", "what's new")),
-                SettingsChild(stringResource(R.string.about_open_source_licenses), "about_license", listOf("license", "gpl", "open source")),
+                SettingsChild(context.getString(R.string.about_version), "about_version", listOf("version", "build")),
+                SettingsChild(context.getString(R.string.changelog), "about_changelog", listOf("changelog", "changes", "release notes", "what's new")),
+                SettingsChild(context.getString(R.string.about_open_source_licenses), "about_license", listOf("license", "gpl", "open source")),
             ),
         )
 
     return listOf(
         SettingsGroup(
-            title = stringResource(R.string.settings),
+            title = context.getString(R.string.settings),
             items = listOf(account, stats, listenTogether),
         ),
         SettingsGroup(
-            title = stringResource(R.string.settings_section_player_content),
+            title = context.getString(R.string.settings_section_player_content),
             items =
                 listOf(
                     appearance,
@@ -1135,7 +1133,7 @@ fun buildSettingsGroups(
                 ),
         ),
         SettingsGroup(
-            title = stringResource(R.string.integration),
+            title = context.getString(R.string.integration),
             // Discord / Last.fm / Tidal / Qobuz / Telegram are intentionally NOT
             // top-level items here — they live as children of `integration` (and
             // also under their respective `sources` / `integration` screens).
@@ -1156,11 +1154,11 @@ fun buildSettingsGroups(
                 ),
         ),
         SettingsGroup(
-            title = stringResource(R.string.storage),
+            title = context.getString(R.string.storage),
             items = listOf(storage, downloads, languagePacks, backupRestore),
         ),
         SettingsGroup(
-            title = stringResource(R.string.about),
+            title = context.getString(R.string.about),
             items =
                 buildList {
                     add(developerOptions)

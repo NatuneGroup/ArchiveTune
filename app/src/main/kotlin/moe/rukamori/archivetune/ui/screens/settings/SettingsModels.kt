@@ -8,11 +8,11 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
 
 @Immutable
 data class SettingsProfileState(
@@ -33,7 +33,7 @@ data class SettingsGroup(
 @Immutable
 data class SettingsItem(
     val key: String,
-    val icon: Painter,
+    @DrawableRes val icon: Int,
     val title: String,
     val subtitle: String? = null,
     val badge: String? = null,
@@ -75,7 +75,7 @@ data class SettingsChild(
 data class SearchResultItem(
     val title: String,
     val parentTitle: String,
-    val parentIcon: Painter,
+    @DrawableRes val parentIcon: Int,
     val parentKey: String,
     val parentAccentColor: Color = Color.Unspecified,
     val parentRoute: String?,

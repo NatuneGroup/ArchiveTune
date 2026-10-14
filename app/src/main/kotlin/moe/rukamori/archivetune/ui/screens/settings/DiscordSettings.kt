@@ -10,6 +10,14 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.ui.utils.rememberOpeningTransitionFinished
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.WindowInsets
 import android.content.Intent
 import android.net.Uri
@@ -19,10 +27,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -62,7 +68,6 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
-import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.extractThemeColor
@@ -71,8 +76,6 @@ import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.ArtworkStorage
 import moe.rukamori.archivetune.utils.discordAlbumMusicUrl
 import moe.rukamori.archivetune.utils.makeTimeString
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import timber.log.Timber
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -93,6 +96,7 @@ private val DiscordLargeTextOptions = listOf("song", "artist", "album", "app", "
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
     val playerConnection = LocalPlayerConnection.current ?: return
     val scrollBehavior = appBarScrollBehavior()
     val song by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
@@ -100,10 +104,10 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    var discordToken by rememberPreference(DiscordTokenKey, "")
-    var discordUsername by rememberPreference(DiscordUsernameKey, "")
-    var discordName by rememberPreference(DiscordNameKey, "")
-    var discordAvatarUrl by rememberPreference(DiscordAvatarUrlKey, "")
+    var discordToken by prefs.state(DiscordTokenKey, "")
+    var discordUsername by prefs.state(DiscordUsernameKey, "")
+    var discordName by prefs.state(DiscordNameKey, "")
+    var discordAvatarUrl by prefs.state(DiscordAvatarUrlKey, "")
     var authorizedToken by remember { mutableStateOf("") }
     var authorizedUsername by rememberSaveable { mutableStateOf("") }
     var authorizedName by rememberSaveable { mutableStateOf("") }
@@ -126,7 +130,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
             DiscordAuthorizationUiMode.valueOf(authorizationUiModeName)
         }
 
-    val discordTokenExpiresAt by rememberPreference(DiscordTokenExpiresAtKey, 0L)
+    val discordTokenExpiresAt by prefs.state(DiscordTokenExpiresAtKey, 0L)
 
     LaunchedEffect(discordTokenExpiresAt) {
         currentTimeMillis = System.currentTimeMillis()
@@ -175,7 +179,7 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     }
 
     val (discordRPC, onDiscordRPCChange) =
-        rememberPreference(
+        prefs.state(
             key = EnableDiscordRPCKey,
             defaultValue = true,
         )
@@ -302,120 +306,125 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
     }
 
     val (largeImageType, onLargeImageTypeChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordLargeImageTypeKey,
             defaultValue = "thumbnail",
         )
     val (largeImageCustomUrl, onLargeImageCustomUrlChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordLargeImageCustomUrlKey,
             defaultValue = "",
         )
     val (smallImageType, onSmallImageTypeChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordSmallImageTypeKey,
             defaultValue = "artist",
         )
     val (smallImageCustomUrl, onSmallImageCustomUrlChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordSmallImageCustomUrlKey,
             defaultValue = "",
         )
     var isRefreshing by remember { mutableStateOf(false) }
 
     val (activityStatusSelection, onActivityStatusSelectionChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordPresenceStatusKey,
             defaultValue = "online",
         )
 
     val (platformSelection, onPlatformSelectionChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityPlatformKey,
             defaultValue = "android",
         )
 
     val (nameSource, onNameSourceChange) =
-        rememberEnumPreference(
+        prefs.enumState(
             key = DiscordActivityNameKey,
             defaultValue = ActivitySource.APP,
         )
     val (detailsSource, onDetailsSourceChange) =
-        rememberEnumPreference(
+        prefs.enumState(
             key = DiscordActivityDetailsKey,
             defaultValue = ActivitySource.SONG,
         )
     val (stateSource, onStateSourceChange) =
-        rememberEnumPreference(
+        prefs.enumState(
             key = DiscordActivityStateKey,
             defaultValue = ActivitySource.ARTIST,
         )
 
     val (button1Label) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton1LabelKey,
             defaultValue = "Listen on YouTube Music",
         )
     val (button1Enabled) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton1EnabledKey,
             defaultValue = true,
         )
     val (button2Label) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton2LabelKey,
             defaultValue = "Go to ArchiveTune",
         )
     val (button2Enabled) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton2EnabledKey,
             defaultValue = true,
         )
     val (button1UrlSource) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton1UrlSourceKey,
             defaultValue = "songurl",
         )
     val (button1CustomUrl) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton1CustomUrlKey,
             defaultValue = "",
         )
     val (button2UrlSource) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton2UrlSourceKey,
             defaultValue = "custom",
         )
     val (button2CustomUrl) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityButton2CustomUrlKey,
             defaultValue = "https://github.com/rukamori/ArchiveTune",
         )
 
     val (activityType, onActivityTypeChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordActivityTypeKey,
             defaultValue = "LISTENING",
         )
-    var showWhenPaused by rememberPreference(
+    var showWhenPaused by prefs.state(
         key = DiscordShowWhenPausedKey,
         defaultValue = false,
     )
 
     val (largeTextSource, onLargeTextSourceChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordLargeTextSourceKey,
             defaultValue = "album",
         )
     val (largeTextCustom, onLargeTextCustomChange) =
-        rememberPreference(
+        prefs.state(
             key = DiscordLargeTextCustomKey,
             defaultValue = "",
         )
 
-    LaunchedEffect(largeImageType, smallImageType) {
-        ArtworkStorage.removeBySongId(context, song?.song?.id ?: return@LaunchedEffect)
+    // Keyed on the song as well as the image types: without it a song change left the old
+    // song's cached artwork in place. File and JSON work, so it runs on IO.
+    val currentSongId = song?.song?.id
+    LaunchedEffect(currentSongId, largeImageType, smallImageType) {
+        val songId = currentSongId ?: return@LaunchedEffect
+        withContext(Dispatchers.IO) { ArtworkStorage.removeBySongId(context, songId) }
     }
+    val openingTransitionFinished = rememberOpeningTransitionFinished()
 
     Scaffold(
         modifier =
@@ -487,32 +496,36 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
 
-        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
+        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
 
-        Column(
+        val accountTitle = stringResource(R.string.account)
+        val optionsTitle = stringResource(R.string.options)
+        val connectionTitle = stringResource(R.string.discord_connection_settings)
+        val activityContentTitle = stringResource(R.string.discord_activity_content)
+        val imageOptionsTitle = stringResource(R.string.discord_image_options)
+
+        // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+        // opening transition.
+        LazyColumn(
+            state = listState,
+            contentPadding =
+                PaddingValues(
+                    top = innerPadding.calculateTopPadding() + 16.dp,
+                    bottom = 32.dp,
+                ),
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .windowInsetsPadding(
-                        LocalPlayerAwareWindowInsets.current.only(
-                            WindowInsetsSides.Horizontal,
-                        ),
-                    )
-                    // Chained before verticalScroll so it measures the viewport, not the scrolling content.
-                    .then(positions.containerModifier())
-                    .verticalScroll(scrollState)
-                    .padding(
-                        top = innerPadding.calculateTopPadding() + 16.dp,
-                        bottom = 32.dp,
-                    ),
+                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    .then(positions.containerModifier()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("discord_account"),
-                title = stringResource(R.string.account),
+                title = accountTitle,
             ) {
                 item {
                     DiscordAccountGroupCard(
@@ -564,9 +577,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("discord_options"),
-                title = stringResource(R.string.options),
+                title = optionsTitle,
             ) {
                 item {
                     PreferenceEntry(
@@ -615,9 +628,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("discord_connection"),
-                title = stringResource(R.string.discord_connection_settings),
+                title = connectionTitle,
             ) {
                 item {
                     ListPreference(
@@ -644,9 +657,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("discord_activity"),
-                title = stringResource(R.string.discord_activity_content),
+                title = activityContentTitle,
             ) {
                 item {
                     EnumListPreference(
@@ -703,9 +716,9 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("discord_images"),
-                title = stringResource(R.string.discord_image_options),
+                title = imageOptionsTitle,
             ) {
                 item {
                     ListPreference(
@@ -774,29 +787,34 @@ fun DiscordSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            RichPresence(
-                song = song,
-                currentPlaybackTimeMillis = playerConnection.player.currentPosition,
-                nameSource = nameSource,
-                detailsSource = detailsSource,
-                stateSource = stateSource,
-                activityType = activityType,
-                largeImageType = largeImageType,
-                largeImageCustomUrl = largeImageCustomUrl,
-                largeTextSource = largeTextSource,
-                largeTextCustom = largeTextCustom,
-                smallImageType = smallImageType,
-                smallImageCustomUrl = smallImageCustomUrl,
-                button1Label = button1Label,
-                button1Enabled = button1Enabled,
-                button1UrlSource = button1UrlSource,
-                button1CustomUrl = button1CustomUrl,
-                button2Label = button2Label,
-                button2Enabled = button2Enabled,
-                button2UrlSource = button2UrlSource,
-                button2CustomUrl = button2CustomUrl,
-                isPlaying = playerConnection.player.isPlaying,
-            )
+            // The preview's artwork loads only after the opening transition.
+            item(contentType = "rich_presence") {
+                if (openingTransitionFinished) {
+                    RichPresence(
+                        song = song,
+                        currentPlaybackTimeMillis = playerConnection.player.currentPosition,
+                        nameSource = nameSource,
+                        detailsSource = detailsSource,
+                        stateSource = stateSource,
+                        activityType = activityType,
+                        largeImageType = largeImageType,
+                        largeImageCustomUrl = largeImageCustomUrl,
+                        largeTextSource = largeTextSource,
+                        largeTextCustom = largeTextCustom,
+                        smallImageType = smallImageType,
+                        smallImageCustomUrl = smallImageCustomUrl,
+                        button1Label = button1Label,
+                        button1Enabled = button1Enabled,
+                        button1UrlSource = button1UrlSource,
+                        button1CustomUrl = button1CustomUrl,
+                        button2Label = button2Label,
+                        button2Enabled = button2Enabled,
+                        button2UrlSource = button2UrlSource,
+                        button2CustomUrl = button2CustomUrl,
+                        isPlaying = playerConnection.player.isPlaying,
+                    )
+                }
+            }
         }
 
         if (showLogoutConfirm) {

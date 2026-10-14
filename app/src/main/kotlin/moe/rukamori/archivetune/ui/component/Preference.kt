@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.MarqueeAnimationMode
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -298,11 +299,14 @@ fun PreferenceEntry(
                 }
                 if (description != null) {
                     Spacer(Modifier.height(SettingsDimensions.SegmentedRowSpacing))
+                    // Scrolls only while focused (D-pad/TV): an idle page full of endless
+                    // marquees forced a frame, and a backdrop re-record, every vsync.
                     MarqueeText(
                         text = description,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier,
+                        animationMode = MarqueeAnimationMode.WhileFocused,
                     )
                 }
                 content?.invoke()
@@ -1391,6 +1395,7 @@ fun PreferenceGroupTitle(
     MarqueeText(
         text = title,
         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary),
+        animationMode = MarqueeAnimationMode.WhileFocused,
         modifier = modifier.padding(
             horizontal = SettingsDimensions.SectionHeaderHorizontalPadding,
             vertical = SettingsDimensions.SectionHeaderBottomPadding,

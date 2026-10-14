@@ -30,7 +30,6 @@ import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
 import moe.rukamori.archivetune.constants.FloatingNavigationBarBottomPadding
 import moe.rukamori.archivetune.constants.FloatingNavigationBarHorizontalPadding
 import moe.rukamori.archivetune.constants.FloatingNavigationBarMaxWidth
-import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_OPACITY_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_TRANSPARENCY_DEFAULT
@@ -39,18 +38,17 @@ import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
 import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
 import moe.rukamori.archivetune.constants.NavigationBarCompactBehaviorKey
 import moe.rukamori.archivetune.constants.NavigationBarCornerRadiusKey
-import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
 import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.NavigationBarOpacityKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
-import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.constants.CompactBottomPillsKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
+import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 
@@ -202,10 +200,10 @@ fun rememberNavigationPillStyle(): NavigationBarStyle {
 /** Resolves the style from the stored preferences, for surfaces that are not handed it by the shell. */
 @Composable
 fun rememberPillStyle(): PillStyle {
-    val (frostedBlur) = rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
-    val (tintFrostedBlur) = rememberPreference(NavigationBarTintFrostedBlurKey, defaultValue = false)
+    val frostedBlur = StartupSettings.navigationBarFrostedBlur
+    val tintFrostedBlur = StartupSettings.navigationBarTintFrostedBlur
     val liquidGlassEnabled = rememberLiquidGlassEnabled()
-    val (liquidGlassNavBar) = rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
+    val liquidGlassNavBar = StartupSettings.liquidGlassNavBarEnabled
     val (stockColours) = rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     return rememberPillStyle(
         style = rememberNavigationPillStyle(),

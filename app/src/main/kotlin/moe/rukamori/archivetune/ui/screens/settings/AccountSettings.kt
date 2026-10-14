@@ -143,7 +143,7 @@ import moe.rukamori.archivetune.utils.putLegacyPoToken
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.AccountChannelUiModel
 import moe.rukamori.archivetune.viewmodels.AccountChannelsState
-import moe.rukamori.archivetune.viewmodels.HomeViewModel
+import moe.rukamori.archivetune.viewmodels.AccountSettingsViewModel
 
 private val AccountContentMaxWidth = 840.dp
 private val AvatarSize = 72.dp
@@ -208,7 +208,7 @@ fun AccountSettings(
         YouTube.useLoginForBrowse = useLoginForBrowse
     }
 
-    val viewModel: HomeViewModel = hiltViewModel()
+    val viewModel: AccountSettingsViewModel = hiltViewModel()
     val accountNameFromViewModel by viewModel.accountName.collectAsStateWithLifecycle()
     val accountImageUrl by viewModel.accountImageUrl.collectAsStateWithLifecycle()
     val accountChannelsState by viewModel.accountChannelsState.collectAsStateWithLifecycle()

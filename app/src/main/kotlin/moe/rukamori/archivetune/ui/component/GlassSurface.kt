@@ -26,7 +26,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -34,14 +33,12 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.LocalBlurPolicy
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.StartupSettings
 
 /** True while the user has opted into the Liquid Glass look and the blur policy allows it. */
 @Composable
 fun rememberLiquidGlassEnabled(): Boolean {
-    val enabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
-    return enabled && LocalBlurPolicy.current.any
+    return StartupSettings.liquidGlassEnabled && LocalBlurPolicy.current.any
 }
 
 /**

@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.player
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -75,7 +76,6 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.autoRateDisplay
 import moe.rukamori.archivetune.db.entities.containerLabel
@@ -88,7 +88,6 @@ import moe.rukamori.archivetune.ui.component.ActionPromptDialog
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.bottomSheetDraggable
 import moe.rukamori.archivetune.utils.makeTimeString
-import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.roundToInt
 
 /**
@@ -120,7 +119,7 @@ fun CurrentSongHeader(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     Column(
         modifier =
@@ -543,7 +542,7 @@ fun QueueCollapsedContentV2(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     LaunchedEffect(enableHapticFeedback) {
         view.isHapticFeedbackEnabled = enableHapticFeedback
@@ -777,7 +776,7 @@ fun QueueCollapsedContentV3(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     Column(modifier = modifier.fillMaxWidth()) {
         if (showCodecOnPlayer && currentFormat != null) {
@@ -1394,7 +1393,7 @@ fun QueueCollapsedContentV9(
     modifier: Modifier = Modifier,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val railContainerColor = textBackgroundColor.copy(alpha = 0.14f)
     val buttonContainerColor = textBackgroundColor.copy(alpha = 0.08f)
     val selectedButtonContainerColor = textBackgroundColor.copy(alpha = 0.18f)

@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.player
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -92,7 +93,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.MiniPlayerCompactHeight
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
@@ -102,7 +102,6 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.CompactControlGap
 import moe.rukamori.archivetune.ui.component.CompactControlSize
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
-import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -154,7 +153,7 @@ fun SwipeableMiniPlayerBox(
     var totalDragDistance by remember { mutableFloatStateOf(0f) }
 
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val animationSpec =
         spring<Float>(
@@ -512,7 +511,7 @@ private fun MiniPlayerTransportButton(
     colors: MiniPlayerContentColors,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val containerColor =
         if (isPrimary) colors.primaryButtonContainer else colors.secondaryButtonContainer

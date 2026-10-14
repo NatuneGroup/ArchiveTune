@@ -144,7 +144,13 @@ class ContentSettingsViewModel
             )
 
         init {
-            startAiContentFilterRefresh(force = false, showSuccess = false)
+            // Lyrics, Lyrics providers and Content all create this ViewModel; refreshing on each
+            // visit put a network round-trip on every one of those page opens.
+            val now = System.currentTimeMillis()
+            if (shouldAutoRefreshAiContentFilter(now, lastAutoRefreshAtMs)) {
+                lastAutoRefreshAtMs = now
+                startAiContentFilterRefresh(force = false, showSuccess = false)
+            }
         }
 
         fun fetchPaxsenixStats() {
@@ -247,5 +253,17 @@ class ContentSettingsViewModel
 
         private companion object {
             const val AISLIST_URL = "https://aisloplist.com"
+
+            @Volatile
+            var lastAutoRefreshAtMs: Long = 0L
         }
     }
+
+internal const val AI_CONTENT_FILTER_AUTO_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000L
+
+/** True when the background AI filter refresh on opening a settings page is due again. */
+internal fun shouldAutoRefreshAiContentFilter(
+    nowMs: Long,
+    lastRefreshAtMs: Long,
+    intervalMs: Long = AI_CONTENT_FILTER_AUTO_REFRESH_INTERVAL_MS,
+): Boolean = lastRefreshAtMs <= 0L || nowMs - lastRefreshAtMs >= intervalMs || nowMs < lastRefreshAtMs

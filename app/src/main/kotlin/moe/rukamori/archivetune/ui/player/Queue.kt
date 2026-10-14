@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.player
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import android.annotation.SuppressLint
 import android.view.ViewTreeObserver
 import android.widget.Toast
@@ -102,7 +103,6 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.ListItemHeight
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
@@ -147,7 +147,7 @@ fun Queue(
     onShowLyrics: () -> Unit = {},
     pureBlack: Boolean,
 ) {
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboard.current

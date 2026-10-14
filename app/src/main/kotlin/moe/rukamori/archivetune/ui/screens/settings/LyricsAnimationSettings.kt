@@ -8,6 +8,9 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -176,15 +179,17 @@ fun LyricsAnimationSettings(
                 }
 
                 item {
+                    var bounceFactorDraft by remember(bounceFactor) { mutableFloatStateOf(bounceFactor) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_scale_animation"),
                         title = { Text("Bounce Amplitude") },
-                        description = "Adjust the bounce effect when a word is sung (${(bounceFactor * 100).toInt()}%)",
+                        description = "Adjust the bounce effect when a word is sung (${(bounceFactorDraft * 100).toInt()}%)",
                         icon = { Icon(painterResource(R.drawable.animation), null) },
                         content = {
                             Slider(
-                                value = bounceFactor,
-                                onValueChange = onBounceFactorChange,
+                                value = bounceFactorDraft,
+                                onValueChange = { bounceFactorDraft = it },
+                                onValueChangeFinished = { onBounceFactorChange(bounceFactorDraft) },
                                 valueRange = 0f..2f,
                             )
                         },
@@ -192,15 +197,17 @@ fun LyricsAnimationSettings(
                 }
 
                 item {
+                    var glowFactorDraft by remember(glowFactor) { mutableFloatStateOf(glowFactor) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_glow_animation"),
                         title = { Text("Glow Intensity") },
-                        description = "Adjust the glow brightness of the sung word (${(glowFactor * 100).toInt()}%)",
+                        description = "Adjust the glow brightness of the sung word (${(glowFactorDraft * 100).toInt()}%)",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         content = {
                             Slider(
-                                value = glowFactor,
-                                onValueChange = onGlowFactorChange,
+                                value = glowFactorDraft,
+                                onValueChange = { glowFactorDraft = it },
+                                onValueChangeFinished = { onGlowFactorChange(glowFactorDraft) },
                                 valueRange = 0f..2f,
                             )
                         },
@@ -208,15 +215,17 @@ fun LyricsAnimationSettings(
                 }
 
                 item {
+                    var fillTransitionWidthDraft by remember(fillTransitionWidth) { mutableFloatStateOf(fillTransitionWidth) }
                     PreferenceEntry(
                         modifier = positions.modifierFor("lyrics_fade_animation"),
                         title = { Text("Fill Transition Smoothness") },
-                        description = "Adjust the gradient edge width of the liquid fill effect (${fillTransitionWidth.toInt()} dp)",
+                        description = "Adjust the gradient edge width of the liquid fill effect (${fillTransitionWidthDraft.toInt()} dp)",
                         icon = { Icon(painterResource(R.drawable.lyrics), null) },
                         content = {
                             Slider(
-                                value = fillTransitionWidth,
-                                onValueChange = onFillTransitionWidthChange,
+                                value = fillTransitionWidthDraft,
+                                onValueChange = { fillTransitionWidthDraft = it },
+                                onValueChangeFinished = { onFillTransitionWidthChange(fillTransitionWidthDraft) },
                                 valueRange = 2f..24f,
                             )
                         },

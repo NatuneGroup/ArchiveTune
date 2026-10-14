@@ -10,6 +10,11 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,8 +27,6 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
@@ -79,11 +82,9 @@ import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
-import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.ContentSettingsViewModel
 import moe.rukamori.archivetune.viewmodels.PaxsenixEndpointCheckState
 import moe.rukamori.archivetune.viewmodels.PaxsenixStatsState
@@ -99,52 +100,53 @@ fun LyricsProvidersSettings(
     viewModel: ContentSettingsViewModel = hiltViewModel(),
     scrollTo: String? = null,
 ) {
-    val (enableLrclib, onEnableLrclibChange) = rememberPreference(key = EnableLrcLibKey, defaultValue = true)
-    val (enableKugou, onEnableKugouChange) = rememberPreference(key = EnableKugouKey, defaultValue = true)
+    val prefs = rememberPreferenceSnapshot()
+    val (enableLrclib, onEnableLrclibChange) = prefs.state(key = EnableLrcLibKey, defaultValue = true)
+    val (enableKugou, onEnableKugouChange) = prefs.state(key = EnableKugouKey, defaultValue = true)
     val (enableBetterLyrics, onEnableBetterLyricsChange) =
-        rememberPreference(key = EnableBetterLyricsKey, defaultValue = true)
+        prefs.state(key = EnableBetterLyricsKey, defaultValue = true)
     val (enableBetterLyricsPortato, onEnableBetterLyricsPortatoChange) =
-        rememberPreference(key = EnableBetterLyricsPortatoKey, defaultValue = true)
+        prefs.state(key = EnableBetterLyricsPortatoKey, defaultValue = true)
     val (enableYouLyPlusLyrics, onEnableYouLyPlusLyricsChange) =
-        rememberPreference(key = EnableYouLyPlusLyricsKey, defaultValue = true)
+        prefs.state(key = EnableYouLyPlusLyricsKey, defaultValue = true)
     val (enableSimpMusicLyrics, onEnableSimpMusicLyricsChange) =
-        rememberPreference(key = EnableSimpMusicLyricsKey, defaultValue = true)
+        prefs.state(key = EnableSimpMusicLyricsKey, defaultValue = true)
     val (enableMegalobizLyrics, onEnableMegalobizLyricsChange) =
-        rememberPreference(key = EnableMegalobizLyricsKey, defaultValue = true)
+        prefs.state(key = EnableMegalobizLyricsKey, defaultValue = true)
     val (enableBiniLyrics, onEnableBiniLyricsChange) =
-        rememberPreference(key = EnableBiniLyricsKey, defaultValue = true)
+        prefs.state(key = EnableBiniLyricsKey, defaultValue = true)
     val (enableLrcRed, onEnableLrcRedChange) =
-        rememberPreference(key = EnableLrcRedKey, defaultValue = true)
+        prefs.state(key = EnableLrcRedKey, defaultValue = true)
     val (enableGeniusLyrics, onEnableGeniusLyricsChange) =
-        rememberPreference(key = EnableGeniusLyricsKey, defaultValue = false)
+        prefs.state(key = EnableGeniusLyricsKey, defaultValue = false)
     val (enablePaxsenixLyrics, onEnablePaxsenixLyricsChange) =
-        rememberPreference(key = EnablePaxsenixLyricsKey, defaultValue = true)
+        prefs.state(key = EnablePaxsenixLyricsKey, defaultValue = true)
     val (enablePaxsenixAppleMusicLyrics, onEnablePaxsenixAppleMusicLyricsChange) =
-        rememberPreference(key = EnablePaxsenixAppleMusicLyricsKey, defaultValue = true)
+        prefs.state(key = EnablePaxsenixAppleMusicLyricsKey, defaultValue = true)
     val (enablePaxsenixNeteaseLyrics, onEnablePaxsenixNeteaseLyricsChange) =
-        rememberPreference(key = EnablePaxsenixNeteaseLyricsKey, defaultValue = false)
+        prefs.state(key = EnablePaxsenixNeteaseLyricsKey, defaultValue = false)
     val (enablePaxsenixSpotifyLyrics, onEnablePaxsenixSpotifyLyricsChange) =
-        rememberPreference(key = EnablePaxsenixSpotifyLyricsKey, defaultValue = false)
+        prefs.state(key = EnablePaxsenixSpotifyLyricsKey, defaultValue = false)
     val (enablePaxsenixMusixmatchLyrics, onEnablePaxsenixMusixmatchLyricsChange) =
-        rememberPreference(key = EnablePaxsenixMusixmatchLyricsKey, defaultValue = false)
+        prefs.state(key = EnablePaxsenixMusixmatchLyricsKey, defaultValue = false)
     val (enablePaxsenixYouTubeLyrics, onEnablePaxsenixYouTubeLyricsChange) =
-        rememberPreference(key = EnablePaxsenixYouTubeLyricsKey, defaultValue = false)
+        prefs.state(key = EnablePaxsenixYouTubeLyricsKey, defaultValue = false)
     val (paxsenixApiKey, onPaxsenixApiKeyChange) =
-        rememberPreference(key = PaxsenixApiKeyKey, defaultValue = "")
+        prefs.state(key = PaxsenixApiKeyKey, defaultValue = "")
     val (paxsenixEndpoint, onPaxsenixEndpointChange) =
-        rememberPreference(key = PaxsenixEndpointKey, defaultValue = "")
+        prefs.state(key = PaxsenixEndpointKey, defaultValue = "")
     val (enableUnisonLyrics, onEnableUnisonLyricsChange) =
-        rememberPreference(key = EnableUnisonLyricsKey, defaultValue = true)
+        prefs.state(key = EnableUnisonLyricsKey, defaultValue = true)
     val (enableTidalLyrics, onEnableTidalLyricsChange) =
-        rememberPreference(key = EnableTidalLyricsKey, defaultValue = true)
+        prefs.state(key = EnableTidalLyricsKey, defaultValue = true)
     val (enableDeezerLyrics, onEnableDeezerLyricsChange) =
-        rememberPreference(key = EnableDeezerLyricsKey, defaultValue = true)
+        prefs.state(key = EnableDeezerLyricsKey, defaultValue = true)
     val (prioritizeWordSynced, onPrioritizeWordSyncedChange) =
-        rememberPreference(key = PrioritizeWordSyncedLyricsKey, defaultValue = false)
+        prefs.state(key = PrioritizeWordSyncedLyricsKey, defaultValue = false)
     val (enableMusixmatchExperimental, onEnableMusixmatchExperimentalChange) =
-        rememberPreference(key = EnableMusixmatchExperimentalKey, defaultValue = false)
+        prefs.state(key = EnableMusixmatchExperimentalKey, defaultValue = false)
     val (providerOrderStr, onProviderOrderStrChange) =
-        rememberPreference(key = LyricsProviderOrderKey, defaultValue = "")
+        prefs.state(key = LyricsProviderOrderKey, defaultValue = "")
     val providerOrder =
         remember(providerOrderStr) {
             deserializeLyricsProviderOrder(providerOrderStr)
@@ -213,23 +215,23 @@ fun LyricsProvidersSettings(
                 .only(WindowInsetsSides.Bottom)
                 .asPaddingValues()
                 .calculateBottomPadding()
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
-        androidx.compose.runtime.LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
-        Column(
-            Modifier
-                .padding(top = innerPadding.calculateTopPadding())
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(
-                        WindowInsetsSides.Horizontal,
-                    ),
-                )
-                // Chained before verticalScroll so it measures the viewport, not the scrolling content.
-                .then(positions.containerModifier())
-                .verticalScroll(scrollState)
-                .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+        androidx.compose.runtime.LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
+        // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+        // opening transition.
+        val providersTitle = stringResource(R.string.providers)
+        val musixmatchExperimentalSectionTitle = stringResource(R.string.musixmatch_experimental_section)
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+            modifier =
+                Modifier
+                    .padding(top = innerPadding.calculateTopPadding())
+                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    .then(positions.containerModifier()),
         ) {
-            PreferenceGroup(title = stringResource(R.string.providers)) {
+            preferenceGroup(title = providersTitle) {
                 // "Prioritize Word Synced Lyrics" sits at the TOP of the providers
                 // group because when it's ON it overrides every other toggle and the
                 // Lyrics Priority order below — the app queries only BetterLyrics,
@@ -565,7 +567,7 @@ fun LyricsProvidersSettings(
                 }
             }
 
-            PreferenceGroup(title = stringResource(R.string.musixmatch_experimental_section)) {
+            preferenceGroup(title = musixmatchExperimentalSectionTitle) {
                 item {
                     SwitchPreference(
                         modifier = positions.modifierFor("enable_musixmatch_experimental"),

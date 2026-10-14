@@ -40,12 +40,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The task name carries the flavour (gms/foss × mobile/tv × abi), so ask Gradle which
-          # unit-test tasks exist instead of guessing one — a wrong guess fails with "task not
-          # found", which says nothing about the tests themselves.
+          # The task name carries the flavour (gms/foss × mobile/tv × abi). The fork ships
+          # GMS-only, so run the gms-mobile-universal task the fork contract tests document;
+          # fall back to whatever unit-test task exists if the flavour matrix ever changes.
           TASKS="$(./gradlew :app:tasks --all --console=plain)"
           echo "$TASKS" | grep -E "^test[A-Za-z0-9]*UnitTest\b" || true
-          TASK="$(echo "$TASKS" | grep -oE "^test[A-Za-z0-9]*UnitTest\b" | head -1)"
+          TASK="$(echo "$TASKS" | grep -oE "^test[A-Za-z0-9]*UnitTest\b" | grep -E 'testGmsMobileUniversalDebugUnitTest$' | head -1)"
+          [ -n "$TASK" ] || TASK="$(echo "$TASKS" | grep -oE "^testGmsMobileUniversal[A-Za-z0-9]*UnitTest\b" | head -1)"
+          [ -n "$TASK" ] || TASK="$(echo "$TASKS" | grep -oE "^test[A-Za-z0-9]*UnitTest\b" | head -1)"
           if [ -z "$TASK" ]; then
             echo "::error::No unit-test task found in :app — check whether unit tests are enabled"
             exit 1

@@ -21,6 +21,5 @@
 
 ## Release
 
-- Finish the Canary retirement in [RELEASES.md](RELEASES.md): last Canary build, `dev` fast-forward and Nightly publish, then delete `canary.yml`.
 - Complete physical Nightly QA, thermal comparison, update installation, and provider fallback checks.
 - Promote `dev` to `main` only after QA evidence is recorded in the active PR.

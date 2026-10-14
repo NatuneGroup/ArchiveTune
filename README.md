@@ -257,6 +257,8 @@ ArchiveTune has two update channels:
 
 Both channels are signed with the same key, so updates install over the existing app in place.
 
+The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has been retired. Its final build already follows Nightly, so existing Canary installs move to Nightly with their next update.
+
 The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
 
 > [!WARNING]  

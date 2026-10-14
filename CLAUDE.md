@@ -32,9 +32,9 @@ fork ships GMS-only.
 ## Branches
 
 `dev` is the integration branch and builds the N-tagged Nightly channel; `main` is
-Stable. There are only these two channels. The Canary channel (`canary` branch,
-C-tagged releases) is retired: the app migrates a stored Canary channel to Nightly,
-and `canary.yml` remains only until the last Canary build has shipped — see
+Stable. There are only these two channels. The Canary channel is retired: the last
+C-tagged release shipped, `canary.yml` is deleted, the `canary` branch is frozen as
+history, and the app migrates a stored Canary channel to Nightly — see
 [docs/claude/RELEASES.md](docs/claude/RELEASES.md).
 
 ## Subsystems

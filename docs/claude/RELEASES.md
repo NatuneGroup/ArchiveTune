@@ -15,11 +15,11 @@ Note what gates a release: the unit-test workflow is separate and the publishing
 
 ## Canary retirement
 
-The Canary channel (`canary` branch, `C`-tagged prereleases, `canary.yml`) is retired. The app has no Canary channel any more: a stored `CANARY` choice migrates to Nightly and the Canary-only preference keys are cleared, and the Stable filter ignores leftover `C` tags. Remaining steps, in order:
+The Canary channel (`canary` branch, `C`-tagged prereleases) is retired, and `canary.yml` has been deleted. The app has no Canary channel any more: a stored `CANARY` choice migrates to Nightly and the Canary-only preference keys are cleared, and the Stable filter ignores leftover `C` tags.
 
-1. Push the integrated head to `canary` once so `canary.yml` publishes the last `C` release with the migration (that build must be Nightly-locked).
-2. In a commit on top of it, delete `canary.yml`, then fast-forward `dev` to that commit so `nightly.yml` publishes the next `N` build with a higher `versionCode` and `nightly.json`.
-3. Leave the `canary` branch frozen as history and never delete the old `C` releases.
+- The last `C` release was built as a Nightly-locked build, so Canary installs move to Nightly on their next update; the first Nightly after it has a higher `versionCode`.
+- The `canary` branch is frozen as history. Do not push to it again.
+- Never delete the last `C` release or the `update-feed` release and its manifests by hand.
 
 ## Device QA
 
@@ -30,6 +30,6 @@ The Canary channel (`canary` branch, `C`-tagged prereleases, `canary.yml`) is re
 5. Test low-end or battery-saver conditions with canvas/artwork and lyrics both enabled and disabled. Compare heat, buffer stalls, and startup latency.
 6. Open Integration, enable Spotify history sync, open History, refresh, search, sign out, and verify the source disappears without background playback.
 7. Walk the settings root, every provider page, settings search anchors, dialogs, sliders, toggles, and back navigation.
-8. Verify update installation from the prior Nightly artifact (and, until the retirement above is finished, from the last Canary artifact) before promoting to `main`.
+8. Verify update installation from the prior Nightly artifact and from the last Canary artifact before promoting to `main`.
 
 Do not promote `dev` to `main` until the playback and installation checks pass on a physical device.

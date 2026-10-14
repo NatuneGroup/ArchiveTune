@@ -2036,11 +2036,11 @@ class MainActivity : ComponentActivity() {
                     // navigates. optimisticTabRoute shows the tapped tab as selected from the tap
                     // frame, so the bar's pill/highlight never waits for the back stack.
                     var optimisticTabRoute by remember { mutableStateOf<String?>(null) }
-                    var pendingTabRoute by remember { mutableStateOf<String?>(null) }
+                    var tabNavState by remember { mutableStateOf(TabNavState()) }
 
-                    // All header resets (re-select taps and route changes) share one cancellable
-                    // job: overlapping animate() writers on the same heightOffset jitter the
-                    // header when re-select is spammed.
+                    // All header resets (re-select taps, route changes and search activation)
+                    // share one cancellable job: overlapping animate() writers on the same
+                    // heightOffset jitter the header when re-select is spammed.
                     var headerResetJob by remember { mutableStateOf<Job?>(null) }
                     val launchHeaderReset: (suspend () -> Unit) -> Unit = { block ->
                         headerResetJob?.cancel()
@@ -2057,59 +2057,77 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    val handlePrimaryNavigationClick: (Screens) -> Unit = { screen ->
-                        val (nextState, action) =
-                            reduceTabNav(
-                                TabNavState(pendingTabRoute),
-                                TabNavEvent.Tap(
-                                    targetRoute = screen.route,
-                                    isCurrentTab =
-                                        navController.currentDestination?.hierarchy
-                                            ?.any { it.route == screen.route } == true,
-                                    currentResumed =
-                                        navController.currentBackStackEntry?.lifecycle?.currentState ==
-                                            Lifecycle.State.RESUMED,
-                                ),
-                            )
-                        pendingTabRoute = nextState.pendingTab
-                        when (action) {
-                            is TabNavAction.Navigate -> {
-                                optimisticTabRoute = screen.route
-                                navigateToTab(action.targetRoute)
+                    val reselectTab: (String) -> Unit = { route ->
+                        if (route == Screens.Search.route) {
+                            openSearch()
+                            launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
+                        } else {
+                            navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                            if (route == Screens.Home.route) {
+                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                             }
-
-                            is TabNavAction.SetPending -> {
-                                optimisticTabRoute = screen.route
-                                pendingTabRoute = action.targetRoute
-                            }
-
-                            TabNavAction.None ->
-                                if (screen == Screens.Search) {
-                                    openSearch()
-                                    launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
-                                } else {
-                                    navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                                    if (screen == Screens.Home) {
-                                        launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
-                                    }
-                                }
                         }
                     }
 
                     // The round Library/Home button returns to the tab's root even from deep inside it,
                     // where the tab item itself would only reselect the current page.
-                    val navigateToTabRoot: (Screens) -> Unit = { screen ->
-                        val popped = runCatching { navController.popBackStack(screen.route, false) }.getOrDefault(false)
-                        if (!popped && navController.currentDestination?.route != screen.route) {
-                            navigateToTab(screen.route)
+                    val navigateToTabRoot: (String) -> Unit = { route ->
+                        val popped = runCatching { navController.popBackStack(route, false) }.getOrDefault(false)
+                        if (!popped && navController.currentDestination?.route != route) {
+                            navigateToTab(route)
                         }
-                        if (navController.currentDestination?.route == screen.route) {
-                            navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                            if (screen == Screens.Home) {
-                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
-                            }
+                        if (navController.currentDestination?.route == route) {
+                            reselectTab(route)
                         }
                     }
+
+                    val runTabNavAction: (TabNavAction) -> Unit = { action ->
+                        when (action) {
+                            is TabNavAction.Navigate -> {
+                                optimisticTabRoute = action.targetRoute
+                                if (action.toRoot) {
+                                    navigateToTabRoot(action.targetRoute)
+                                } else {
+                                    navigateToTab(action.targetRoute)
+                                    if (action.reselect) reselectTab(action.targetRoute)
+                                }
+                                // A root request already on its root page does not navigate, so
+                                // the current entry stays RESUMED and no settle would clear this.
+                                if (navController.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+                                    optimisticTabRoute = null
+                                }
+                            }
+
+                            is TabNavAction.SetPending -> optimisticTabRoute = action.targetRoute
+
+                            is TabNavAction.Reselect -> reselectTab(action.targetRoute)
+
+                            TabNavAction.None -> {}
+                        }
+                    }
+
+                    // Tab items and the round root buttons both go through the reducer, so a
+                    // root request joins the same last-wins pending slot instead of navigating
+                    // over an in-flight transition.
+                    val requestTab: (String, Boolean) -> Unit = { route, toRoot ->
+                        val (nextState, action) =
+                            reduceTabNav(
+                                tabNavState,
+                                TabNavEvent.Tap(
+                                    targetRoute = route,
+                                    isCurrentTab =
+                                        navController.currentDestination?.hierarchy
+                                            ?.any { it.route == route } == true,
+                                    currentResumed =
+                                        navController.currentBackStackEntry?.lifecycle?.currentState ==
+                                            Lifecycle.State.RESUMED,
+                                    toRoot = toRoot,
+                                ),
+                            )
+                        tabNavState = nextState
+                        runTabNavAction(action)
+                    }
+                    val handlePrimaryNavigationClick: (Screens) -> Unit = { screen -> requestTab(screen.route, false) }
 
                     // One collector drives the coalesced navigation: when the current entry
                     // settles (RESUMED) it navigates to the last pending tab. It also clears the
@@ -2120,12 +2138,15 @@ class MainActivity : ComponentActivity() {
                     LaunchedEffect(navController) {
                         navController.currentBackStackEntryFlow.collectLatest { entry ->
                             entry.lifecycle.currentStateFlow.first { it == Lifecycle.State.RESUMED }
-                            val pending = pendingTabRoute
-                            pendingTabRoute = null
-                            if (pending == null || pending == entry.destination.route) {
+                            val route = entry.destination.route
+                            if (route == null) {
+                                tabNavState = TabNavState()
                                 optimisticTabRoute = null
                             } else {
-                                navigateToTab(pending)
+                                val (nextState, action) = reduceTabNav(tabNavState, TabNavEvent.Settled(route))
+                                tabNavState = nextState
+                                if (action !is TabNavAction.Navigate) optimisticTabRoute = null
+                                runTabNavAction(action)
                             }
                             if (scrolledDown) scrolledDown = false
                         }
@@ -2190,11 +2211,11 @@ class MainActivity : ComponentActivity() {
                         if (active) {
                             when (currentRoute) {
                                 Screens.Home.route -> {
-                                    homeScrollBehavior.state.resetHeightOffset()
+                                    launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                                 }
 
                                 Screens.Search.route -> {
-                                    searchScrollBehavior.state.resetHeightOffset()
+                                    launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
                                 }
 
                                 else -> {}
@@ -3548,8 +3569,9 @@ class MainActivity : ComponentActivity() {
                                                             },
                                                         ),
                                                     onClick = {
-                                                        navigateToTabRoot(
-                                                            if (compactLeftCircleIsLibrary) Screens.Library else Screens.Home,
+                                                        requestTab(
+                                                            if (compactLeftCircleIsLibrary) Screens.Library.route else Screens.Home.route,
+                                                            true,
                                                         )
                                                     },
                                                     backdrop = compactBackdrop,

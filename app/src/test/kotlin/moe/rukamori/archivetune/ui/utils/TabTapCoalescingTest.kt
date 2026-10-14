@@ -35,7 +35,7 @@ class TabTapCoalescingTest {
     fun `tap on the shown tab is a re-select and never navigates`() {
         val (_, action) = tap(home, isCurrent = true)
 
-        assertEquals(TabNavAction.None, action)
+        assertEquals(TabNavAction.Reselect(home), action)
     }
 
     @Test
@@ -141,5 +141,75 @@ class TabTapCoalescingTest {
 
         assertEquals(listOf(search, home), navigations)
         assertNull(settle2.first.pendingTab)
+    }
+
+    @Test
+    fun `tapping the pending tab again keeps its re-select intent for the entry it lands on`() {
+        // Library is entering; home is tapped (pending, locally selected) and tapped again.
+        var state = TabNavState()
+        state = reduceTabNav(state, TabNavEvent.Tap(home, isCurrentTab = false, currentResumed = false)).first
+        val (afterSecond, secondAction) =
+            reduceTabNav(state, TabNavEvent.Tap(home, isCurrentTab = false, currentResumed = false))
+
+        assertEquals(TabNavAction.SetPending(home), secondAction)
+        assertEquals(TabNavState(pendingTab = home, pendingReselect = true), afterSecond)
+
+        val (settled, action) = reduceTabNav(afterSecond, TabNavEvent.Settled(library))
+
+        assertEquals(TabNavState(), settled)
+        assertEquals(TabNavAction.Navigate(home, reselect = true), action)
+    }
+
+    @Test
+    fun `a re-select intent on the pending tab is applied when it settles there`() {
+        val state = TabNavState(pendingTab = home, pendingReselect = true)
+
+        val (_, action) = reduceTabNav(state, TabNavEvent.Settled(home))
+
+        assertEquals(TabNavAction.Reselect(home), action)
+    }
+
+    @Test
+    fun `a different tab tapped after the pending one drops the earlier re-select intent`() {
+        val state = TabNavState(pendingTab = home, pendingReselect = true)
+
+        val (next, _) = reduceTabNav(state, TabNavEvent.Tap(library, isCurrentTab = false, currentResumed = false))
+
+        assertEquals(TabNavState(pendingTab = library), next)
+    }
+
+    @Test
+    fun `a root request while settled navigates to the tab root even from inside that tab`() {
+        val (state, action) =
+            reduceTabNav(TabNavState(), TabNavEvent.Tap(library, isCurrentTab = true, currentResumed = true, toRoot = true))
+
+        assertEquals(TabNavState(), state)
+        assertEquals(TabNavAction.Navigate(library, toRoot = true), action)
+    }
+
+    @Test
+    fun `a root request during a transition replaces the pending tab and wins on settle`() {
+        // Search is pending while home is entering; the round Library button is the last request.
+        val state = TabNavState(pendingTab = search)
+
+        val (next, action) =
+            reduceTabNav(state, TabNavEvent.Tap(library, isCurrentTab = false, currentResumed = false, toRoot = true))
+
+        assertEquals(TabNavAction.SetPending(library), action)
+        assertEquals(TabNavState(pendingTab = library, pendingToRoot = true), next)
+
+        val (settled, settleAction) = reduceTabNav(next, TabNavEvent.Settled(home))
+
+        assertNull(settled.pendingTab)
+        assertEquals(TabNavAction.Navigate(library, toRoot = true), settleAction)
+    }
+
+    @Test
+    fun `a tab tap after a pending root request replaces it`() {
+        val state = TabNavState(pendingTab = library, pendingToRoot = true)
+
+        val (next, _) = reduceTabNav(state, TabNavEvent.Tap(search, isCurrentTab = false, currentResumed = false))
+
+        assertEquals(TabNavState(pendingTab = search), next)
     }
 }

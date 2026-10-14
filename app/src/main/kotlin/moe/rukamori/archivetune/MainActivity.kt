@@ -3448,7 +3448,8 @@ class MainActivity : ComponentActivity() {
                                                 // solid pill when Liquid Glass is off or pre-S.
                                                 SukisuLiquidNavBar(
                                                     items = navigationItems,
-                                                    backdrop = liquidGlassBackdrop,
+                                                    // "Stock colours instead of Liquid Glass" draws the bar with no glass.
+                                                    backdrop = liquidGlassBackdrop.takeIf { !compactControlsStockColor },
                                                     modifier =
                                                         Modifier
                                                             .align(Alignment.BottomCenter)
@@ -3603,6 +3604,32 @@ class MainActivity : ComponentActivity() {
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             ) {
+                                // The frosted layer is recorded only while a surface on screen
+                                // samples it: the bottom bar (on screen while its animated height is
+                                // above zero) or rail with a frosted treatment, or a present frosted
+                                // mini player. The backdrop object itself stays allocated so the
+                                // pill colours that key off its availability do not flip.
+                                val recordFrostedBackdrop by remember(
+                                    navBarFrostedBackdrop,
+                                    playerBottomSheetState,
+                                    navigationBarFrostedBlur,
+                                    navigationBarTintFrostedBlur,
+                                    miniPlayerBgStyle,
+                                    useRail,
+                                    isSukisuNavBar,
+                                ) {
+                                    derivedStateOf {
+                                        val navBarFrosted =
+                                            (navigationBarFrostedBlur || navigationBarTintFrostedBlur) &&
+                                                (useRail || (!isSukisuNavBar && bottomNavigationBarHeightState.value > 0.dp))
+                                        val miniPlayerFrosted =
+                                            miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED &&
+                                                !playerBottomSheetState.isDismissed
+                                        navBarFrostedBackdrop != null &&
+                                            !playerBottomSheetState.isExpanded &&
+                                            (navBarFrosted || miniPlayerFrosted)
+                                    }
+                                }
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -3735,10 +3762,10 @@ class MainActivity : ComponentActivity() {
                                                 },
                                             ).then(
                                                 // Frosted nav bar: capture the app content into a
-                                                // layer each frame so the bar can draw it blurred.
-                                                // Nothing samples the backdrop while the opaque
-                                                // expanded player covers the NavHost.
-                                                if (navBarFrostedBackdrop != null && !playerBottomSheetState.isExpanded) {
+                                                // layer each frame so the bar can draw it blurred,
+                                                // only while recordFrostedBackdrop says a visible
+                                                // surface samples it.
+                                                if (recordFrostedBackdrop && navBarFrostedBackdrop != null) {
                                                     Modifier
                                                         .onGloballyPositioned { coordinates ->
                                                             navBarFrostedBackdrop.contentOffsetInRoot =

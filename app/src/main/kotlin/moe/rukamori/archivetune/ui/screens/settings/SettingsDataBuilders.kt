@@ -17,6 +17,8 @@ import android.widget.Toast
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.R
@@ -89,8 +91,10 @@ import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
 import moe.rukamori.archivetune.constants.TranslateLyricsKey
 import moe.rukamori.archivetune.constants.UseLyricsV2Key
-import moe.rukamori.archivetune.constants.UseSystemFontKey
+import moe.rukamori.archivetune.constants.AppFontPreference
+import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
+import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 
 @Composable
@@ -102,6 +106,21 @@ private fun SearchResultSwitch(
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+    )
+}
+
+/**
+ * "Use system font" drives the canonical [FontPreferenceKey], the key Appearance writes and
+ * StartupSettings resolves; the legacy boolean is ignored once that key exists.
+ */
+@Composable
+private fun SearchResultSystemFontSwitch() {
+    var fontPreference by rememberEnumPreference(FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
+    Switch(
+        checked = fontPreference == AppFontPreference.SYSTEM,
+        onCheckedChange = { checked ->
+            fontPreference = if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT
+        },
     )
 }
 
@@ -170,7 +189,7 @@ fun buildSettingsGroups(
                 SettingsChild("Blur intensity", "blur_intensity", listOf("blur intensity", "blur amount", "blur level", "blur radius")),
                 SettingsChild("Backdrop blur", "backdrop_blur", listOf("backdrop", "backdrop blur", "background blur", "frosted")) { SearchResultSwitch(BackdropEnabledKey, false) },
                 SettingsChild("Font preference", "font_preference", listOf("font", "font style", "typography")),
-                SettingsChild("Use system font", "use_system_font", listOf("system font", "default font", "roboto"), restartPending = { it.font }) { SearchResultSwitch(UseSystemFontKey, false) },
+                SettingsChild("Use system font", "use_system_font", listOf("system font", "default font", "roboto"), restartPending = { it.font }) { SearchResultSystemFontSwitch() },
                 SettingsChild("Thumbnail corner radius", "thumbnail_corner_radius", listOf("thumbnail corner", "corner radius", "rounded thumbnail", "thumbnail shape")),
                 SettingsChild("Crop thumbnail to square", "crop_thumbnail_to_square", listOf("crop thumbnail", "square thumbnail", "thumbnail crop")) { SearchResultSwitch(CropThumbnailToSquareKey, false) },
                 SettingsChild("Enable canvas in albums page", "album_canvas_enabled", listOf("album canvas", "canvas in album", "album motion artwork", "album animated cover", "album header video")) { SearchResultSwitch(AlbumCanvasEnabledKey, true) },

@@ -63,7 +63,9 @@ import moe.rukamori.archivetune.ui.theme.yumaClickable
 import moe.rukamori.archivetune.ui.theme.yumaGlassCard
 import moe.rukamori.archivetune.ui.theme.yumaSegmentPosition
 import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
+import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.utils.StartupSettings
+import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 
 @Composable
@@ -523,6 +525,17 @@ fun SettingsSearchResultItem(
             result.restartPending?.let { restartPending ->
                 val prefs = rememberPreferenceSnapshot()
                 RestartToApplyNotice(visible = restartPending(StartupSettings.pending(prefs.current)))
+            }
+            if (result.blurOverridden) {
+                val (blurDisabled) = rememberPreference(DisableBlurKey, defaultValue = false)
+                if (blurDisabled) {
+                    Text(
+                        text = stringResource(R.string.blur_setting_overridden),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 56.dp, top = 4.dp),
+                    )
+                }
             }
         }
     }

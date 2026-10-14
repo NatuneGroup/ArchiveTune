@@ -1254,6 +1254,25 @@ private fun AppearancePlayerSection(
                             MiniPlayerBackgroundStyle.LIQUID_GLASS -> stringResource(R.string.liquid_glass)
                         }
                     },
+                    isValueEnabled = { style ->
+                        !disableBlur ||
+                            (
+                                style != MiniPlayerBackgroundStyle.FROSTED &&
+                                    style != MiniPlayerBackgroundStyle.LIQUID_GLASS
+                            )
+                    },
+                    valueDescription = { style ->
+                        if (disableBlur &&
+                            (
+                                style == MiniPlayerBackgroundStyle.FROSTED ||
+                                    style == MiniPlayerBackgroundStyle.LIQUID_GLASS
+                            )
+                        ) {
+                            stringResource(R.string.blur_setting_overridden)
+                        } else {
+                            ""
+                        }
+                    },
                 )
                 // Pre-Android 12 warning: frosted mini player uses RenderEffect (API 31+).
                 // On pre-S the FROSTED style is silently downgraded to THEME — surface a

@@ -97,11 +97,14 @@ import moe.rukamori.archivetune.utils.rememberPreference
 private fun SearchResultSwitch(
     key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
     defaultValue: Boolean,
+    blurOverridden: Boolean = false,
 ) {
     val (checked, onCheckedChange) = rememberPreference(key, defaultValue)
+    val blurDisabled = blurOverridden && rememberPreference(DisableBlurKey, false).value
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
+        enabled = !blurDisabled,
     )
 }
 
@@ -168,7 +171,7 @@ fun buildSettingsGroups(
                 SettingsChild("App icon", "app_icon", listOf("icon", "app icon", "icon pack", "launcher icon")),
                 SettingsChild("Disable blur", "disable_blur", listOf("blur", "disable blur", "no blur", "performance")) { SearchResultSwitch(DisableBlurKey, false) },
                 SettingsChild("Blur intensity", "blur_intensity", listOf("blur intensity", "blur amount", "blur level", "blur radius")),
-                SettingsChild("Backdrop blur", "backdrop_blur", listOf("backdrop", "backdrop blur", "background blur", "frosted")) { SearchResultSwitch(BackdropEnabledKey, false) },
+                SettingsChild("Backdrop blur", "backdrop_blur", listOf("backdrop", "backdrop blur", "background blur", "frosted"), blurOverridden = true) { SearchResultSwitch(BackdropEnabledKey, false, blurOverridden = true) },
                 SettingsChild("Font preference", "font_preference", listOf("font", "font style", "typography")),
                 SettingsChild("Use system font", "use_system_font", listOf("system font", "default font", "roboto"), restartPending = { it.font }) { SearchResultSwitch(UseSystemFontKey, false) },
                 SettingsChild("Thumbnail corner radius", "thumbnail_corner_radius", listOf("thumbnail corner", "corner radius", "rounded thumbnail", "thumbnail shape")),
@@ -193,9 +196,9 @@ fun buildSettingsGroups(
                 SettingsChild("Hide status bar", "hide_status_bar", listOf("status bar", "hide status", "immersive", "fullscreen", "hide bar")) { SearchResultSwitch(HideStatusBarKey, false) },
                 SettingsChild("Force high refresh rate", "force_high_refresh_rate", listOf("refresh rate", "high refresh", "120hz", "90hz", "smooth")) { SearchResultSwitch(ForceHighRefreshRateKey, false) },
                 SettingsChild("Navigation bar style", "navigation_bar_style", listOf("navigation bar", "nav bar", "bottom bar", "sukisu", "liquid glass bar")),
-                SettingsChild("Frosted navigation bar", "frosted_nav_bar", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }) { SearchResultSwitch(NavigationBarFrostedBlurKey, false) },
-                SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass", "glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false) },
-                SettingsChild("Liquid Glass effects", "liquid_glass_effects", listOf("liquid glass", "glass effects", "liquid glass effects", "header glass", "mini player glass"), restartPending = { it.liquidGlass }) { SearchResultSwitch(LiquidGlassEnabledKey, false) },
+                SettingsChild("Frosted navigation bar", "frosted_nav_bar", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(NavigationBarFrostedBlurKey, false, blurOverridden = true) },
+                SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass", "glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false, blurOverridden = true) },
+                SettingsChild("Liquid Glass effects", "liquid_glass_effects", listOf("liquid glass", "glass effects", "liquid glass effects", "header glass", "mini player glass"), restartPending = { it.liquidGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassEnabledKey, false, blurOverridden = true) },
                 SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },
                 SettingsChild("Hide navigation bar while scrolling", "navigation_bar_hide_on_scroll", listOf("hide navigation bar", "hide nav bar", "scroll to hide", "auto hide bar")) { SearchResultSwitch(NavigationBarHideOnScrollKey, false) },
                 SettingsChild("Navigation bar customization", "navigation_bar_settings", listOf("navigation bar", "nav bar dimensions", "nav bar opacity", "nav bar width", "nav bar height", "nav bar corner radius", "nav bar label spacing")),
@@ -289,9 +292,9 @@ fun buildSettingsGroups(
                 SettingsChild("Navigation bar style", "navigation_bar_style", listOf("navigation bar style", "nav bar style", "bottom bar style", "sukisu", "liquid glass bar")),
                 SettingsChild("Bottom pills layout", "compact_bottom_pills", listOf("compact pills", "compact navigation", "compact bottom bar", "bottom pills layout")),
                 SettingsChild("Mini player and bar behavior", "navigation_bar_compact_behavior", listOf("compact", "mini player", "collapse", "adaptive", "scroll", "always expanded", "always compact")),
-                SettingsChild("Frosted navigation bar", "navigation_bar_frosted_blur", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }) { SearchResultSwitch(NavigationBarFrostedBlurKey, false) },
+                SettingsChild("Frosted navigation bar", "navigation_bar_frosted_blur", listOf("frosted nav", "frosted navigation", "frosted blur"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(NavigationBarFrostedBlurKey, false, blurOverridden = true) },
                 SettingsChild("Tint frosted navigation bar", "navigation_bar_tint_frosted_blur", listOf("tint frosted", "tint nav bar", "frosted tint", "coloured nav bar")),
-                SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false) },
+                SettingsChild("Liquid Glass navigation bar", "liquid_glass_nav_bar", listOf("liquid glass nav", "glass navigation", "liquid nav"), restartPending = { it.navigationBarGlass }, blurOverridden = true) { SearchResultSwitch(LiquidGlassNavBarEnabledKey, false, blurOverridden = true) },
                 SettingsChild("Glass glow", "navigation_bar_glass_glow", listOf("glow", "rim light", "sheen", "glass glow", "glow intensity")),
                 SettingsChild("Stock colours instead of Liquid Glass", "compact_controls_stock_color", listOf("stock color", "stock colour", "solid pills", "glass pills", "compact buttons", "bottom buttons", "solid", "no glass", "replace liquid glass", "liquid glass alternative")) { SearchResultSwitch(CompactControlsStockColorKey, false) },
                 SettingsChild("Hide labels in navigation bar", "hide_navigation_bar_labels", listOf("hide labels", "navigation labels", "nav labels", "icons only")) { SearchResultSwitch(HideNavigationBarLabelsKey, false) },

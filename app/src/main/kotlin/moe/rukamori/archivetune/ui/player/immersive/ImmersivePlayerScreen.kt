@@ -82,6 +82,7 @@ import moe.rukamori.archivetune.ui.component.ListDialog
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
+import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap

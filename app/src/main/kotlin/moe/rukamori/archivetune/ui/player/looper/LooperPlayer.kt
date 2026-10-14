@@ -64,6 +64,7 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
+import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
@@ -83,6 +84,7 @@ import moe.rukamori.archivetune.ui.player.LocalVideoPreferredHeight
 import moe.rukamori.archivetune.ui.player.LocalVideoOnPreferredHeightChange
 import moe.rukamori.archivetune.ui.player.LocalVideoAvailableHeights
 import moe.rukamori.archivetune.ui.player.LocalVideoSelectedHeight
+import moe.rukamori.archivetune.ui.player.label
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo

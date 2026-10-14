@@ -316,39 +316,34 @@ class DownloadUtil
                 // Instead, sum the actual cached spans and compare against
                 // FormatEntity.contentLength — only treat the cache as
                 // complete when we actually have the full file.
+                // Only keys the gated download chain could produce are reused, in its order, so a
+                // complete cache entry from a disabled or lower-ranked source is never copied.
+                val eligibleCacheKeys = gatedDownloadCacheKeys(mediaId)
+                val youTubeAllowed = DownloadSourceConfig.youTubeFallbackAllowed(playbackEnabledSources)
                 val expectedLength = database.getSongByIdBlocking(mediaId)?.format?.contentLength ?: 0L
                 if (expectedLength > 0L) {
-                    val cachedBytes = runCatching {
-                        playerCache.getCachedSpans(mediaId).sumOf { it.length }
-                    }.getOrDefault(0L)
-                    if (cachedBytes >= expectedLength) {
-                        return@Factory dataSpec
-                    }
-                }
-                // Same check for source-prefixed cache keys — only return
-                // when we actually have the full file, not on partial cache.
-                for (sourcePrefix in DownloadSourceConfig.CACHE_KEY_PREFIXES) {
-                    val sourceKey = "$sourcePrefix$mediaId"
-                    val sourceExpected = expectedLength // same expected length across sources
-                    if (sourceExpected > 0L) {
+                    for (cacheKey in eligibleCacheKeys) {
                         val cachedBytes = runCatching {
-                            playerCache.getCachedSpans(sourceKey).sumOf { it.length }
+                            playerCache.getCachedSpans(cacheKey).sumOf { it.length }
                         }.getOrDefault(0L)
-                        if (cachedBytes >= sourceExpected) {
-                            return@Factory dataSpec.buildUpon().setKey(sourceKey).build()
+                        if (cachedBytes >= expectedLength) {
+                            return@Factory if (cacheKey == mediaId) dataSpec else dataSpec.buildUpon().setKey(cacheKey).build()
                         }
                     }
                 }
                 // Fallback: if we have no expected length info at all, do a
                 // bounded check that requires the WHOLE dataSpec.length to be
                 // cached (only meaningful when dataSpec.length is set).
-                if (dataSpec.length >= 0 && playerCache.isCached(mediaId, dataSpec.position, dataSpec.length)) {
+                if (youTubeAllowed && dataSpec.length >= 0 && playerCache.isCached(mediaId, dataSpec.position, dataSpec.length)) {
                     return@Factory dataSpec
                 }
                 // No usable cache — proceed to resolve a fresh URL.
                 val lowDataModeActive = context.isLowDataModeActive()
                 if (!lowDataModeActive) {
                     resolvePreferredDownloadDataSpec(dataSpec, mediaId)?.let { return@Factory it }
+                }
+                if (!youTubeAllowed) {
+                    throw IOException("No enabled download source resolved $mediaId (YouTube is switched off)")
                 }
                 val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
                 val streamCacheKey = buildSongUrlCacheKey(mediaId, requestedAudioQuality)
@@ -518,9 +513,10 @@ class DownloadUtil
                 runCatching { PoolAccountManager.refresh(appContext) }
             }
 
-            // Fast path: bytes already cached under any source-prefixed key — no work to do. The
-            // DownloadManager will pick them up via the resolver in [youtubeDataSourceFactory].
-            for (key in DownloadSourceConfig.cacheKeysFor(mediaId)) {
+            // Fast path: bytes already cached under a key the gated download chain allows — no
+            // work to do. The DownloadManager will pick them up via the resolver in
+            // [youtubeDataSourceFactory], which applies the same gate.
+            for (key in gatedDownloadCacheKeys(mediaId)) {
                 val spans = runCatching { playerCache.getCachedSpans(key) }.getOrNull().orEmpty()
                 if (spans.isNotEmpty()) {
                     val expected = database.getSongByIdBlocking(mediaId)?.format?.contentLength ?: 0L
@@ -558,6 +554,7 @@ class DownloadUtil
             // YouTube Music fallback — prefer M4A/AAC over Opus/WebM so the
             // resulting file is .m4a (jaudiotagger-readable) rather than .webm
             // (jaudiotagger-unreadable).
+            if (!DownloadSourceConfig.youTubeFallbackAllowed(playbackEnabledSources)) return null
             val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
             val playbackData =
                 resolveYouTubeDownload(mediaId, requestedAudioQuality, lowDataModeActive).getOrNull()
@@ -791,6 +788,14 @@ class DownloadUtil
             }
             return null
         }
+
+        private fun gatedDownloadCacheKeys(mediaId: String): List<String> =
+            DownloadSourceConfig.downloadCacheKeys(
+                rawOrder = downloadSourceOrderCsv,
+                pinnedSource = SongSourceOverride.get(readPreference(SongSourceOverrideKey), mediaId),
+                playbackEnabled = playbackEnabledSources,
+                mediaId = mediaId,
+            )
 
         private fun resolvePreferredDownloadDataSpec(
             dataSpec: DataSpec,

@@ -1,8 +1,8 @@
 # AGENTS.md — ArchiveTune (vossgraves fork of 4nx3b/ArchiveTune)
 
-Active development is on `canary`, the integration branch (feature PRs land there
-first; `dev` follows it only after device QA and builds the Nightly channel, `main`
-is stable). The fork tracks both upstreams, `4nx3b/ArchiveTune` and
+Active development is on `dev`, the integration branch (feature PRs land there
+first; it builds the Nightly channel, and `main` is Stable). Canary is retired: there
+are only the Stable and Nightly channels. The fork tracks both upstreams, `4nx3b/ArchiveTune` and
 `rukamori/ArchiveTune`, at `4nx3b/dev` and `rukamori/dev`. Any agent working here
 must preserve the invariants below.
 
@@ -42,8 +42,8 @@ must preserve the invariants below.
 
 ## Upstream sync (state as of 2026-09-27)
 
-- **There is no automation.** `upstream-sync.yml`, `upstream-sync-merge.yml`, `mirror-4nx3b.yml` and the scripts they drove (`scripts/upstream_sync.sh`, `scripts/ai_resolve.py`, `docs/UPSTREAM_SYNC.md`) were deleted in 2026-09 (commit `699d1e390` and the mirror removal), so nothing merges or mirrors branches. The `SYNC_PAT` / `AI_API_KEY` secrets are unused.
-- Upstream changes land by **manual comparison**: the rukamori line shares no merge base, so read the upstream tree directly (`git show 4nx3b/dev:<path>`, `git show rukamori/dev:<path>`) and port the behaviour onto canary's current code instead of pasting files over it.
+- **There is no automation.** `upstream-sync.yml`, `upstream-sync-merge.yml`, `mirror-4nx3b.yml` and the scripts they drove (`scripts/upstream_sync.sh`, `scripts/ai_resolve.py`, `docs/UPSTREAM_SYNC.md`) were deleted in 2026-09 (commit `699d1e390` and the mirror removal), so nothing merges or mirrors branches. The unused `SYNC_PAT`, `AI_API_KEY` and `API_BEARER_TOKEN` secrets were deleted from the repository; the in-app updater needs no key.
+- Upstream changes land by **manual comparison**: the rukamori line shares no merge base, so read the upstream tree directly (`git show 4nx3b/dev:<path>`, `git show rukamori/dev:<path>`) and port the behaviour onto `dev`'s current code instead of pasting files over it.
 - If any automation is ever put back, it must not tree-replace a branch: that would re-commit `app/persistent-debug.keystore` (still present in 4nx3b's tree), resurrect main's committed-keystore signing fallback, and wipe every deliberate fork divergence (yt-dlp removal, keystore removal, UI rework). Direction decision (merge-based 4nx3b sync vs release-tag mirroring only) is pending with the maintainer. When a fork feature or protected file changes, update the invariants in this file — it is the only description of sync policy left.
 
 ## Agent hygiene

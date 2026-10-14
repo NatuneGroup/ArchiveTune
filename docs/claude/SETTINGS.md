@@ -64,8 +64,10 @@ Also shipped since this note was written:
   action list on a flat charcoal card. No live backdrop blur: recording one cost a full-screen layer
   every frame on every lyrics surface.
 - **Flamingo player** — `PlayerDesignStyle.FLAMINGO` (Appearance → Player), 4nx3b's album / lyrics /
-  queue pager with its own floating-light backdrop. Its two options, `flamingo_background_effect`
-  (moving blur) and `flamingo_volume_bar`, render only while it is the selected style.
+  queue pager with its own floating-light backdrop. Its moving-blur option,
+  `flamingo_background_effect`, renders only while it is the selected style. Its volume bar follows
+  the shared `show_player_volume_bar` switch like every other layout that has a volume row (the old
+  Flamingo-only switch was folded into it; an explicit earlier Flamingo choice is kept).
 - **Additional downloads** (`settings/language_packs`, search key `language_packs`) — a visible row
   in the main page's Storage group (after Downloads), also linked from Lyrics settings and found
   by search. It holds the Japanese dictionary (about 13 MB) plus files kept out of the APK in
@@ -85,7 +87,7 @@ playback must remain separate from any future public catalog search/fallback wor
 - Add new preference keys with explicit defaults and localized descriptions.
 - Keep settings available through both the page and settings search when appropriate.
 - Update route inventory and tests for any renamed or moved entry.
-- Verify back navigation, deep links, dialogs, toggles, sliders, and provider-specific pages on Canary.
+- Verify back navigation, deep links, dialogs, toggles, sliders, and provider-specific pages on a Nightly build.
 
 ## Navigation bar
 
@@ -98,3 +100,15 @@ The interface-style experience, library and player preferences change in one
 DataStore edit, using the current stored player style rather than a value from a
 previous composition. Re-selecting the active style does not overwrite the
 saved player choice.
+
+`BackAnimationStyleKey` (Appearance, anchor `back_animation_style`) chooses the back animation:
+Predictive (the default; sheets, pages and menus follow the back gesture) or Original. The SukiSU
+liquid glass bar is a `NavigationBarStyle` (`SUKISU`) rendered inside the normal nav-bar container,
+so compact mode and hide-on-scroll keep working.
+
+## Restart-to-apply settings
+
+UI scale, font and custom font, tablet mode, the Liquid Glass master switch, the liquid-glass nav
+bar and the frosted nav bar are read once per process through `utils/StartupSettings`. Changing one
+shows `RestartToApplyNotice` instead of recomposing the whole app. "Disable blur effects" is applied
+on top through the root `LocalBlurPolicy`, which every blur and glass surface honours.

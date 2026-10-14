@@ -20,9 +20,9 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/vossgraves/ArchiveTune"><b>Official Website</b></a> •
+    <a href="https://github.com/NatuneGroup/ArchiveTune"><b>Official Website</b></a> •
     <a href="#features"><b>Features</b></a> •
-    <a href="https://github.com/vossgraves/ArchiveTune"><b>Privacy</b></a> •
+    <a href="PRIVACY.md"><b>Privacy</b></a> •
     <a href="#download-now"><b>Download</b></a> •
     <a href="#screenshots"><b>Screenshots</b></a> •
     <a href="https://github.com/NatuneGroup/ArchiveTune/issues/new/choose"><b>Support</b></a>
@@ -91,7 +91,9 @@
           <li>Multiple account support with quick switching</li>
           <li>Ad-free playback with background listening</li>
           <li>Your playlists, liked songs, and subscriptions appear after sign-in</li>
-          <li>Support local file and local song playback
+          <li>Support local file and local song playback</li>
+          <li>Multiple audio sources (Tidal, Qobuz, Deezer, Amazon, QQ Music, JioSaavn, Telegram and more), tried in the order you choose, with YouTube as the final fallback</li>
+          <li>Sources you turn off are skipped everywhere: playback, prefetch, crossfade, Cast and downloads</li>
           <li>Fast startup and lightweight performance</li>
           <li>Built for a private, uninterrupted listening experience</li>
         </ul>
@@ -103,7 +105,7 @@
         <ul>
           <li>EBU R128 loudness normalization</li>
           <li>Tempo, pitch, and playback speed controls</li>
-          <li>Crossfade between tracks</li>
+          <li>Crossfade and automix between tracks, with one smooth hand-off per song pair</li>
           <li>System equalizer and spatial audio integration</li>
         </ul>
       </div>
@@ -114,7 +116,7 @@
       <div align="left">
         <h3>Lyrics &amp; Discovery</h3>
         <ul>
-          <li>Live synced lyrics</li>
+          <li>Live synced lyrics, including word-by-word karaoke and TTML lyrics</li>
           <li>Lyrics translation, AI Lyrics translation and romanization</li>
           <li>Music recognition for songs around you</li>
           <li>Listening statistics whenever you want them</li>
@@ -141,8 +143,11 @@
         <ul>
           <li>Material 3 design language</li>
           <li>Album-art powered dynamic colors</li>
-          <li>Up to 9 different player styles</li>
-          <li>Up to 8 different player background styles</li>
+          <li>17 different player styles, including BitChord, TikTok, SimpMusic, SpatialFlow, Looper, Flamingo and Apple Music</li>
+          <li>8 different player background styles, shared across the player styles that support them</li>
+          <li>Liquid glass surfaces, including the SukiSU liquid glass navigation bar</li>
+          <li>Predictive back gesture (with an option to keep the original back animation)</li>
+          <li>Animations follow the system animation speed</li>
           <li>Responsive layouts for different screen sizes</li>
           <li>Clean browsing, player, artist, album, and lyrics views</li>
         </ul>
@@ -156,6 +161,7 @@
           <li>Dynamic color theming options</li>
           <li>Gesture customization</li>
           <li>Animation and layout tuning</li>
+          <li>Option to disable all blur effects</li>
           <li>Flexible controls to shape the app around your workflow</li>
         </ul>
       </div>
@@ -227,13 +233,13 @@
 <table>
   <thead>
     <tr>
-      <th align="center">GitHub Actions</th>
+      <th align="center">GitHub Pre-releases</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td align="center">
-        <a href="https://nightly.link/NatuneGroup/ArchiveTune/workflows/build/dev/app-gms-mobile-universal-release">
+        <a href="https://github.com/NatuneGroup/ArchiveTune/releases">
           <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/main/assets/badge_github.png" height="50" alt="Download the latest ArchiveTune nightly build">
         </a>
       </td>
@@ -241,6 +247,17 @@
   </tbody>
 </table>
 </div>
+
+### Release Channels
+
+ArchiveTune has two update channels:
+
+- **Stable** is built from the `main` branch and published as regular GitHub releases.
+- **Nightly** is built from the `dev` branch and published as `N`-tagged GitHub pre-releases (for example `N202610141200`). It gets new features first and may be less polished.
+
+Both channels are signed with the same key, so updates install over the existing app in place.
+
+The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
 
 > [!WARNING]  
 > **Notes:** The trusted download source is listed above; we are not responsible for any risks you may encounter from downloading from other sources.

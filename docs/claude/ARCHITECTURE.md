@@ -2,11 +2,11 @@
 
 ## Playback
 
-`MusicService` owns the Media3 player, notification/session lifecycle, queue persistence, audio focus, wake lock, route recovery, source switching, and crossfade. `CrossfadePolicy` is pure decision logic and is unit tested.
+`MusicService` owns the Media3 player, notification/session lifecycle, queue persistence, audio focus, wake lock, route recovery, source switching, and crossfade. `CrossfadePolicy` and `CrossfadeHandoffPolicy` are pure decision logic and are unit tested.
 
 The primary player uses a bounded load control and network wake mode. Crossfade uses a separately prepared player only when explicitly enabled. Offload is disabled during crossfade because overlapping players and audio processing are not compatible with the low-power path. Secondary-player promotion is generation guarded; failed promotion leaves the outgoing player authoritative.
 
-When an outgoing player reaches `STATE_ENDED` during an incomplete fade, the service clears `pauseAtEndOfMediaItems` and resumes the next queue item only when playback had been requested and a valid target exists. This prevents the reported second-song stop without forcing playback after an intentional pause.
+Crossfade and automix hand-offs are decided by `CrossfadeHandoffPolicy` (`CONTINUE`, `PROMOTE`, `CARRY_TO_PRIMARY`, `RESTORE_OUTGOING`). Each transition runs once per song pair and the outgoing song is silenced at hand-over. Once the incoming song is dominant (the outgoing song ran out, or the fade is at least half done) it is never restarted from 0: a healthy incoming player is promoted, and an unusable one hands its position to the primary player. Restores never rewind, and `CrossfadeFailureTracker` turns repeated failures into a bounded hard cut instead of another fade. When the outgoing player ends during an incomplete fade, the service clears `pauseAtEndOfMediaItems` and continues only when playback had been requested, so an intentional pause is respected.
 
 Stream errors are handled through bounded URL/cache invalidation, source re-resolution, codec recovery, and optional next-item skipping. Do not turn a terminal error into an unbounded retry loop.
 
@@ -20,7 +20,7 @@ the opt-in, experimental Spotify streaming source plays on a second, streaming-o
 never on the catalog account (`docs/spotify-streaming.md`). Amazon, QQ and Spotify are all members
 of `AudioSourceConfig.DEFAULT_ORDER`, placed just above YouTube (`… AMAZON, QQ, SPOTIFY, YOUTUBE`),
 and all three default to off; Spotify is additionally active only while a streaming account is
-signed in. Like every other source they resolve through `resolveMultiSourceDataSpec`. Telegram uses
+signed in. Like every other source they resolve through `resolveMultiSourceDataSpec`. One ordered, gated chain (`audiosource/PlaybackSourceChain`) decides which sources may be tried, and normal play, prefetch, crossfade/automix, Cast, per-song pins, the cache shortcut and downloads all use it, so a source the user turned off is never tried. Telegram uses
 independent `telegram://` routing. Tidal progressive DASH uses `tidal-dash://`. YouTube is the final
 fallback and is itself a toggle: turning it off leaves the resolver with no terminal fallback beyond
 the standard no-stream error.

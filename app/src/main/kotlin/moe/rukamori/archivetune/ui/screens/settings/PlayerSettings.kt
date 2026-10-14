@@ -60,7 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
 import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.AudioNormalizationKey
@@ -285,14 +284,6 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             defaultValue = true,
         )
 
-    // Artwork sources. The Tidal toggle defaults to false so users do not get unexpected Tidal
-    // network traffic; DataStore only stores values the user explicitly changed, so an explicit
-    // choice is preserved either way.
-    val (archiveTuneCanvasEnabled, onArchiveTuneCanvasEnabledChange) =
-        prefs.state(
-            ArchiveTuneCanvasKey,
-            defaultValue = false,
-        )
     // Spotify Canvas: fetch the official Spotify Canvas looping video for the current song
     // using its YouTube Music video ID via https://mlc.kouzu.in/api/canvas?id=<videoId>.
     // Defaults to false so existing users don't see surprise network traffic / video playback
@@ -316,6 +307,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             TidalEnabledKey,
             defaultValue = true,
         )
+    // The Tidal artwork toggle defaults to false so users do not get unexpected Tidal network
+    // traffic; DataStore only stores values the user explicitly changed, so an explicit choice
+    // is preserved either way.
     val (tidalArtworkEnabled, onTidalArtworkEnabledChange) =
         prefs.state(
             TidalArtworkFallbackEnabledKey,
@@ -939,12 +933,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 title = tidalArtworkTitle,
             ) {
                 item {
-                    SwitchPreference(
+                    PreferenceEntry(
                         title = { Text(stringResource(R.string.archivetune_canvas)) },
-                        description = stringResource(R.string.archivetune_canvas_desc),
+                        description = stringResource(R.string.canvas_settings_subtitle),
                         icon = { Icon(painterResource(R.drawable.motion_photos_on), null) },
-                        checked = archiveTuneCanvasEnabled,
-                        onCheckedChange = onArchiveTuneCanvasEnabledChange,
+                        showChevron = true,
+                        onClick = { navController.navigate("settings/canvas") },
                     )
                 }
 

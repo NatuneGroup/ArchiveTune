@@ -20,20 +20,22 @@ JDK 21, compileSdk 37, Gradle wrapper 9.6.1. Flavors: `gms|foss` × `mobile|tv` 
 
 CI is the only compile signal if you cannot build locally: `Build APKs` (`build.yml`,
 on push to `main`/`dev`) builds `gms-mobile-arm64` and `gms-tv-universal`; a push
-to `canary` runs `Canary build` (`canary.yml`), which publishes the C-tagged
-prerelease the in-app updater takes, and a push to `dev` also runs `Nightly
-(canary) build` (`nightly.yml`, N-tagged). Unit tests are their own workflow
-(`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK jobs
-assemble releases and never compile `app/src/test`, so start it by hand after merges
-and before promoting canary. There is no separate Kotlin compile check: the APK build
-is the compile signal. There is no `foss`+`tv` variant, deliberately — the
+to `dev` also runs `Nightly build` (`nightly.yml`), which publishes the N-tagged
+prerelease and the `nightly.json` update-feed manifest the in-app updater reads, and
+`release.yml` (run by hand) publishes Stable releases and `stable.json`. Unit tests are their own
+workflow (`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK
+jobs assemble releases and never compile `app/src/test`, so start it by hand after
+merges and before promoting `dev`. There is no separate Kotlin compile check: the APK
+build is the compile signal. There is no `foss`+`tv` variant, deliberately — the
 fork ships GMS-only.
 
 ## Branches
 
-`canary` is the integration branch and builds the C-tagged Canary channel. It merges
-into `dev` only after the device QA in [docs/claude/RELEASES.md](docs/claude/RELEASES.md);
-`dev` builds the N-tagged Nightly channel, and `main` is stable.
+`dev` is the integration branch and builds the N-tagged Nightly channel; `main` is
+Stable. There are only these two channels. The Canary channel (`canary` branch,
+C-tagged releases) is retired: the app migrates a stored Canary channel to Nightly,
+and `canary.yml` remains only until the last Canary build has shipped — see
+[docs/claude/RELEASES.md](docs/claude/RELEASES.md).
 
 ## Subsystems
 

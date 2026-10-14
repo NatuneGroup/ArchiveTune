@@ -39,6 +39,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
@@ -2490,6 +2491,13 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                        // Hoisted so the frosted backdrop gate can follow the rail's real on-screen
+                        // presence, including its exit fade, rather than the tablet-mode flag alone.
+                        val railVisibleState = remember { MutableTransitionState(false) }
+                        railVisibleState.targetState =
+                            useRail &&
+                            shouldShowNavigationBar &&
+                            (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding)
                         Row(
                             modifier =
                                 Modifier
@@ -2524,10 +2532,7 @@ class MainActivity : ComponentActivity() {
                                     },
                         ) {
                             AnimatedVisibility(
-                                visible =
-                                    useRail &&
-                                        shouldShowNavigationBar &&
-                                        (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding),
+                                visibleState = railVisibleState,
                                 enter = fadeIn(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 150)),
                                 exit = fadeOut(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 100)),
                             ) {
@@ -3619,9 +3624,12 @@ class MainActivity : ComponentActivity() {
                                     isSukisuNavBar,
                                 ) {
                                     derivedStateOf {
+                                        val railOnScreen =
+                                            useRail &&
+                                                (railVisibleState.currentState || railVisibleState.targetState)
                                         val navBarFrosted =
                                             (navigationBarFrostedBlur || navigationBarTintFrostedBlur) &&
-                                                (useRail || (!isSukisuNavBar && bottomNavigationBarHeightState.value > 0.dp))
+                                                (railOnScreen || (!isSukisuNavBar && bottomNavigationBarHeightState.value > 0.dp))
                                         val miniPlayerFrosted =
                                             miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED &&
                                                 !playerBottomSheetState.isDismissed

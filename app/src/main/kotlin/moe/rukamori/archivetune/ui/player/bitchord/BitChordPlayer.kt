@@ -579,15 +579,20 @@ fun BitChordPlayerContent(
     // still loading and nothing is audible.
     val audioAdvancing by playerConnection.isAudioAdvancing.collectAsStateWithLifecycle()
 
-    // Back out of the lyrics panel to the player, and only from the player
-    // itself out to the mini player. The sheet the player is drawn in keeps
-    // its own back handling while no panel is open (predictive-back shrink).
-    PlayerInlinePageBackHandler(enabled = lyricsOpen) { lyricsOpen = false }
+    // Back out of the lyrics or queue panel to the player, and only from the
+    // player itself out to the mini player. The sheet the player is drawn in
+    // keeps its own back handling while no panel is open (predictive-back shrink).
+    val panelOpen = lyricsOpen || queueOpen
+    val closePanel = {
+        lyricsOpen = false
+        queueOpen = false
+    }
+    PlayerInlinePageBackHandler(enabled = panelOpen, onBack = closePanel)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val view = LocalView.current
-        DisposableEffect(view, lyricsOpen) {
-            val callback = if (lyricsOpen) {
-                OverlayBack.register(view) { lyricsOpen = false }
+        DisposableEffect(view, panelOpen) {
+            val callback = if (panelOpen) {
+                OverlayBack.register(view, closePanel)
             } else {
                 null
             }

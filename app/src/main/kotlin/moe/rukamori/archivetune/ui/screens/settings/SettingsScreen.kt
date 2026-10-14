@@ -41,6 +41,7 @@ import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -294,7 +295,14 @@ fun SettingsScreen(
         BuildConfig.UPDATER_AVAILABLE &&
             Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
     var isUpdateDismissed by remember { mutableStateOf(false) }
-    val allSettingsGroups = buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context)
+    val colorScheme = MaterialTheme.colorScheme
+    val configuration = LocalConfiguration.current
+    // The index holds ~440 children; rebuilding it on each recomposition re-ran on every
+    // search keystroke. Configuration covers a locale change.
+    val allSettingsGroups =
+        remember(navController, isAndroid12OrLater, hasUpdate, context, colorScheme, configuration) {
+            buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context, colorScheme)
+        }
     // When searching, flatten all individual SettingsChildren across every category so each
     // matching setting is shown as a separate row.
     val filteredChildResults = remember(searchQuery, allSettingsGroups) {

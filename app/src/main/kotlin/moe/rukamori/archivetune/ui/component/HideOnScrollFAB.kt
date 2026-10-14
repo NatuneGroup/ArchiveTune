@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -34,9 +35,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.ui.utils.isScrollingUp
-import moe.rukamori.archivetune.utils.rememberPreference
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
@@ -153,7 +152,7 @@ private fun HideOnScrollFabButton(
     onClick: () -> Unit,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     ExtendedFloatingActionButton(
         modifier = Modifier.padding(16.dp),

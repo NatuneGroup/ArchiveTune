@@ -8,6 +8,12 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,9 +30,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -115,15 +119,12 @@ import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.NumberPickerPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
-import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SliderPreference
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TagsManagementDialog
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
-import moe.rukamori.archivetune.utils.rememberPreference
-import moe.rukamori.archivetune.utils.rememberEnumPreference
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
 import kotlin.math.roundToInt
@@ -132,21 +133,22 @@ import androidx.compose.foundation.layout.asPaddingValues
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
     // snapshot paints the stored value on the first frame instead of a default flash.
     val (persistentQueue, onPersistentQueueChange) =
-        rememberPreference(
+        prefs.state(
             PersistentQueueKey,
             defaultValue = true,
         )
     val (permanentShuffle, onPermanentShuffleChange) =
-        rememberPreference(
+        prefs.state(
             PermanentShuffleKey,
             defaultValue = false,
         )
     val (sponsorBlockEnabled, onSponsorBlockEnabledChange) =
-        rememberPreference(SponsorBlockEnabledKey, defaultValue = false)
+        prefs.state(SponsorBlockEnabledKey, defaultValue = false)
     val (sponsorBlockCategories, onSponsorBlockCategoriesRawChange) =
-        rememberPreference(
+        prefs.state(
             SponsorBlockCategoriesKey,
             defaultValue = SponsorBlockCategory.Defaults.map { it.apiName }.toSet(),
         )
@@ -158,30 +160,30 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             onSponsorBlockCategoriesRawChange(parsed.map { it.apiName }.toSet())
         } }
     val (skipSilence, onSkipSilenceChange) =
-        rememberPreference(
+        prefs.state(
             SkipSilenceKey,
             defaultValue = false,
         )
     val (audioNormalization, onAudioNormalizationChange) =
-        rememberPreference(
+        prefs.state(
             AudioNormalizationKey,
             defaultValue = true,
         )
     val (audioQuality, onAudioQualityChange) =
-        rememberEnumPreference(AudioQualityKey, AudioQuality.AUTO)
+        prefs.enumState(AudioQualityKey, AudioQuality.AUTO)
     val (rejectSuspectedUpscaledAudio, onRejectSuspectedUpscaledAudioChange) =
-        rememberPreference(RejectSuspectedUpscaledAudioKey, defaultValue = false)
+        prefs.state(RejectSuspectedUpscaledAudioKey, defaultValue = false)
     val (audioOffload, onAudioOffloadChange) =
-        rememberPreference(
+        prefs.state(
             AudioOffload,
             defaultValue = false,
         )
     val (swipeUpToOpenQueue, onSwipeUpToOpenQueueChange) =
-        rememberPreference(SwipeUpToOpenQueueKey, defaultValue = true)
+        prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
     val (queueAddAfterManual, onQueueAddAfterManualChange) =
-        rememberPreference(QueueAddAfterManualKey, defaultValue = true)
+        prefs.state(QueueAddAfterManualKey, defaultValue = true)
     val (bitPerfectUsb, onBitPerfectUsbChange) =
-        rememberPreference(
+        prefs.state(
             BitPerfectUsbOutputKey,
             defaultValue = false,
         )
@@ -192,41 +194,45 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         if (BitPerfectUsbOutput.sinkActive) BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
     }
     val (tryptifyEngine, onTryptifyEngineChange) =
-        rememberPreference(TryptifyAudioProcessingKey, defaultValue = false)
+        prefs.state(TryptifyAudioProcessingKey, defaultValue = false)
     val (lastwaveEngine, onLastwaveEngineChange) =
-        rememberPreference(LastwaveAudioProcessingKey, defaultValue = false)
+        prefs.state(LastwaveAudioProcessingKey, defaultValue = false)
     val (floatDsp, onFloatDspChange) =
-        rememberPreference(FloatDspEnabledKey, defaultValue = false)
+        prefs.state(FloatDspEnabledKey, defaultValue = false)
     // The engines ride the standard sink only; the bit-perfect sink skips every processor.
     val audioEnginesBlocked = bitPerfectUsb || BitPerfectUsbOutput.sinkActive
     val (usbExclusive, onUsbExclusiveChange) =
-        rememberPreference(UsbExclusiveAudioKey, defaultValue = false)
-    // Loads libarchivetune_dsp, which the exclusive stream needs anyway.
-    val usbExclusiveSupported = remember { FloatDsp.available }
+        prefs.state(UsbExclusiveAudioKey, defaultValue = false)
+    // FloatDsp.available loads libarchivetune_dsp on first touch; never on the main thread.
+    // Unknown (null) counts as supported until the background check says otherwise.
+    val usbExclusiveAvailability by produceState<Boolean?>(initialValue = null) {
+        value = withContext(Dispatchers.Default) { FloatDsp.available }
+    }
+    val usbExclusiveSupported = usbExclusiveAvailability != false
 
     val (seekExtraSeconds, onSeekExtraSeconds) =
-        rememberPreference(
+        prefs.state(
             SeekExtraSeconds,
             defaultValue = false,
         )
 
     val (enableVideoPlayback, onEnableVideoPlaybackChange) =
-        rememberPreference(
+        prefs.state(
             EnableVideoPlaybackKey,
             defaultValue = false,
         )
     val (enablePipMode, onEnablePipModeChange) =
-        rememberPreference(
+        prefs.state(
             EnablePipModeKey,
             defaultValue = false,
         )
     val (autoSkipNextOnError, onAutoSkipNextOnErrorChange) =
-        rememberPreference(
+        prefs.state(
             AutoSkipNextOnErrorKey,
             defaultValue = false,
         )
     val (pauseOnDeviceMute, onPauseOnDeviceMuteChange) =
-        rememberPreference(
+        prefs.state(
             PauseOnDeviceMuteKey,
             defaultValue = false,
         )
@@ -234,48 +240,48 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         deviceMutePlaybackRecoveryVolume,
         onDeviceMutePlaybackRecoveryVolumeChange,
     ) =
-        rememberPreference(
+        prefs.state(
             DeviceMutePlaybackRecoveryVolumeKey,
             defaultValue = 0,
         )
     val (autoStartOnBluetooth, onAutoStartOnBluetoothChange) =
-        rememberPreference(
+        prefs.state(
             AutoStartOnBluetoothKey,
             defaultValue = false,
         )
     val (stopMusicOnTaskClear, onStopMusicOnTaskClearChange) =
-        rememberPreference(
+        prefs.state(
             StopMusicOnTaskClearKey,
             defaultValue = false,
         )
     val (historyDuration, onHistoryDurationChange) =
-        rememberPreference(
+        prefs.state(
             HistoryDuration,
             defaultValue = HISTORY_DURATION_DEFAULT,
         )
 
     val (crossfadeEnabled, onCrossfadeEnabledChange) =
-        rememberPreference(
+        prefs.state(
             CrossfadeEnabledKey,
             defaultValue = false,
         )
     val (automixEnabled, onAutomixEnabledChange) =
-        rememberPreference(
+        prefs.state(
             AutomixEnabledKey,
             defaultValue = false,
         )
     val (automixPerformanceMode, onAutomixPerformanceModeChange) =
-        rememberEnumPreference(
+        prefs.enumState(
             AutomixPerformanceModeKey,
             defaultValue = AutomixPerformanceMode.BALANCED,
         )
     val (crossfadeDurationSeconds, onCrossfadeDurationSecondsChange) =
-        rememberPreference(
+        prefs.state(
             CrossfadeDurationKey,
             defaultValue = 5f,
         )
     val (crossfadeGapless, onCrossfadeGaplessChange) =
-        rememberPreference(
+        prefs.state(
             CrossfadeGaplessKey,
             defaultValue = true,
         )
@@ -284,7 +290,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     // network traffic; DataStore only stores values the user explicitly changed, so an explicit
     // choice is preserved either way.
     val (archiveTuneCanvasEnabled, onArchiveTuneCanvasEnabledChange) =
-        rememberPreference(
+        prefs.state(
             ArchiveTuneCanvasKey,
             defaultValue = false,
         )
@@ -293,7 +299,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     // Defaults to false so existing users don't see surprise network traffic / video playback
     // until they explicitly opt in.
     val (spotifyCanvasEnabled, onSpotifyCanvasEnabledChange) =
-        rememberPreference(
+        prefs.state(
             SpotifyCanvasKey,
             defaultValue = false,
         )
@@ -302,17 +308,17 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     // operator's own sp_dc cookie, so there is no stable public instance worth hardcoding —
     // the user supplies whichever instances they have access to and they are tried in order.
     val (canvasResolverEndpointsRaw, onCanvasResolverEndpointsChange) =
-        rememberPreference(
+        prefs.state(
             CanvasResolverEndpointsKey,
             defaultValue = "",
         )
     val (tidalEnabled, _) =
-        rememberPreference(
+        prefs.state(
             TidalEnabledKey,
             defaultValue = true,
         )
     val (tidalArtworkEnabled, onTidalArtworkEnabledChange) =
-        rememberPreference(
+        prefs.state(
             TidalArtworkFallbackEnabledKey,
             defaultValue = false,
         )
@@ -321,7 +327,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     // providers are tried — whichever is on top gets the most priority. If the top provider
     // has no artwork for the current song, the resolver falls back to the next one, and so on.
     val (artworkProviderOrderStr, onArtworkProviderOrderStrChange) =
-        rememberPreference(
+        prefs.state(
             ArtworkProviderOrderKey,
             defaultValue = "",
         )
@@ -332,28 +338,28 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     var showArtworkProviderOrderDialog by remember { mutableStateOf(false) }
 
     val (artistSeparators, onArtistSeparatorsChange) =
-        rememberPreference(
+        prefs.state(
             ArtistSeparatorsKey,
             defaultValue = ",;/&",
         )
     val (wakelockEnabled, onWakelockChange) =
-        rememberPreference(
+        prefs.state(
             WakelockKey,
             defaultValue = false,
         )
     val (swipeToSong, onSwipeToSongChange) =
-        rememberPreference(
+        prefs.state(
             SwipeToSongKey,
-            defaultValue = false,
+            defaultValue = true,
         )
     // Swipe-to-change-song: lets the user swipe the player thumbnail left/right to skip tracks.
     val (swipeThumbnail, onSwipeThumbnailChange) =
-        rememberPreference(
+        prefs.state(
             SwipeThumbnailKey,
             defaultValue = true,
         )
     val (swipeSensitivity, onSwipeSensitivityChange) =
-        rememberPreference(
+        prefs.state(
             SwipeSensitivityKey,
             defaultValue = 0.73f,
         )
@@ -367,6 +373,17 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             onSave = { newSeparators ->
                 onArtistSeparatorsChange(newSeparators)
                 showArtistSeparatorsDialog = false
+            },
+        )
+    }
+
+    if (showArtworkProviderOrderDialog) {
+        ArtworkProviderOrderDialog(
+            initialOrder = artworkProviderOrder,
+            onDismiss = { showArtworkProviderOrderDialog = false },
+            onConfirm = { newOrder ->
+                onArtworkProviderOrderStrChange(newOrder.joinToString(",") { it.name })
+                showArtworkProviderOrderDialog = false
             },
         )
     }
@@ -402,25 +419,33 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 .asPaddingValues()
                 .calculateBottomPadding()
         val topPadding = innerPadding.calculateTopPadding()
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
 
-        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
+        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
 
-        Column(
-            Modifier
-                .padding(top = topPadding)
-                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-                // Chained before verticalScroll so it measures the viewport, not the scrolling content.
-                .then(positions.containerModifier())
-                .verticalScroll(scrollState)
-                .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+        // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+        // opening transition.
+        val settingsSectionPlayerContentTitle = stringResource(R.string.settings_section_player_content)
+        val videoPlaybackTitle = stringResource(R.string.video_playback)
+        val playerTitle = stringResource(R.string.player)
+        val tidalArtworkTitle = stringResource(R.string.tidal_artwork)
+        val queueTitle = stringResource(R.string.queue)
+        val miscTitle = stringResource(R.string.misc)
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+            modifier =
+                Modifier
+                    .padding(top = topPadding)
+                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    .then(positions.containerModifier()),
         ) {
             // "Sources" group: music source + lyrics settings now live on the Playback page
             // (moved from the main settings list per Tasks 4 & 5). Each row navigates to its
             // own dedicated sub-page so the existing screens stay reachable.
-            PreferenceGroup(
-                title = stringResource(R.string.settings_section_player_content),
+            preferenceGroup(
+                title = settingsSectionPlayerContentTitle,
             ) {
                 item {
                     PreferenceEntry(
@@ -441,9 +466,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("enable_video_playback"),
-                title = stringResource(R.string.video_playback),
+                title = videoPlaybackTitle,
             ) {
                 item {
                     Column(modifier = positions.modifierFor("enable_video_playback")) {
@@ -471,9 +496,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("low_data_mode"),
-                title = stringResource(R.string.player),
+                title = playerTitle,
             ) {
                 item {
                     Column(modifier = positions.modifierFor("history_duration")) {
@@ -910,9 +935,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("archive_tune_canvas"),
-                title = stringResource(R.string.tidal_artwork),
+                title = tidalArtworkTitle,
             ) {
                 item {
                     SwitchPreference(
@@ -1014,20 +1039,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            if (showArtworkProviderOrderDialog) {
-                ArtworkProviderOrderDialog(
-                    initialOrder = artworkProviderOrder,
-                    onDismiss = { showArtworkProviderOrderDialog = false },
-                    onConfirm = { newOrder ->
-                        onArtworkProviderOrderStrChange(newOrder.joinToString(",") { it.name })
-                        showArtworkProviderOrderDialog = false
-                    },
-                )
-            }
-
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("persistent_queue"),
-                title = stringResource(R.string.queue),
+                title = queueTitle,
             ) {
                 item {
                     SwitchPreference(
@@ -1194,9 +1208,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                 }
             }
 
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("audio_offload"),
-                title = stringResource(R.string.misc),
+                title = miscTitle,
             ) {
                 item {
                     Column(modifier = positions.modifierFor("stop_task_clear")) {

@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.screens.library
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -97,7 +98,6 @@ import moe.rukamori.archivetune.constants.PlaylistSortType
 import moe.rukamori.archivetune.constants.PlaylistSortTypeKey
 import moe.rukamori.archivetune.constants.PlaylistViewTypeKey
 import moe.rukamori.archivetune.constants.LibraryViewType
-import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.db.entities.Playlist
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toMediaItem
@@ -731,7 +731,7 @@ fun rememberArtworkCardColor(
         )
     val surfaceColor = MaterialTheme.colorScheme.surface
     val useDarkTheme = remember(surfaceColor) { ColorUtils.calculateLuminance(surfaceColor.toArgb()) < 0.5 }
-    val pureBlack by rememberPreference(PureBlackKey, defaultValue = false)
+    val pureBlack = LocalItemPreferences.current.pureBlack
 
     return remember(gradientColors, useDarkTheme, pureBlack) {
         val baseColor = gradientColors.firstOrNull() ?: fallbackColor

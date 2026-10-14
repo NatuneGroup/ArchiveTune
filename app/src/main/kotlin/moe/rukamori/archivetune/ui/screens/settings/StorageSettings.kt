@@ -980,7 +980,9 @@ private fun CacheUsagePreference(progress: Float) {
     )
 }
 
-private const val StorageRefreshIntervalMillis = 500L
+// Clears re-key the polling effects, so a finished clear refreshes at once; the interval only
+// catches growth from playback and downloads, and each poll recomposes the page.
+private const val StorageRefreshIntervalMillis = 5_000L
 private const val CacheSizeBytesPerMegabyte = 1024L * 1024L
 
 private fun cacheSizeMegabytesToBytes(sizeMegabytes: Int): Long = sizeMegabytes.toLong().coerceAtLeast(0L) * CacheSizeBytesPerMegabyte

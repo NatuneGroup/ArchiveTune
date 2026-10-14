@@ -1224,4 +1224,7 @@
     <string name="back_animation_style_desc">How the back gesture animates the screen it closes. Predictive moves the player and sheets under your finger and springs back if you cancel.</string>
     <string name="back_animation_style_original">Original</string>
     <string name="back_animation_style_predictive">Predictive</string>
+    <string name="restart_to_apply">Restart to apply</string>
+    <string name="restart_to_apply_desc">Saved. This setting takes effect the next time the app starts.</string>
+    <string name="restart_now">Restart</string>
 </resources>

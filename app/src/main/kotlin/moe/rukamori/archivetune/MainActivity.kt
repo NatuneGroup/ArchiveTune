@@ -241,7 +241,6 @@ import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.AppLanguageKey
 import moe.rukamori.archivetune.constants.BackAnimationStyle
 import moe.rukamori.archivetune.constants.BackAnimationStyleKey
-import moe.rukamori.archivetune.constants.CustomFontUriKey
 import moe.rukamori.archivetune.constants.CustomThemeColorKey
 import moe.rukamori.archivetune.constants.DarkModeKey
 import moe.rukamori.archivetune.constants.DefaultOpenTabKey
@@ -259,15 +258,12 @@ import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.LastShownUpdatePopupVersionKey
 import moe.rukamori.archivetune.constants.LaunchCountKey
 import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.MiniPlayerBottomSpacing
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.MiniPlayerLastAnchorKey
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
-import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.BottomSheetAnimationSpec
 import moe.rukamori.archivetune.constants.MiniPlayerCompactHeight
@@ -275,7 +271,6 @@ import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
 import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
 import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
-import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
 import moe.rukamori.archivetune.constants.NeverShowUpdatePopupKey
 import moe.rukamori.archivetune.constants.PauseSearchHistoryKey
 import moe.rukamori.archivetune.constants.PersistentUpdatePopupKey
@@ -291,8 +286,6 @@ import moe.rukamori.archivetune.constants.SearchSource
 import moe.rukamori.archivetune.constants.SearchSourceKey
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
 import moe.rukamori.archivetune.constants.StopMusicOnTaskClearKey
-import moe.rukamori.archivetune.constants.TabletModeEnabledKey
-import moe.rukamori.archivetune.constants.UiScaleFactorKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.constants.UseSystemFontKey
@@ -389,9 +382,12 @@ import moe.rukamori.archivetune.ui.utils.TabNavAction
 import moe.rukamori.archivetune.ui.utils.TabNavEvent
 import moe.rukamori.archivetune.ui.utils.TabNavState
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
+import moe.rukamori.archivetune.ui.utils.ItemPreferences
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.reduceTabNav
 import moe.rukamori.archivetune.ui.utils.resetHeightOffset
+import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.SyncUtils
@@ -981,8 +977,9 @@ class MainActivity : ComponentActivity() {
                 moe.rukamori.archivetune.constants.HideScrollbarKey,
                 defaultValue = false,
             )
-            val fontPreference by rememberEnumPreference(FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
-            val customFontUri by rememberPreference(CustomFontUriKey, defaultValue = "")
+            // Restart-scoped: swapping the typography live remeasures every text node in the app.
+            val fontPreference = StartupSettings.fontPreference
+            val customFontUri = StartupSettings.customFontUri
             val legacyUseSystemFont by rememberPreference(UseSystemFontKey, defaultValue = false)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
@@ -1006,18 +1003,11 @@ class MainActivity : ComponentActivity() {
                 } else {
                     navigationBarStyleStored
                 }
-            val navigationBarFrostedBlur by rememberPreference(
-                NavigationBarFrostedBlurKey,
-                defaultValue = false,
-            )
-            val navigationBarTintFrostedBlur by rememberPreference(
-                NavigationBarTintFrostedBlurKey,
-                defaultValue = false,
-            )
-            val liquidGlassEnabled by rememberPreference(
-                LiquidGlassEnabledKey,
-                defaultValue = false,
-            )
+            // Restart-scoped (see StartupSettings): each of these turns on a whole-NavHost backdrop
+            // recording, which cannot be set up or torn down cheaply while the app is running.
+            val navigationBarFrostedBlur = StartupSettings.navigationBarFrostedBlur
+            val navigationBarTintFrostedBlur = StartupSettings.navigationBarTintFrostedBlur
+            val liquidGlassEnabled = StartupSettings.liquidGlassEnabled
             val compactControlsStockColor by rememberPreference(
                 CompactControlsStockColorKey,
                 defaultValue = false,
@@ -1029,10 +1019,7 @@ class MainActivity : ComponentActivity() {
             )
             val navGlassStrength =
                 if (navigationBarGlassGlow && !compactControlsStockColor) navigationBarGlassGlowIntensity else 0f
-            val liquidGlassNavBarEnabled by rememberPreference(
-                LiquidGlassNavBarEnabledKey,
-                defaultValue = false,
-            )
+            val liquidGlassNavBarEnabled = StartupSettings.liquidGlassNavBarEnabled
             // Forced high refresh rate applies at the activity level so it holds on
             // every screen, not just while Appearance settings is composed.
             val forceHighRefreshRate by rememberPreference(
@@ -1303,7 +1290,7 @@ class MainActivity : ComponentActivity() {
                     val bottomInsetDp = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
 
                     val isTvDevice = remember { applicationContext.isTvDevice() }
-                    val (tabletModeEnabled) = rememberPreference(TabletModeEnabledKey, defaultValue = false)
+                    val tabletModeEnabled = StartupSettings.tabletModeEnabled
                     val useRail =
                         isTvDevice ||
                             tabletModeEnabled ||
@@ -1322,8 +1309,8 @@ class MainActivity : ComponentActivity() {
                     // device's own font-size setting still applies. The slider in Appearance
                     // Settings clamps to [0.85, 1.30]; we additionally guard here in case a
                     // backup-restore injects an out-of-range value.
-                    val (uiScaleRaw) = rememberPreference(UiScaleFactorKey, defaultValue = 1.0f)
-                    val uiScale = uiScaleRaw.coerceIn(0.85f, 1.30f)
+                    // Restart-scoped: a live change relayouts the whole app. Clamped in StartupSettings.
+                    val uiScale = StartupSettings.uiScale
                     val scaledDensity = remember(density, uiScale) {
                         Density(
                             density = density.density,
@@ -2416,6 +2403,23 @@ class MainActivity : ComponentActivity() {
                         }
                     val haptic = LocalHapticFeedback.current
                     val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+                    val swipeToSongEnabled by rememberPreference(
+                        moe.rukamori.archivetune.constants.SwipeToSongKey,
+                        defaultValue = true,
+                    )
+                    val cropThumbnailToSquare by rememberPreference(
+                        moe.rukamori.archivetune.constants.CropThumbnailToSquareKey,
+                        defaultValue = false,
+                    )
+                    val itemPreferences =
+                        remember(enableHapticFeedback, swipeToSongEnabled, cropThumbnailToSquare, pureBlackEnabled) {
+                            ItemPreferences(
+                                hapticFeedbackEnabled = enableHapticFeedback,
+                                swipeToSongEnabled = swipeToSongEnabled,
+                                cropThumbnailToSquare = cropThumbnailToSquare,
+                                pureBlack = pureBlackEnabled,
+                            )
+                        }
                     val customHaptic =
                         remember(haptic, enableHapticFeedback) {
                             object : HapticFeedback {
@@ -2453,6 +2457,7 @@ class MainActivity : ComponentActivity() {
                         LocalLiquidGlassBackdrop provides liquidGlassBackdrop,
                         moe.rukamori.archivetune.ui.player.LocalIsInPipMode provides isInPictureInPictureModeState,
                         moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen provides isPlayerLyricsFullScreen,
+                        LocalItemPreferences provides itemPreferences,
                     ) {
                         // The opening animation sits under the content and over the background,
                         // so the home screen rises through the particles as the burst lands
@@ -3719,7 +3724,9 @@ class MainActivity : ComponentActivity() {
                                             ).then(
                                                 // Frosted nav bar: capture the app content into a
                                                 // layer each frame so the bar can draw it blurred.
-                                                if (navBarFrostedBackdrop != null) {
+                                                // Nothing samples the backdrop while the opaque
+                                                // expanded player covers the NavHost.
+                                                if (navBarFrostedBackdrop != null && !playerBottomSheetState.isExpanded) {
                                                     Modifier
                                                         .onGloballyPositioned { coordinates ->
                                                             navBarFrostedBackdrop.contentOffsetInRoot =
@@ -3734,7 +3741,7 @@ class MainActivity : ComponentActivity() {
                                                     Modifier
                                                 },
                                             ).then(
-                                                if (liquidGlassBackdrop != null && !isPlayerLyricsFullScreen) {
+                                                if (liquidGlassBackdrop != null && !isPlayerLyricsFullScreen && !playerBottomSheetState.isExpanded) {
                                                     // Suspend the outer app-wide layerBackdrop while the
                                                     // full-screen lyrics overlay is open. The overlay is
                                                     // opaque, so nothing visible samples this backdrop

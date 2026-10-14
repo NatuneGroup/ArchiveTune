@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
@@ -111,12 +112,10 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
 import moe.rukamori.archivetune.constants.GridThumbnailCornerRadius
 import moe.rukamori.archivetune.constants.GridThumbnailHeight
 import moe.rukamori.archivetune.constants.ListItemHeight
 import moe.rukamori.archivetune.constants.ListThumbnailSize
-import moe.rukamori.archivetune.constants.SwipeToSongKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
@@ -142,7 +141,6 @@ import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.ui.utils.thumbnailSourceRatio
 import moe.rukamori.archivetune.utils.joinByBullet
 import moe.rukamori.archivetune.utils.makeTimeString
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.math.roundToInt
 
@@ -400,7 +398,7 @@ fun SongListItem(
     showActiveContainer: Boolean = true,
     trailingContent: @Composable RowScope.() -> Unit = {},
 ) {
-    val swipeEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
+    val swipeEnabled = LocalItemPreferences.current.swipeToSongEnabled
     val resolvedSwipeContentBackgroundColor = swipeContentBackgroundColor ?: MaterialTheme.colorScheme.surface
 
     val content: @Composable () -> Unit = {
@@ -1126,7 +1124,7 @@ fun YouTubeListItem(
     trailingContent: @Composable RowScope.() -> Unit = {},
     badges: @Composable RowScope.() -> Unit = { YTItemBadges(item) },
 ) {
-    val swipeEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
+    val swipeEnabled = LocalItemPreferences.current.swipeToSongEnabled
 
     val content: @Composable () -> Unit = {
         val subtitle =
@@ -1214,7 +1212,7 @@ fun YouTubeGridItem(
     isPlaying: Boolean = false,
     fillMaxWidth: Boolean = false,
 ) {
-    val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val resolvedThumbnailRatio = thumbnailRatio ?: item.preferredThumbnailRatio(cropThumbnailToSquare)
 
     GridItem(
@@ -1394,7 +1392,7 @@ fun ItemThumbnail(
                     }
                 },
     ) {
-        val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+        val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
         val isYouTubeThumb = thumbnailUrl?.contains("ytimg.com", ignoreCase = true) == true
         val shouldApplySquareCrop = cropThumbnailToSquare && isYouTubeThumb && kotlin.math.abs(thumbnailRatio - 1f) < 0.001f
         val resolvedContentScale = contentScale ?: if (shouldApplySquareCrop) ContentScale.Crop else ContentScale.Fit
@@ -1552,7 +1550,7 @@ fun LocalThumbnail(
                 .aspectRatio(thumbnailRatio)
                 .clip(shape),
     ) {
-        val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+        val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
         val isYouTubeThumb = thumbnailUrl?.contains("ytimg.com", ignoreCase = true) == true
         val shouldApplySquareCrop = cropThumbnailToSquare && isYouTubeThumb && kotlin.math.abs(thumbnailRatio - 1f) < 0.001f
         val widthPx = if (maxWidth == Dp.Infinity) null else with(density) { maxWidth.roundToPx().coerceAtLeast(1) }

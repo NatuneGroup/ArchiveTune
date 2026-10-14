@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.utils.relaunchApp
 import moe.rukamori.archivetune.constants.GitHubContributorsEtagKey
 import moe.rukamori.archivetune.constants.GitHubContributorsJsonKey
 import moe.rukamori.archivetune.constants.GitHubContributorsLastCheckedAtKey
@@ -145,7 +146,7 @@ object StorageRestartScheduler {
         restartJob =
             scope.launch {
                 delay(AppRestartDelayMillis)
-                appContext.restartApp()
+                appContext.relaunchApp()
             }
     }
 }
@@ -660,14 +661,6 @@ private fun Context.defaultCacheDirectory(kind: StorageFolderKind): File =
     }
 
 private fun Context.defaultStorageRootDirectory(): File = filesDir
-
-private fun Context.restartApp() {
-    packageManager.getLaunchIntentForPackage(packageName)?.let { launchIntent ->
-        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-        startActivity(launchIntent)
-    }
-    kotlin.system.exitProcess(0)
-}
 
 private fun Context.storageLocationPreferences() = getSharedPreferences(StorageLocationPreferencesName, Context.MODE_PRIVATE)
 

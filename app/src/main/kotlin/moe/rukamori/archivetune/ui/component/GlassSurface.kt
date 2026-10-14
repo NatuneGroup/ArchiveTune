@@ -33,14 +33,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.unit.dp
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.utils.StartupSettings
 
 /** True while the user has opted into the Liquid Glass look. */
 @Composable
 fun rememberLiquidGlassEnabled(): Boolean {
-    val enabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
-    return enabled
+    return StartupSettings.liquidGlassEnabled
 }
 
 /**

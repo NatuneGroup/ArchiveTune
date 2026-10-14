@@ -587,11 +587,20 @@ fun BitChordPlayerContent(
         lyricsOpen = false
         queueOpen = false
     }
-    PlayerInlinePageBackHandler(enabled = panelOpen, onBack = closePanel)
+    // Mirrors the condition under which Player.kt publishes a non-NONE back target. The
+    // PRIORITY_OVERLAY callback below bypasses that controller, so without this gate a panel
+    // left open by a drag-collapse (or hidden under AOD) would swallow the next Back.
+    val aodActive by playerConnection.aodModeEnabled.collectAsStateWithLifecycle()
+    val playerOwnsBack = state.isExpandedOrExpanding && !aodActive
+    LaunchedEffect(state.isExpandedOrExpanding) {
+        if (!state.isExpandedOrExpanding) closePanel()
+    }
+    val panelOwnsBack = panelOpen && playerOwnsBack
+    PlayerInlinePageBackHandler(enabled = panelOwnsBack, onBack = closePanel)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val view = LocalView.current
-        DisposableEffect(view, panelOpen) {
-            val callback = if (panelOpen) {
+        DisposableEffect(view, panelOwnsBack) {
+            val callback = if (panelOwnsBack) {
                 OverlayBack.register(view, closePanel)
             } else {
                 null

@@ -43,7 +43,11 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
 import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.utils.rememberPreference
+import kotlin.math.min
 import kotlin.math.roundToLong
+
+// Bounds the catch-up after a hitch; at the smallest animator scales a 33 ms frame needs ~14.
+private const val MAX_SPLASH_SUBSTEPS = 16
 
 @Composable
 fun SplashOverlay(
@@ -123,7 +127,14 @@ fun SplashOverlay(
             // The engine's own clock: frame deltas divided by the animator scale, so the
             // particle timeline stretches and shrinks with the system setting while its
             // internal phases, the burst trigger and the force wobble all stay on one clock.
-            var engineTimeMs = 0L
+            var engineTimeSec = 0.0
+            // The integrator clamps each step to 0.5..MAX_STEP sixtieths of a second, so the
+            // scaled time is fed in bounded substeps and any remainder below the minimum is
+            // carried to the next frame; nothing is clamped away or invented, which keeps the
+            // particles on the same clock as phaseElapsedMs and the content reveal.
+            val minSubstepSec = 0.5f / 60f
+            val maxSubstepSec = SplashPhysics.MAX_STEP / 60f
+            var pendingSec = 0f
             while (isActive) {
                 withFrameNanos { now ->
                     if (!isInitialized) return@withFrameNanos
@@ -133,8 +144,16 @@ fun SplashOverlay(
                     }
                     val dt = ((now - lastTime) / 1_000_000_000f).coerceIn(0f, 0.033f)
                     lastTime = now
-                    engineTimeMs += (dt * 1000f / animatorScale).roundToLong()
-                    engine.update(dt / animatorScale, engineTimeMs)
+                    pendingSec += dt / animatorScale
+                    var substeps = 0
+                    while (pendingSec + 1e-6f >= minSubstepSec && substeps < MAX_SPLASH_SUBSTEPS) {
+                        val sub = min(pendingSec, maxSubstepSec)
+                        pendingSec -= sub
+                        engineTimeSec += sub
+                        engine.update(sub, (engineTimeSec * 1000.0).roundToLong())
+                        substeps++
+                    }
+                    if (substeps == MAX_SPLASH_SUBSTEPS) pendingSec = 0f
                     frameTick = now
 
                     val burstLimit =

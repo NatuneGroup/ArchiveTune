@@ -127,7 +127,7 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.BlurRadiusKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
 import moe.rukamori.archivetune.constants.LyricsMode
@@ -228,7 +228,7 @@ fun LyricsScreen(
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val currentSongLiked = currentSong?.song?.liked == true
 
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
     val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
     val configuredLyricsBackground by rememberEnumPreference(LyricsBackgroundStyleKey, LyricsBackgroundStyle.DEFAULT)

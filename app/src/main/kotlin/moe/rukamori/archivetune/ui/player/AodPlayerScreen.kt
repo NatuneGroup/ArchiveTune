@@ -89,7 +89,7 @@ import moe.rukamori.archivetune.constants.AodThumbnailShapeRotationKey
 import moe.rukamori.archivetune.constants.AodThumbnailSizeKey
 import moe.rukamori.archivetune.constants.AodTitleMaxLinesKey
 import moe.rukamori.archivetune.constants.AodVerticalSpacingKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
@@ -463,7 +463,7 @@ private fun AodControls(
     onSkipNext: () -> Unit,
 ) {
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val playButtonSize = controlSize.dp
     val skipButtonSize = (controlSize * 0.75f).dp
     val playIconSize = (controlSize * 0.5f).dp

@@ -40,20 +40,16 @@
 
 package moe.rukamori.archivetune.ui.player.bitchord
 
-import android.media.AudioManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import android.view.View
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -109,11 +105,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -157,7 +153,6 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -675,60 +670,21 @@ fun BitChordPlayerContent(
     // Signature Apple Music touch: the sleeve shrinks back while paused.
     val artScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.86f,
-        animationSpec = spring(
+        animationSpec = if (reduceAnimations) snap() else spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessLow,
         ),
         label = "artScale",
     )
 
-    // ── Volume, exactly BitChord's own AudioManager approach ──
-    val audioManager = remember(context) {
-        context.getSystemService(AudioManager::class.java)
-    }
-    val maxVolume = remember(audioManager) {
-        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
-    }
-    val scope = rememberCoroutineScope()
-    // Animatable rather than plain state: a hardware volume step is a jump of
-    // 1/15th of the bar, which reads as a stutter unless it's tweened.
-    val volume = remember {
-        Animatable(
-            (audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0).toFloat() / maxVolume,
-        )
-    }
-    var volumeDragging by remember { mutableStateOf(false) }
-    var systemVolume by remember { mutableFloatStateOf(volume.value) }
-
-    // Glide to the level the system reports, but never fight the finger — a
-    // drag writes the stream, which calls straight back through here.
-    LaunchedEffect(systemVolume) {
-        if (!volumeDragging) {
-            volume.animateTo(systemVolume, tween(durationMillis = 220, easing = FastOutSlowInEasing))
-        }
-    }
-
-    // Hardware volume keys and the system panel change the stream behind our
-    // back — watch Settings for changes so the bar tracks them live.
-    DisposableEffect(audioManager) {
-        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: return
-                systemVolume = current.toFloat() / maxVolume
-            }
-        }
-        context.contentResolver.registerContentObserver(
-            Settings.System.CONTENT_URI,
-            true,
-            observer,
-        )
-        onDispose { context.contentResolver.unregisterContentObserver(observer) }
-    }
+    val presentation = moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current
+    val volumeController = moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController()
+    val volume = moe.rukamori.archivetune.ui.player.volumeDisplayFraction(volumeController)
 
     // 0 = the ordinary square sleeve, 1 = the artwork as a full-bleed banner.
     val p by animateFloatAsState(
         targetValue = if (lyricsOpen || queueOpen) 1f else 0f,
-        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (reduceAnimations) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "sleeveCollapse",
     )
     // BitChord's fullBleedArtwork defaults to true; a phone-width player is
@@ -749,7 +705,7 @@ fun BitChordPlayerContent(
     }
     val heroT by animateFloatAsState(
         targetValue = if (heroMode && (artLoaded || heroSettled)) 1f else 0f,
-        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (reduceAnimations) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "heroCanvas",
     )
 
@@ -799,7 +755,7 @@ fun BitChordPlayerContent(
     Box(modifier = modifier.fillMaxSize()) {
         // Keyed on the track: the backdrop drifts when the player opens and on
         // every skip, then rests.
-        MeshBackdrop(
+        if (!presentation.sharedBackground) MeshBackdrop(
             palette = meshColors,
             trackKey = mediaMetadata.id,
             reduceAnimation = reduceAnimations,
@@ -811,7 +767,7 @@ fun BitChordPlayerContent(
         // is the only way to escape the player's side gutter and its
         // status-bar inset — a banner that stops short of either reads as a
         // misplaced card rather than as the artwork the screen is made of.
-        if (heroHeight > 0.dp) {
+        if (heroHeight > 0.dp && !presentation.hideSleeve) {
             if (heroMode && (p < 0.5f || heroVisible > 0.001f)) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
@@ -1121,6 +1077,7 @@ fun BitChordPlayerContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .ordinarySleeve(presentation.hideSleeve)
                             .graphicsLayer { alpha = if (artLoaded) 1f - heroVisible else 1f }
                             // A drop shadow grounds a photo; on the flat
                             // placeholder tile it has nothing to sit behind, so
@@ -1128,9 +1085,9 @@ fun BitChordPlayerContent(
                             // the first. Only cast it once there's actually art.
                             .shadow(
                                 if (artLoaded) lerp(14.dp, 6.dp, p) else 0.dp,
-                                RoundedCornerShape(lerp(10.dp, 7.dp, p)),
+                                RoundedCornerShape(lerp(presentation.radius(10.dp), 7.dp, p)),
                             )
-                            .clip(RoundedCornerShape(lerp(10.dp, 7.dp, p)))
+                            .clip(RoundedCornerShape(lerp(presentation.radius(10.dp), 7.dp, p)))
                             .background(Color.Black.copy(alpha = 0.18f))
                             .playerSeekDoubleTap(enabled = !queueOpen && !lyricsOpen),
                         contentAlignment = Alignment.Center,
@@ -1577,7 +1534,7 @@ fun BitChordPlayerContent(
 
             Spacer(Modifier.height(12.dp + controlSpread / 3))
 
-            Row(
+            if (presentation.showVolume) Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1589,18 +1546,11 @@ fun BitChordPlayerContent(
                 )
                 Spacer(Modifier.width(10.dp))
                 ThinSlider(
-                    valueProvider = { volume.value },
-                    onValueChange = {
-                        volumeDragging = true
-                        // Follow the finger exactly; only external changes tween.
-                        scope.launch { volume.snapTo(it) }
-                        audioManager?.setStreamVolume(
-                            AudioManager.STREAM_MUSIC,
-                            (it * maxVolume).roundToInt(),
-                            0,
-                        )
-                    },
-                    onValueChangeFinished = { volumeDragging = false },
+                    valueProvider = { volume },
+                    onValueChange = volumeController::setVolumeFraction,
+                    onValueChangeStarted = volumeController::startInteraction,
+                    onValueChangeFinished = volumeController::finishInteraction,
+                    onValueChangeCancelled = volumeController::cancelInteraction,
                     idleHeight = 6.dp,
                     activeHeight = 10.dp,
                     modifier = Modifier.weight(1f),
@@ -2059,7 +2009,7 @@ private fun BitChordScrubTimes(
         Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             ScrubTime { formatTime((shownFraction() * duration).toLong()) }
         }
-        LosslessOrStats(
+        if (moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current.showCodec) LosslessOrStats(
             format = format,
             modifier = Modifier.padding(horizontal = 8.dp),
         )

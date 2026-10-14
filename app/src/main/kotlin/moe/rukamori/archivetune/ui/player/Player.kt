@@ -10,16 +10,14 @@
 
 package moe.rukamori.archivetune.ui.player
 
-import android.content.Context
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
+
 import android.content.res.Configuration
-import android.database.ContentObserver
 import android.graphics.Bitmap
-import android.media.AudioManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
-import android.provider.Settings
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
@@ -81,7 +79,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -197,7 +194,6 @@ import moe.rukamori.archivetune.constants.PoTokenGvsKey
 import moe.rukamori.archivetune.constants.PoTokenPlayerKey
 import moe.rukamori.archivetune.constants.QueuePeekHeight
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
-import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.constants.SliderStyleKey
 import moe.rukamori.archivetune.constants.SpotifyCanvasKey
@@ -247,90 +243,6 @@ import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val SeekbarSettleToleranceMs = 1_500L
 private const val V8BackdropArtworkSizePx = 1_024
-
-@Stable
-internal class DeviceMusicVolumeController(
-    private val audioManager: AudioManager,
-) {
-    private var minVolume by mutableIntStateOf(readMinVolume())
-    private var maxVolume by mutableIntStateOf(readMaxVolume())
-    var volumeFraction by mutableFloatStateOf(readVolumeFraction())
-        private set
-
-    fun refresh() {
-        minVolume = readMinVolume()
-        maxVolume = readMaxVolume()
-        volumeFraction = readVolumeFraction()
-    }
-
-    @JvmName("setDeviceMusicVolumeFraction")
-    fun setVolumeFraction(fraction: Float) {
-        val safeFraction = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: volumeFraction
-        val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
-        val targetVolume =
-            (minVolume + (safeFraction * volumeRange).roundToInt())
-                .coerceIn(minVolume, maxVolume)
-        val adjustedTarget =
-            if (safeFraction > 0f && targetVolume <= minVolume) {
-                (minVolume + 1).coerceAtMost(maxVolume)
-            } else {
-                targetVolume
-            }
-
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, adjustedTarget, 0)
-        refresh()
-    }
-
-    private fun readVolumeFraction(): Float {
-        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
-        return ((currentVolume - minVolume).toFloat() / volumeRange.toFloat()).coerceIn(0f, 1f)
-    }
-
-    private fun readMaxVolume(): Int {
-        val streamMinVolume = readMinVolume()
-        return audioManager
-            .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            .coerceAtLeast(streamMinVolume + 1)
-    }
-
-    private fun readMinVolume(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-}
-
-@Composable
-internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController {
-    val context = LocalContext.current
-    val audioManager =
-        remember(context) {
-            context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        }
-    val controller =
-        remember(audioManager) {
-            DeviceMusicVolumeController(audioManager)
-        }
-
-    DisposableEffect(context, controller) {
-        val observer =
-            object : ContentObserver(Handler(Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) {
-                    controller.refresh()
-                }
-            }
-        val contentResolver = context.applicationContext.contentResolver
-        contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
-        controller.refresh()
-        onDispose {
-            contentResolver.unregisterContentObserver(observer)
-        }
-    }
-
-    return controller
-}
 
 /**
  * The numbered styles that take the player-wide double-tap-to-seek handler.
@@ -414,10 +326,8 @@ fun BottomSheetPlayer(
         key = PlayerDesignStyleKey,
         defaultValue = PlayerDesignStyle.Default,
     )
-    val showPlayerVolumeBar by rememberPreference(
-        key = ShowPlayerVolumeBarKey,
-        defaultValue = true,
-    )
+    val presentationPreferences = rememberPreferenceSnapshot()
+    val showPlayerVolumeBar by presentationPreferences.playerVolumeVisibility(playerDesignStyle)
 
     val storedPlayerBackground by rememberEnumPreference(
         key = PlayerBackgroundStyleKey,
@@ -499,7 +409,7 @@ fun BottomSheetPlayer(
     val currentLyricsEntity by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
-    val deviceMusicVolumeController = rememberDeviceMusicVolumeController()
+    val deviceMusicVolumeController = rememberDeviceMusicVolumeController(playerDesignStyle)
     val onPlayerVolumeChange =
         remember(deviceMusicVolumeController) {
             { volume: Float ->
@@ -1234,6 +1144,15 @@ fun BottomSheetPlayer(
         )
 
     CompositionLocalProvider(
+        LocalDeviceMusicVolumeController provides deviceMusicVolumeController,
+        LocalPlayerPresentation provides PlayerPresentation(
+            sharedBackground = playerDesignStyle.usesSharedBackground(storedPlayerBackground),
+            hideSleeve = playerDesignStyle.hasOrdinarySleeve && presentationPreferences[HidePlayerThumbnailKey, false],
+            sleeveRadius = presentationPreferences.current[ThumbnailCornerRadiusKey].takeIf { playerDesignStyle.hasOrdinarySleeve },
+            swipeArtwork = !playerDesignStyle.hasHorizontalArtworkSkip || presentationPreferences[moe.rukamori.archivetune.constants.SwipeThumbnailKey, true],
+            showCodec = showCodecOnPlayer,
+            showVolume = showPlayerVolumeBar,
+        ),
         LocalVideoArtworkState provides videoState,
         LocalVideoPreferredHeight provides videoPreferredHeight,
         LocalVideoOnPreferredHeightChange provides { videoPreferredHeight = it },
@@ -1283,14 +1202,14 @@ fun BottomSheetPlayer(
 
                         Key.DirectionUp -> {
                             deviceMusicVolumeController.setVolumeFraction(
-                                (deviceMusicVolumeController.volumeFraction + 0.05f).coerceAtMost(1f),
+                                (deviceMusicVolumeController.observedFraction + 0.05f).coerceAtMost(1f),
                             )
                             true
                         }
 
                         Key.DirectionDown -> {
                             deviceMusicVolumeController.setVolumeFraction(
-                                (deviceMusicVolumeController.volumeFraction - 0.05f).coerceAtLeast(0f),
+                                (deviceMusicVolumeController.observedFraction - 0.05f).coerceAtLeast(0f),
                             )
                             true
                         }
@@ -1488,7 +1407,7 @@ fun BottomSheetPlayer(
                 !aodModeEnabled
         val shouldUseArtworkCanvas =
             (archiveTuneCanvasEnabled || spotifyCanvasEnabled) &&
-                (playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC || playerDesignStyle == PlayerDesignStyle.FLAMINGO) &&
+                playerDesignStyle.hasArtworkCanvasSurface &&
                 !aodModeEnabled
         val shouldFetchV7Canvas = shouldUseV7Canvas && !lowDataModeActive
         val shouldFetchArtworkCanvas = shouldUseArtworkCanvas && !lowDataModeActive
@@ -1674,16 +1593,7 @@ fun BottomSheetPlayer(
         ) {
         if (!state.isCollapsed &&
             !aodModeEnabled &&
-            playerDesignStyle != PlayerDesignStyle.V5 &&
-            playerDesignStyle != PlayerDesignStyle.V7 &&
-            playerDesignStyle != PlayerDesignStyle.V8 &&
-            playerDesignStyle != PlayerDesignStyle.V9 &&
-            playerDesignStyle != PlayerDesignStyle.APPLE_MUSIC &&
-            playerDesignStyle != PlayerDesignStyle.BITCHORD &&
-            playerDesignStyle != PlayerDesignStyle.TIKTOK &&
-            playerDesignStyle != PlayerDesignStyle.SIMPMUSIC &&
-            playerDesignStyle != PlayerDesignStyle.SPATIALFLOW &&
-            playerDesignStyle != PlayerDesignStyle.FLAMINGO
+            playerDesignStyle.rendersSharedBackground(storedPlayerBackground)
         ) {
             PlayerBackground(
                 playerBackground = playerBackground,

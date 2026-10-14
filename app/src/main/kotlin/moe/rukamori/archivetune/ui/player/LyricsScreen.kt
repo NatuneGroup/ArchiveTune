@@ -159,6 +159,8 @@ import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
 import moe.rukamori.archivetune.playback.artwork.guessArtworkProvider
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.makeTimeString
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
@@ -233,7 +235,10 @@ fun LyricsScreen(
     val currentSongLiked = currentSong?.song?.liked == true
 
     val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
-    val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val storedPlayerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val selectedStyle by rememberEnumPreference(moe.rukamori.archivetune.constants.PlayerDesignStyleKey, moe.rukamori.archivetune.constants.PlayerDesignStyle.Default)
+    val playerBackground = selectedStyle.resolveBackground(storedPlayerBackground)
+    val showVolume by rememberPreferenceSnapshot().playerVolumeVisibility(selectedStyle)
     val configuredLyricsBackground by rememberEnumPreference(LyricsBackgroundStyleKey, LyricsBackgroundStyle.DEFAULT)
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
     val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
@@ -754,7 +759,8 @@ fun LyricsScreen(
                                     controlsExpanded = controlsExpanded,
                                     isPlaying = isPlaying,
                                     isLoading = isLoading,
-                                    volume = deviceMusicVolumeController.volumeFraction,
+                                    volumeController = deviceMusicVolumeController,
+                                    showVolume = showVolume,
                                     onPositionChange = onControlsPositionChange,
                                     onPositionChangeFinished = onControlsPositionChangeFinished,
                                     onVolumeChange = onControlsVolumeChange,
@@ -802,7 +808,8 @@ fun LyricsScreen(
                         controlsExpanded = controlsExpanded,
                         isPlaying = isPlaying,
                         isLoading = isLoading,
-                        volume = deviceMusicVolumeController.volumeFraction,
+                        volumeController = deviceMusicVolumeController,
+                        showVolume = showVolume,
                         onPositionChange = onControlsPositionChange,
                         onPositionChangeFinished = onControlsPositionChangeFinished,
                         onVolumeChange = onControlsVolumeChange,
@@ -1408,7 +1415,8 @@ private fun AppleMusicControls(
     controlsExpanded: Boolean,
     isPlaying: Boolean,
     isLoading: Boolean,
-    volume: Float,
+    volumeController: DeviceMusicVolumeController,
+    showVolume: Boolean,
     onPositionChange: (Long) -> Unit,
     onPositionChangeFinished: () -> Unit,
     onVolumeChange: (Float) -> Unit,
@@ -1425,6 +1433,8 @@ private fun AppleMusicControls(
     modifier: Modifier = Modifier,
     onOverflowPositioned: ((Rect) -> Unit)? = null,
 ) {
+    val displayedVolume = volumeDisplayFraction(volumeController)
+    val volumeInteractions = rememberVolumeSliderInteractions(volumeController)
     val position = positionProvider()
     val duration = durationProvider()
     val hasDuration = duration != C.TIME_UNSET && duration > 0L
@@ -1550,7 +1560,7 @@ private fun AppleMusicControls(
                     )
                 }
 
-                Row(
+                if (showVolume) Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -1564,13 +1574,17 @@ private fun AppleMusicControls(
                         modifier = Modifier.size(17.dp),
                     )
                     AppleMusicSlider(
-                        value = volume.coerceIn(0f, 1f),
+                        value = displayedVolume.coerceIn(0f, 1f),
                         valueRange = 0f..1f,
                         activeColor = foregroundColor.copy(alpha = 0.88f),
                         inactiveColor = foregroundColor.copy(alpha = 0.24f),
                         trackHeight = 8.dp,
-                        onValueChange = onVolumeChange,
-                        onValueChangeFinished = {},
+                        onValueChange = {
+                            volumeController.startInteraction()
+                            onVolumeChange(it)
+                        },
+                        onValueChangeFinished = { volumeController.finishInteraction() },
+                        interactionSource = volumeInteractions,
                         modifier =
                             Modifier
                                 .weight(1f)
@@ -1680,6 +1694,7 @@ private fun AppleMusicSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
+    interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource? = null,
 ) {
     val safeStart = valueRange.start
     val safeEnd = valueRange.endInclusive.coerceAtLeast(safeStart + 1f)
@@ -1693,6 +1708,7 @@ private fun AppleMusicSlider(
         )
 
     Slider(
+        interactionSource = interactionSource ?: remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
         value = value.coerceIn(safeRange),
         valueRange = safeRange,
         onValueChange = onValueChange,

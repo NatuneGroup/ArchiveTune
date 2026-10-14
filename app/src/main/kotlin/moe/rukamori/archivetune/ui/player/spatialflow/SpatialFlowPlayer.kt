@@ -110,8 +110,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.ui.AspectRatioFrameLayout
-import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.source.ShuffleOrder
@@ -202,6 +203,8 @@ fun SpatialFlowPlayerContent(
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val presentation = LocalPlayerPresentation.current
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
@@ -334,11 +337,11 @@ fun SpatialFlowPlayerContent(
     val canvasAvailable = !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
     var canvasPlayingForLyrics by remember { mutableStateOf(true) }
     var canvasSurfacesForLyrics by remember { mutableStateOf(true) }
-    LaunchedEffect(lyricsModeEnabled) {
+    LaunchedEffect(lyricsModeEnabled, animationsDisabled) {
         if (lyricsModeEnabled) {
             canvasPlayingForLyrics = false
             canvasSurfacesForLyrics = true
-            delay(SfLyricsBackdropMorphMs.toLong())
+            if (!animationsDisabled) moe.rukamori.archivetune.scaledDelay(SfLyricsBackdropMorphMs.toLong())
             canvasSurfacesForLyrics = false
         } else {
             canvasPlayingForLyrics = true
@@ -347,7 +350,7 @@ fun SpatialFlowPlayerContent(
     }
     val lyricsBackdropProgress by animateFloatAsState(
         targetValue = if (lyricsModeEnabled) 1f else 0f,
-        animationSpec = tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
         label = "SfLyricsCanvasFade",
     )
 
@@ -367,10 +370,10 @@ fun SpatialFlowPlayerContent(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(backgroundBrush)
+                .then(if (presentation.sharedBackground) Modifier else Modifier.background(backgroundBrush))
                 .onGloballyPositioned { playerRootTopY = it.positionInRoot().y },
     ) {
-        SpatialFlowBlurredBackdrop(
+        if (!presentation.sharedBackground) SpatialFlowBlurredBackdrop(
             artUrl = artUrl,
             // When the canvas owns the player the AM scrim (below) replaces
             // this backdrop's own gradient — stacking both made the frosted
@@ -386,7 +389,7 @@ fun SpatialFlowPlayerContent(
             // height of the player so the same canvas keeps playing, blurred,
             // behind the bottom controls — and fades out + stops rendering
             // while the lyrics overlay is up. Skipped entirely without blur.
-            if (moe.rukamori.archivetune.LocalBlurPolicy.current.any) Box(
+            if (moe.rukamori.archivetune.LocalBlurPolicy.current.any && !presentation.sharedBackground) Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -417,7 +420,7 @@ fun SpatialFlowPlayerContent(
             // down the player — the colours the Apple Music player style itself
             // paints over its blurred canvas backdrop, so the liquid blur reads
             // correctly instead of too bright.
-            Box(
+            if (!presentation.sharedBackground) Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -482,7 +485,7 @@ fun SpatialFlowPlayerContent(
                 var lyricsButtonCenterInRoot by remember { mutableStateOf<Offset?>(null) }
                 val lyricsRevealProgress by animateFloatAsState(
                     targetValue = if (lyricsModeEnabled) 1f else 0f,
-                    animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
+                    animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = 340, easing = FastOutSlowInEasing),
                     label = "LyricsCircularReveal",
                 )
 
@@ -540,10 +543,9 @@ fun SpatialFlowPlayerContent(
                         mediaMetadata = mediaMetadata,
                         queueWindows = queueWindows,
                         currentWindowIndex = currentWindowIndex,
-                        userScrollEnabled = !lyricsModeEnabled && !queueExpanded,
+                        userScrollEnabled = presentation.swipeArtwork && !lyricsModeEnabled && !queueExpanded,
                         artUrl = artUrl,
-                        isPlaying = isPlaying,
-                        cornerRadius = 16.dp,
+                        cornerRadius = presentation.radius(16.dp),
                         shadowElevation = 16.dp,
                         onPlaySongAtWindow = { windowIndex ->
                             val window = queueWindows.getOrNull(windowIndex) ?: return@SpatialFlowArtworkPager
@@ -1014,15 +1016,12 @@ fun SpatialFlowPlayerContent(
                     syncedLyrics = syncedLyrics,
                     plainLyrics = plainLyrics,
                     lyricsProvider = currentLyricsEntity?.providerName,
-                    currentPositionProvider = positionProvider,
                     contentReady = lyricsContentReady,
                     backgroundBrush = lyricsBackgroundBrush,
                     artUrl = artUrl,
                     revealProgressProvider = { lyricsRevealProgress },
                     revealCenterProvider = { lyricsButtonCenterInRoot },
                     contentColor = contentColor,
-                    contentSecondary = contentSecondary,
-                    onSeekTo = onSeek,
                     onDismiss = { lyricsModeEnabled = false },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1113,12 +1112,12 @@ private fun SpatialFlowArtworkPager(
     currentWindowIndex: Int,
     userScrollEnabled: Boolean,
     artUrl: String?,
-    isPlaying: Boolean,
     cornerRadius: androidx.compose.ui.unit.Dp,
     shadowElevation: androidx.compose.ui.unit.Dp,
     onPlaySongAtWindow: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val pagerState =
         rememberPagerState(initialPage = currentWindowIndex.coerceAtLeast(0)) {
             queueWindows.size.coerceAtLeast(1)
@@ -1129,7 +1128,8 @@ private fun SpatialFlowArtworkPager(
             currentWindowIndex < pagerState.pageCount &&
             pagerState.currentPage != currentWindowIndex
         ) {
-            pagerState.animateScrollToPage(currentWindowIndex)
+            if (animationsDisabled) pagerState.scrollToPage(currentWindowIndex)
+            else pagerState.animateScrollToPage(currentWindowIndex)
         }
     }
 
@@ -1165,6 +1165,7 @@ private fun SpatialFlowArtworkPager(
                 modifier =
                     Modifier
                         .fillMaxSize()
+                        .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                         .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
                         .clip(RoundedCornerShape(cornerRadius)),
                 contentAlignment = Alignment.Center,

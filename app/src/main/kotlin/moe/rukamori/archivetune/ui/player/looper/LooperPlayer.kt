@@ -12,8 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,7 +63,6 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
 import androidx.compose.ui.platform.LocalContext
-import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
@@ -77,6 +74,10 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
+import androidx.compose.animation.core.snap
+import androidx.compose.runtime.rememberUpdatedState
 import moe.rukamori.archivetune.ui.player.InlineVideoPlayer
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.LocalVideoPlaybackFailed
@@ -116,6 +117,7 @@ fun LooperPlayerContent(
     lyricsVisible: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val haptic = LocalHapticFeedback.current
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp.dp
@@ -129,11 +131,11 @@ fun LooperPlayerContent(
 
     var canvasPlayingForLyrics by remember { mutableStateOf(true) }
     var canvasSurfacesForLyrics by remember { mutableStateOf(true) }
-    LaunchedEffect(lyricsVisible) {
+    LaunchedEffect(lyricsVisible, animationsDisabled) {
         if (lyricsVisible) {
             canvasPlayingForLyrics = false
             canvasSurfacesForLyrics = true
-            delay(650)
+            if (!animationsDisabled) moe.rukamori.archivetune.scaledDelay(650)
             canvasSurfacesForLyrics = false
         } else {
             canvasPlayingForLyrics = true
@@ -153,7 +155,7 @@ fun LooperPlayerContent(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(Color(0xFF141414)),
+                .then(if (LocalPlayerPresentation.current.sharedBackground) Modifier else Modifier.background(Color(0xFF141414))),
     ) {
         MaterialTheme(typography = LooperTypography) {
             Column(
@@ -196,7 +198,7 @@ fun LooperPlayerContent(
                     }
 
                     val looperQuality = remember(currentFormat) { currentFormat?.streamQuality() }
-                    if (looperQuality != null) {
+                    if (looperQuality != null && LocalPlayerPresentation.current.showCodec) {
                         Box(
                             modifier =
                                 Modifier
@@ -288,10 +290,6 @@ fun LooperPlayerContent(
                             onSkipPrevious = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 playerConnection.seekToPrevious()
-                            },
-                            onSeekRelative = { deltaMs ->
-                                onSeek((positionProvider() + deltaMs).coerceAtLeast(0L))
-                                onSeekFinished()
                             },
                             modifier = Modifier.size(artSize),
                         )
@@ -555,33 +553,34 @@ private fun LooperArtwork(
     onLyricsClick: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
-    onSeekRelative: (Long) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val haptic = LocalHapticFeedback.current
+    val presentation = LocalPlayerPresentation.current
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
+    val currentNext by rememberUpdatedState(onSkipNext)
+    val currentPrevious by rememberUpdatedState(onSkipPrevious)
     var dragOffset by remember { mutableStateOf(0f) }
-    var artWidthPx by remember { mutableStateOf(0f) }
 
     Box(
         modifier =
             modifier
                 .aspectRatio(1f)
-                .onSizeChanged { artWidthPx = it.width.toFloat() }
                 .graphicsLayer { translationX = dragOffset }
-                .pointerInput(Unit) {
-                    detectDragGestures(
+                .pointerInput(presentation.swipeArtwork) {
+                    if (!presentation.swipeArtwork) return@pointerInput
+                    detectHorizontalDragGestures(
                         onDragEnd = {
                             val threshold = size.width * 0.25f
                             when {
-                                dragOffset < -threshold -> onSkipNext()
-                                dragOffset > threshold -> onSkipPrevious()
+                                dragOffset < -threshold -> currentNext()
+                                dragOffset > threshold -> currentPrevious()
                             }
                             dragOffset = 0f
                         },
                         onDragCancel = { dragOffset = 0f },
                     ) { change, dragAmount ->
                         change.consume()
-                        dragOffset += dragAmount.x
+                        dragOffset += dragAmount
                     }
                 }.playerSeekDoubleTap(
                     // The fork's shared handler rather than Looper's own ±10s: one seek step
@@ -609,17 +608,17 @@ private fun LooperArtwork(
 
         val staticArtworkAlpha by animateFloatAsState(
             targetValue = if (canvasShowing) 0f else 1f,
-            animationSpec = tween(300),
+            animationSpec = if (animationsDisabled) snap() else tween(300),
             label = "looperStaticArtworkAlpha",
         )
         if (staticArtworkAlpha > 0f) {
             val artworkContext = LocalContext.current
             val artworkRequest =
-                remember(artworkContext, mediaMetadata.thumbnailUrl) {
+                remember(artworkContext, mediaMetadata.thumbnailUrl, animationsDisabled) {
                     ImageRequest
                         .Builder(artworkContext)
                         .data(mediaMetadata.thumbnailUrl)
-                        .crossfade(320)
+                        .crossfade(if (animationsDisabled) 0 else 320)
                         .build()
                 }
             AsyncImage(
@@ -629,15 +628,16 @@ private fun LooperArtwork(
                 modifier =
                     Modifier
                         .fillMaxSize()
+                        .ordinarySleeve(presentation.hideSleeve)
                         .graphicsLayer { alpha = staticArtworkAlpha }
                         .let { base ->
 
                             if (isPlaying) base else base.padding(2.dp)
-                        }.clip(RoundedCornerShape(12.dp))
+                        }.clip(RoundedCornerShape(presentation.radius(12.dp)))
                         .border(
                             width = 0.8.dp,
                             color = Color.White.copy(alpha = 0.04f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = RoundedCornerShape(presentation.radius(12.dp)),
                         ),
             )
         }

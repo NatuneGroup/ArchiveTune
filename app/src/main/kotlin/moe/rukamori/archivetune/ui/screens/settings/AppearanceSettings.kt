@@ -13,6 +13,7 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.annotation.StringRes
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.mutableIntStateOf
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.RestartScopedSettings
@@ -101,7 +102,6 @@ import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.constants.FlamingoBackgroundEffectKey
-import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
@@ -141,7 +141,6 @@ import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.constants.RandomThemeOnStartupKey
-import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.constants.SliderStyleKey
 import moe.rukamori.archivetune.constants.TabletModeEnabledKey
@@ -792,10 +791,8 @@ private fun AppearancePlayerSection(
     // player is not in.
     val (flamingoBackgroundEffect, onFlamingoBackgroundEffectChange) =
         prefs.state(FlamingoBackgroundEffectKey, defaultValue = false)
-    val (flamingoShowVolumeBar, onFlamingoShowVolumeBarChange) =
-        prefs.state(FlamingoShowVolumeBarKey, defaultValue = true)
     val (showPlayerVolumeBar, onShowPlayerVolumeBarChange) =
-        prefs.state(ShowPlayerVolumeBarKey, defaultValue = true)
+        prefs.playerVolumeVisibility(playerDesignStyle)
     val (hidePlayerThumbnail, onHidePlayerThumbnailChange) =
         prefs.state(HidePlayerThumbnailKey, defaultValue = false)
     // The ArchiveTune Canvas artwork toggle lives in Player Settings → Artwork.
@@ -849,23 +846,14 @@ private fun AppearancePlayerSection(
     // player will discard — or hide one it would have honoured.
     val isPlayerStyleCustomizationEnabled = playerDesignStyle.supportsBackgroundChoice
     val isVolumeBarSupported =
-        playerDesignStyle == PlayerDesignStyle.V7 ||
-            playerDesignStyle == PlayerDesignStyle.V8
+        playerDesignStyle.hasVolumeRow
 
     var showSliderOptionDialog by rememberSaveable {
         mutableStateOf(false)
     }
 
-    LaunchedEffect(isPlayerStyleCustomizationEnabled, playerBackground) {
-        if (!isPlayerStyleCustomizationEnabled && playerBackground != PlayerBackgroundStyle.DEFAULT) {
-            onPlayerBackgroundChange(PlayerBackgroundStyle.DEFAULT)
-        }
-    }
-
-    LaunchedEffect(isPlayerStyleCustomizationEnabled) {
-        if (!isPlayerStyleCustomizationEnabled) {
-            showSliderOptionDialog = false
-        }
+    LaunchedEffect(playerDesignStyle.supportsSharedSeekStyle) {
+        if (!playerDesignStyle.supportsSharedSeekStyle) showSliderOptionDialog = false
     }
 
     if (homeScreensOpen) {
@@ -887,7 +875,7 @@ private fun AppearancePlayerSection(
         )
     }
 
-    if (showSliderOptionDialog && isPlayerStyleCustomizationEnabled) {
+    if (showSliderOptionDialog && playerDesignStyle.supportsSharedSeekStyle) {
         val sliderStyles =
             remember {
                 listOf(
@@ -1096,7 +1084,7 @@ private fun AppearancePlayerSection(
             }
         }
 
-        // Flamingo reads its own keys, not the shared volume-bar switch below.
+        // The floating-light decoration is native, not a second background preference.
         if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
             item {
                 SwitchPreference(
@@ -1106,16 +1094,6 @@ private fun AppearancePlayerSection(
                     icon = { Icon(painterResource(R.drawable.blur_on), null) },
                     checked = flamingoBackgroundEffect,
                     onCheckedChange = onFlamingoBackgroundEffectChange,
-                )
-            }
-            item {
-                SwitchPreference(
-                    modifier = positions.modifierFor("flamingo_volume_bar"),
-                    title = { Text(stringResource(R.string.flamingo_settings_volume_bar)) },
-                    description = stringResource(R.string.flamingo_settings_volume_bar_desc),
-                    icon = { Icon(painterResource(R.drawable.volume_up), null) },
-                    checked = flamingoShowVolumeBar,
-                    onCheckedChange = onFlamingoShowVolumeBarChange,
                 )
             }
         }
@@ -1128,7 +1106,7 @@ private fun AppearancePlayerSection(
                     if (isVolumeBarSupported) {
                         null
                     } else {
-                        stringResource(R.string.player_volume_bar_v7_v8_only)
+                        stringResource(R.string.player_volume_bar_existing_layouts)
                     },
                 icon = { Icon(painterResource(R.drawable.volume_up), null) },
                 checked = showPlayerVolumeBar,
@@ -1164,7 +1142,7 @@ private fun AppearancePlayerSection(
                     isEnabled = isPlayerStyleCustomizationEnabled,
                     valueText = {
                         when (it) {
-                            PlayerBackgroundStyle.DEFAULT -> stringResource(R.string.follow_theme)
+                            PlayerBackgroundStyle.DEFAULT -> stringResource(if (playerDesignStyle.nativeBackground != null) R.string.default_style else R.string.follow_theme)
                             PlayerBackgroundStyle.GRADIENT -> stringResource(R.string.gradient)
                             PlayerBackgroundStyle.CUSTOM -> stringResource(R.string.custom)
                             PlayerBackgroundStyle.BLUR -> stringResource(R.string.player_background_blur)
@@ -1381,15 +1359,15 @@ private fun AppearancePlayerSection(
                 EnumListPreference(
                     title = { Text(stringResource(R.string.player_buttons_style)) },
                     description =
-                        if (isPlayerStyleCustomizationEnabled) {
+                        if (playerDesignStyle.supportsSharedButtons) {
                             null
                         } else {
-                            stringResource(R.string.player_background_style_v8_v9_desc)
+                            stringResource(R.string.player_native_controls_description)
                         },
                     icon = { Icon(painterResource(R.drawable.palette), null) },
                     selectedValue = playerButtonsStyle,
                     onValueSelected = onPlayerButtonsStyleChange,
-                    isEnabled = isPlayerStyleCustomizationEnabled,
+                    isEnabled = playerDesignStyle.supportsSharedButtons,
                     valueText = {
                         when (it) {
                             PlayerButtonsStyle.DEFAULT -> stringResource(R.string.default_style)
@@ -1404,12 +1382,12 @@ private fun AppearancePlayerSection(
             Column(modifier = positions.modifierFor("player_slider_style")) {
                 PreferenceEntry(
                     title = { Text(stringResource(R.string.player_slider_style)) },
-                    description = sliderStyleLabel(sliderStyle),
+                    description = if (playerDesignStyle.supportsSharedSeekStyle) sliderStyleLabel(sliderStyle) else stringResource(R.string.player_native_controls_description),
                     icon = { Icon(painterResource(R.drawable.sliders), null) },
                     onClick = {
                         showSliderOptionDialog = true
                     },
-                    isEnabled = isPlayerStyleCustomizationEnabled,
+                    isEnabled = playerDesignStyle.supportsSharedSeekStyle,
                 )
             }
         }

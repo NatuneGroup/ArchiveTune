@@ -1,5 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="player_native_controls_description">This layout keeps its native transport and seek controls.</string>
+    <string name="player_volume_bar_existing_layouts">Available in Immersive, V8, BitChord, Apple Music and Flamingo layouts</string>
     <string name="blur_setting_overridden">Turned off by \"Disable blur effects\"</string>
     <string name="explore">Explore</string>
     <string name="suggestions">Suggestions</string>
@@ -375,8 +377,6 @@
     <string name="player_design_flamingo">Flamingo</string>
     <string name="flamingo_settings_background_effect">Moving blur</string>
     <string name="flamingo_settings_background_effect_desc">Let the blurred artwork drift behind the player.</string>
-    <string name="flamingo_settings_volume_bar">Flamingo volume bar</string>
-    <string name="flamingo_settings_volume_bar_desc">Show the device volume slider under the transport.</string>
     <string name="rich_synced">Rich Synced</string>
     <string name="line_synced">Line Synced</string>
     <string name="unsynced">Unsynced</string>

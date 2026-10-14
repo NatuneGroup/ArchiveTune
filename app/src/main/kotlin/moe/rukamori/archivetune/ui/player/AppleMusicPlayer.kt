@@ -28,6 +28,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -324,6 +325,7 @@ fun AppleMusicPlayerContent(
     modifier: Modifier = Modifier,
     landscape: Boolean = false,
 ) {
+    val presentation = LocalPlayerPresentation.current
     // In-place queue morph state. When the user taps the queue button (or
     // swipes up on the controls area), we toggle this state instead of
     // opening the separate queue BottomSheet. The artwork + title row then
@@ -693,7 +695,7 @@ fun AppleMusicPlayerContent(
         val useCanvasBackdrop = canvasActive && !videoShowing && !isPreS && blurAllowed
         val context = LocalContext.current
         val preBlurredBitmap =
-            if (videoShowing || useCanvasBackdrop) {
+            if (videoShowing || useCanvasBackdrop || presentation.sharedBackground) {
                 null
             } else {
                 // Pre-S has no RenderEffect, so Modifier.blur is a no-op there and the blur has to
@@ -709,7 +711,7 @@ fun AppleMusicPlayerContent(
                 )
             }
 
-        if (!videoShowing) {
+        if (!videoShowing && !presentation.sharedBackground) {
             // Backdrop rendering — one blurred-artwork node for every state, plus (on canvas songs)
             // the live canvas video composited over it. • COVER / QUEUE state — the artwork sits at
             // [AmCoverBlurScale] with no drift.
@@ -1541,7 +1543,7 @@ private fun AppleMusicSharpArtwork(
                 val (pauseScaleEnabled) = rememberPreference(AppleMusicPauseScaleKey, defaultValue = true)
                 val artworkPauseScale by animateFloatAsState(
                     targetValue = if (isPlaying || !pauseScaleEnabled) 1f else 0.92f,
-                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 320, easing = FastOutSlowInEasing),
                     label = "artworkPauseScale",
                 )
                 Box(
@@ -1555,6 +1557,7 @@ private fun AppleMusicSharpArtwork(
                         modifier =
                             Modifier
                                 .size(artworkSize)
+                                .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                                 .graphicsLayer {
                                     scaleX = artworkPauseScale
                                     scaleY = artworkPauseScale
@@ -1892,7 +1895,7 @@ private fun AppleMusicControlsColumn(
     // which has proper drag tracking (dragging state + rememberUpdatedState) so the
     // fill follows the finger during a drag instead of lagging behind the rounded
     // device-volume step.
-    AppleMusicVolumeRow(
+    if (LocalPlayerPresentation.current.showVolume) AppleMusicVolumeRow(
         volume = volume,
         onVolumeChange = onVolumeChange,
         modifier = Modifier.fillMaxWidth(),
@@ -2250,7 +2253,7 @@ private fun SharedTransitionScope.AppleMusicMiniHeader(
                 model = artworkRequest ?: artworkUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().ordinarySleeve(LocalPlayerPresentation.current.hideSleeve),
             )
         }
         Spacer(Modifier.width(12.dp))

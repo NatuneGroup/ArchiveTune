@@ -26,6 +26,12 @@ package moe.rukamori.archivetune.ui.player.bitchord
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -86,6 +92,8 @@ fun ThinSlider(
     inactiveColor: Color = Color.White.copy(alpha = 0.26f),
     /** Halfway between the two track colours: visible against unplayed, invisible under played. */
     markerColor: Color = Color.White.copy(alpha = 0.5f),
+    onValueChangeStarted: () -> Unit = {},
+    onValueChangeCancelled: (() -> Unit)? = onValueChangeFinished,
 ) {
     // The gesture block runs under a Unit-keyed pointerInput, so it keeps the
     // FIRST composition's lambdas. Re-read the latest here or a drag-seek
@@ -93,10 +101,13 @@ fun ThinSlider(
     // (automix/crossfade promotion): the bar moves, nothing seeks.
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentOnStart by rememberUpdatedState(onValueChangeStarted)
+    val currentOnCancel by rememberUpdatedState(onValueChangeCancelled)
+    val animationsDisabled = LocalAnimationsDisabled.current
     var dragging by remember { mutableStateOf(false) }
     val height by animateDpAsState(
         targetValue = if (dragging) activeHeight else idleHeight,
-        animationSpec = spring(
+        animationSpec = if (animationsDisabled) snap() else spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow,
         ),
@@ -112,30 +123,44 @@ fun ThinSlider(
             .fillMaxWidth()
             // Generous invisible touch target — the visible bar is only ~7dp.
             .height(activeHeight + 22.dp)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(valueProvider().coerceIn(0f, 1f), 0f..1f)
+                setProgress { value ->
+                    currentOnStart()
+                    currentOnValueChange(value.coerceIn(0f, 1f))
+                    currentOnValueChangeFinished?.invoke()
+                    true
+                }
+            }
             // One gesture loop for both taps and drags. Two separate detectors
             // — a drag one plus a tap one — meant taps never landed: the drag
             // detector took the pointer and a tap has no drag to report.
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    currentOnStart()
                     dragging = true
-                    currentOnValueChange((down.position.x / size.width).coerceIn(0f, 1f))
+                    var released = false
+                    try {
+                        currentOnValueChange((down.position.x / size.width).coerceIn(0f, 1f))
 
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!pointer.pressed) {
-                            pointer.consume()
-                            break
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!pointer.pressed) {
+                                pointer.consume()
+                                released = true
+                                break
+                            }
+                            if (pointer.positionChanged()) {
+                                currentOnValueChange((pointer.position.x / size.width).coerceIn(0f, 1f))
+                                pointer.consume()
+                            }
                         }
-                        if (pointer.positionChanged()) {
-                            currentOnValueChange((pointer.position.x / size.width).coerceIn(0f, 1f))
-                            pointer.consume()
-                        }
+                    } finally {
+                        dragging = false
+                        if (released) currentOnValueChangeFinished?.invoke() else currentOnCancel?.invoke()
                     }
-
-                    dragging = false
-                    currentOnValueChangeFinished?.invoke()
                 }
             },
         contentAlignment = Alignment.Center,
@@ -143,7 +168,7 @@ fun ThinSlider(
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(height),
+                .height(if (animationsDisabled) { if (dragging) activeHeight else idleHeight } else height),
         ) {
             val radius = CornerRadius(size.height / 2f)
             drawRoundRect(color = inactiveColor, cornerRadius = radius)
@@ -177,6 +202,6 @@ fun ThinSlider(
                 )
             }
         }
-        MixTrackSheen(visible = mixing, color = activeColor, height = height)
+        MixTrackSheen(visible = mixing, color = activeColor, height = if (animationsDisabled) { if (dragging) activeHeight else idleHeight } else height)
     }
 }

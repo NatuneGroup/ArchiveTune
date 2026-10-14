@@ -29,6 +29,7 @@ fun SelectedLyrics(
     lyricsSyncOffset: Int,
     modifier: Modifier = Modifier,
     textColorOverride: Color? = null,
+    textSizeOverride: Float? = null,
 ) {
     val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
     when (lyricsMode) {
@@ -38,6 +39,7 @@ fun SelectedLyrics(
                 lyricsSyncOffset = lyricsSyncOffset,
                 modifier = modifier,
                 textColorOverride = textColorOverride,
+                textSizeOverride = textSizeOverride,
             )
 
         LyricsMode.SPOTIFY ->
@@ -46,6 +48,7 @@ fun SelectedLyrics(
                 lyricsSyncOffset = lyricsSyncOffset,
                 modifier = modifier,
                 textColorOverride = textColorOverride,
+                textSizeOverride = textSizeOverride,
                 spotifyStyle = true,
             )
 

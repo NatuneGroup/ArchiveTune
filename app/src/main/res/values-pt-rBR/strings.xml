@@ -875,7 +875,6 @@
     <string name="source">Origem</string>
     <string name="enable_youlyplus_lyrics">Ativar letras do YouLyPlus</string>
     <string name="show_player_volume_bar">Mostrar a barra de volume</string>
-    <string name="player_volume_bar_v7_v8_only">Disponível apenas nos modelos de player V7 e V8</string>
     <string name="app_icon_description">Escolha o ícone do launcher</string>
     <string name="app_icon_default">Padrão</string>
     <string name="app_icon_subtitle">Personalize o seu launcher</string>

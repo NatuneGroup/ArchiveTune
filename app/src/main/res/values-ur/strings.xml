@@ -647,7 +647,6 @@
     <string name="discord_url_source_song">‫گیت کی URL</string>
     <string name="permission_storage_desc">نشر کو ممکن بنانے کے لئے آپکی ڈاؤنلوڈ کردہ اور مقامی سمعی مسلیں پڑھنا ضروری ہے۔</string>
     <string name="show_player_volume_bar">حجم آواز کی سنٹی کو دکھایا جائے</string>
-    <string name="player_volume_bar_v7_v8_only">‫صرف V7 اور V8 والے پخش کننده کے اسلوب میں دستیاب ہے</string>
     <string name="force_high_refresh_rate">تازہ کرنے کی رفتار کو زبردستی بڑھائیں</string>
     <string name="discord_activity_button_1_url">‫پہلے بٹن کی URL کا مصدر</string>
     <string name="discord_activity_button_2_url">‫دوسرے بٹن کی URL کا مصدر</string>

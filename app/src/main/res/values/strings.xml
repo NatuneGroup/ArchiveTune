@@ -266,7 +266,6 @@
     <string name="loudness">Loudness</string>
     <string name="volume">Volume</string>
     <string name="show_player_volume_bar">Show volume bar</string>
-    <string name="player_volume_bar_v7_v8_only">Available only with V7 and V8 player styles</string>
     <string name="looper_collapse_player">Collapse player</string>
     <string name="looper_favourite">Favourite</string>
     <string name="looper_next_up">Next Up</string>

@@ -2874,6 +2874,9 @@ private fun V8VolumeControls(
     secondaryForeground: Color,
     onVolumeChange: (Float) -> Unit,
 ) {
+    val controller = LocalDeviceMusicVolumeController.current
+    val displayedVolume = if (controller != null) volumeDisplayFraction(controller) else volume
+    val interactions = rememberVolumeSliderInteractions(controller)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -2885,13 +2888,17 @@ private fun V8VolumeControls(
             modifier = Modifier.size(22.dp),
         )
         V8FlatSlider(
-            value = volume.coerceIn(0f, 1f),
+            value = displayedVolume.coerceIn(0f, 1f),
             valueRange = 0f..1f,
             activeColor = foreground.copy(alpha = 0.86f),
             inactiveColor = foreground.copy(alpha = 0.24f),
             trackHeight = 8.dp,
-            onValueChange = { onVolumeChange(it.coerceIn(0f, 1f)) },
-            onValueChangeFinished = {},
+            onValueChange = {
+                controller?.startInteraction()
+                onVolumeChange(it.coerceIn(0f, 1f))
+            },
+            onValueChangeFinished = { controller?.finishInteraction() },
+            interactionSource = interactions,
             modifier =
                 Modifier
                     .weight(1f)
@@ -2918,6 +2925,7 @@ private fun V8FlatSlider(
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
 ) {
     val safeEnd = valueRange.endInclusive.coerceAtLeast(valueRange.start + 1f)
     val safeRange = valueRange.start..safeEnd
@@ -2930,6 +2938,7 @@ private fun V8FlatSlider(
         )
 
     Slider(
+        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
         value = value.coerceIn(safeRange),
         valueRange = safeRange,
         onValueChange = onValueChange,

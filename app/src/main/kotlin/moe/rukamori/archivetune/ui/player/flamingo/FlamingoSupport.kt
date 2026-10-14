@@ -57,7 +57,8 @@ import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
 import coil3.request.crossfade
-import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.utils.PreferenceStore
 import kotlin.math.sqrt
 
 @Composable
@@ -295,11 +296,12 @@ private fun flamingoImageRequest(
 ): ImageRequest? {
     if (url == null) return null
     val context = LocalContext.current
-    return remember(url, imageQuality) {
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
+    return remember(url, imageQuality, animationsDisabled) {
         ImageRequest
             .Builder(context)
             .data(url)
-            .crossfade(true)
+            .crossfade(!animationsDisabled)
             .allowHardware(true)
             .apply {
                 if (imageQuality != ImageQuality.RAW) {
@@ -369,6 +371,7 @@ object FlamingoHaptics {
         context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
 
     fun click(context: Context) {
+        if (PreferenceStore.get(EnableHapticFeedbackKey) == false) return
         val vibrator = vibrator(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             vibrator.vibrate(
@@ -383,6 +386,7 @@ object FlamingoHaptics {
     }
 
     fun longClick(context: Context) {
+        if (PreferenceStore.get(EnableHapticFeedbackKey) == false) return
         val vibrator = vibrator(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             vibrator.vibrate(
@@ -397,6 +401,7 @@ object FlamingoHaptics {
     }
 
     fun doubleClick(context: Context) {
+        if (PreferenceStore.get(EnableHapticFeedbackKey) == false) return
         val vibrator = vibrator(context)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             vibrator.vibrate(

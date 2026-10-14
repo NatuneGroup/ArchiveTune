@@ -145,7 +145,6 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import me.saket.squiggles.SquigglySlider
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerHorizontalPadding
 import moe.rukamori.archivetune.constants.SliderStyle
@@ -170,6 +169,7 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.constants.SwipeUpToOpenQueueKey
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 @Composable
 fun AutoResizeText(
@@ -721,7 +721,7 @@ private fun EditorialDieCutArt(
         val artSize = minOf(maxWidth, maxHeight) * 0.95f
 
         val view = androidx.compose.ui.platform.LocalView.current
-        val (enableHapticFeedback) = rememberPreference(moe.rukamori.archivetune.constants.EnableHapticFeedbackKey, true)
+        val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
         val coroutineScope = rememberCoroutineScope()
 
         // Visual feedback variables

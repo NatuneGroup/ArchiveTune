@@ -70,6 +70,9 @@ import moe.rukamori.archivetune.ui.theme.LocalYumaColors
 import moe.rukamori.archivetune.ui.theme.yumaClickable
 import moe.rukamori.archivetune.ui.theme.yumaGlassCard
 import moe.rukamori.archivetune.ui.theme.yumaSegmentPosition
+import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
+import moe.rukamori.archivetune.utils.StartupSettings
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 @Composable
 fun SettingsProfileHeader(
     state: SettingsProfileState,
@@ -854,50 +857,58 @@ fun SettingsSearchResultItem(
                     borderColor = resultYuma.glassBorder,
                 ).yumaClickable(onClick = onClick),
     ) {
-        Row(
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(effectiveAccent.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    painter = painterResource(result.parentIcon),
-                    contentDescription = null,
-                    tint = effectiveAccent,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = result.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (result.parentTitle.isNotBlank()) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(effectiveAccent.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(result.parentIcon),
+                        contentDescription = null,
+                        tint = effectiveAccent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = result.parentTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = result.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (result.parentTitle.isNotBlank()) {
+                        Text(
+                            text = result.parentTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                result.switchControl?.let { switchControl ->
+                    Spacer(Modifier.width(12.dp))
+                    switchControl()
                 }
             }
-            result.switchControl?.let { switchControl ->
-                Spacer(Modifier.width(12.dp))
-                switchControl()
+            result.restartPending?.let { restartPending ->
+                val prefs = rememberPreferenceSnapshot()
+                RestartToApplyNotice(visible = restartPending(StartupSettings.pending(prefs.current)))
             }
         }
     }

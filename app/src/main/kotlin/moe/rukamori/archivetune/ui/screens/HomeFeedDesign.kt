@@ -72,7 +72,6 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
 import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
 import moe.rukamori.archivetune.db.entities.LocalItem
@@ -98,7 +97,7 @@ import moe.rukamori.archivetune.ui.menu.YouTubeArtistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 // ============================================================================
 // BitChord home-feed design system (ported from kushagrasinghx/BitChord).
@@ -635,7 +634,7 @@ fun HomeFeedYTItemCard(
             is EpisodeItem -> listOfNotNull(item.podcast?.name, item.dateText, item.durationText).joinToString(" • ")
         }
 
-    val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val resolvedThumbnailRatio = item.preferredThumbnailRatio(cropThumbnailToSquare)
     // A sheet for either would come up empty, so neither card has a hold.
     val hasMenu = item !is PodcastItem && item !is EpisodeItem

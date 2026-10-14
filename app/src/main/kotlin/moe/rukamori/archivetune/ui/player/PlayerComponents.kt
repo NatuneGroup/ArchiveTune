@@ -114,7 +114,6 @@ import me.saket.squiggles.SquigglySlider
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerHorizontalPadding
@@ -140,7 +139,7 @@ import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val PlayerBackgroundMaxBlurRadius = 64f
 private const val ExplicitBadgeInlineId = "explicitBadge"
@@ -952,7 +951,7 @@ fun PlayerPlaybackControls(
     val haptic = LocalHapticFeedback.current
     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val cinematicPlayPauseCorner by animateDpAsState(
         targetValue = if (isPlaying) 28.dp else 44.dp,

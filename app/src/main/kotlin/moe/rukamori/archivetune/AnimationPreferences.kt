@@ -34,8 +34,6 @@ import kotlinx.coroutines.delay
 
 val LocalAnimationsDisabled = compositionLocalOf { false }
 
-val LocalBlurDisabled = compositionLocalOf { false }
-
 /**
  * Whether the app may blur at all, decided once from "Disable blur effects" and provided at the
  * root. Every blur or glass effect reads the policy through [LocalBlurPolicy] instead of the raw

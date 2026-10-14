@@ -2435,7 +2435,6 @@ class MainActivity : ComponentActivity() {
                     CompositionLocalProvider(
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides animationsOff,
-                        moe.rukamori.archivetune.LocalBlurDisabled provides disableBlur,
                         moe.rukamori.archivetune.LocalBlurPolicy provides remember(disableBlur) { moe.rukamori.archivetune.BlurPolicy(userEnabled = !disableBlur) },
                         moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
                         moe.rukamori.archivetune.LocalAnimationScale provides animatorScale,

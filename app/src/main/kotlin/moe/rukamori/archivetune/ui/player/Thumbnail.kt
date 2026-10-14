@@ -94,8 +94,6 @@ import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -115,6 +113,7 @@ import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.abs
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private data class ThumbnailPage(
     val slotKey: String,
@@ -141,7 +140,7 @@ fun Thumbnail(
     val swipeThumbnail by rememberPreference(SwipeThumbnailKey, true)
 
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val hidePlayerThumbnail by rememberPreference(HidePlayerThumbnailKey, false)
     val archiveTuneCanvasEnabled by rememberPreference(ArchiveTuneCanvasKey, false)
@@ -161,7 +160,7 @@ fun Thumbnail(
             key = ThumbnailCornerRadiusKey,
             defaultValue = 16f,
         )
-    val cropThumbnailToSquare by rememberPreference(CropThumbnailToSquareKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val (backdropEnabled) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)

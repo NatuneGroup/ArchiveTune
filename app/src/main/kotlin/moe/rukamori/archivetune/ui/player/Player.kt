@@ -190,7 +190,6 @@ import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.DarkModeKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -251,6 +250,7 @@ import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
 import moe.rukamori.archivetune.ui.player.flamingo.FlamingoPlayerContent
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val SeekbarSettleToleranceMs = 1_500L
 private const val V7BackdropMinArtworkSizePx = 1_024
@@ -3625,7 +3625,7 @@ private fun Modifier.littlePlayerOverlayGestures(
 ): Modifier =
     composed {
         val view = LocalView.current
-        val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+        val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
         pointerInput(seekEnabled, durationMs, canSkipPrevious, canSkipNext) {
             var lastTapUptimeMs = 0L

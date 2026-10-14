@@ -20,11 +20,11 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import moe.rukamori.archivetune.LocalPlayerConnection
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.playback.resolveSeekByTargetMs
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 internal const val SeekSkipStepMs = 5_000L
 
@@ -72,7 +72,7 @@ internal fun Modifier.playerSeekDoubleTap(
     val playerConnection = LocalPlayerConnection.current ?: return this
     val seekSkip = rememberSeekSkip(playerConnection)
     val haptics = LocalHapticFeedback.current
-    val (hapticsEnabled) = rememberPreference(EnableHapticFeedbackKey, true)
+    val hapticsEnabled = LocalItemPreferences.current.hapticFeedbackEnabled
     val layoutDirection = LocalLayoutDirection.current
     val currentOnTap = rememberUpdatedState(onTap)
     return pointerInput(seekSkip, enabled, hapticsEnabled, layoutDirection) {

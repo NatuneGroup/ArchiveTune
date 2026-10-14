@@ -138,6 +138,7 @@ internal object SettingsSearch {
                                         parentRoute = routeFor(item.key, child.scrollKey),
                                         scrollKey = child.scrollKey,
                                         onClick = item.onClick,
+                                        restartPending = child.restartPending,
                                         switchControl = child.switchControl,
                                     ),
                             )

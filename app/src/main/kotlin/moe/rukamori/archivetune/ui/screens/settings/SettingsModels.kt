@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.PendingRestart
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.runtime.Composable
@@ -64,6 +65,8 @@ data class SettingsChild(
     val title: String,
     val scrollKey: String,
     val keywords: List<String> = emptyList(),
+    /** Set on restart-scoped settings: which [PendingRestart] flag this row's switch can raise. */
+    val restartPending: ((PendingRestart) -> Boolean)? = null,
     val switchControl: (@Composable () -> Unit)? = null,
 )
 
@@ -81,5 +84,6 @@ data class SearchResultItem(
     val parentRoute: String?,
     val scrollKey: String?,
     val onClick: () -> Unit,
+    val restartPending: ((PendingRestart) -> Boolean)? = null,
     val switchControl: (@Composable () -> Unit)? = null,
 )

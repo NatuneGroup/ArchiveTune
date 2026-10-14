@@ -36,7 +36,7 @@ internal class CanvasSnapshotView(context: Context) : TextureView(context), Text
     // getBitmap can return null (or throw) while the surface texture is still initializing, so a
     // failed capture retries briefly before reporting the failure — one missed read must not
     // strand a snapshot consumer without a still for the whole song.
-    private val capture = Runnable {
+    private val capture: Runnable = Runnable {
         if (isAvailable && output != null) {
             val bitmap: Bitmap? =
                 try {

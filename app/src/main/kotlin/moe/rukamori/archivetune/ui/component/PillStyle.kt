@@ -132,7 +132,7 @@ class PillStyle(
     val isDocked: Boolean get() = navigationStyle == NavigationBarStyle.DEFAULT
     val tonalElevation: Dp get() = NavigationBarDefaults.Elevation
     val shadowElevation: Dp
-        get() = if (floats) 8.dp else NavigationBarDefaults.Elevation
+        get() = if (navigationStyle.floats) 8.dp else NavigationBarDefaults.Elevation
     val border: BorderStroke? = borderColor?.let { BorderStroke(PillBorderWidth, it) }
 
     /**

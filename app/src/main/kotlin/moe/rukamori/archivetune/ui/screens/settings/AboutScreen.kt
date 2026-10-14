@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
@@ -349,7 +350,7 @@ private fun AboutFullScreenDialog(
                         )
                     },
                     navigationIcon = {
-                        IconButton(onClick = onDismiss) {
+                        IconButton(onClick = onDismiss, onLongClick = {}) {
                             Icon(
                                 painter = painterResource(R.drawable.close),
                                 contentDescription = stringResource(R.string.close_dialog),
@@ -939,8 +940,7 @@ private fun AboutMemberRow(
 ) {
     val rowOnClick: (() -> Unit)? =
         remember(member.profileUrl, onOpenUri) {
-            val url = member.profileUrl
-            if (url == null) null else { onOpenUri(url) }
+            member.profileUrl?.let { url -> { onOpenUri(url) } }
         }
 
     SettingsGlassSegment(

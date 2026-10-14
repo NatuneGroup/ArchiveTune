@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
@@ -178,7 +179,10 @@ fun Modifier.optionalRenderEffectBlur(
             BlurEffect(
                 radiusX = radiusX,
                 radiusY = radiusY,
-                edgeTreatment = edgeTreatment,
+                // Compose 1.12's BlurEffect takes a TileMode: Unbounded fades past the edges
+                // (Decal), a bounded shape clamps.
+                edgeTreatment =
+                    if (edgeTreatment == BlurredEdgeTreatment.Unbounded) TileMode.Decal else TileMode.Clamp,
             )
     }
 }

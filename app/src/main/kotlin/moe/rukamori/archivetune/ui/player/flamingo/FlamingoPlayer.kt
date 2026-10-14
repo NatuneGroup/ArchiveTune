@@ -102,7 +102,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.awaitFrame
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -730,7 +730,7 @@ fun FlamingoPlayerContent(
                 // an empty page at 0x the way the old fixed defer did. One frame of grace keeps
                 // the composition off the morph's final frame.
                 snapshotFlow { pageMorphState.isIdle }.first { it }
-                awaitFrame()
+                withFrameNanos { }
                 lyricsContentReady = true
             } else {
                 lyricsContentReady = false

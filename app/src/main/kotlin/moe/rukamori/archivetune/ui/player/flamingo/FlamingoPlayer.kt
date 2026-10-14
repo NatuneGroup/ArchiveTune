@@ -514,7 +514,13 @@ fun FlamingoPlayerContent(
                                     .allowHardware(false)
                                     .size(256, 256)
                                     .build()
-                            (context.imageLoader.execute(request) as? SuccessResult)?.image?.toBitmap()
+                            // Coil may hand back the bitmap held by its memory cache (and shown by
+                            // the canvas itself); the bake recycles its frame, so it must own a copy.
+                            (context.imageLoader.execute(request) as? SuccessResult)
+                                ?.image
+                                ?.toBitmap()
+                                ?.takeUnless(Bitmap::isRecycled)
+                                ?.copy(Bitmap.Config.ARGB_8888, false)
                         }.getOrNull()
                     }
             }
@@ -994,7 +1000,9 @@ fun FlamingoPlayerContent(
                                                 )
                                             },
                                 ) {
-                                    canvasFrostBake?.let { bake ->
+                                    // Gated on the policy, not just the reveal target: a retained
+                                    // bake must not keep drawing through the fade-out once blur is off.
+                                    canvasFrostBake?.takeIf { canvasFrostAllowed }?.let { bake ->
                                         Image(
                                             bitmap = bake,
                                             contentDescription = null,

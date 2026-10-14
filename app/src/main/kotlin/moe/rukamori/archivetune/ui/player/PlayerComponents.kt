@@ -1867,16 +1867,7 @@ fun PlayerControlsContent(
         centerContent =
             if (playerDesignStyle == PlayerDesignStyle.V7 && currentFormat != null) {
                 {
-                    val codec = currentFormat.mimeType.substringAfter("/").uppercase()
-                    val label =
-                        when {
-                            codec.contains("FLAC") || codec.contains("ALAC") -> "Lossless"
-                            codec.contains("OPUS") -> codec
-                            codec.contains("AAC") -> codec
-                            codec.contains("MP4A") -> "AAC"
-                            codec.contains("VORBIS") -> "Vorbis"
-                            else -> codec
-                        }
+                    val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = textBackgroundColor.copy(alpha = 0.12f),

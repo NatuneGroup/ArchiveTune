@@ -619,6 +619,7 @@ private fun ProgressSection(
     onAction: (ImmersivePlayerAction) -> Unit,
 ) {
     val displayPosition = model.seekPositionMs ?: model.positionMs
+    val quality = model.streamQuality
     val valueRange = remember(model.durationMs) { 0L..model.durationMs.coerceAtLeast(1L) }
     ThinProgressSlider(
         value = displayPosition,
@@ -637,7 +638,7 @@ private fun ProgressSection(
             style = MaterialTheme.typography.bodyMedium,
         )
         Spacer(modifier = Modifier.weight(1f))
-        if (showCodecOnPlayer && model.formatDetails.isNotBlank()) {
+        if (showCodecOnPlayer && quality != null) {
             Icon(
                 imageVector = model.outputDevice.type.imageVector,
                 contentDescription = null,
@@ -645,7 +646,7 @@ private fun ProgressSection(
                 modifier = Modifier.size(17.dp),
             )
             Text(
-                text = model.formatDetails.substringBefore(" · "),
+                text = quality.label(),
                 color = ImmersiveContentColor,
                 style = MaterialTheme.typography.labelLarge,
                 modifier = Modifier.padding(start = 5.dp),

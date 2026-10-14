@@ -270,9 +270,6 @@
     <string name="looper_collapse_player">Collapse player</string>
     <string name="looper_favourite">Favourite</string>
     <string name="looper_next_up">Next Up</string>
-    <string name="looper_quality_high_audio">High Quality • Audio</string>
-    <string name="looper_quality_standard">Standard Quality</string>
-    <string name="looper_quality_high">High Quality</string>
     <string name="file_size">File size</string>
     <string name="unknown">Unknown</string>
     <string name="copied">Copied to clipboard</string>

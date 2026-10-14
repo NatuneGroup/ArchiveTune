@@ -53,6 +53,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -104,6 +105,7 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
+import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.utils.rememberPreference
 
 /** Everything but the line being sung. SimpMusic's `Color.LightGray.copy(alpha = 0.35f)`. */
@@ -268,6 +270,15 @@ fun SimpMusicLyrics(
             // four seconds after it is opened.
             manualUntilMs = System.currentTimeMillis() + MANUAL_SCROLL_HOLD_MS
         }
+    }
+    // The lyrics page holds its controls up only while a renderer reports a user scroll; without
+    // this, a long drag here lets the idle timer hide them mid-gesture.
+    val onLyricsScroll by rememberUpdatedState(LocalLyricsScrollListener.current)
+    LaunchedEffect(dragged) {
+        onLyricsScroll(dragged)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onLyricsScroll(false) }
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {

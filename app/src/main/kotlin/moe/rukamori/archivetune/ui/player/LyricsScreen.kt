@@ -16,6 +16,7 @@ import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -193,6 +194,12 @@ private val LyricsSwipeDismissThreshold = 96.dp
  */
 val LocalLyricsScrollListener = compositionLocalOf<(Boolean) -> Unit> { {} }
 
+/**
+ * Reports from [LyricsEnhanced] while a lyric selection is in progress, so the idle auto-hide
+ * waits for the user to finish picking lines rather than dismissing them mid-selection.
+ */
+val LocalLyricsSelectionListener = compositionLocalOf<(Boolean) -> Unit> { {} }
+
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun LyricsScreen(
@@ -242,6 +249,9 @@ fun LyricsScreen(
     // Reported by LyricsEnhanced / LyricsV2 through LocalLyricsScrollListener; a scroll counts as
     // interaction and holds the controls up until it ends.
     var isUserScrollingLyrics by remember { mutableStateOf(false) }
+    // Reported by LyricsEnhanced through LocalLyricsSelectionListener; an open selection must not
+    // be tucked away by the idle timer under the user's finger.
+    var isSelectionActiveLyrics by remember { mutableStateOf(false) }
 
     val hapticClick =
         remember(enableHapticFeedback, view) {
@@ -567,6 +577,7 @@ fun LyricsScreen(
             userScrollingLyrics = isUserScrollingLyrics,
             scrubbing = sliderPosition != null,
             menuOpen = showAnchoredLyricsMenu,
+            selectionActive = isSelectionActiveLyrics,
         )
     // Keyed only on the gating state and explicit interactions, never on the position ticks, so
     // the countdown is not restarted four times a second. Plain delay rather than scaledDelay:
@@ -668,9 +679,14 @@ fun LyricsScreen(
                     .consumeUnhandledPointerInput(),
         )
 
-        CompositionLocalProvider(LocalLyricsScrollListener provides { scrolling ->
-            if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
-        }) {
+        CompositionLocalProvider(
+            LocalLyricsScrollListener provides { scrolling ->
+                if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
+            },
+            LocalLyricsSelectionListener provides { selecting ->
+                if (isSelectionActiveLyrics != selecting) isSelectionActiveLyrics = selecting
+            },
+        ) {
             Column(
                 modifier =
                     Modifier
@@ -693,41 +709,42 @@ fun LyricsScreen(
                 )
 
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    AnimatedContent(
-                    targetState = controlsVisible,
-                    transitionSpec = {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
-                    },
-                    label = "lyrics-landscape-controls",
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                ) { controlsVisible ->
-                    if (controlsVisible) {
-                        Row(
+                    // One Row for both controls states: the lyrics pane is composed in a single
+                    // slot and the controls only animate their share of the row away. Swapping
+                    // whole subtrees per state (the AnimatedContent this replaces) rebuilt the
+                    // lyrics renderer on every auto-hide, discarding LyricsEnhanced's selection
+                    // sheet and selected lines.
+                    val controlsFraction by animateFloatAsState(
+                        targetValue = if (controlsVisible) 1f else 0f,
+                        animationSpec = tween(180),
+                        label = "lyrics-landscape-controls",
+                    )
+                    Row(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 36.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AppleMusicLyricsPane(
+                            foregroundColor = foregroundColor,
+                            sliderPositionProvider = { sliderPosition },
+                            lyricsSyncOffset = lyricsSyncOffset,
                             modifier =
                                 Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 36.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AppleMusicLyricsPane(
-                                foregroundColor = foregroundColor,
-                                sliderPositionProvider = { sliderPosition },
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier =
-                                    Modifier
-                                        .weight(1.15f)
-                                        .fillMaxHeight()
-                                        .padding(end = 32.dp),
-                            )
+                                    .weight(1.15f + 0.85f * (1f - controlsFraction))
+                                    .fillMaxHeight()
+                                    .padding(end = 32.dp * controlsFraction),
+                        )
 
+                        if (controlsFraction > 0f) {
                             Column(
                                 modifier =
                                     Modifier
-                                        .weight(0.85f)
-                                        .widthIn(max = 420.dp),
+                                        .weight(0.85f * controlsFraction)
+                                        .widthIn(max = 420.dp)
+                                        .graphicsLayer { alpha = controlsFraction },
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 AppleMusicControls(
@@ -756,19 +773,8 @@ fun LyricsScreen(
                                 )
                             }
                         }
-                    } else {
-                        AppleMusicLyricsPane(
-                            foregroundColor = foregroundColor,
-                            sliderPositionProvider = { sliderPosition },
-                            lyricsSyncOffset = lyricsSyncOffset,
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 36.dp, vertical = 8.dp),
-                        )
                     }
-                }
-            } else {
+                } else {
                 AppleMusicLyricsPane(
                     foregroundColor = foregroundColor,
                     sliderPositionProvider = { sliderPosition },

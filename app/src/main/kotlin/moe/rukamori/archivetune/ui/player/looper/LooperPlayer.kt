@@ -64,7 +64,6 @@ import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import androidx.compose.ui.platform.LocalContext
 import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
@@ -85,6 +84,7 @@ import moe.rukamori.archivetune.ui.player.LocalVideoOnPreferredHeightChange
 import moe.rukamori.archivetune.ui.player.LocalVideoAvailableHeights
 import moe.rukamori.archivetune.ui.player.LocalVideoSelectedHeight
 import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
+import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.utils.isLocalMediaId
 
@@ -115,7 +115,6 @@ fun LooperPlayerContent(
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
-    val context = LocalContext.current
     val configuration = LocalConfiguration.current
     val screenWidthDp = configuration.screenWidthDp.dp
 
@@ -194,24 +193,27 @@ fun LooperPlayerContent(
                         )
                     }
 
-                    Box(
-                        modifier =
-                            Modifier
-                                .border(
-                                    width = 0.5.dp,
-                                    color = Color.White.copy(alpha = 0.12f),
-                                    shape = RoundedCornerShape(20.dp),
-                                ).background(
-                                    color = Color.White.copy(alpha = 0.08f),
-                                    shape = RoundedCornerShape(20.dp),
-                                ).padding(horizontal = 10.dp, vertical = 3.dp),
-                    ) {
-                        Text(
-                            text = looperQualityText(context, currentFormat),
-                            style = LooperTypography.labelSmall,
-                            color = Color.White.copy(alpha = 0.7f),
-                            maxLines = 1,
-                        )
+                    val looperQuality = remember(currentFormat) { currentFormat?.streamQuality() }
+                    if (looperQuality != null) {
+                        Box(
+                            modifier =
+                                Modifier
+                                    .border(
+                                        width = 0.5.dp,
+                                        color = Color.White.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(20.dp),
+                                    ).background(
+                                        color = Color.White.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(20.dp),
+                                    ).padding(horizontal = 10.dp, vertical = 3.dp),
+                        ) {
+                            Text(
+                                text = looperQuality.label(),
+                                style = LooperTypography.labelSmall,
+                                color = Color.White.copy(alpha = 0.7f),
+                                maxLines = 1,
+                            )
+                        }
                     }
 
                     Box(
@@ -762,27 +764,4 @@ private fun LooperTransportPill(
     ) {
         content()
     }
-}
-
-private fun looperQualityText(
-    context: android.content.Context,
-    format: FormatEntity?,
-): String {
-    if (format == null) return context.getString(R.string.looper_quality_high_audio)
-    val container = format.mimeType.substringAfter("/").substringBefore(";").uppercase()
-    val losslessCodecs = listOf("FLAC", "WAV", "ALAC", "APE")
-    val parts = buildList {
-        when {
-            losslessCodecs.contains(container) -> add(context.getString(R.string.flamingo_quality_lossless))
-            format.bitrate in 1..191_999 -> add(context.getString(R.string.looper_quality_standard))
-            else -> add(context.getString(R.string.looper_quality_high))
-        }
-        add(container)
-        if (losslessCodecs.contains(container)) {
-            format.sampleRate?.let { add("%.1f kHz".format(java.util.Locale.ROOT, it / 1000f)) }
-        } else {
-            if (format.bitrate > 0) add("${format.bitrate / 1000} kbps")
-        }
-    }
-    return parts.joinToString(" • ")
 }

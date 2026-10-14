@@ -133,6 +133,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
+import moe.rukamori.archivetune.ui.player.LocalLyricsSelectionListener
 import moe.rukamori.archivetune.constants.LyricsClickKey
 import moe.rukamori.archivetune.constants.LyricsLineBlurKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeChineseKey
@@ -835,6 +836,16 @@ fun LyricsEnhanced(
     val onLyricsScroll = LocalLyricsScrollListener.current
     LaunchedEffect(isManualScrolling) {
         onLyricsScroll(isManualScrolling)
+    }
+
+    // Selection pauses the page's controls auto-hide too: tucking the controls away must not
+    // dismiss the sheet the user is picking lines in.
+    val onSelectionActive = LocalLyricsSelectionListener.current
+    LaunchedEffect(isSelectionModeActive) {
+        onSelectionActive(isSelectionModeActive)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onSelectionActive(false) }
     }
 
     // Deliberately not a key on `syncedLyrics` — the value is read through rememberUpdatedState

@@ -30,8 +30,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -165,7 +163,6 @@ import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -174,40 +171,20 @@ private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
 private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
-private const val LYRIC_FOCUS_TOP_ANCHOR_RATIO = 0.08f
-// Guards define the "close enough" zone inside which the custom scroll is skipped.
-// The top guard MUST be smaller than LYRIC_FOCUS_TOP_ANCHOR_RATIO so the resting
-// position (8%) is inside the zone — otherwise the custom scroll would re-fire on
-// every line change to "fix" a position that's already correct.
-private const val LYRIC_FOCUS_TOP_GUARD_RATIO = 0.04f
-private const val LYRIC_FOCUS_BOTTOM_GUARD_RATIO = 0.30f
-private const val LYRIC_FOCUS_MIN_SCROLL_PX = 6
-// Auto-scroll deltas up to this fraction of the viewport height snap instantly
-// (no tween). A typical line-advance scroll moves the focus point from ~30%
-// (bottom guard) to ~8% (anchor) = 22% of viewport. Setting the threshold to
-// 40% covers all normal-playback line advances AND small-to-medium seeks,
-// while larger jumps (return from manual scroll, large seeks) still animate.
-// This eliminates the per-frame LazyColumn re-layout cost of the 280ms tween
-// for the common case — which was the single biggest source of "auto-scroll
-// lag" because the tween was competing with the 60Hz karaoke syllable sweep
-// for frame budget on every line change.
-private const val LYRIC_FOCUS_INSTANT_SCROLL_RATIO = 0.40f
-private const val LYRIC_FOCUS_ANIMATED_DISTANCE = 4
+private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
+private const val LYRIC_FIRST_FOCUS_EMPTY_FRAMES = 6
 private const val SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS = 80L
 private const val SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS = 180L
 private const val SMOOTH_PLAYBACK_DRIFT_CORRECTION = 0.55f
-// Reduced from 520ms to 280ms. The previous 520ms tween was long enough that
-// it was STILL running when the next line change fired (especially on tracks
-// with short lines), causing collectLatest to cancel + restart the animation
-// repeatedly — visible as stuttery, non-monotonic scroll motion. 280ms is
-// short enough to settle before the next line change in almost all songs,
-// while still looking smooth rather than instant.
-private const val LYRIC_FOCUS_SCROLL_DURATION_MS = 280
+// Sentinels for the first-focus collector: the user took over the list, or no line index is
+// published yet.
+private const val LYRIC_FOCUS_TARGET_MANUAL = -2
+private const val LYRIC_FOCUS_TARGET_PENDING = -1
 // The lines stay transparent until the active one has been placed, then fade in
 // over this long. See `awaitingFirstFocus`.
 private const val LYRIC_FIRST_FOCUS_FADE_MS = 200
 // Hard ceiling on how long the lines may stay hidden waiting for that placement.
-private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 400L
+private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
 // A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
 // the library will accept rather than a share of the line's duration — see
 // buildWrappingKaraokeSyllables.
@@ -624,8 +601,8 @@ fun LyricsEnhanced(
     // The scroll state is recreated together with the subtree that owns it.
     val listState = key(lyricsSessionKey, positionResetCounter, karaokeGeneration) { rememberLazyListState() }
 
-    // ── First-frame placement ── A fresh LazyListState starts at line 0 and the auto-scroll
-    // collector below walks it to the active line.
+    // ── First-frame placement ── A fresh LazyListState starts at line 0 and KaraokeLyricsView
+    // walks it to the active line; the lines stay hidden until the collector below sees it settle.
     var awaitingFirstFocus by
         remember(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
             mutableStateOf(isSynced)
@@ -657,8 +634,8 @@ fun LyricsEnhanced(
         lastManualScrollTime = 0L
         isSelectionModeActive = false
         selectedLineKeys.clear()
-        // Reset the cached line index so the auto-scroll effect force-scrolls to the
-        // new track's first active line instead of inheriting the previous track's index.
+        // Reset the cached line index so first focus waits for the new track's active line
+        // instead of inheriting the previous track's index.
         currentLineIndexState.intValue = -1
     }
 
@@ -860,7 +837,6 @@ fun LyricsEnhanced(
         isSynced,
         positionResetCounter,
         karaokeGeneration,
-        animationsDisabled,
     ) {
         if (!isSynced || singleActiveLine) {
             // Single-line mode never scrolls a lyric list, so there is no first focus to wait
@@ -875,51 +851,39 @@ fun LyricsEnhanced(
         // drawn at line 0 and then visibly walked to the active one. Wait for the content instead;
         // the LYRIC_FIRST_FOCUS_TIMEOUT_MS safety net above covers the case where it never arrives.
         snapshotFlow { latestSyncedLyricsForScroll.value.lines.isNotEmpty() }.first { it }
-        snapshotFlow {
-            listState.layoutInfo.viewportEndOffset > listState.layoutInfo.viewportStartOffset
-        }.first { it }
 
-        var forceNextScroll = true
+        // KaraokeLyricsView scrolls its own list to the active line, so it is the only auto-scroll
+        // owner. A second app-side scroller fought it and clipped the top active line of an
+        // accompaniment/duet aggregate. This collector only decides when the hidden list may fade in.
         snapshotFlow {
             if (isManualScrolling || isSelectionModeActive) {
-                null
+                LYRIC_FOCUS_TARGET_MANUAL
             } else {
                 currentLineIndexState.intValue
                     .takeIf { index -> index in latestSyncedLyricsForScroll.value.lines.indices }
+                    ?: LYRIC_FOCUS_TARGET_PENDING
             }
         }.distinctUntilChanged()
-            .collectLatest { index ->
-                if (index == null) {
-                    forceNextScroll = true
-                    // Nothing to place: either no line has started yet (song intro) or the user
-                    // took over the scroll. The list is already where it belongs in both cases, so
-                    // release the first-focus gate instead of letting it time out — otherwise the
-                    // lines would sit invisible for LYRIC_FIRST_FOCUS_TIMEOUT_MS on every track
-                    // whose first lyric starts a beat after playback does.
+            .collectLatest { target ->
+                if (target == LYRIC_FOCUS_TARGET_MANUAL) {
+                    // The user took over the list, so there is nothing left to hide.
                     awaitingFirstFocus = false
                     return@collectLatest
                 }
-
-                // The first placement of a session is a snap: the list is still
-                // transparent, so animating it would only spend frames on a
-                // motion nobody can see — and it is the animation that used to
-                // read as the lyrics repositioning themselves.
-                val isFirstFocus = awaitingFirstFocus
-                listState.scrollLyricIntoFocus(
-                    index = index,
-                    animateToNearbyItem = !forceNextScroll,
-                    force = forceNextScroll,
-                    snap = isFirstFocus,
-                    animationsDisabled = animationsDisabled,
-                )
-                forceNextScroll = false
-                if (isFirstFocus) awaitingFirstFocus = false
+                // No index published yet: releasing here would fade the list in at line 0 and then
+                // show the library walking to the active line. LYRIC_FIRST_FOCUS_TIMEOUT_MS still
+                // releases it if no line ever becomes active (long intro).
+                if (target == LYRIC_FOCUS_TARGET_PENDING) return@collectLatest
+                if (awaitingFirstFocus) {
+                    listState.awaitKaraokeFirstFocus(target)
+                    awaitingFirstFocus = false
+                }
             }
     }
 
     // Clear the tracked active line after a backward discontinuity so the re-keyed
-    // auto-scroll collector above force-scrolls to the first line of the new
-    // play-through instead of treating the previous line index as still current.
+    // first-focus collector above waits for the first line of the new play-through
+    // instead of treating the previous line index as still current.
     //
     // No explicit scroll here: [listState] is recreated alongside the karaoke subtree on
     // the same counter, so the fresh list already starts at the top. Scrolling the old
@@ -1619,66 +1583,22 @@ private fun LyricsSelectionLineItem(
     }
 }
 
-private suspend fun LazyListState.scrollLyricIntoFocus(
-    index: Int,
-    animateToNearbyItem: Boolean,
-    force: Boolean,
-    // Placement for a view that isn't visible yet: skip both animations so the
-    // active line is already in place on the frame the lyrics fade in.
-    snap: Boolean = false,
-    animationsDisabled: Boolean,
-) {
-    val itemCount = layoutInfo.totalItemsCount
-    if (itemCount == 0) return
-
-    val targetIndex = index.coerceIn(0, itemCount - 1)
-    var itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == targetIndex }
-    if (itemInfo == null) {
-        val distance = abs(targetIndex - firstVisibleItemIndex)
-        if (!snap && animateToNearbyItem && !animationsDisabled && distance <= LYRIC_FOCUS_ANIMATED_DISTANCE) {
-            animateScrollToItem(targetIndex)
-        } else {
-            scrollToItem(targetIndex)
-        }
+// Waits, without scrolling, until KaraokeLyricsView has placed the active line and stopped moving.
+// Both loops are frame-bounded so an empty list or a target the library never shows cannot hold
+// the lyrics hidden; LYRIC_FIRST_FOCUS_TIMEOUT_MS remains the outer ceiling.
+private suspend fun LazyListState.awaitKaraokeFirstFocus(index: Int) {
+    var framesAwaited = 0
+    var emptyFrames = 0
+    while (framesAwaited < LYRIC_FIRST_FOCUS_SETTLE_FRAMES) {
         withFrameNanos { }
-        itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == targetIndex }
-    }
-
-    itemInfo ?: return
-
-    val viewportStart = layoutInfo.viewportStartOffset
-    val viewportEnd = layoutInfo.viewportEndOffset
-    val viewportHeight = viewportEnd - viewportStart
-    if (viewportHeight <= 0) return
-
-    val itemFocusPoint = itemInfo.offset
-    val topGuard = viewportStart + (viewportHeight * LYRIC_FOCUS_TOP_GUARD_RATIO).roundToInt()
-    val bottomGuard = viewportEnd - (viewportHeight * LYRIC_FOCUS_BOTTOM_GUARD_RATIO).roundToInt()
-    if (!force && itemFocusPoint in topGuard..bottomGuard) return
-
-    val targetFocusPoint = viewportStart + (viewportHeight * LYRIC_FOCUS_TOP_ANCHOR_RATIO).roundToInt()
-    val scrollDelta = itemFocusPoint - targetFocusPoint
-    if (abs(scrollDelta) > LYRIC_FOCUS_MIN_SCROLL_PX) {
-        // For deltas up to 40% of the viewport (which covers ALL normal
-        // line-advance scrolls — they're typically ~22% of viewport), snap
-        // instantly instead of running a 280ms tween. The tween triggers a
-        // LazyColumn re-layout every frame for its entire duration, which
-        // steals frame budget from the 60Hz karaoke syllable sweep. The snap
-        // is imperceptible because the karaoke fill animation already provides
-        // visual continuity. Larger deltas (return from manual scroll, large
-        // seeks) still animate so the motion stays smooth over long distances.
-        val instantThreshold = (viewportHeight * LYRIC_FOCUS_INSTANT_SCROLL_RATIO).roundToInt()
-        if (snap || animationsDisabled || (abs(scrollDelta) <= instantThreshold && !force)) {
-            scrollBy(scrollDelta.toFloat())
+        framesAwaited++
+        if (layoutInfo.totalItemsCount == 0) {
+            emptyFrames++
+            if (emptyFrames >= LYRIC_FIRST_FOCUS_EMPTY_FRAMES) return
         } else {
-            animateScrollBy(
-                value = scrollDelta.toFloat(),
-                animationSpec =
-                    tween(
-                        durationMillis = LYRIC_FOCUS_SCROLL_DURATION_MS,
-                        easing = FastOutSlowInEasing,
-                    ),
-            )
+            emptyFrames = 0
+            val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == index }
+            if (itemInfo != null && !isScrollInProgress) return
         }
     }
 }

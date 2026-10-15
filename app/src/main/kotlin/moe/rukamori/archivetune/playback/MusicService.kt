@@ -7143,6 +7143,35 @@ class MusicService :
     )
 
     /**
+     * Observes an already-selected source only. The audit must never enter playback resolution,
+     * refresh an account, or select a different rendition just to obtain readable bytes.
+     * Called on the player application thread; the returned snapshot owns no playback resources.
+     */
+    internal fun acousticAuditSourceSnapshot(mediaId: String): moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot? {
+        if (!::player.isInitialized || player.currentMediaItem?.mediaId != mediaId) return null
+        val source = selectedPlaybackSourceByMediaId[mediaId] ?: AudioSourceType.YOUTUBE
+        val cached = directStreamCache[mediaId]?.takeIf { it.stream.source == source }
+        val stream = cached?.stream
+        val clearProvider = source in setOf(AudioSourceType.TIDAL, AudioSourceType.QOBUZ, AudioSourceType.QOBUZ_BACKUP)
+        val info = currentStreamInfo.value
+        val verified = clearProvider && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL &&
+            localPlayer.currentMediaItem?.mediaId == mediaId && info != null && info.mediaId == mediaId &&
+            info.source == source && stream != null && info.sampleRate == stream.sampleRate &&
+            info.bitDepth == stream.bitDepth && stream.uri.startsWith("https://") &&
+            stream.mimeType.substringBefore(';') in setOf("audio/flac", "audio/x-flac", "audio/mp4", "audio/mpeg")
+        return moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot(
+            mediaId = mediaId,
+            source = source,
+            cacheKey = sourceCacheKey(source, mediaId),
+            uri = stream?.uri?.takeIf { verified },
+            expiresAtMs = cached?.expiresAtMs ?: 0L,
+            contentLength = stream?.contentLength ?: contentLengthCache[sourceCacheKey(source, mediaId)],
+            advertisedSampleRate = authenticitySampleRateByMediaId[mediaId],
+            claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true,
+        )
+    }
+
+    /**
      * Prefetches the stream URL for the next-up media item in the queue so that when the user skips
      * to it (or auto-advance fires), the URL is already in [playbackUrlCache] (YouTube) or
      * [directStreamCache] (Qobuz / Tidal) and playback starts within ~100ms instead of the usual

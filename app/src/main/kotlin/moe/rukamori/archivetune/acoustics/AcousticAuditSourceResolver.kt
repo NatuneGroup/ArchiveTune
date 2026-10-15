@@ -10,22 +10,23 @@
 package moe.rukamori.archivetune.acoustics
 
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.media.MediaDataSource
 import android.net.Uri
+import android.os.CancellationSignal
 import android.system.Os
 import android.system.OsConstants
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.ContentMetadata
+import java.io.Closeable
 import java.io.File
 import java.io.RandomAccessFile
-import java.net.InetAddress
-import java.net.Proxy
-import java.net.UnknownHostException
 import java.nio.ByteBuffer
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -39,8 +40,8 @@ import moe.rukamori.archivetune.constants.SongSourceOverrideKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
 import moe.rukamori.archivetune.playback.CachedAudioMetadata
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 import okhttp3.Call
-import okhttp3.Dns
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -96,8 +97,16 @@ internal class AcousticAuditSourceResolver(
             }
             return FileInput(file, work)
         }
-        // Arbitrary ContentProviders can block Binder/open/read despite coroutine cancellation.
-        if (uri.scheme in listOf("content", "android.resource")) {
+        if (uri.scheme == "content") {
+            val opening = ContentOpen()
+            work.own(opening)
+            val descriptor = context.contentResolver.openAssetFileDescriptor(uri, "r", opening.signal)
+                ?: throw AcousticUnavailable("content_unreadable")
+            opening.accept(descriptor)
+            work.check()
+            return ContentInput(descriptor, opening, work)
+        }
+        if (uri.scheme == "android.resource") {
             throw AcousticUnavailable("provider_input_unsupported")
         }
         if (uri.scheme == "telegram") throw AcousticUnavailable("telegram_unsupported")
@@ -122,10 +131,11 @@ internal class AcousticAuditSourceResolver(
                 work.check()
                 completeCache(cache, key, source, current, work)?.let { return it }
             }
-            if (current != null && current.uri != null &&
-                current.expiresAtMs > System.currentTimeMillis() && current.contentLength?.let { it > 0 } == true
-            ) {
-                return RangeInput(current, work)
+            if (current != null && current.uri != null && current.expiresAtMs > System.currentTimeMillis()) {
+                val input = RangeInput(current, work)
+                work.own(input)
+                input.resolveLength()
+                return input
             }
         }
         throw AcousticUnavailable(if (current != null) "current_source_unavailable" else "no_safe_source")
@@ -167,6 +177,62 @@ internal class AcousticAuditSourceResolver(
         return CacheInput(
             source.name, length, segments, current, audio.sampleRateHz, audio.claimedLossless, work,
         )
+    }
+}
+
+private class ContentOpen : Closeable {
+    val signal = CancellationSignal()
+    private val closed = AtomicBoolean(false)
+    private val descriptor = AtomicReference<AssetFileDescriptor?>(null)
+
+    fun accept(value: AssetFileDescriptor) {
+        descriptor.set(value)
+        if (closed.get()) {
+            runCatching { descriptor.getAndSet(null)?.close() }
+            throw CancellationException()
+        }
+    }
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) {
+            try {
+                signal.cancel()
+            } finally {
+                descriptor.getAndSet(null)?.close()
+            }
+        }
+    }
+}
+
+private class ContentInput(
+    private val descriptor: AssetFileDescriptor,
+    private val opening: ContentOpen,
+    work: AcousticWork,
+) : AcousticInput(
+    "LOCAL_CONTENT", null, null, false, listOf("local_content", "excerpt_only"), work,
+) {
+    private val offset = descriptor.startOffset
+    private val stat = Os.fstat(descriptor.fileDescriptor)
+    private val length = descriptor.declaredLength.takeIf { it >= 0 } ?: (stat.st_size - offset)
+
+    init {
+        if (!OsConstants.S_ISREG(stat.st_mode) || offset < 0 || offset > stat.st_size ||
+            length <= 0 || length > stat.st_size - offset
+        ) throw AcousticUnavailable("content_not_seekable")
+        // Verify seekability without changing a descriptor position shared with its provider.
+        Os.lseek(descriptor.fileDescriptor, 0L, OsConstants.SEEK_CUR)
+    }
+
+    override fun getSize(): Long = length
+    override fun readBounded(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
+        if (Os.fstat(descriptor.fileDescriptor).st_size != stat.st_size) {
+            throw AcousticUnavailable("local_changed")
+        }
+        return Os.pread(descriptor.fileDescriptor, buffer, offset, size, this.offset + position)
+            .takeIf { it > 0 } ?: -1
+    }
+    override fun close() {
+        if (closed.compareAndSet(false, true)) opening.close()
     }
 }
 
@@ -231,24 +297,10 @@ private class RangeInput(
     identity.claimedLossless, listOf("current_clear_rendition", "excerpt_only"), work,
 ) {
     companion object {
-        private fun numericAddress(host: String): InetAddress? {
-            val parts = host.split('.')
-            if (parts.size != 4) return null
-            val bytes = ByteArray(4)
-            for (index in parts.indices) {
-                if (parts[index].isEmpty() || parts[index].any { it !in '0'..'9' }) return null
-                val value = parts[index].toIntOrNull()?.takeIf { it in 0..255 } ?: return null
-                bytes[index] = value.toByte()
-            }
-            return InetAddress.getByAddress(bytes)
-        }
-
-        // No cookies, authenticators, playback interceptors, redirects or disk cache.
+        // Keep the app's stream proxy policy, but no provider credentials, playback
+        // interceptors, redirects or disk cache are attached to independent audit reads.
         private val client = OkHttpClient.Builder()
-            // System DNS and proxy discovery are not reliably interrupted by Call.cancel().
-            // Until a bounded resolver is available, hostname-based remote input is unsupported.
-            .dns(Dns { host -> listOf(numericAddress(host) ?: throw UnknownHostException()) })
-            .proxy(Proxy.NO_PROXY)
+            .withAppStreamProxy()
             .callTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
             .connectTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
             .readTimeout(AcousticAuditLimits.NETWORK_CALL_MS, TimeUnit.MILLISECONDS)
@@ -259,14 +311,48 @@ private class RangeInput(
     }
     private val call = AtomicReference<Call?>(null)
     private val url = identity.uri?.toHttpUrlOrNull()?.takeIf {
-        it.scheme == "https" && it.username.isEmpty() && it.password.isEmpty() && numericAddress(it.host) != null
-    } ?: throw AcousticUnavailable("remote_requires_bounded_dns")
-    private val length = identity.contentLength ?: throw AcousticUnavailable("remote_length_unknown")
+        it.scheme == "https" && it.username.isEmpty() && it.password.isEmpty()
+    } ?: throw AcousticUnavailable("remote_unsupported")
+    private var length = identity.contentLength?.takeIf { it > 0 } ?: -1L
     private val block = ByteArray(AcousticAuditLimits.MAX_READ_CHUNK)
     private var blockStart = -1L
     private var blockSize = 0
     private var networkBytes = 0L
     override fun getSize(): Long = length
+
+    fun resolveLength() {
+        work.check()
+        if (System.currentTimeMillis() >= identity.expiresAtMs) throw AcousticUnavailable("source_expired")
+        if (length > 0) return
+        // A one-byte range probe obtains container size without downloading/materializing it.
+        val request = Request.Builder().url(url)
+            .header("Range", "bytes=0-0").header("Accept-Encoding", "identity").build()
+        val owned = client.newCall(request)
+        call.set(owned)
+        try {
+            work.check()
+            if (closed.get()) throw AcousticUnavailable("input_closed")
+            owned.execute().use { response ->
+                val range = response.header("Content-Range").orEmpty()
+                val reportedLength = Regex("^bytes 0-0/([1-9][0-9]*)$").matchEntire(range)
+                    ?.groupValues?.get(1)?.toLongOrNull()
+                if (response.code != 206 || reportedLength == null ||
+                    response.header("Content-Encoding")?.let { it != "identity" } == true
+                ) throw AcousticUnavailable("remote_length_unknown")
+                val body = response.body ?: throw AcousticUnavailable("remote_unreadable")
+                networkBytes++
+                body.byteStream().use { stream ->
+                    work.check()
+                    if (stream.read() < 0) throw AcousticUnavailable("remote_short_read")
+                }
+                work.check()
+                length = reportedLength
+            }
+        } finally {
+            call.compareAndSet(owned, null)
+            owned.cancel()
+        }
+    }
     override fun readBounded(position: Long, buffer: ByteArray, offset: Int, size: Int): Int {
         if (blockStart < 0 || position < blockStart || position - blockStart >= blockSize) {
             loadBlock(position / block.size * block.size)

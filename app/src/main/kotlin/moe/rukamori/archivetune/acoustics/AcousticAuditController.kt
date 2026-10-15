@@ -9,7 +9,10 @@ package moe.rukamori.archivetune.acoustics
 
 import java.io.Closeable
 import java.io.IOException
+import java.util.concurrent.ArrayBlockingQueue
 import java.util.concurrent.ScheduledThreadPoolExecutor
+import java.util.concurrent.Semaphore
+import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -19,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -63,12 +67,23 @@ internal class AcousticWork : Closeable {
     }
 }
 
+private object AcousticWorkers {
+    // A slow OS provider/DNS call may outlive cancellation. Keep its lease until it really
+    // unwinds, rather than spawning another blocking worker on every retry or target change.
+    val permits = Semaphore(2)
+    val dispatcher = ThreadPoolExecutor(
+        2, 2, 0L, TimeUnit.MILLISECONDS, ArrayBlockingQueue(2),
+        { task -> Thread(task, "AcousticAuditWorker").apply { isDaemon = true } },
+        ThreadPoolExecutor.AbortPolicy(),
+    ).asCoroutineDispatcher()
+}
+
 class AcousticAuditController internal constructor(
     private val target: AcousticAuditTarget,
     private val resolver: AcousticAuditSourceResolver,
 ) : Closeable {
     private val lock = Any()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + AcousticWorkers.dispatcher)
     private val mutableState = MutableStateFlow(AcousticAuditState())
     val state: StateFlow<AcousticAuditState> = mutableState.asStateFlow()
     private var generation = 0L
@@ -81,11 +96,19 @@ class AcousticAuditController internal constructor(
         synchronized(lock) {
             // A cancelled decoder must finish unwinding before another run can own resources.
             if (closed || !active || job?.isCompleted == false) return
+            if (!AcousticWorkers.permits.tryAcquire()) {
+                mutableState.value = AcousticAuditState(
+                    AcousticAuditStatus.UNAVAILABLE, message = "analysis_busy",
+                )
+                return
+            }
             val token = ++generation
             val ownedWork = AcousticWork()
+            val entered = AtomicBoolean(false)
             work = ownedWork
             mutableState.value = AcousticAuditState(AcousticAuditStatus.RESOLVING, 0f)
             job = scope.launch {
+                entered.set(true)
                 try {
                     val source = withTimeout(AcousticAuditLimits.DEADLINE_MS) {
                         resolver.resolve(target, ownedWork).also(ownedWork::own)
@@ -126,6 +149,15 @@ class AcousticAuditController internal constructor(
                     publish(token, AcousticAuditState(AcousticAuditStatus.FAILED, message = "analysis_failed"))
                 } finally {
                     ownedWork.close()
+                }
+            }.also { launched ->
+                // Also covers cancellation before the coroutine's try/finally was entered.
+                launched.invokeOnCompletion { cause ->
+                    ownedWork.close()
+                    AcousticWorkers.permits.release()
+                    if (cause != null && !entered.get()) {
+                        publish(token, AcousticAuditState(AcousticAuditStatus.UNAVAILABLE, message = "analysis_busy"))
+                    }
                 }
             }
         }

@@ -105,7 +105,7 @@
         <ul>
           <li>EBU R128 loudness normalization</li>
           <li>Tempo, pitch, and playback speed controls</li>
-          <li>Crossfade and automix between tracks, with one smooth hand-off per song pair</li>
+          <li>Crossfade and automix between tracks, with bounded hand-off and recovery policies</li>
           <li>System equalizer and spatial audio integration</li>
         </ul>
       </div>
@@ -257,9 +257,21 @@ ArchiveTune has two update channels:
 
 Both channels are signed with the same key, so updates install over the existing app in place.
 
-The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has been retired. Its final build already follows Nightly, so existing Canary installs move to Nightly with their next update.
+The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has been retired. Final Canary `C202610141722` shipped at `a1a04ea02`; the branch is frozen. A stored Canary choice migrates to Nightly.
 
 The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
+
+### Current development follow-up (not yet released)
+
+- Stable and Nightly remain explicit user choices on every build; build identity supplies only the unset default. Offers retain channel association and require a known newer version code.
+- Visible overflowing settings descriptions scroll automatically for finite passes, respecting lifecycle and reduced motion. Restart-scoped edits keep the running values until restart and share one **Restart now / Later** dialog after persistence; Later never restarts automatically.
+- The acoustic heat graph is available in Developer settings and shared player/song menus. Opening it does not analyze: **Run / Cancel / Retry** owns a bounded, source-bound excerpt. Seekable local file/content, supported clear current streams and complete source-bound cache are supported; DRM/inaccessible inputs can be unavailable. Spectral suspicion is heuristic, not proof of original losslessness or physical DAC output.
+- Existing DSP maintenance updates Oboe to 1.11.0, Signalsmith Linear to 0.6.5 and retained libusb to 1.0.30; Stretch stays 1.4.0 and soxr 0.1.3. No new engine or default audio policy. libusb/soxr are trimmed Android subsets, rebuilt through the app's CMake/Gradle path, not full standalone upstream test distributions. Active USB output remains; only an unreachable older USB module was removed, with its MIT license retained.
+- Lyrics Unicode/phonetics, AI/provider/cache/lifecycle fixes and Japanese dictionary automation are **pending implementation/integration**. The approved dictionary policy uses primary device locale region JP, never IP geolocation; one best-effort foreground attempt may use Wi-Fi or cellular, respects explicit off/removal and does not block startup. This is optional IPADIC data for offline romaji, not UI translation or a universal language engine.
+
+These follow-ups are local and uncompiled. Final cleanup, independent review, focused tests,
+parallel exact-head CI and the new dev PR/merge/Nightly verification are still pending.
+No device, visual, USB or all-language validation is claimed.
 
 > [!WARNING]  
 > **Notes:** The trusted download source is listed above; we are not responsible for any risks you may encounter from downloading from other sources.

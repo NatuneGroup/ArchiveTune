@@ -110,5 +110,47 @@ so compact mode and hide-on-scroll keep working.
 
 UI scale, font and custom font, tablet mode, the Liquid Glass master switch, the liquid-glass nav
 bar and the frosted nav bar are read once per process through `utils/StartupSettings`. Changing one
-shows `RestartToApplyNotice` instead of recomposing the whole app. "Disable blur effects" is applied
-on top through the root `LocalBlurPolicy`, which every blur and glass surface honours.
+keeps the running latch unchanged. The local follow-up mounts one shared post-persistence
+**Restart now / Later** modal through the root host, with `RestartToApplyNotice` as supporting
+inline copy. Restart now is explicit; Later/dismiss never schedules a restart. Direct/search
+edits and custom-font changes must use the same prompt path. Keep page snapshots and atomic writes.
+"Disable blur effects" remains live through the root `LocalBlurPolicy`.
+
+## Description text, channel choice and acoustic graph
+
+Settings-specific marquee is automatic and finite only while visible/resumed, overflowing and
+motion-enabled; short, offscreen/background and 0x text stays static. Preserve full accessible
+text, wrapped paragraphs, row geometry, RTL and the separate player-title policy.
+
+Stable and Nightly are explicit choices on all builds; build identity is only the unset default.
+Canary migration must not overwrite a later Stable choice. Update/About/startup/worker paths
+share the selected channel, reject stale channel candidates and require known newer version codes.
+
+Developer remains `settings/misc`; `acoustic_quality` is a searchable animated expansion
+for the current item. No item disables Run with an explanation. Shared PlayerMenu, SongMenu
+and YouTubeSongMenu actions open the same dialog for their actual selected item, not blindly
+the playing song; SpatialFlow uses the shared player menu. Opening is idle; collapse/navigation/
+target changes deactivate work even during exit animation. See [architecture](ARCHITECTURE.md)
+for bounded-source and heuristic-result limits.
+
+These local changes are uncompiled. Japanese pack automation and language/AI lifecycle repairs
+remain pending: primary device locale region JP only, one best-effort foreground attempt on
+Wi-Fi/cellular, no startup block/IP lookup, explicit off/removal respected. Keep manual download,
+retry/remove and absent-pack fallback. IPADIC data (13,343,016 bytes) supplies offline romaji,
+not UI language, lyrics, fonts or translation models. Built-in Korean/Devanagari/ICU conversions
+are best-effort, not validated language identification or complete pronunciation support.
+
+## Preserved appearance-port provenance
+
+The superseded 2026-10-02 review compared canary `6932180bb` with 4nx3b `5e0c8e452`
+(historical ancestor `646829cfd`). Scroll-hidden navigation (`76cd0ae6d`), tint
+(`940473914`, `6c8639207`) and bottom search (`bf905241f`, `481b13579`) were adapted
+to the fork's nested scroll, stable padding, insets and pill coordinator. Credit remains
+with 4nx3b; this is not a wholesale tree merge or import of settings redesign `e50e8a606`.
+Glass recorder rewrites were deliberately not copied (upstream freeze/recursive-recording
+fixes `53ede6f0d`, `cbf7d806c` are context, not prerequisites). Alternate players, canvas
+and source/login policies remain independent of appearance. Atomic interface-style selection
+retains the previous player design and a later manual choice; no database/backfill/key rotation.
+Historical maintenance rationale includes gapless/podcast crossfade guards, USB lifecycle,
+digest analysis keys, opaque Tidal tokens, font-backup/path validation, canvas fallback and
+stale-account/profile invalidation. Do not regress these boundaries during prose cleanup.

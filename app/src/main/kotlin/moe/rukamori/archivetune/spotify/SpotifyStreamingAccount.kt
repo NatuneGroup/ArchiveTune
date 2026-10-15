@@ -19,6 +19,9 @@ import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -71,6 +74,7 @@ object SpotifyStreamingAccount {
             .readTimeout(10, TimeUnit.SECONDS)
             .build()
 
+    // Refresh, account replacement and sign-out share one commit boundary, including identity caches.
     private val tokenMutex = Mutex()
 
     // The catalog sp_dc whose account was last compared with the streaming account, and whether
@@ -144,6 +148,7 @@ object SpotifyStreamingAccount {
             val spDc = prefs[SpotifyStreamSpDcKey].orEmpty()
             if (spDc.isBlank()) return@withLock null
             if (collidesWithCatalog(context, spDc)) return@withLock null
+            currentCoroutineContext().ensureActive()
             val cached = prefs[SpotifyStreamAccessTokenKey].orEmpty()
             val expiry = prefs[SpotifyStreamAccessTokenExpiresAtKey] ?: 0L
             if (cached.isNotBlank() && expiry - TOKEN_REFRESH_MARGIN_MS > System.currentTimeMillis()) {
@@ -155,12 +160,12 @@ object SpotifyStreamingAccount {
                     .getOrNull()
                     ?.takeUnless { it.isAnonymous }
                     ?: return@withLock null
-            runCatching {
-                context.dataStore.edit {
-                    it[SpotifyStreamAccessTokenKey] = fresh.accessToken
-                    it[SpotifyStreamAccessTokenExpiresAtKey] = fresh.accessTokenExpirationTimestampMs
-                }
+            currentCoroutineContext().ensureActive()
+            context.dataStore.edit {
+                it[SpotifyStreamAccessTokenKey] = fresh.accessToken
+                it[SpotifyStreamAccessTokenExpiresAtKey] = fresh.accessTokenExpirationTimestampMs
             }
+            currentCoroutineContext().ensureActive()
             fresh.accessToken
         }
 
@@ -204,38 +209,41 @@ object SpotifyStreamingAccount {
         spKey: String,
     ): Result<Profile> =
         withContext(Dispatchers.IO) {
-            runCatching {
-                val prefs = context.dataStore.data.first()
-                val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
-                if (catalogSpDc.isNotBlank() && catalogSpDc == spDc) throw SignInError.SameAsCatalog()
+            tokenMutex.withLock {
+                runCatching {
+                    val prefs = context.dataStore.data.first()
+                    val catalogSpDc = prefs[SpotifySpDcKey].orEmpty()
+                    if (catalogSpDc.isNotBlank() && catalogSpDc == spDc) throw SignInError.SameAsCatalog()
 
-                val token =
-                    SpotifyAuth
-                        .fetchAccessToken(spDc, spKey)
-                        .getOrNull()
-                        ?.takeUnless { it.isAnonymous }
-                        ?: throw SignInError.InvalidSession()
-                val profile = fetchProfile(token.accessToken) ?: throw SignInError.ProfileUnavailable()
+                    val token =
+                        SpotifyAuth
+                            .fetchAccessToken(spDc, spKey)
+                            .getOrNull()
+                            ?.takeUnless { it.isAnonymous }
+                            ?: throw SignInError.InvalidSession()
+                    val profile = fetchProfile(token.accessToken) ?: throw SignInError.ProfileUnavailable()
 
-                if (catalogSpDc.isNotBlank()) {
-                    val catalogProfile =
-                        catalogToken(context)?.let { fetchProfile(it) }
-                            ?: throw SignInError.CatalogUnverifiable()
-                    if (catalogProfile.userId == profile.userId) throw SignInError.SameAsCatalog()
-                }
+                    if (catalogSpDc.isNotBlank()) {
+                        val catalogProfile =
+                            catalogToken(context)?.let { fetchProfile(it) }
+                                ?: throw SignInError.CatalogUnverifiable()
+                        if (catalogProfile.userId == profile.userId) throw SignInError.SameAsCatalog()
+                    }
 
-                resetSessions()
-                comparedCatalogSpDc = catalogSpDc.ifBlank { null }
-                catalogIsStreamingAccount = false
-                context.dataStore.edit {
-                    it[SpotifyStreamSpDcKey] = spDc
-                    it[SpotifyStreamSpKeyKey] = spKey
-                    it[SpotifyStreamAccessTokenKey] = token.accessToken
-                    it[SpotifyStreamAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
-                    it[SpotifyStreamUserIdKey] = profile.userId
-                    it[SpotifyStreamAccountNameKey] = profile.displayName.orEmpty()
-                }
-                profile
+                    currentCoroutineContext().ensureActive()
+                    resetSessions()
+                    comparedCatalogSpDc = catalogSpDc.ifBlank { null }
+                    catalogIsStreamingAccount = false
+                    context.dataStore.edit {
+                        it[SpotifyStreamSpDcKey] = spDc
+                        it[SpotifyStreamSpKeyKey] = spKey
+                        it[SpotifyStreamAccessTokenKey] = token.accessToken
+                        it[SpotifyStreamAccessTokenExpiresAtKey] = token.accessTokenExpirationTimestampMs
+                        it[SpotifyStreamUserIdKey] = profile.userId
+                        it[SpotifyStreamAccountNameKey] = profile.displayName.orEmpty()
+                    }
+                    profile
+                }.onFailure { if (it is CancellationException) throw it }
             }
         }
 
@@ -255,7 +263,7 @@ object SpotifyStreamingAccount {
         return SpotifyAuth.fetchAccessToken(catalogSpDc, catalogSpKey).getOrNull()?.takeUnless { it.isAnonymous }?.accessToken
     }
 
-    suspend fun signOut(context: Context) {
+    suspend fun signOut(context: Context): Unit = tokenMutex.withLock {
         resetSessions()
         comparedCatalogSpDc = null
         catalogIsStreamingAccount = false
@@ -268,6 +276,7 @@ object SpotifyStreamingAccount {
             it.remove(SpotifyStreamAccountNameKey)
             it[SpotifyStreamEnabledKey] = false
         }
+        Unit
     }
 
     /** Drops every in-memory session the streaming pipelines hold, so no state crosses accounts. */

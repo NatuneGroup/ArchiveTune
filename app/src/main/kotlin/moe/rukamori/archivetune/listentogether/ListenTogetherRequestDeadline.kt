@@ -31,6 +31,15 @@ internal class ListenTogetherRequestDeadline(private val scope: CoroutineScope) 
 
     fun isCurrent(attempt: Long): Boolean = generation.get() == attempt
 
+    fun currentAttempt(): Long = generation.get()
+
+    /** Serialize the final check and send against cancel/replacement, not merely the delay. */
+    @Synchronized
+    fun runIfCurrent(attempt: Long, requirePending: Boolean = false, block: () -> Unit) {
+        if (!isCurrent(attempt) || (requirePending && timeoutJob?.isActive != true)) return
+        block()
+    }
+
     @Synchronized
     fun startIfIdle(timeoutMs: Long, onTimeout: () -> Unit): Long? {
         if (timeoutJob?.isActive == true) return null

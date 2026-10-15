@@ -95,7 +95,9 @@ object AudioAuthenticityAnalyzer {
         channelCount: Int,
         advertisedSampleRateHz: Int?,
         claimedLossless: Boolean = false,
+        checkActive: () -> Unit = {},
     ): AudioAuthenticityAssessment {
+        checkActive()
         if (!claimedLossless || channelCount !in 1..8 ||
             pcmSampleRateHz < MIN_LOSSLESS_SAMPLE_RATE_HZ ||
             advertisedSampleRateHz == null || advertisedSampleRateHz < MIN_LOSSLESS_SAMPLE_RATE_HZ
@@ -105,9 +107,9 @@ object AudioAuthenticityAnalyzer {
         return if (pcmSampleRateHz >= MIN_ANALYSIS_SAMPLE_RATE_HZ &&
             advertisedSampleRateHz >= MIN_ANALYSIS_SAMPLE_RATE_HZ
         ) {
-            analyzeHiResInterleavedPcm(samples, pcmSampleRateHz, channelCount)
+            analyzeHiResInterleavedPcm(samples, pcmSampleRateHz, channelCount, checkActive)
         } else {
-            analyzeStandardRateLosslessPcm(samples, pcmSampleRateHz, channelCount)
+            analyzeStandardRateLosslessPcm(samples, pcmSampleRateHz, channelCount, checkActive)
         }
     }
 
@@ -115,6 +117,7 @@ object AudioAuthenticityAnalyzer {
         samples: FloatArray,
         pcmSampleRateHz: Int,
         channelCount: Int,
+        checkActive: () -> Unit,
     ): AudioAuthenticityAssessment {
         val totalFrames = samples.size / channelCount
         val maximumFrames = minOf(totalFrames, WINDOW_SIZE * MAX_WINDOWS)
@@ -132,6 +135,7 @@ object AudioAuthenticityAnalyzer {
 
         var startFrame = 0
         while (startFrame + WINDOW_SIZE <= maximumFrames && windowsAnalyzed < MAX_WINDOWS) {
+            checkActive()
             var framePower = 0.0
             var finiteWindow = true
             for (index in 0 until WINDOW_SIZE) {
@@ -159,6 +163,7 @@ object AudioAuthenticityAnalyzer {
             var windowPostPower = 0.0
             var windowReferencePower = 0.0
             for (channel in 0 until channelCount) {
+                checkActive()
                 for (index in 0 until WINDOW_SIZE) {
                     val sample = samples[((startFrame - WINDOW_SIZE + index) * channelCount) + channel].toDouble()
                     real[index] = sample * window[index]
@@ -208,6 +213,7 @@ object AudioAuthenticityAnalyzer {
         samples: FloatArray,
         pcmSampleRateHz: Int,
         channelCount: Int,
+        checkActive: () -> Unit,
     ): AudioAuthenticityAssessment {
         val totalFrames = samples.size / channelCount
         val maximumFrames = minOf(totalFrames, MAX_ANALYSIS_FRAMES)
@@ -229,6 +235,7 @@ object AudioAuthenticityAnalyzer {
         var startFrame = 0
 
         while (startFrame + WINDOW_SIZE <= maximumFrames && windowsAnalyzed < MAX_WINDOWS) {
+            checkActive()
             var framePower = 0.0
             var finiteWindow = true
             for (index in 0 until WINDOW_SIZE) {
@@ -255,6 +262,7 @@ object AudioAuthenticityAnalyzer {
             val prePowers = DoubleArray(cutoffs.size)
             val postPowers = DoubleArray(cutoffs.size)
             for (channel in 0 until channelCount) {
+                checkActive()
                 for (index in 0 until WINDOW_SIZE) {
                     val sample = samples[((startFrame - WINDOW_SIZE + index) * channelCount) + channel].toDouble()
                     real[index] = sample * window[index]

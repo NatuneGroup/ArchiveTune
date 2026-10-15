@@ -18,12 +18,23 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
 
-fun clearPlaybackWebAuthSession(context: Context) {
-    clearWebAuthStorage(context)
-    val cookieManager = CookieManager.getInstance()
-    cookieManager.removeSessionCookies(null)
-    cookieManager.removeAllCookies(null)
-    cookieManager.flush()
+fun clearPlaybackWebAuthSession() {
+    // Android exposes no per-domain remove API. Expire only cookie names visible to official
+    // YouTube origins, at host/domain scopes; do not touch Google or other providers' storage.
+    val manager = CookieManager.getInstance()
+    listOf("music.youtube.com", "www.youtube.com", "youtube.com").forEach { host ->
+        val origin = "https://$host"
+        manager.getCookie(origin)?.split(';')?.forEach { part ->
+            val name = part.substringBefore('=').trim()
+            if (name.isNotBlank()) {
+                val expired = "$name=; Max-Age=0; Path=/; Secure"
+                manager.setCookie(origin, expired)
+                manager.setCookie(origin, "$expired; Domain=$host")
+                manager.setCookie(origin, "$expired; Domain=.youtube.com")
+            }
+        }
+    }
+    manager.flush()
 }
 
 suspend fun clearWebAuthSession(context: Context) {

@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.utils
 
+import moe.rukamori.archivetune.App
+import moe.rukamori.archivetune.auth.YouTubeSessionOrigin
 import android.net.ConnectivityManager
 import androidx.media3.common.PlaybackException
 import io.ktor.client.plugins.ClientRequestException
@@ -247,6 +249,8 @@ object YTPlayerUtils {
     }
 
     suspend fun recoverFromBadStreamPlayerResponse(videoId: String) {
+        val owner = App.instance.youTubeLoginRepository
+        val origin = owner.origin()
         BotGuardTokenGenerator.invalidateAll()
         val authState =
             YouTube
@@ -270,7 +274,7 @@ object YTPlayerUtils {
                 reason = "all stream clients failed",
             )
         if (refreshedAuthState.fingerprint != authState.fingerprint) {
-            YouTube.authState = refreshedAuthState
+            owner.publishRepair(origin, refreshedAuthState)
         }
         clearPlaybackAuthCaches()
     }
@@ -281,6 +285,8 @@ object YTPlayerUtils {
         forceRefresh: Boolean = false,
         reason: String,
     ): PlaybackAuthState {
+        val owner = App.instance.youTubeLoginRepository
+        val origin = owner.origin()
         if (!forceRefresh) {
             authState.visitorData
                 ?.takeIf { it.isNotBlank() }
@@ -300,8 +306,9 @@ object YTPlayerUtils {
                 ?.takeIf { it.isNotBlank() }
 
         if (refreshedVisitorData != null) {
-            YouTube.visitorData = refreshedVisitorData
-            return authState.copy(visitorData = refreshedVisitorData).normalized()
+            val refreshed = authState.copy(visitorData = refreshedVisitorData).normalized()
+            owner.publishRepair(origin, refreshed)
+            return refreshed
         }
 
         return authState
@@ -312,6 +319,8 @@ object YTPlayerUtils {
         authState: PlaybackAuthState,
         reason: String,
     ): PlaybackAuthState {
+        val owner = App.instance.youTubeLoginRepository
+        val origin = owner.origin()
         var repairedAuthState = authState
 
         if (authState.webClientPoTokenEnabled && !authState.sessionId.isNullOrBlank()) {
@@ -381,7 +390,7 @@ object YTPlayerUtils {
         }
 
         if (repairedAuthState.fingerprint != authState.fingerprint) {
-            YouTube.authState = repairedAuthState
+            owner.publishRepair(origin, repairedAuthState)
             clearPlaybackAuthCaches()
         }
 
@@ -399,9 +408,10 @@ object YTPlayerUtils {
         videoId: String,
         authState: PlaybackAuthState,
     ): PlaybackAuthState {
+        val origin = App.instance.youTubeLoginRepository.origin()
         val sessionId = authState.sessionId ?: return authState
         val tokenResult = BotGuardTokenGenerator.mintToken(videoId, sessionId) ?: return authState
-        return authState.withGeneratedPoTokens(videoId, tokenResult)
+        return authState.withGeneratedPoTokens(videoId, tokenResult, origin)
     }
 
     suspend fun ensureWebPoTokensForSubtitles(videoId: String): PlaybackAuthState {
@@ -451,17 +461,19 @@ object YTPlayerUtils {
         videoId: String,
         authState: PlaybackAuthState = YouTube.currentPlaybackAuthState(),
     ): PlaybackAuthState {
+        val origin = App.instance.youTubeLoginRepository.origin()
         val contentBinding = authState.ytDlpContentBinding() ?: return authState
         val tokenResult =
             BotGuardTokenGenerator.mintToken(videoId, contentBinding) ?: return authState
         return authState
-            .withGeneratedPoTokens(videoId, tokenResult)
+            .withGeneratedPoTokens(videoId, tokenResult, origin)
             .copy(dataSyncId = contentBinding)
     }
 
     private fun PlaybackAuthState.withGeneratedPoTokens(
         videoId: String,
         tokenResult: PoTokenResult,
+        origin: YouTubeSessionOrigin,
     ): PlaybackAuthState {
         val updatedAuthState =
             copy(
@@ -474,9 +486,9 @@ object YTPlayerUtils {
                 poTokenSubsVideoId = videoId,
                 webClientPoTokenEnabled = true,
             ).normalized()
-        val currentAuthState = YouTube.currentPlaybackAuthState()
+        val currentAuthState = origin.authState
         if (hasSamePlaybackSession(currentAuthState)) {
-            YouTube.authState =
+            App.instance.youTubeLoginRepository.publishRepair(origin,
                 currentAuthState
                     .copy(
                         poTokenGvs = tokenResult.playerToken,
@@ -487,7 +499,8 @@ object YTPlayerUtils {
                         poTokenSubs = tokenResult.playerToken,
                         poTokenSubsVideoId = videoId,
                         webClientPoTokenEnabled = true,
-                    ).normalized()
+                    ).normalized(),
+            )
         }
         return updatedAuthState
     }

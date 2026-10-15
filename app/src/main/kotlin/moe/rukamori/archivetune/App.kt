@@ -77,8 +77,6 @@ import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.ProxyUtils
-import moe.rukamori.archivetune.utils.YTPlayerUtils
-import moe.rukamori.archivetune.utils.clearPlaybackAuthSession
 import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
@@ -121,6 +119,9 @@ class App :
     // Field injection keeps this additive: no constructor or init-order changes.
     @Inject
     lateinit var youtubeiStreamRepository: YoutubeiStreamRepository
+
+    @Inject
+    lateinit var youTubeLoginRepository: moe.rukamori.archivetune.auth.YouTubeLoginRepository
 
     private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
@@ -599,16 +600,9 @@ class App :
             dataStore.data
                 .map { it.toPlaybackAuthState() }
                 .distinctUntilChanged()
-                .collect { authState ->
-                    val previousFingerprint = YouTube.currentPlaybackAuthState().fingerprint
-                    YouTube.authState = authState
-                    if (previousFingerprint != authState.fingerprint) {
-                        YTPlayerUtils.clearPlaybackAuthCaches()
-                        val sessionId = authState.sessionId
-                        if (!sessionId.isNullOrBlank()) {
-                            BotGuardTokenGenerator.preWarm(sessionId)
-                        }
-                    }
+                .collect {
+                    val authState = youTubeLoginRepository.reconcilePersisted()
+                    authState.sessionId?.takeIf(String::isNotBlank)?.let { BotGuardTokenGenerator.preWarm(it) }
                 }
         }
 
@@ -618,16 +612,12 @@ class App :
                 .distinctUntilChanged()
                 .collect { visitorData ->
                     if (!visitorData.isNullOrBlank()) return@collect
-                    YouTube
-                        .visitorData()
-                        .onFailure {
-                            reportException(it)
-                        }.getOrNull()
-                        ?.also { newVisitorData ->
-                            dataStore.edit { settings ->
-                                settings[VisitorDataKey] = newVisitorData
-                            }
-                        }
+                    youTubeLoginRepository.reconcilePersisted()
+                    val origin = youTubeLoginRepository.origin()
+                    if (!origin.authState.visitorData.isNullOrBlank()) return@collect
+                    YouTube.visitorData().getOrNull()?.let { newVisitorData ->
+                        youTubeLoginRepository.persistVisitor(origin, newVisitorData)
+                    }
                 }
         }
 
@@ -768,12 +758,10 @@ class App :
             clearWebAuthSession: Boolean = true,
         ) {
             if (clearWebAuthSession) {
-                clearPlaybackWebAuthSession(context)
+                clearPlaybackWebAuthSession()
             }
-            CoroutineScope(Dispatchers.IO).launch {
-                context.dataStore.edit { settings ->
-                    settings.clearPlaybackAuthSession()
-                }
+            instance.applicationScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+                instance.youTubeLoginRepository.logout()
             }
         }
     }

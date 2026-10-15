@@ -131,13 +131,10 @@ import moe.rukamori.archivetune.ui.theme.LocalYumaColors
 import moe.rukamori.archivetune.ui.theme.yumaGlassCard
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.SavedAccount
 import moe.rukamori.archivetune.utils.Updater
-import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.decodeSavedAccounts
 import moe.rukamori.archivetune.utils.encodeSavedAccounts
-import moe.rukamori.archivetune.utils.putLegacyPoToken
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.AccountChannelUiModel
 import moe.rukamori.archivetune.viewmodels.AccountChannelsState
@@ -168,12 +165,12 @@ fun AccountSettings(
     val loginLabel = stringResource(R.string.login)
     val tokenDescription = stringResource(R.string.token_adv_login_description)
 
-    val (accountNamePref, onAccountNameChange) = rememberPreference(AccountNameKey, "")
-    val (accountEmail, onAccountEmailChange) = rememberPreference(AccountEmailKey, "")
-    val (accountChannelHandle, onAccountChannelHandleChange) = rememberPreference(AccountChannelHandleKey, "")
-    val (innerTubeCookie, onInnerTubeCookieChange) = rememberPreference(InnerTubeCookieKey, "")
-    val (visitorData, onVisitorDataChange) = rememberPreference(VisitorDataKey, "")
-    val (dataSyncId, onDataSyncIdChange) = rememberPreference(DataSyncIdKey, "")
+    val (accountNamePref, _) = rememberPreference(AccountNameKey, "")
+    val (accountEmail, _) = rememberPreference(AccountEmailKey, "")
+    val (accountChannelHandle, _) = rememberPreference(AccountChannelHandleKey, "")
+    val (innerTubeCookie, _) = rememberPreference(InnerTubeCookieKey, "")
+    val (visitorData, _) = rememberPreference(VisitorDataKey, "")
+    val (dataSyncId, _) = rememberPreference(DataSyncIdKey, "")
     val (useLoginForBrowse, onUseLoginForBrowseChange) = rememberPreference(UseLoginForBrowse, true)
     val (ytmSync, onYtmSyncChange) = rememberPreference(YtmSyncKey, true)
     val (forceSyncOnAccountSwitch, onForceSyncOnAccountSwitchChange) =
@@ -191,12 +188,6 @@ fun AccountSettings(
             SavedAccountCollection(decodeSavedAccounts(savedAccountsJson))
         }
 
-    val onLegacyPoTokenChange: (String) -> Unit = { value ->
-        PreferenceStore.launchEdit(context.dataStore) {
-            putLegacyPoToken(value)
-        }
-    }
-
     val isLoggedIn =
         remember(innerTubeCookie) {
             hasYouTubeLoginCookie(innerTubeCookie)
@@ -210,6 +201,11 @@ fun AccountSettings(
     val accountNameFromViewModel by viewModel.accountName.collectAsStateWithLifecycle()
     val accountImageUrl by viewModel.accountImageUrl.collectAsStateWithLifecycle()
     val accountChannelsState by viewModel.accountChannelsState.collectAsStateWithLifecycle()
+    val actionFailures by viewModel.actionFailures.collectAsStateWithLifecycle()
+    val loginFailureMessage = stringResource(R.string.youtube_login_validation_failed)
+    LaunchedEffect(actionFailures) {
+        if (actionFailures > 0) Toast.makeText(context, loginFailureMessage, Toast.LENGTH_LONG).show()
+    }
 
     val displayName =
         when {
@@ -374,7 +370,6 @@ fun AccountSettings(
                         onSecondaryAction = {
                             if (isLoggedIn) {
                                 showToken = false
-                                onInnerTubeCookieChange("")
                                 forgetAccount(context, clearWebAuthSession = true)
                             } else {
                                 showTokenEditor = true
@@ -564,13 +559,7 @@ fun AccountSettings(
             accountNamePref = accountNamePref,
             accountEmail = accountEmail,
             accountChannelHandle = accountChannelHandle,
-            onInnerTubeCookieChange = onInnerTubeCookieChange,
-            onPoTokenChange = onLegacyPoTokenChange,
-            onVisitorDataChange = onVisitorDataChange,
-            onDataSyncIdChange = onDataSyncIdChange,
-            onAccountNameChange = onAccountNameChange,
-            onAccountEmailChange = onAccountEmailChange,
-            onAccountChannelHandleChange = onAccountChannelHandleChange,
+            onImport = viewModel::importManualAuth,
             onDismiss = { showTokenEditor = false },
         )
     }
@@ -1345,13 +1334,7 @@ private fun TokenEditorDialog(
     accountNamePref: String,
     accountEmail: String,
     accountChannelHandle: String,
-    onInnerTubeCookieChange: (String) -> Unit,
-    onPoTokenChange: (String) -> Unit,
-    onVisitorDataChange: (String) -> Unit,
-    onDataSyncIdChange: (String) -> Unit,
-    onAccountNameChange: (String) -> Unit,
-    onAccountEmailChange: (String) -> Unit,
-    onAccountChannelHandleChange: (String) -> Unit,
+    onImport: (String, String?, String?, String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val text =
@@ -1368,17 +1351,11 @@ private fun TokenEditorDialog(
     TextFieldDialog(
         initialTextFieldValue = TextFieldValue(text),
         onDone = { data ->
-            data.split("\n").forEach {
-                when {
-                    it.startsWith("***INNERTUBE COOKIE*** =") -> onInnerTubeCookieChange(it.substringAfter("="))
-                    it.startsWith("***VISITOR DATA*** =") -> onVisitorDataChange(it.substringAfter("="))
-                    it.startsWith("***DATASYNC ID*** =") -> onDataSyncIdChange(it.substringAfter("="))
-                    it.startsWith("***PO TOKEN*** =") -> onPoTokenChange(it.substringAfter("="))
-                    it.startsWith("***ACCOUNT NAME*** =") -> onAccountNameChange(it.substringAfter("="))
-                    it.startsWith("***ACCOUNT EMAIL*** =") -> onAccountEmailChange(it.substringAfter("="))
-                    it.startsWith("***ACCOUNT CHANNEL HANDLE*** =") -> onAccountChannelHandleChange(it.substringAfter("="))
-                }
+            val fields = data.lineSequence().filter { "=" in it }.associate {
+                it.substringBefore('=').trim() to it.substringAfter('=').trim()
             }
+            onImport(fields["***INNERTUBE COOKIE***"].orEmpty(), fields["***VISITOR DATA***"],
+                fields["***DATASYNC ID***"], fields["***PO TOKEN***"])
         },
         onDismiss = onDismiss,
         singleLine = false,

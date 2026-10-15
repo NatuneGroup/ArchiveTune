@@ -92,6 +92,7 @@ import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsEntry.Companion.HEAD_LYRICS_ENTRY
@@ -222,8 +223,11 @@ fun SimpMusicLyrics(
             }
     }
     val entries = parsed.orEmpty()
-    val aiHandlesLyrics = remember(aiRomanizationSettings, entries) {
-        AiLyricsRomanization.isEligible(aiRomanizationSettings, entries.map { it.text })
+    val sourceLanguageHints = remember(lyrics, entries) {
+        LyricsUtils.sourceLanguageHints(lyrics, entries)
+    }
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entries, sourceLanguageHints) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entries.map { it.text }, sourceLanguageHints)
     }
     val romanizationPreferences =
         remember(romanizeJapanese, romanizeKorean, romanizeChinese, romanizeHindi, romanizeOther, aiHandlesLyrics) {
@@ -237,15 +241,14 @@ fun SimpMusicLyrics(
             )
         }
 
-    val sessionKey = remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+    val sessionKey = remember(mediaMetadata?.id, lyrics, sourceLanguageHints) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics, sourceLanguageHints) }
     val aiResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     val aiLines = remember(aiResult, sessionKey, entries, aiRomanizationSettings) {
-        if (aiHandlesLyrics) AiLyricsRomanization.linesFor(sessionKey, entries.map { it.text })
-        else emptyList()
+        AiLyricsRomanization.linesFor(sessionKey, entries.map { it.text }, sourceLanguageHints)
     }
     LaunchedEffect(sessionKey, entries, aiRomanizationSettings) {
         if (aiHandlesLyrics && aiRomanizationSettings.auto && entries.isNotEmpty()) {
-            AiLyricsRomanization.request(sessionKey = sessionKey, lines = entries.map { it.text }, settings = aiRomanizationSettings)
+            AiLyricsRomanization.request(sessionKey = sessionKey, lines = entries.map { it.text }, settings = aiRomanizationSettings, sourceLanguageHints = sourceLanguageHints)
         }
     }
     var phonetics by remember(entries, romanizationPreferences) { mutableStateOf<List<LyricsPhonetics>>(emptyList()) }

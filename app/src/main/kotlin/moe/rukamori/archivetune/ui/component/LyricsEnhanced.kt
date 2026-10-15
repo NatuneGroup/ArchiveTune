@@ -147,6 +147,7 @@ import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
@@ -379,8 +380,11 @@ fun LyricsEnhanced(
             }
     }
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
-    val aiHandlesLyrics = remember(aiRomanizationSettings, lyricsEntries) {
-        AiLyricsRomanization.isEligible(aiRomanizationSettings, lyricsEntries.map { it.text })
+    val sourceLanguageHints = remember(lyrics, lyricsEntries) {
+        LyricsUtils.sourceLanguageHints(lyrics, lyricsEntries)
+    }
+    val aiHandlesLyrics = remember(aiRomanizationSettings, lyricsEntries, sourceLanguageHints) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, lyricsEntries.map { it.text }, sourceLanguageHints)
     }
     val romanizationPreferences =
         remember(
@@ -418,18 +422,14 @@ fun LyricsEnhanced(
     // folded into the same romanizationMap the built-in engines feed, which means everything
     // downstream — the wrapping-unit distribution, the karaoke phonetics, `showPhonetic` — is shared.
     val aiRomanizationSessionKey =
-        remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+        remember(mediaMetadata?.id, lyrics, sourceLanguageHints) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics, sourceLanguageHints) }
     val aiRomanizationResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     // Resolved by line text, not by index — this renderer parses without the head entry and without
     // instrumental breaks, LyricsV2 parses with both, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
         remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, lyricsEntries) {
-            if (!aiHandlesLyrics) {
-                emptyList()
-            } else {
-                AiLyricsRomanization.linesFor(aiRomanizationSessionKey, lyricsEntries.map { it.text })
-            }
+            AiLyricsRomanization.linesFor(aiRomanizationSessionKey, lyricsEntries.map { it.text }, sourceLanguageHints)
         }
     LaunchedEffect(aiRomanizationSessionKey, lyricsEntries, aiRomanizationSettings) {
         if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
@@ -438,6 +438,7 @@ fun LyricsEnhanced(
             sessionKey = aiRomanizationSessionKey,
             lines = lyricsEntries.map { it.text },
             settings = aiRomanizationSettings,
+            sourceLanguageHints = sourceLanguageHints,
         )
     }
 

@@ -114,6 +114,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.datastore.preferences.core.edit
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
@@ -136,6 +137,7 @@ import moe.rukamori.archivetune.constants.AiProviderKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
@@ -146,6 +148,7 @@ import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
+import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
@@ -659,12 +662,20 @@ fun LyricsMenu(
 
                                 when (selectedSource) {
                                     LyricsTranslationSource.AI_TRANSLATION -> {
-                                        isDialogAiTranslationRunning = true
-                                        viewModel.translateLyricsWithAi(
-                                            mediaMetadata = mediaMetadataProvider(),
-                                            lyrics = inputText,
-                                            targetLanguage = languageCode,
-                                        )
+                                        val requestMediaMetadata = mediaMetadataProvider()
+                                        val sourceSnapshot = lyricsProvider()
+                                        translationJob = coroutineScope.launch {
+                                            // The request's freshness guard must see the committed picker target.
+                                            context.dataStore.edit { it[TranslatorTargetLangKey] = languageCode }
+                                            if (mediaMetadataProvider().id != requestMediaMetadata.id ||
+                                                lyricsProvider() != sourceSnapshot) return@launch
+                                            isDialogAiTranslationRunning = true
+                                            viewModel.translateLyricsWithAi(
+                                                mediaMetadata = requestMediaMetadata,
+                                                lyrics = inputText,
+                                                targetLanguage = languageCode,
+                                            )
+                                        }
                                     }
 
                                     LyricsTranslationSource.TRANSLATION -> {
@@ -758,14 +769,17 @@ fun LyricsMenu(
                 enabled = isAiRomanizationEnabled,
                 onClick = {
                     val lyricsText = lyricsProvider()?.lyrics.orEmpty()
+                    val sourceLanguageHints = LyricsUtils.sourceLanguageHints(lyricsText)
                     AiLyricsRomanization.request(
                         sessionKey =
                             AiLyricsRomanization.sessionKey(
                                 mediaId = mediaMetadataProvider().id,
                                 lyrics = lyricsText,
+                                sourceLanguageHints = sourceLanguageHints,
                             ),
                         lines = AiLyricsRomanization.linesOf(lyricsText, mediaMetadataProvider().duration),
                         settings = aiRomanizationSettings,
+                        sourceLanguageHints = sourceLanguageHints,
                     )
                     Toast
                         .makeText(context, context.getString(R.string.ai_romanize_started), Toast.LENGTH_SHORT)

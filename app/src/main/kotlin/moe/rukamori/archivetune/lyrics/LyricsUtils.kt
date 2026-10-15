@@ -17,6 +17,9 @@ import moe.rukamori.archivetune.betterlyrics.TTMLParser
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import java.lang.Character.UnicodeScript
 import java.text.Normalizer
+import java.util.Locale
+import java.io.StringReader
+import org.xmlpull.v1.XmlPullParser
 import kotlin.math.roundToLong
 
 data class LyricsRomanizationPreferences(
@@ -488,17 +491,94 @@ object LyricsUtils {
             "HEBREW" to listOf("YIDDISH"),
         )
 
+    // Use the same English Locale names as the existing translation picker, not a text detector.
+    private val sourceLanguageCodes: Map<String, String> by lazy {
+        val pickerNames = mapOf(
+            "ug" to "UIGHUR", "fy" to "FRISIAN", "gd" to "SCOTS_GAELIC",
+            "nb" to "NORWEGIAN", "no" to "NORWEGIAN", "or" to "ODIA_ORIYA",
+            "ny" to "NYANJA_CHICHEWA", "ht" to "HAITIAN_CREOLE", "ku" to "KURDISH_KURMANJI",
+        )
+        buildMap {
+            for (code in Locale.getISOLanguages()) {
+                val locale = Locale.forLanguageTag(code)
+                val name = pickerNames[code] ?: locale.getDisplayLanguage(Locale.ENGLISH)
+                    .uppercase(Locale.ROOT).replace(' ', '_')
+                put(code, name)
+                runCatching { locale.getISO3Language() }.getOrNull()?.let { put(it, name) }
+            }
+            put("fil", "FILIPINO")
+            put("ceb", "CEBUANO")
+            put("haw", "HAWAIIAN")
+            put("hmn", "HMONG")
+        }
+    }
+
+    fun validatedSourceLanguage(hint: String): String? {
+        val normalized = hint.trim().replace('_', '-')
+        val label = normalized.uppercase(Locale.ROOT)
+        if (label == "UYGHUR") return "UIGHUR"
+        if (label in setOf("CHINESE-SIMPLIFIED", "ZH-HANS", "ZH-CN", "ZH-SG")) return "CHINESE_SIMPLIFIED"
+        if (label in setOf("CHINESE-TRADITIONAL", "ZH-HANT", "ZH-TW", "ZH-HK", "ZH-MO")) return "CHINESE_TRADITIONAL"
+        sourceLanguageCodes.values.firstOrNull { it.replace('_', '-') == label }?.let { return it }
+        val locale = runCatching { Locale.Builder().setLanguageTag(normalized).build() }.getOrNull() ?: return null
+        if (locale.language == "zh") {
+            return when (locale.script) {
+                "Hans" -> "CHINESE_SIMPLIFIED"
+                "Hant" -> "CHINESE_TRADITIONAL"
+                else -> "CHINESE"
+            }
+        }
+        return sourceLanguageCodes[locale.language]
+    }
+
+    /** Whole-document requests respect every known source hint, including mixed-language entries. */
+    fun sourceLanguageHints(lyrics: String?, entries: List<LyricsEntry>? = null): List<String> {
+        val text = lyrics?.let(::normalizeLyricsText).orEmpty()
+        val hints = mutableSetOf<String>()
+        if (isTtml(text)) {
+            val documentHint = runCatching {
+                val parser = android.util.Xml.newPullParser()
+                parser.setFeature(XmlPullParser.FEATURE_PROCESS_NAMESPACES, true)
+                parser.setInput(StringReader(text))
+                if (parser.nextTag() == XmlPullParser.START_TAG && parser.name == "tt") {
+                    parser.getAttributeValue("http://www.w3.org/XML/1998/namespace", "lang")
+                } else null
+            }.getOrNull()?.let(::validatedSourceLanguage)
+            if (documentHint != null) hints.add(documentHint)
+        }
+        val parsed = entries ?: if (isTtml(text)) runCatching { parseTtml(text) }.getOrDefault(emptyList()) else emptyList()
+        parsed.mapNotNullTo(hints) { it.providerRomanizedLanguage?.let(::validatedSourceLanguage) }
+        return hints.sorted()
+    }
+
+    /** Exact known metadata is not expanded to ambiguous script siblings. */
+    fun isAutomaticLanguageEligible(
+        text: String,
+        excludedLanguageCodes: Set<String>,
+        sourceLanguageHints: List<String> = emptyList(),
+    ): Boolean {
+        val exact = sourceLanguageHints.mapNotNull(::validatedSourceLanguage).distinct()
+        if (exact.isNotEmpty()) {
+            val excluded = excludedLanguageCodes.mapNotNull(::validatedSourceLanguage).toSet()
+            return exact.none { code ->
+                code in excluded ||
+                    (code.startsWith("CHINESE") && "CHINESE" in excluded) ||
+                    (code == "CHINESE" && excluded.any { it.startsWith("CHINESE") })
+            }
+        }
+        val dominant = detectDominantLanguageCode(text)
+        return dominant == null || !matchesExcludedLanguage(dominant, excludedLanguageCodes)
+    }
+
     /** True when [lyrics] should be sent for automatic AI translation into [targetLanguage]. */
     fun shouldAutoTranslate(
         lyrics: String,
         targetLanguage: String,
         excludedLanguageCodes: Set<String>,
+        sourceLanguageHints: List<String> = LyricsUtils.sourceLanguageHints(lyrics),
     ): Boolean {
         if (lyrics.isBlank()) return false
-        val dominant = detectDominantLanguageCode(lyrics)
-        // If the lyrics' dominant language is in the user's "Don't auto translate these languages"
-        // exclusion set, skip translation even when auto-translate is on.
-        if (dominant != null && matchesExcludedLanguage(dominant, excludedLanguageCodes)) {
+        if (!isAutomaticLanguageEligible(lyrics, excludedLanguageCodes, sourceLanguageHints)) {
             return false
         }
         val allowedScripts = allowedScriptsForLanguage(targetLanguage)

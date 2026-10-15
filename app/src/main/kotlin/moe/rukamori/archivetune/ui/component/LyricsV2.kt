@@ -143,6 +143,7 @@ import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.insertInstrumentalBreaks
@@ -337,8 +338,11 @@ fun LyricsV2(
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
 
     val entriesWithWords: List<LyricsEntry> = lyricsEntries
-    val aiHandlesLyrics = remember(aiRomanizationSettings, entriesWithWords) {
-        AiLyricsRomanization.isEligible(aiRomanizationSettings, entriesWithWords.map { it.text })
+    val sourceLanguageHints = remember(lyrics, entriesWithWords) {
+        LyricsUtils.sourceLanguageHints(lyrics, entriesWithWords)
+    }
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entriesWithWords, sourceLanguageHints) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entriesWithWords.map { it.text }, sourceLanguageHints)
     }
     val romanizationPreferences =
         remember(
@@ -367,18 +371,14 @@ fun LyricsV2(
     // below. Results are pushed into the same `romanizedTextFlow` the built-in engines write to, so
     // the render path and the fade-in behaviour are identical whichever engine produced them.
     val aiRomanizationSessionKey =
-        remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+        remember(mediaMetadata?.id, lyrics, sourceLanguageHints) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics, sourceLanguageHints) }
     val aiRomanizationResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     // Resolved by line text, not by index — this renderer's entry list carries a head entry and
     // instrumental breaks that LyricsEnhanced's does not, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
         remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, entriesWithWords) {
-            if (!aiHandlesLyrics) {
-                emptyList()
-            } else {
-                AiLyricsRomanization.linesFor(aiRomanizationSessionKey, entriesWithWords.map { it.text })
-            }
+            AiLyricsRomanization.linesFor(aiRomanizationSessionKey, entriesWithWords.map { it.text }, sourceLanguageHints)
         }
     LaunchedEffect(aiRomanizationSessionKey, entriesWithWords, aiRomanizationSettings) {
         if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
@@ -387,6 +387,7 @@ fun LyricsV2(
             sessionKey = aiRomanizationSessionKey,
             lines = entriesWithWords.map { it.text },
             settings = aiRomanizationSettings,
+            sourceLanguageHints = sourceLanguageHints,
         )
     }
     LaunchedEffect(entriesWithWords, aiRomanizedLines, aiHandlesLyrics) {
@@ -447,7 +448,7 @@ fun LyricsV2(
     var currentLineIndex by remember { mutableIntStateOf(0) }
 
     val currentPositionProvider: () -> Long =
-        remember { { currentPositionMsState.longValue } }
+        remember(currentPositionMsState) { { currentPositionMsState.longValue } }
 
     // rememberUpdatedState so the playback loop always sees the latest
     // sliderPositionProvider lambda. Without this, if the caller's lambda

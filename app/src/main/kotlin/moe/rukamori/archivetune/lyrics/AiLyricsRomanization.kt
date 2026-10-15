@@ -132,10 +132,14 @@ object AiLyricsRomanization {
     }
 
     /** Shared fallback policy: excluded/ineligible AI must not suppress other phonetics. */
-    fun isEligible(settings: Settings, lines: List<String>): Boolean {
+    fun isEligible(
+        settings: Settings,
+        lines: List<String>,
+        sourceLanguageHints: List<String> = emptyList(),
+    ): Boolean {
         if (!settings.active || lines.isEmpty()) return false
-        val dominant = LyricsUtils.detectDominantLanguageCode(lines.joinToString("\n"))
-        return dominant == null || !LyricsUtils.matchesExcludedLanguage(dominant, settings.excludedLanguages)
+        return LyricsUtils.isAutomaticLanguageEligible(
+            lines.joinToString("\n"), settings.excludedLanguages, sourceLanguageHints)
     }
 
     private val _results = MutableStateFlow<Result?>(null)
@@ -222,7 +226,11 @@ object AiLyricsRomanization {
     fun sessionKey(
         mediaId: String?,
         lyrics: String?,
-    ): String = "${mediaId.orEmpty()}|${lyrics?.length ?: 0}|${lyrics?.hashCode() ?: 0}"
+        sourceLanguageHints: List<String> = LyricsUtils.sourceLanguageHints(lyrics),
+    ): String = "${mediaId.orEmpty()}|${lyrics?.length ?: 0}|${lyrics?.hashCode() ?: 0}|${hintIdentity(sourceLanguageHints)}"
+
+    private fun hintIdentity(hints: List<String>): String =
+        hints.mapNotNull(LyricsUtils::validatedSourceLanguage).distinct().sorted().joinToString(",")
 
     /**
      * Resolves romanisation for [lines] in the caller's own index space, or an empty list when
@@ -232,11 +240,12 @@ object AiLyricsRomanization {
     fun linesFor(
         sessionKey: String,
         lines: List<String>,
+        sourceLanguageHints: List<String> = emptyList(),
     ): List<String?> {
         selectSession(sessionKey)
         val settings = currentSettings ?: return emptyList()
-        if (!isEligible(settings, lines)) return emptyList()
-        val byLine = cache[sessionKey] ?: return emptyList()
+        if (!isEligible(settings, lines, sourceLanguageHints)) return emptyList()
+        val byLine = cache["$sessionKey|${hintIdentity(sourceLanguageHints)}"] ?: return emptyList()
         return lines.map { byLine[it.trim()] }
     }
 
@@ -274,12 +283,14 @@ object AiLyricsRomanization {
         sessionKey: String,
         lines: List<String>,
         settings: Settings,
+        sourceLanguageHints: List<String> = emptyList(),
     ) {
         updateSettings(settings)
         selectSession(sessionKey)
-        if (settings != currentSettings || !isEligible(settings, lines)) return
+        if (settings != currentSettings || !isEligible(settings, lines, sourceLanguageHints)) return
         if (lines.none { LyricsUtils.hasRomanizableScript(it) }) return
-        cache[sessionKey]?.let { publish(sessionKey, it); return }
+        val cacheKey = "$sessionKey|${hintIdentity(sourceLanguageHints)}"
+        cache[cacheKey]?.let { publish(sessionKey, it); return }
         if (inFlight.containsKey(sessionKey)) return
         val generation = settingsGeneration
         val job = scope.async(start = CoroutineStart.LAZY) {
@@ -293,7 +304,8 @@ object AiLyricsRomanization {
             try {
                 val result = job.await()
                 synchronized(this@AiLyricsRomanization) {
-                    if (generation != settingsGeneration || visibleSession != sessionKey || !isEligible(settings, lines)) return@synchronized
+                    if (generation != settingsGeneration || visibleSession != sessionKey ||
+                        !isEligible(settings, lines, sourceLanguageHints)) return@synchronized
                     val byLine = LinkedHashMap<String, String>()
                     lines.forEachIndexed { index, line ->
                         result.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }?.let {
@@ -303,8 +315,8 @@ object AiLyricsRomanization {
                     // Do not turn a partially failed track into a permanent session-cache hit.
                     if (byLine.isNotEmpty() && lines.filter { LyricsUtils.hasRomanizableScript(it) }
                             .all { byLine.containsKey(it.trim()) }) {
-                        cache[sessionKey] = byLine
-                        trimCache(sessionKey)
+                        cache[cacheKey] = byLine
+                        trimCache(cacheKey)
                         publish(sessionKey, byLine)
                     }
                 }

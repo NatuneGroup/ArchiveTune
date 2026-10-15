@@ -35,6 +35,8 @@ import kotlinx.serialization.json.*
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.auth.YouTubeLoginNavigationPolicy
 import moe.rukamori.archivetune.auth.YouTubeLoginReturnGuard
+import moe.rukamori.archivetune.auth.YouTubeLoginWebEvents
+import moe.rukamori.archivetune.auth.YouTubeLoginDocumentCallbacks
 import moe.rukamori.archivetune.auth.mergePreferredYouTubeCookies
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
@@ -153,8 +155,7 @@ private class YouTubeLoginWebViewClient(
     private var returnLoad: Runnable? = null
     private var released = false
     private var destroyed = false
-    private var document = 0L
-    private var evaluation = 0L
+    private val callbacks = YouTubeLoginDocumentCallbacks()
     private var trustedSource = true
     private fun owns(): Boolean = !released && viewModel.ownsView(viewRevision)
 
@@ -198,7 +199,7 @@ private class YouTubeLoginWebViewClient(
 
     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
         if (!owns()) return
-        document += 1
+        callbacks.pageStarted()
         stopExtraction(view)
         // A provider may report an unsupported intent as a started page before reporting its
         // error. Keep the preceding document's trust for that narrow recovery path.
@@ -228,11 +229,11 @@ private class YouTubeLoginWebViewClient(
         if (error.errorCode == ERROR_UNSUPPORTED_SCHEME && YouTubeLoginNavigationPolicy.isMusicInstall(request.url.toString()) &&
             request.method == "GET") {
             intercept(view, request.url.toString(), true, request.method)
-        } else fail(view, if (error.errorCode == ERROR_UNSUPPORTED_SCHEME) LoginError.UnsupportedNavigation else LoginError.Network)
+        } else YouTubeLoginWebEvents.networkError(request.isForMainFrame, error.errorCode == ERROR_UNSUPPORTED_SCHEME)?.let { fail(view, it) }
     }
 
     override fun onReceivedHttpError(view: WebView, request: WebResourceRequest, errorResponse: WebResourceResponse) {
-        if (owns() && request.isForMainFrame && errorResponse.statusCode >= 400) fail(view, LoginError.Http)
+        if (owns()) YouTubeLoginWebEvents.httpError(request.isForMainFrame, errorResponse.statusCode)?.let { fail(view, it) }
     }
 
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
@@ -249,6 +250,7 @@ private class YouTubeLoginWebViewClient(
     fun destroy(view: WebView) {
         if (destroyed) return
         released = true
+        callbacks.release()
         returns.release()
         stopExtraction(view)
         returnLoad?.let(view::removeCallbacks)
@@ -268,26 +270,26 @@ private class YouTubeLoginWebViewClient(
     }
 
     private fun stopExtraction(view: WebView) {
-        evaluation += 1
+        callbacks.invalidateEvaluation()
         extraction?.let(view::removeCallbacks)
         extraction = null
     }
 
     private fun scheduleExtraction(view: WebView, url: String?) {
         if (extraction != null || !owns() || YouTubeLoginNavigationPolicy.trustedYouTubeOrigin(url) == null) return
-        val page = document
+        val page = callbacks.document
         var attempts = LOGIN_CONTEXT_EXTRACTION_ATTEMPTS
         val task = object : Runnable {
             override fun run() {
-                if (!owns() || page != document || view.url != url) return
+                if (!owns() || page != callbacks.document || view.url != url) return
                 if (attempts-- <= 0) {
                     extraction = null
                     viewModel.onExtractionExhausted(viewRevision)
                     return
                 }
-                val evaluationId = ++evaluation
+                val evaluationId = callbacks.nextEvaluation()
                 view.evaluateJavascript(LOGIN_CONTEXT_SCRIPT) { raw ->
-                    if (!owns() || evaluationId != evaluation || page != document || view.url != url) return@evaluateJavascript
+                    if (!owns() || !callbacks.accepts(page, evaluationId) || view.url != url) return@evaluateJavascript
                     val payload = runCatching {
                         val text = (Json.parseToJsonElement(raw) as? JsonPrimitive)?.contentOrNull ?: return@runCatching null
                         Json.parseToJsonElement(text) as? JsonObject

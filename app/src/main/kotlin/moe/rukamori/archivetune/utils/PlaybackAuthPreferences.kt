@@ -29,6 +29,7 @@ import moe.rukamori.archivetune.constants.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.innertube.PlaybackAuthState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.App
+import moe.rukamori.archivetune.auth.YouTubeLoginRepository
 
 fun Preferences.toPlaybackAuthState(): PlaybackAuthState =
     PlaybackAuthState(
@@ -83,10 +84,17 @@ fun MutablePreferences.putLegacyPoToken(value: String?) {
 
 /** Preserve the selected context and terminal auth errors; a repair is never a default-account retry. */
 suspend fun <T> Context.retryWithoutPlaybackLoginContext(block: suspend () -> Result<T>): Result<T> {
-    val owner = App.instance.youTubeLoginRepository
+    return retryWithoutPlaybackLoginContext(App.instance.youTubeLoginRepository, { YouTube.currentPlaybackAuthState() }, block)
+}
+
+internal suspend fun <T> retryWithoutPlaybackLoginContext(
+    owner: YouTubeLoginRepository,
+    currentAuth: () -> PlaybackAuthState,
+    block: suspend () -> Result<T>,
+): Result<T> {
     owner.reconcilePersisted()
     val origin = owner.origin()
     val result = block()
-    if (result.isSuccess) owner.persistRepair(origin, YouTube.currentPlaybackAuthState())
+    if (result.isSuccess) owner.persistRepair(origin, currentAuth())
     return result
 }

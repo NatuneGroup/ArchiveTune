@@ -73,7 +73,7 @@ object YouTubeFailsafeChain {
         connectivityManager: ConnectivityManager,
     ): YTPlayerUtils.PlaybackData {
         logTier("shipped", false, shippedStartedAtMs, primaryFailure.javaClass.simpleName)
-        if (isActionable(primaryFailure)) throw primaryFailure
+        if (isActionable(primaryFailure) || primaryFailure is CancellationException) throw primaryFailure
 
         val request =
             AudioStreamRequest(
@@ -87,19 +87,39 @@ object YouTubeFailsafeChain {
             EntryPointAccessors
                 .fromApplication(context.applicationContext, ResolverEntryPoint::class.java)
                 .resolveAudioStream()
-        resolver.resolveShippedFallback(request, TIER_TIMEOUT_MS)?.let { return it.toPlaybackData(mediaId) }
+        return recoverAfterPrimary(
+            primaryFailure = primaryFailure,
+            extractors = { timeoutMs -> resolver.resolveShippedFallback(request, timeoutMs)?.toPlaybackData(mediaId) },
+            echo = {
+                CipherDeobfuscator.ensureInitialized(context)
+                EchoStreamResolver.playerResponseForPlayback(
+                    videoId = mediaId,
+                    audioQuality = audioQuality,
+                    connectivityManager = connectivityManager,
+                )
+            },
+            echoOutcome = { resolved, startedAt, reason -> logTier("echo", resolved, startedAt, reason) },
+            elapsedRealtime = SystemClock::elapsedRealtime,
+        )
+    }
 
-        val echoStartedAt = SystemClock.elapsedRealtime()
+    /** Shared orchestration; platform clients stay at the boundary, not in the policy fixtures. */
+    internal suspend fun <T : Any> recoverAfterPrimary(
+        primaryFailure: Throwable,
+        extractors: suspend (Long) -> T?,
+        echo: suspend () -> T?,
+        echoOutcome: (Boolean, Long, String?) -> Unit = { _, _, _ -> },
+        elapsedRealtime: () -> Long = { System.nanoTime() / 1_000_000L },
+    ): T {
+        if (isActionable(primaryFailure) || primaryFailure is CancellationException) throw primaryFailure
+        currentCoroutineContext().ensureActive()
+        extractors(TIER_TIMEOUT_MS)?.let { return it }
+        val echoStartedAt = elapsedRealtime()
         var echoFailureReason = "timeout"
-        val echo =
+        val echoResult =
             try {
                 withTimeoutOrNull(ECHO_TIMEOUT_MS) {
-                    CipherDeobfuscator.ensureInitialized(context)
-                    EchoStreamResolver.playerResponseForPlayback(
-                        videoId = mediaId,
-                        audioQuality = audioQuality,
-                        connectivityManager = connectivityManager,
-                    )
+                    echo()
                 }
             } catch (e: CancellationException) {
                 currentCoroutineContext().ensureActive()
@@ -109,8 +129,8 @@ object YouTubeFailsafeChain {
                 echoFailureReason = t.javaClass.simpleName
                 null
             }
-        logTier("echo", echo != null, echoStartedAt, if (echo == null) echoFailureReason else null)
-        return echo ?: throw primaryFailure
+        echoOutcome(echoResult != null, echoStartedAt, if (echoResult == null) echoFailureReason else null)
+        return echoResult ?: throw primaryFailure
     }
 
     private fun logTier(

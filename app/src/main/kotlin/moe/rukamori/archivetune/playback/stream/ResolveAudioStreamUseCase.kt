@@ -35,13 +35,20 @@ import javax.inject.Singleton
 
 @Singleton
 class ResolveAudioStreamUseCase
+    internal constructor(
+        private val nativeRepository: AudioStreamRepository,
+        private val innerTuneXRepository: AudioStreamRepository,
+        private val newPipeRepository: AudioStreamRepository,
+        private val ytdlnisRepository: AudioStreamRepository,
+        private val elapsedRealtime: () -> Long,
+    ) {
     @Inject
     constructor(
-        private val nativeRepository: NativeStreamRepository,
-        private val innerTuneXRepository: InnerTuneXStreamRepository,
-        private val newPipeRepository: NewPipeStreamRepository,
-        private val ytdlnisRepository: YtdlnisStreamRepository,
-    ) {
+        nativeRepository: NativeStreamRepository,
+        innerTuneXRepository: InnerTuneXStreamRepository,
+        newPipeRepository: NewPipeStreamRepository,
+        ytdlnisRepository: YtdlnisStreamRepository,
+    ) : this(nativeRepository, innerTuneXRepository, newPipeRepository, ytdlnisRepository, SystemClock::elapsedRealtime)
     /**
      * The tiers live behind the shipped resolver, in order: `MusicService` and `DownloadUtil` walk
      * these through [resolveShippedFallback] after `YTPlayerUtils` fails and before echo.
@@ -210,7 +217,7 @@ class ResolveAudioStreamUseCase
             tierTimeoutMs: Long,
         ): ResolvedAudioStream? {
             for ((name, tier) in shippedFallbackTiers) {
-                val startedAt = SystemClock.elapsedRealtime()
+                val startedAt = elapsedRealtime()
                 val outcome =
                     try {
                         withTimeoutOrNull(tierTimeoutMs) { tier.resolve(request) }
@@ -240,7 +247,7 @@ class ResolveAudioStreamUseCase
                 "YouTube tier=%s resolved=%s elapsedMs=%d%s",
                 name,
                 outcome != null,
-                SystemClock.elapsedRealtime() - startedAt,
+                elapsedRealtime() - startedAt,
                 reason?.let { " reason=$it" }.orEmpty(),
             )
         }

@@ -15,6 +15,7 @@ import com.metrolist.innertubex.extraction.AudioQuality as InnerTuneXAudioQualit
 import com.metrolist.innertubex.extraction.ContentHints
 import com.metrolist.innertubex.extraction.ExtractedStream
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
+import com.metrolist.innertubex.extraction.StreamExtractor
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
@@ -44,12 +45,14 @@ import moe.rukamori.archivetune.utils.withAppProxy
  */
 @Singleton
 class InnerTuneXStreamRepository
+    internal constructor(extractorOverride: StreamExtractor?) : AudioStreamRepository {
+
     @Inject
-    constructor() : AudioStreamRepository {
+    constructor() : this(null)
 
         private val httpClient by lazy { createHttpClient() }
 
-        private val extractor: InnerTubeExtractor by lazy { createExtractor() }
+        private val extractor: StreamExtractor by lazy { extractorOverride ?: createExtractor() }
 
         @Volatile
         private var prewarmed = false

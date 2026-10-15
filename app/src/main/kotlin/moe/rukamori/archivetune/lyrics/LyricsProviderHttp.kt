@@ -129,6 +129,11 @@ internal object LyricsPayload {
         }
         if (value.isBlank()) return null
         val element = LyricsProviderHttp.parseJson(value) ?: return value
+        // The lenient provider parser also accepts an unquoted plain lyric as a primitive.
+        // Only real JSON scalars should be discarded, not single-token Unicode/entity text.
+        if (element is JsonPrimitive && element !is JsonNull && !element.isString &&
+            element.content !in setOf("true", "false") && element.content.toDoubleOrNull() == null
+        ) return value
         return extract(element)?.trim()?.takeIf { it.isNotEmpty() }
     }
 
@@ -264,9 +269,9 @@ internal object LyricsPayload {
         if ('&' !in text) return text
         return text
             .replace(HEX_ENTITY) { match ->
-                runCatching { match.groupValues[1].toInt(16).toChar().toString() }.getOrDefault(match.value)
+                decodeScalarEntity(match.groupValues[1], 16) ?: match.value
             }.replace(DEC_ENTITY) { match ->
-                runCatching { match.groupValues[1].toInt().toChar().toString() }.getOrDefault(match.value)
+                decodeScalarEntity(match.groupValues[1], 10) ?: match.value
             }.replace("&apos;", "'")
             .replace("&quot;", "\"")
             .replace("&nbsp;", " ")
@@ -274,6 +279,12 @@ internal object LyricsPayload {
             .replace("&gt;", ">")
 
             .replace("&amp;", "&")
+    }
+
+    private fun decodeScalarEntity(digits: String, radix: Int): String? {
+        val codePoint = digits.toIntOrNull(radix) ?: return null
+        if (codePoint !in 0..0x10FFFF || codePoint in 0xD800..0xDFFF) return null
+        return String(Character.toChars(codePoint))
     }
 
     private fun escapeXml(text: String): String =
@@ -338,8 +349,8 @@ internal object LyricsPayload {
     private val NOT_FOUND_HINT =
         Regex("""(?i)\b(?:lyrics?\s+(?:not\s+found|unavailable|not\s+available))\b""")
 
-    private val HEX_ENTITY = Regex("""&#x([0-9a-fA-F]{1,5});""")
-    private val DEC_ENTITY = Regex("""&#(\d{1,5});""")
+    private val HEX_ENTITY = Regex("""&#x([0-9a-fA-F]+);""")
+    private val DEC_ENTITY = Regex("""&#([0-9]+);""")
 }
 
 internal fun String.forLyricsSearch(): String {

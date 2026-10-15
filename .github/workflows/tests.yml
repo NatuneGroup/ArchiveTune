@@ -40,20 +40,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # The task name carries the flavour (gms/foss × mobile/tv × abi). The fork ships
-          # GMS-only, so run the gms-mobile-universal task the fork contract tests document;
-          # fall back to whatever unit-test task exists if the flavour matrix ever changes.
-          TASKS="$(./gradlew :app:tasks --all --console=plain)"
-          echo "$TASKS" | grep -E "^test[A-Za-z0-9]*UnitTest\b" || true
-          TASK="$(echo "$TASKS" | grep -oE "^test[A-Za-z0-9]*UnitTest\b" | grep -E 'testGmsMobileUniversalDebugUnitTest$' | head -1)"
-          [ -n "$TASK" ] || TASK="$(echo "$TASKS" | grep -oE "^testGmsMobileUniversal[A-Za-z0-9]*UnitTest\b" | head -1)"
-          [ -n "$TASK" ] || TASK="$(echo "$TASKS" | grep -oE "^test[A-Za-z0-9]*UnitTest\b" | head -1)"
-          if [ -z "$TASK" ]; then
-            echo "::error::No unit-test task found in :app — check whether unit tests are enabled"
-            exit 1
-          fi
-          echo "running :app:$TASK"
-          ./gradlew --stacktrace ":app:$TASK"
+          # Fail if this documented contract variant disappears; never test a different flavor.
+          ./gradlew --console=plain --stacktrace --profile :app:testGmsMobileUniversalDebugUnitTest
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -62,3 +50,15 @@ jobs:
           START_IO_APP_ID: ${{ secrets.START_IO_APP_ID }}
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
+
+      - name: Upload local test diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/profile/
+            app/build/reports/tests/
+            app/build/test-results/
+          if-no-files-found: warn
+          retention-days: 7

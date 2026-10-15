@@ -1,5 +1,23 @@
 SoX Resampler Library       Copyright (c) 2007-18 robs@users.sourceforge.net
 
+ArchiveTune Android subset
+--------------------------
+This vendored runtime remains libsoxr 0.1.3, with ArchiveTune's existing
+shared-library build adaptations. The supported rebuild route is the
+application's app/src/main/cpp/CMakeLists.txt through its Android/Gradle
+build, not a standalone default upstream build. That caller forces
+BUILD_TESTS, BUILD_EXAMPLES, BUILD_LSR_TESTS and WITH_LSR_BINDINGS OFF.
+
+Upstream tests, examples and MSVC projects, and the LSR test implementation,
+are not retained. lsr-tests/COPYING and lsr-tests/README remain as licensing
+and provenance notices, not as an available test suite. Runtime src,
+coefficient data, root/src CMake files, configuration templates, CMake
+modules and license/source notices are preserved. Upstream standalone
+test/example and source-distribution workflows are unsupported in this
+subset; obtain the full upstream 0.1.3 release for those workflows.
+
+Upstream overview
+-----------------
 The SoX Resampler library `libsoxr' performs one-dimensional sample-rate
 conversion -- it may be used, for example, to resample PCM-encoded audio.
 For higher-dimensional resampling, such as for visual-image processing, you
@@ -23,7 +41,8 @@ Libsoxr provides a simple API that allows interfacing using the most
 commonly-used sample formats and buffering schemes: sample-formats may be
 either floating-point or integer, and multiple channels either interleaved
 or split in separate buffers.  The API is documented in the header file
-`soxr.h', together with sample code found in the 'examples' directory.
+`soxr.h', together with sample code in the full upstream 'examples'
+directory (not retained in this subset).
 
 For compatibility with the popular `libsamplerate' library, the header file
 `soxr-lsr.h' is provided and may be used as an alternative API.³  Note
@@ -43,7 +62,8 @@ configuration to resample between 44100Hz and 48000Hz, the latency is
 around 1000 output samples, i.e. roughly 20ms (though passband and FFT-
 size configuration parameters may be used to reduce this figure).
 
-For build and installation instructions, see the file `INSTALL'; for
+For upstream build and installation instructions, see the file `INSTALL';
+this Android subset uses the application build described above. For
 copyright and licensing information, see the file `LICENCE'.
 
 For support and new versions, see https://soxr.sourceforge.net

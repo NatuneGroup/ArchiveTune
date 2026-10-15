@@ -10,9 +10,10 @@ To ensure build stability and environment parity, the following hardware and sof
 
 ### **Development Environment**
 
-* **IDE:** [Android Studio](https://developer.android.com/studio) **Ladybug (2024.2.1) or newer**.
-* **Java Runtime:** **JDK 17** (Amazon Corretto or Azul Zulu recommended for deterministic builds).
-* **Android SDK:** API Level 34+ (Upside Down Cake).
+* **IDE:** [Android Studio](https://developer.android.com/studio), with support for the checked-in Android Gradle Plugin; command-line builds are also supported.
+* **Java Runtime:** **JDK 21**.
+* **Android SDK:** compile SDK **37**, NDK **30.0.16248370** and the build tools selected by the project. Runtime minimum is Android 8.0/API 26.
+* **Gradle:** use the checked-in **9.6.1** wrapper, not a system Gradle installation.
 * **Version Control:** Git 2.40+.
 
 ### **Technical DNA (Skill Requirements)**
@@ -28,11 +29,11 @@ The ArchiveTune codebase is built on a modern, reactive architecture. Contributo
 
 ## 📐 Architectural Manifesto
 
-ArchiveTune follows a strict **Clean Architecture** approach. This separation of concerns ensures that the audio engine remains independent of the UI layer.
+ArchiveTune separates UI, data and playback responsibilities; preserve the concrete ownership and fork invariants in [AGENTS.md](AGENTS.md) and [architecture](docs/claude/ARCHITECTURE.md).
 
 1. **UI Layer (Compose):** Handles user interactions and renders state emitted by ViewModels.
 2. **Domain Layer:** Contains business logic, Use Cases, and high-level audio processing interfaces.
-3. **Data Layer:** Manages the single source of truth—coordinating between the YouTube Music API (Retrofit) and the local encrypted cache (Room).
+3. **Data Layer:** Coordinates provider APIs, Room data and preferences. Pool credentials use a separate Keystore-encrypted cache; that does not establish encryption for every database/preference.
 4. **Service Layer (Media3):** A specialized background layer managing the `MediaSession` and low-latency audio pipelines.
 
 ---
@@ -41,9 +42,10 @@ ArchiveTune follows a strict **Clean Architecture** approach. This separation of
 
 1. **Clone the Source:**
 ```bash
-git clone https://github.com/rukamori/ArchiveTune.git
+git clone --recurse-submodules https://github.com/NatuneGroup/ArchiveTune.git
 cd ArchiveTune
-
+git switch dev
+git submodule update --init --recursive
 ```
 
 
@@ -57,41 +59,54 @@ sdk.dir=/Users/yourname/Library/Android/sdk
 
 
 3. **Syncing the Core:**
-Open the project in Android Studio. The IDE will automatically trigger a Gradle sync. We use **Version Catalogs** to ensure all dependencies (Media3, Hilt, Compose) are locked to tested versions.
+Open the project in Android Studio or use the wrapper below with JDK 21 and the SDK path configured. Keep the checked-in submodule revisions; do not update them to upstream tips. Version catalogs and build scripts define dependency versions, not proof that an unvalidated local change passed tests.
 
 ---
 
 ## 📦 Build Pipelines
 
-Use the Gradle Wrapper to execute verified build scripts.
+Use the Gradle Wrapper with an explicit variant. GMS/FOSS, mobile/TV and ABI axes do not imply every combination ships.
 
 | Command | Output | Context |
 | --- | --- | --- |
-| `./gradlew assembleDebug` | `app-debug.apk` | Local testing & feature development. |
-| `./gradlew assembleRelease` | `app-release.apk` | Production-ready, R8-optimized build. |
-| `./gradlew bundleRelease` | `app-release.aab` | Optimized bundle for distribution. |
-| `./gradlew clean` | `N/A` | Flushes build cache to resolve sync issues. |
+| `./gradlew assembleGmsMobileUniversalDebug` | Debug APK under `app/build/outputs/apk/` | Local development; install/launch the APK on an API 26+ device or emulator. |
+| `./gradlew lintGmsMobileUniversalDebug` | Android lint reports | Same universal GMS mobile variant as PR CI. |
+| `./gradlew :app:testGmsMobileUniversalDebugUnitTest` | Unit-test reports | Separate from APK assembly; also compiles `app/src/test`. |
+
+Debug builds use AGP's local debug key. Release/Nightly publication uses the historical
+signing identity from existing CI secrets; never restore a committed keystore or assume
+a debug build establishes release shrinking/native packaging/signature compatibility.
+Standard packages exclude optional automix models/runtime; `-Pautomix=true` opts in.
 
 ---
 
 ## 🛡️ Code Quality & Static Analysis
 
-Before initiating a Pull Request, every contributor must run the following quality gates:
+Before promotion, obtain both exact-head gates:
 
-* **Linting:** `./gradlew lintDebug` (Ensures adherence to Android XML/Compose standards).
-* **Formatting:** `./gradlew ktlintCheck` (Ensures consistent Kotlin styling).
-* **Logic Verification:** `./gradlew testDebugUnitTest` (Runs the architectural unit tests).
+* **Build and lint:** `Build Pull Request` / `build`, using the explicit assembly/lint tasks above.
+* **Logic verification:** `Unit tests` / `Compile and run unit tests`, dispatched separately and run concurrently with the build.
+* **Style:** match surrounding code; there is no formatter task.
+
+The current constrained mission prohibits local JVM/Gradle/LSP execution and defers focused
+tests/execution to final remote CI. This is mission-scoped, not a general contributor rule.
+Its current implementation is locally integrated, uncompiled and unreleased; earlier green
+`e0ada1758` does not validate it. No current device QA was run.
+
+`dev` is Nightly integration, `main` is Stable. Final Canary `C202610141722` shipped at
+`a1a04ea02`; `canary` is frozen. Use a new dev PR after review, preserve history on merge
+and verify the resulting Nightly/manifest. See [release gates](docs/claude/RELEASES.md);
+compilation alone is not UI, language, physical USB/DAC or listening validation.
 
 ---
 
 ## ⚖️ Troubleshooting
 
 > [!IMPORTANT]
-> **Heap Memory:** If you experience `GC overhead limit exceeded`, ensure your `gradle.properties` has sufficient memory allocated:
-> `org.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g`
+> **Memory:** Use the checked-in resource settings first. Collect the failing task and logs before changing heap, workers, KSP or configuration-cache policy; larger heaps are not automatically suitable for constrained hosts.
 
 > [!WARNING]
-> **Compose Compiler:** If the build fails due to a Compose version mismatch, verify that the `kotlinCompilerExtensionVersion` in the build script matches the current Kotlin version.
+> **Toolchain mismatch:** Check JDK 21, wrapper/AGP/Kotlin versions and SDK/NDK installation against the checked-in project. Do not add legacy Compose compiler settings or reorder dependency mirrors to work around an unrelated resolution failure.
 
 ---
 

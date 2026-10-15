@@ -13,7 +13,6 @@
     <string name="deezer_quality_mp3_128">MP3 128 kbps</string>
     <string name="deezer_signed_in_as">Signed in as %1$s</string>
     <string name="deezer_sign_out">Sign out of Deezer</string>
-    <string name="deezer_sign_out_description">Removes the stored session cookie from this device</string>
     <string name="deezer_signed_out">Signed out of Deezer</string>
 
     <!-- JioSaavn source (ui/screens/settings/PlaybackSourceSections.kt + JioSettings.kt).
@@ -24,8 +23,6 @@
     <string name="jiosaavn_enable">Enable JioSaavn source</string>
     <string name="jiosaavn_enable_description">Use JioSaavn for playback (up to 320 kbps)</string>
     <string name="jiosaavn_audio_quality">Audio quality</string>
-    <string name="jiosaavn_open_settings">Open JioSaavn settings</string>
-    <string name="jiosaavn_open_settings_description">Configure the JioSaavn streaming source</string>
     <string name="jiosaavn_settings">JioSaavn settings</string>
     <string name="jiosaavn_beta_info">JioSaavn streams are unauthenticated MP4/AAC. Stream URLs are decrypted locally via DES-ECB. Falls back to YouTube on any failure.</string>
     <string name="jiosaavn_credit_title">Credit</string>
@@ -57,11 +54,6 @@
     <string name="translate_mode_romanize">Romanize (transliterate to Latin)</string>
 
     <!-- Update info dialog (ported from vivi-music under GPL-3.0). -->
-    <string name="update_info_badge">Update info</string>
-    <string name="update_info_title">Downloaded updates</string>
-    <string name="clear_downloaded_updates_auto_info">Downloaded update APKs are cleared automatically after a successful install. You can also delete them manually from storage settings.</string>
-    <string name="manual_delete_hint_title">Manual delete</string>
-    <string name="manual_delete_hint_desc">If an update download was interrupted, the partial file lives in cache/app_update and is safe to delete.</string>
 
     <!-- Minimal Home Mode (AppearanceSettings.kt + HomeScreen.kt).
          When enabled, the Home feed collapses to a focused subset:
@@ -73,8 +65,6 @@
     <string name="home_screen_style_desc">Layout of the home feed</string>
     <string name="home_screen_style_default">ArchiveTune</string>
     <string name="home_screen_style_rukamori">Rukamori</string>
-    <string name="show_lyrics_on_player">Lyrics on player</string>
-    <string name="show_lyrics_on_player_desc">Show word-synced lyrics in place of the artwork on the expanded player. Tap them to open the full lyrics page.</string>
 
     <!-- Download source priority (fork-only — JioSaavn added). -->
     <string name="download_source_jiosaavn">JioSaavn</string>
@@ -84,7 +74,6 @@
     <string name="source_search_filter_all">All</string>
     <string name="source_search_no_results">No results yet — type a song title to search</string>
     <string name="source_search_no_backend">Search is not yet available for this provider</string>
-    <string name="source_search_play_no_yt_match">Couldn\'t find a matching YouTube track to seed the queue — try a different result or use the automatic source</string>
 
     <!-- Qobuz backup source (mlc.kouzu.in) — separate from regular Qobuz. -->
     <string name="source_qobuz_backup">Qobuz Backup</string>
@@ -100,7 +89,6 @@
     <string name="quality_badge_saavn">AAC 320 kbps</string>
     <string name="quality_badge_mp3">MP3 320 kbps</string>
     <string name="quality_badge_lossless">Lossless</string>
-    <string name="quality_badge_hires">Hi-Res</string>
 
     <!-- Last.fm dashboard redesign (ui/screens/settings/LastFmDashboardScreen.kt).
          Strings for the LastWave-native-inspired dashboard layout: the filter
@@ -108,7 +96,6 @@
          ModalBottomSheet (Start Mix / Genre / Play in ArchiveTune / Play next /
          Add to queue / Add to playlist / Open in Last.fm / Copy Song). -->
     <string name="lastfm_list">List</string>
-    <string name="lastfm_explore">Explore</string>
     <string name="lastfm_filter_recent">Recent</string>
     <string name="lastfm_filter_top_tracks">Top Tracks</string>
     <string name="lastfm_filter_top_artists">Top Artists</string>
@@ -123,7 +110,6 @@
     <string name="lastfm_copy_song">Copy Song</string>
     <string name="lastfm_song_copied">Song copied to clipboard</string>
     <string name="lastfm_no_yt_match">Couldn\'t find this song on YouTube</string>
-    <string name="lastfm_searching_yt">Searching YouTube…</string>
     <string name="lastfm_unknown_genre">Unknown</string>
 
     <!-- (Task 4) Libre.fm + custom endpoint sign-in buttons + scrobble-search
@@ -144,7 +130,6 @@
     <string name="album_canvas_enabled_desc">Play the album\'s looping motion artwork behind the album header, the way Apple Music does. Turn off to always show the static cover.</string>
 
     <!-- Qobuz backup source search -->
-    <string name="source_qobuz_backup_search_hint">Search the kouzu.in backup catalogue</string>
 
     <!-- Spotify Canvas resolvers -->
     <string name="canvas_resolvers">Canvas resolvers</string>

@@ -9,7 +9,7 @@
 package moe.rukamori.archivetune.ui.screens.settings
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -36,7 +36,6 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.addons.AddonPack
 import moe.rukamori.archivetune.addons.AddonState
 import moe.rukamori.archivetune.addons.AdditionalDownloads
-import moe.rukamori.archivetune.constants.LyricsRomanizeJapaneseKey
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -44,15 +43,11 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.formatFileSize
-import moe.rukamori.archivetune.utils.rememberPreference
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LanguagePackSettings(navController: NavController) {
     val packState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-    val (_, onLyricsRomanizeJapaneseChange) =
-        rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
 
     Column(
         Modifier
@@ -72,13 +67,14 @@ fun LanguagePackSettings(navController: NavController) {
 
         PreferenceGroup(title = stringResource(R.string.language_pack_optional_data)) {
             item {
-                val isDownloading = packState is JapaneseLanguagePackState.Downloading
                 val description =
                     when (val state = packState) {
-                        JapaneseLanguagePackState.NotInstalled ->
-                            stringResource(R.string.language_pack_japanese_download_description)
+                        JapaneseLanguagePackState.Checking -> stringResource(R.string.japanese_pack_checking)
+                        JapaneseLanguagePackState.Removing -> stringResource(R.string.japanese_pack_removing)
+                        JapaneseLanguagePackState.NotInstalled -> stringResource(R.string.japanese_pack_description)
                         is JapaneseLanguagePackState.Downloading ->
-                            stringResource(R.string.language_pack_downloading, state.progressPercent)
+                            if (state.progressPercent < 0) stringResource(R.string.japanese_pack_preparing)
+                            else stringResource(R.string.language_pack_downloading, state.progressPercent)
                         is JapaneseLanguagePackState.Installed ->
                             stringResource(R.string.language_pack_installed_size, formatFileSize(state.sizeBytes))
                         is JapaneseLanguagePackState.Failed -> state.message
@@ -88,34 +84,34 @@ fun LanguagePackSettings(navController: NavController) {
                     description = description,
                     icon = { Icon(painterResource(R.drawable.translate), null) },
                     trailingContent = {
-                        when (packState) {
-                            is JapaneseLanguagePackState.Downloading ->
+                        when (val state = packState) {
+                            JapaneseLanguagePackState.Checking,
+                            JapaneseLanguagePackState.Removing ->
                                 CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                            is JapaneseLanguagePackState.Downloading -> Row {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                TextButton(onClick = JapaneseLanguagePackManager::cancel) {
+                                    Text(stringResource(R.string.cancel))
+                                }
+                            }
                             is JapaneseLanguagePackState.Installed ->
-                                TextButton(
-                                    onClick = {
-                                        scope.launch {
-                                            if (JapaneseLanguagePackManager.remove()) {
-                                                onLyricsRomanizeJapaneseChange(false)
-                                            }
-                                        }
-                                    },
-                                ) { Text(stringResource(R.string.language_pack_remove)) }
-                            JapaneseLanguagePackState.NotInstalled,
-                            is JapaneseLanguagePackState.Failed,
-                            ->
-                                TextButton(
-                                    onClick = {
-                                        scope.launch {
-                                            JapaneseLanguagePackManager.install().onSuccess {
-                                                onLyricsRomanizeJapaneseChange(true)
-                                            }
-                                        }
-                                    },
-                                ) { Text(stringResource(R.string.download)) }
+                                TextButton(onClick = JapaneseLanguagePackManager::remove) {
+                                    Text(stringResource(R.string.language_pack_remove))
+                                }
+                            JapaneseLanguagePackState.NotInstalled ->
+                                TextButton(onClick = JapaneseLanguagePackManager::install) {
+                                    Text(stringResource(R.string.download))
+                                }
+                            is JapaneseLanguagePackState.Failed ->
+                                TextButton(onClick = {
+                                    if (state.removalFailed) JapaneseLanguagePackManager.remove()
+                                    else JapaneseLanguagePackManager.install()
+                                }) {
+                                    Text(stringResource(if (state.removalFailed) R.string.language_pack_remove else R.string.japanese_pack_retry))
+                                }
                         }
                     },
-                    isEnabled = !isDownloading,
+                    isEnabled = packState != JapaneseLanguagePackState.Checking && packState != JapaneseLanguagePackState.Removing,
                 )
             }
 

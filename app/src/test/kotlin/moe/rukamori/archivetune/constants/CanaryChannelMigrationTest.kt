@@ -107,4 +107,26 @@ class CanaryChannelMigrationTest {
         assertEquals(UpdateChannel.STABLE, UpdateChannel.fromStoredName(null, UpdateChannel.STABLE))
         assertEquals(UpdateChannel.NIGHTLY, UpdateChannel.fromStoredName("garbage", UpdateChannel.NIGHTLY))
     }
+
+    @Test
+    fun migratedCanaryThenExplicitStable_survivesReinitializationOnEitherBuild() {
+        for (nightlyBuild in listOf(false, true)) {
+            var stored = "CANARY"
+            val migration = canaryChannelMigration(stored, CanaryLegacyKeyNames)
+            assertTrue(migration.channelToNightly)
+            if (migration.channelToNightly) stored = UpdateChannel.NIGHTLY.name
+            assertEquals(UpdateChannel.NIGHTLY, UpdateChannel.fromStoredName(stored, UpdateChannel.STABLE))
+
+            // A later explicit save is not an input the one-time migration may rewrite.
+            stored = UpdateChannel.STABLE.name
+            val reinitialization = canaryChannelMigration(stored, CanaryLegacyKeyNames - migration.dropKeyNames)
+            assertFalse(reinitialization.needed)
+            assertEquals(
+                UpdateChannel.STABLE,
+                moe.rukamori.archivetune.effectiveUpdateChannel(
+                    UpdateChannel.fromStoredName(stored, UpdateChannel.NIGHTLY), nightlyBuild,
+                ),
+            )
+        }
+    }
 }

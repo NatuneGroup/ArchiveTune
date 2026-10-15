@@ -105,7 +105,7 @@
         <ul>
           <li>EBU R128 loudness normalization</li>
           <li>Tempo, pitch, and playback speed controls</li>
-          <li>Crossfade and automix between tracks, with one smooth hand-off per song pair</li>
+          <li>Crossfade and automix between tracks, with bounded hand-off and recovery policies</li>
           <li>System equalizer and spatial audio integration</li>
         </ul>
       </div>
@@ -257,7 +257,28 @@ ArchiveTune has two update channels:
 
 Both channels are signed with the same key, so updates install over the existing app in place.
 
+The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has been retired. Final Canary `C202610141722` shipped at `a1a04ea02`; the branch is frozen. A stored Canary choice migrates to Nightly.
+
 The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
+
+### Current development follow-up (not yet released)
+
+- Stable and Nightly remain explicit user choices on every build; build identity supplies only the unset default. Offers retain channel association and require a known newer version code.
+- Visible overflowing settings descriptions scroll automatically for finite passes, respecting lifecycle and reduced motion. Restart-scoped edits keep the running values until restart and share one **Restart now / Later** dialog after persistence; Later never restarts automatically.
+- The acoustic heat graph is available in Developer settings and shared player/song menus. Opening it does not analyze: **Run / Cancel / Retry** owns a bounded, source-bound excerpt. Seekable local file/content, supported clear current streams and complete source-bound cache are supported; DRM/inaccessible inputs can be unavailable. Spectral suspicion is heuristic, not proof of original losslessness or physical DAC output.
+- Existing DSP maintenance updates Oboe to 1.11.0, Signalsmith Linear to 0.6.5 and retained libusb to 1.0.30; Stretch stays 1.4.0 and soxr 0.1.3. No new engine or default audio policy. libusb/soxr are trimmed Android subsets, rebuilt through the app's CMake/Gradle path, not full standalone upstream test distributions. Active USB output remains; only an unreachable older USB module was removed, with its MIT license retained.
+- Integrated lyrics changes preserve semantic Unicode, use conservative script-family exclusions and metadata/kana-aware phonetics, and give SimpMusic the shared built-in/provider/AI policy with shaped, source-spaced timed text. Unaligned readings fall back to a line instead of invented word timing; this is not exact language detection or universal pronunciation.
+- AI translation accepts complete validated results, keeps failures retryable and binds caches/results to settings and the current lyrics target. DeepL has explicit target codes and does not claim romanization support. All active translation surfaces invalidate changed targets; automatic calls retain exclusion gates. Downloader requests own separate staging/latches; Listen Together retries retain connection/request identity; Spotify refresh/sign-in/sign-out serialize account mutation.
+- Japanese dictionary automation uses primary system-device locale region JP, never IP geolocation. One persisted best-effort foreground consideration may download over Wi-Fi or cellular; offline consumes that consideration, with manual retry still available. Explicit off/removal prevents automatic installation. Download/checksum/tokenizer work stays off the startup/render thread, and the pinned 13,343,016-byte IPADIC pack is optional offline-romaji data, not UI translation or a universal language engine.
+
+Implementation, separate bounded final cleanup, three independent source reviews and their
+confirmed fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods
+(including real pinned IPADIC/production-tokenizer coverage) were integrated but not yet executed.
+For actual exact-head build/lint and unit-test outcomes, consult the candidate PR and
+[GitHub Actions](https://github.com/NatuneGroup/ArchiveTune/actions); source review is not a CI pass.
+The new dev draft PR must pass both separate parallel gates before history-preserving merge
+and Nightly/manifest verification.
+No device, visual, USB or all-language validation is claimed.
 
 > [!WARNING]  
 > **Notes:** The trusted download source is listed above; we are not responsible for any risks you may encounter from downloading from other sources.
@@ -291,6 +312,13 @@ ArchiveTune belongs to everyone. Help us localize the experience for your region
 Interested in building the project or contributing? ArchiveTune is built on a high-performance Kotlin stack.
 <a href="CONTRIBUTING.md"><b>Read the Build & Contribution Guide →</b></a>
 
+Use JDK 21, Android compile SDK 37 and NDK `30.0.16248370`, the checked-in Gradle
+9.6.1 wrapper and recursive submodules. The debug app runs on Android 8.0/API 26+.
+Build/lint with `./gradlew assembleGmsMobileUniversalDebug lintGmsMobileUniversalDebug`;
+tests use `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. The current constrained
+mission defers JVM/build/test execution to final remote CI; that is not a general ban on
+local contributor builds. See [release gates](docs/claude/RELEASES.md) before publishing.
+
 ---
 
 ### Open-Source Acknowledgments
@@ -303,7 +331,7 @@ ArchiveTune is made possible by the work of many open-source projects and commun
 - **rukamori** [ArchiveTune](https://github.com/rukamori/ArchiveTune) for the original ArchiveTune project this fork builds on.
 - **tryptz** [Tryptify](https://github.com/tryptz/Tryptify) and [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) for the audio engine this app's DSP chain, parametric/AutoEq, USB audio output and pitch/time stretch are ported from.
 - **Clash-Projects** [LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) for the native audio engine, bit-perfect USB output and Last.fm dashboard.
-- **Marcelo Silva** for the [decent-usb-audio-driver](audio/decent-usb-audio-driver) exclusive USB audio output module (MIT).
+- **Marcelo Silva** for the previously vendored decent-usb-audio-driver (MIT). Its unreachable implementation was removed; the [license and attribution](audio/decent-usb-audio-driver/LICENSE) are retained.
 - [libusb](https://libusb.info), [SoX Resampler](https://sourceforge.net/projects/soxr/) and [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) for USB access, resampling and pitch shifting.
 - [brahmkshatriya/echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) for how Spotify's web player reads its recently played list.
 

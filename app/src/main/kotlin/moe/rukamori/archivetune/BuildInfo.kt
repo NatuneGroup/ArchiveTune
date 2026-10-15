@@ -16,22 +16,11 @@ internal val isNightlyBuild: Boolean
 internal val defaultUpdateChannel: UpdateChannel
     get() = if (isNightlyBuild) UpdateChannel.NIGHTLY else UpdateChannel.STABLE
 
-/**
- * The single channel rule every update path (launch popup, Updates screen, changelog, background
- * worker, notifications) goes through. A nightly build is always locked to NIGHTLY: its versionCode
- * only ever moves along the nightly line, so honouring a stored STABLE would offer a downgrade the
- * system installer rejects. Every other build follows the stored choice, defaulting to STABLE.
- * Pure so the rule stays unit-testable; the one-argument overload reads the build flag.
- */
+/** Build identity supplies only the default; install eligibility is checked separately. */
 internal fun effectiveUpdateChannel(
     stored: UpdateChannel?,
     isNightlyBuild: Boolean,
-): UpdateChannel =
-    when {
-        isNightlyBuild -> UpdateChannel.NIGHTLY
-        stored != null -> stored
-        else -> UpdateChannel.STABLE
-    }
+): UpdateChannel = stored ?: if (isNightlyBuild) UpdateChannel.NIGHTLY else UpdateChannel.STABLE
 
 internal fun effectiveUpdateChannel(stored: UpdateChannel?): UpdateChannel = effectiveUpdateChannel(stored, isNightlyBuild)
 

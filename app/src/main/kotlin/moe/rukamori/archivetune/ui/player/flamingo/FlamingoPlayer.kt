@@ -775,6 +775,9 @@ fun FlamingoPlayerContent(
         val romanizationOn = aiRomanizeLyricsPref && autoAiRomanizeLyrics
 
         val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+        LaunchedEffect(mediaMetadata.id, currentLyrics?.lyrics) {
+            lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyrics?.lyrics)
+        }
         val translationDismissedMediaIds by lyricsMenuViewModel.translationDismissedMediaIds
             .collectAsStateWithLifecycle()
 
@@ -811,6 +814,7 @@ fun FlamingoPlayerContent(
                 mediaMetadata = mediaMetadata,
                 lyrics = text,
                 targetLanguage = translatorTargetLang,
+                automatic = true,
             )
         }
 
@@ -831,6 +835,7 @@ fun FlamingoPlayerContent(
                             mediaMetadata = mediaMetadata,
                             lyrics = text,
                             targetLanguage = targetLangState.value,
+                            automatic = true,
                         )
                     }
                 }

@@ -25,16 +25,21 @@ prerelease and the `nightly.json` update-feed manifest the in-app updater reads,
 `release.yml` (run by hand) publishes Stable releases and `stable.json`. Unit tests are their own
 workflow (`tests.yml`), manual-only (`workflow_dispatch`) to keep pushes fast; the APK
 jobs assemble releases and never compile `app/src/test`, so start it by hand after
-merges and before promoting `dev`. There is no separate Kotlin compile check: the APK
-build is the compile signal. There is no `foss`+`tv` variant, deliberately — the
-fork ships GMS-only.
+integration and before promoting `dev`. `Build Pull Request` / `build` assembles
+GMS/mobile/universal Debug plus lint on a GitHub-hosted runner. Run that workflow and
+`Unit tests` / `Compile and run unit tests` concurrently on the exact candidate head.
+Tests invoke the documented task directly; both workflows retain local Gradle profiles
+and reports, without external build scans. PR caches remain read-only. Debug checks
+do not replace Release shrinking, signing or native packaging evidence. Nightly
+ships six variants (including FOSS mobile and optional automix); Stable ships seven.
+Neither workflow ships FOSS TV.
 
 ## Branches
 
 `dev` is the integration branch and builds the N-tagged Nightly channel; `main` is
-Stable. There are only these two channels. The Canary channel (`canary` branch,
-C-tagged releases) is retired: the app migrates a stored Canary channel to Nightly,
-and `canary.yml` remains only until the last Canary build has shipped — see
+Stable. There are only these two channels. The Canary channel is retired: the last
+C-tagged release shipped, `canary.yml` is deleted, the `canary` branch is frozen as
+history, and the app migrates a stored Canary channel to Nightly — see
 [docs/claude/RELEASES.md](docs/claude/RELEASES.md).
 
 ## Subsystems
@@ -54,6 +59,16 @@ and `canary.yml` remains only until the last Canary build has shipped — see
 | [docs/REMOVED_RUKAMORI_COMPONENTS.md](docs/REMOVED_RUKAMORI_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |
 
 ## Task state
+
+The channel/default, settings text/shared restart modal, bounded acoustic graph,
+existing DSP pin updates and audited native/USB cleanup are implemented follow-ups, including Unicode/phonetics, SimpMusic parity, optional JP-region dictionary
+automation, settings/target-bound AI results and downloader/room/account lifecycle repairs.
+Implementation, separate bounded final cleanup, three independent source reviews and confirmed
+fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new test methods were integrated,
+not executed. Actual exact-head CI results belong to the candidate PR/Actions; dev merge and
+Nightly verification follow both separate green gates. The no-local-JVM/build policy is scoped to this
+constrained mission, not ordinary contributor setup. See the maintained docs below
+for boundaries and the already-shipped final Canary; do not publish another Canary.
 
 [docs/claude/](docs/claude/) carries what survives between sessions:
 [ARCHITECTURE.md](docs/claude/ARCHITECTURE.md) (playback and source boundaries),

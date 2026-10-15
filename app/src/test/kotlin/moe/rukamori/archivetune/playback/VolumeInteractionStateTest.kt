@@ -158,4 +158,49 @@ class VolumeInteractionStateTest {
         assertEquals(range.fraction(5), state.displayFraction, 0f)
         assertNull(state.expectedLevel)
     }
+
+    @Test
+    fun finiteClampAndInfinity_doNotReplaceLastFiniteIntent() {
+        val state = VolumeInteractionState(range, 5)
+        assertEquals(15, state.change(2f))
+        assertEquals(1f, state.displayFraction, 0f)
+        assertNull(state.change(Float.POSITIVE_INFINITY))
+        assertNull(state.change(Float.NEGATIVE_INFINITY))
+        assertNull(state.change(Float.NaN))
+        assertEquals(1f, state.displayFraction, 0f)
+        assertEquals(0, state.change(-1f))
+        assertEquals(0f, state.displayFraction, 0f)
+    }
+
+    @Test
+    fun tapThenTimeout_reconcilesClampedDeviceAndExternalHardwareChange() {
+        var clock = 100L
+        val state = VolumeInteractionState(range, 5)
+        assertEquals(15, state.change(1f))
+        val generation = state.finish(clock)
+        state.observe(10, fresh = true)
+        assertEquals(1f, state.displayFraction, 0f)
+        clock += 349
+        state.expire(generation, clock)
+        assertEquals(VolumeInteractionPhase.AwaitingConfirmation, state.phase)
+        clock++
+        state.expire(generation, clock)
+        assertEquals(range.fraction(10), state.displayFraction, 0f)
+        state.observe(3)
+        assertEquals(range.fraction(3), state.displayFraction, 0f)
+    }
+
+    @Test
+    fun resetInvalidatesPendingTimeoutAndAcceptsChangedDeviceRange() {
+        val state = VolumeInteractionState(range, 5)
+        state.change(0.9f)
+        val old = state.finish(0)
+        state.observe(6, range = MusicVolumeRange(2, 10))
+        state.reset()
+        state.expire(old, 1_000)
+        assertEquals(VolumeInteractionPhase.Idle, state.phase)
+        assertEquals(0.5f, state.displayFraction, 0f)
+        assertNull(state.confirmationDeadline)
+        assertEquals(3, state.change(0.001f))
+    }
 }

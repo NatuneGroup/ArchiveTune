@@ -12,24 +12,18 @@ import moe.rukamori.archivetune.constants.UpdateChannel
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * Guards the single channel rule every update path (launch popup, Updates screen, changelog,
- * background worker, notifications) goes through. A nightly build is locked to NIGHTLY no matter
- * what is stored — its versionCode only ever moves along the nightly line, so honouring a stored
- * STABLE would offer a downgrade the system installer rejects — and every other build follows the
- * stored choice, defaulting to STABLE.
- */
+/** Stored choices win on either build; only an unset preference uses build identity. */
 class EffectiveUpdateChannelTest {
     @Test
-    fun nightlyBuildForcesNightlyWithStoredStable() {
+    fun nightlyBuildHonoursStoredStable() {
         assertEquals(
-            UpdateChannel.NIGHTLY,
+            UpdateChannel.STABLE,
             effectiveUpdateChannel(UpdateChannel.STABLE, isNightlyBuild = true),
         )
     }
 
     @Test
-    fun nightlyBuildForcesNightlyWithStoredNightly() {
+    fun nightlyBuildHonoursStoredNightly() {
         assertEquals(
             UpdateChannel.NIGHTLY,
             effectiveUpdateChannel(UpdateChannel.NIGHTLY, isNightlyBuild = true),
@@ -37,7 +31,7 @@ class EffectiveUpdateChannelTest {
     }
 
     @Test
-    fun nightlyBuildForcesNightlyWhenNothingStored() {
+    fun nightlyBuildDefaultsToNightly() {
         assertEquals(UpdateChannel.NIGHTLY, effectiveUpdateChannel(null, isNightlyBuild = true))
     }
 

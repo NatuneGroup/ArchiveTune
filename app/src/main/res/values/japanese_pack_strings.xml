@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="japanese_pack_description">Offline Japanese lyric romanization dictionary (13,343,016 bytes). Not translation or app language data. Japan-region devices may download it once over Wi-Fi or cellular; remove it here to prevent automatic reinstallation.</string>
+    <string name="japanese_pack_checking">Checking the offline Japanese dictionary…</string>
+    <string name="japanese_pack_removing">Removing the Japanese dictionary…</string>
+    <string name="japanese_pack_preparing">Downloading or verifying the Japanese dictionary…</string>
+    <string name="japanese_pack_retry">Retry</string>
+    <string name="japanese_pack_invalid">The Japanese dictionary is damaged or unusable. Download it again.</string>
+    <string name="japanese_pack_failed">Could not install the Japanese dictionary. Check your connection and free storage, then retry.</string>
+    <string name="japanese_pack_remove_failed">Could not finish removing the Japanese dictionary. Try removing it again.</string>
+</resources>

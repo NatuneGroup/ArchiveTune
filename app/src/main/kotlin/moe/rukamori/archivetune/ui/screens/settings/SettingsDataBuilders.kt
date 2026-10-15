@@ -8,6 +8,14 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import androidx.compose.ui.platform.LocalContext
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
+import moe.rukamori.archivetune.ui.component.navigationTreatmentKeys
+import moe.rukamori.archivetune.ui.component.setNavigationTreatment
+import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
+import moe.rukamori.archivetune.utils.RestartScopedSettings
+import moe.rukamori.archivetune.constants.TabletModeEnabledKey
+
 import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
@@ -80,7 +88,6 @@ import moe.rukamori.archivetune.constants.ShowLyricsKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
-import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SkipSilenceKey
 import moe.rukamori.archivetune.constants.SmartTrimmerKey
@@ -96,8 +103,6 @@ import moe.rukamori.archivetune.constants.UseLyricsV2Key
 import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.WakelockKey
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 
 @Composable
 private fun SearchResultSwitch(
@@ -105,8 +110,20 @@ private fun SearchResultSwitch(
     defaultValue: Boolean,
     blurOverridden: Boolean = false,
 ) {
-    val (checked, onCheckedChange) = rememberPreference(key, defaultValue)
-    val blurDisabled = blurOverridden && rememberPreference(DisableBlurKey, false).value
+    val prefs = LocalSettingsPreferenceSnapshot.current
+    val restartPrompt = LocalRestartPrompt.current
+    val context = LocalContext.current
+    val (checked, setValue) = prefs.state(key, defaultValue)
+    val onCheckedChange: (Boolean) -> Unit = { enabled ->
+        when (key) {
+            in navigationTreatmentKeys -> setNavigationTreatment(restartPrompt, prefs, key, enabled)
+            LiquidGlassEnabledKey, TabletModeEnabledKey -> restartPrompt.edit(prefs) { this[key] = enabled }
+            CrossfadeEnabledKey, AudioOffload ->
+                setPlaybackOutputPreference(restartPrompt, prefs, context, key, enabled)
+            else -> setValue(enabled)
+        }
+    }
+    val blurDisabled = blurOverridden && prefs[DisableBlurKey, false]
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
@@ -120,11 +137,15 @@ private fun SearchResultSwitch(
  */
 @Composable
 private fun SearchResultSystemFontSwitch() {
-    var fontPreference by rememberEnumPreference(FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
+    val prefs = LocalSettingsPreferenceSnapshot.current
+    val restartPrompt = LocalRestartPrompt.current
+    val fontPreference = RestartScopedSettings.from(prefs.current).fontPreference
     Switch(
         checked = fontPreference == AppFontPreference.SYSTEM,
         onCheckedChange = { checked ->
-            fontPreference = if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT
+            restartPrompt.edit(prefs) {
+                this[FontPreferenceKey] = (if (checked) AppFontPreference.SYSTEM else AppFontPreference.DEFAULT).name
+            }
         },
     )
 }
@@ -1032,6 +1053,11 @@ fun buildSettingsGroups(
                 SettingsChild("Display codec on player", "display_codec_on_player", listOf("display codec", "show codec", "codec on player", "bitrate on player")),
                 SettingsChild("Show Discord debug UI", "show_discord_debug_ui", listOf("discord debug", "show debug ui", "discord debug ui")),
                 SettingsChild("Debug logs", "debug_logs", listOf("debug logs", "verbose logs", "diagnostic logs")),
+                SettingsChild(
+                    context.getString(R.string.acoustic_quality_title),
+                    "acoustic_quality",
+                    listOf("acoustic", "quality graph", "spectrogram", "spectrum", "cutoff", "analysis"),
+                ),
             ),
         )
     val defaultLinks =
@@ -1195,7 +1221,7 @@ fun buildSettingsGroups(
 
 @Composable
 private fun SearchPlayerVolumeVisibilitySwitch() {
-    val prefs = rememberPreferenceSnapshot()
+    val prefs = LocalSettingsPreferenceSnapshot.current
     val (style) = prefs.enumState(PlayerDesignStyleKey, PlayerDesignStyle.Default)
     val (visible, setVisible) = prefs.playerVolumeVisibility(style)
     Switch(checked = visible, onCheckedChange = setVisible, enabled = style.hasVolumeRow)

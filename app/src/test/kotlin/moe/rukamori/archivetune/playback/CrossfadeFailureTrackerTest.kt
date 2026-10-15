@@ -91,4 +91,23 @@ class CrossfadeFailureTrackerTest {
         assertFalse(tracker.canAttempt(null, "B"))
         assertTrue(tracker.canAttempt("A", "B"))
     }
+
+    @Test
+    fun lateFailureAfterSuccessfulHandoffCannotRearmCompletedPair() {
+        val tracker = tracker()
+        tracker.registerSuccess("A", "B")
+        tracker.registerFailure("A", "B")
+        assertFalse(tracker.canAttempt("A", "B"))
+        assertTrue(tracker.canAttempt("B", "A"))
+    }
+
+    @Test
+    fun repeatOneStillHonorsFailureBudgetAndSuccessfulWrapResetsIt() {
+        val tracker = tracker()
+        repeat(3) { tracker.registerFailure("A", "A") }
+        assertFalse(tracker.canAttempt("A", "A"))
+        tracker.registerSuccess("A", "A")
+        assertTrue(tracker.canAttempt("A", "A"))
+        assertEquals(CrossfadeRetryDecision.RETRY_FADE, tracker.registerFailure("A", "A"))
+    }
 }

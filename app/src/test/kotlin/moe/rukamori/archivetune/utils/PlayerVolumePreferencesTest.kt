@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
+import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,5 +70,19 @@ class PlayerVolumePreferencesTest {
         assertFalse(snapshot.playerVolumeVisibility(PlayerDesignStyle.FLAMINGO).value)
         assertTrue(snapshot.playerVolumeVisibility(PlayerDesignStyle.APPLE_MUSIC).value)
         assertTrue(snapshotOf(emptyPreferences()).playerVolumeVisibility(PlayerDesignStyle.FLAMINGO).value)
+    }
+
+    @Test
+    fun explicitWriter_updatesCanonicalAndRemovesLegacyWithoutTouchingStyle() {
+        for (visible in listOf(false, true)) {
+            val preferences = mutablePreferencesOf(
+                ShowPlayerVolumeBarKey to !visible, FlamingoShowVolumeBarKey to !visible,
+                PlayerDesignStyleKey to PlayerDesignStyle.FLAMINGO.name,
+            )
+            preferences.setPlayerVolumeVisibility(visible)
+            assertEquals(visible, preferences[ShowPlayerVolumeBarKey])
+            assertNull(preferences[FlamingoShowVolumeBarKey])
+            assertEquals(PlayerDesignStyle.FLAMINGO.name, preferences[PlayerDesignStyleKey])
+        }
     }
 }

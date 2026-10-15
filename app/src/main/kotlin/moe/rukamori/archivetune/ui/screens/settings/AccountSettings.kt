@@ -124,7 +124,7 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
-import moe.rukamori.archivetune.ui.component.MarqueeText
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.screens.buildLoginRoute
 import moe.rukamori.archivetune.ui.theme.LocalYumaColors
@@ -712,21 +712,17 @@ private fun AccountSummaryCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (accountHandle.isNotBlank()) {
-                        Text(
+                        SettingsDescriptionText(
                             text = accountHandle,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (accountEmail.isNotBlank() || !isLoggedIn) {
-                        Text(
+                        SettingsDescriptionText(
                             text = accountEmail.ifBlank { stringResource(R.string.not_logged_in) },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -881,10 +877,8 @@ private fun AccountSwitcherSheet(
                         supportingContent = {
                             val subtitle = channel.channelHandle.ifBlank { channel.byline }
                             if (subtitle.isNotBlank()) {
-                                Text(
+                                SettingsDescriptionText(
                                     text = subtitle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         },
@@ -980,10 +974,8 @@ private fun AccountSwitcherSheet(
                         },
                         supportingContent = {
                             if (account.email.isNotBlank()) {
-                                Text(
+                                SettingsDescriptionText(
                                     text = account.email,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         },
@@ -1264,18 +1256,26 @@ private fun ExpressiveRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(SettingsDimensions.RowTextSpacing),
             ) {
-                MarqueeText(
+                SettingsDescriptionText(
                     text = title,
                     fontWeight = FontWeight.SemiBold,
                 )
                 subtitle?.let { supportingText ->
-                    Text(
-                        text = supportingText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = subtitleMaxLines,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (subtitleMaxLines == 1) {
+                        SettingsDescriptionText(
+                            text = supportingText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = supportingText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = subtitleMaxLines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             trailing()

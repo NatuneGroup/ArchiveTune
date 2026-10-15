@@ -15,13 +15,46 @@ Note what gates a release: the unit-test workflow is separate and the publishing
 
 ## Canary retirement
 
-The Canary channel (`canary` branch, `C`-tagged prereleases, `canary.yml`) is retired. The app has no Canary channel any more: a stored `CANARY` choice migrates to Nightly and the Canary-only preference keys are cleared, and the Stable filter ignores leftover `C` tags. Remaining steps, in order:
+The Canary channel (`canary` branch, `C`-tagged prereleases) is retired, and `canary.yml` has been deleted. The app has no Canary channel any more: a stored `CANARY` choice migrates to Nightly and the Canary-only preference keys are cleared, and the Stable filter ignores leftover `C` tags.
 
-1. Push the integrated head to `canary` once so `canary.yml` publishes the last `C` release with the migration (that build must be Nightly-locked).
-2. In a commit on top of it, delete `canary.yml`, then fast-forward `dev` to that commit so `nightly.yml` publishes the next `N` build with a higher `versionCode` and `nightly.json`.
-3. Leave the `canary` branch frozen as history and never delete the old `C` releases.
+- Final `C202610141722` shipped at `a1a04ea023192d8de03332e5a933bafc3224f8cc`; PR #196 merged into Canary. That historical build used a Nightly lock. The current local fix honors explicit Stable/Nightly choices instead; only an unset choice uses the build default.
+- `8011d6556` retired the workflow. Earlier continuation `e0ada1758` was green (build 38599097324, tests 38599123903). Those runs do not validate later local follow-ups.
+- The `canary` branch is frozen as history. Do not push to it again.
+- Never delete the last `C` release or the `update-feed` release and its manifests by hand.
 
-## Device QA
+## Current follow-up gate
+
+The channel/settings/graph/DSP/native/USB follow-ups above `8011d6556`, including the
+language/AI/lifecycle wave based on `966570f01`, are implemented and source-reviewed, with
+separate bounded final cleanup, three independent reviews and confirmed fixes complete.
+At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods were integrated but unexecuted,
+including pinned IPADIC artifact/production-tokenizer tests. Read the candidate PR and
+[Actions](https://github.com/NatuneGroup/ArchiveTune/actions) for actual results, not older green runs.
+Required exact-head parallel gates:
+`Build Pull Request` / `build` (GMS mobile universal Debug assembly + lint) and
+`Unit tests` / `Compile and run unit tests` (exact `:app:testGmsMobileUniversalDebugUnitTest`).
+Keep PR read-only caches and trusted test-cache writes; local profiles/reports are artifacts,
+not external build-scan uploads. Task discovery is unnecessary.
+
+Create/reuse a new open draft PR into **dev**, never merged PR #196. After green final-head
+checks, use the approved history-preserving dev merge, then verify Nightly assets and keyless
+manifest/version/source URLs. Do not push main/canary or repeat the already-completed secret
+deletions. Preserve actual Release shrinking/signing/native ABI checks and existing matrices:
+ordinary build has two variants, Nightly six and Stable seven plus reproducibility.
+Debug green is not full release-packaging evidence.
+
+Baseline native/pin cleanup saved 34,228 net tracked text lines; dead-island cleanup saved
+4,542 more: **38,770 before new code/docs**, not a guaranteed overall net reduction or a
+100,000-line promise. Do not delete active/generated assets or locales to meet a quota.
+
+Historical 2026-10-06 Home/Listen Together evidence was 453 tests/71 suites and mobile/TV
+Debug assembly, not current-head validation. The software emulator did not produce usable
+Home screenshots or completed room UI interactions. Historical protocol checks were bounded
+synthetic requests, not synchronized audio or proof of host eligibility. No current device QA
+has run; the user explicitly waived it for this continuation. This is an accepted limitation,
+not a new blocking hardware gate or a claim of smoothness/visual parity.
+
+## Device QA reference (not run for this continuation)
 
 1. Install over the previous build to verify signing and migration.
 2. Start a queue with at least three tracks from YouTube fallback and an enabled external source.
@@ -30,6 +63,7 @@ The Canary channel (`canary` branch, `C`-tagged prereleases, `canary.yml`) is re
 5. Test low-end or battery-saver conditions with canvas/artwork and lyrics both enabled and disabled. Compare heat, buffer stalls, and startup latency.
 6. Open Integration, enable Spotify history sync, open History, refresh, search, sign out, and verify the source disappears without background playback.
 7. Walk the settings root, every provider page, settings search anchors, dialogs, sliders, toggles, and back navigation.
-8. Verify update installation from the prior Nightly artifact (and, until the retirement above is finished, from the last Canary artifact) before promoting to `main`.
+8. Verify update installation from the prior Nightly artifact and from the last Canary artifact before promoting to `main`.
 
-Do not promote `dev` to `main` until the playback and installation checks pass on a physical device.
+Stable promotion is separate from the approved dev merge/Nightly delivery. Record available
+evidence and the explicit no-device limitation; do not present compilation as physical QA.

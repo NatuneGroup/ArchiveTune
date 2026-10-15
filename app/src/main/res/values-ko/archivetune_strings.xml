@@ -430,7 +430,7 @@
     <string name="storage_location_removable_named">SD 카드 (%s)</string>
     <string name="aod_customize_preview">실시간 미리보기</string>
     <string name="aod_customize_title">AOD 맞춤 설정</string>
-    <string name="storage_folder_selected_restart">저장 폴더가 선택되었습니다. 적용을 위해 3초 후 앱이 자동으로 재시작됩니다.</string>
+    <string name="storage_folder_selected_restart">저장 폴더가 선택되었습니다.</string>
     <string name="aod_customize_vertical_spacing">세로 간격</string>
     <string name="player_design_v8">이머시브 익스텐디드</string>
     <string name="spotify_playlists">Spotify 재생목록</string>

@@ -31,7 +31,19 @@ public final class DownloadedJapaneseTokenizer extends TokenizerBase {
     }
 
     public static DownloadedJapaneseTokenizer create(ResourceResolver resolver) {
-        return new DownloadedJapaneseTokenizer(new Builder(resolver));
+        DownloadedJapaneseTokenizer tokenizer = new DownloadedJapaneseTokenizer(new Builder(resolver));
+        List<Token> probe = tokenizer.tokenize("日本語");
+        StringBuilder surface = new StringBuilder();
+        boolean hasReading = false;
+        for (Token token : probe) {
+            surface.append(token.getSurface());
+            String reading = token.getReading();
+            hasReading |= reading != null && !reading.isEmpty() && !"*".equals(reading);
+        }
+        if (!"日本語".contentEquals(surface) || !hasReading) {
+            throw new IllegalStateException("Japanese dictionary is not usable");
+        }
+        return tokenizer;
     }
 
     private static final class Builder extends TokenizerBase.Builder {

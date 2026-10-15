@@ -323,7 +323,7 @@
     <string name="storage_migration_cache_progress">העברת מטמון... %1$d%%</string>
     <string name="storage_migration_downloads_progress">העברת הורדות... %1$d%%</string>
     <string name="storage_migration_warning">אזהרה: אין לסגור את האפליקציה או לכבות את המכשיר במהלך תהליך זה. פעולה זו עלולה לגרום לאובדן נתונים.</string>
-    <string name="storage_folder_selected_restart">תיקיית האחסון נשמרה. האפליקציה תופעל מחדש בעוד 3 שניות.</string>
+    <string name="storage_folder_selected_restart">תיקיית האחסון נשמרה.</string>
     <string name="storage_folder_invalid">בחר תיקייה תקינה.</string>
     <string name="storage_folder_unsupported">לא ניתן להשתמש בתיקייה זו על ידי מטמון המדיה המגובה בקבצים.</string>
     <string name="storage_folder_not_writable">ל-ArchiveTune אין אפשרות לכתוב קבצי מטמון בתיקייה זו.</string>

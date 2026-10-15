@@ -53,15 +53,17 @@ fun MarqueeText(
     inlineContent: Map<String, InlineTextContent> = emptyMap(),
     fadeWidth: Dp = 24.dp,
     animationMode: MarqueeAnimationMode = MarqueeAnimationMode.Immediately,
+    iterations: Int = Int.MAX_VALUE,
+    animationEnabled: Boolean = true,
 ) {
     val animationsDisabled = LocalAnimationsDisabled.current
-    var contentWidth by remember { mutableIntStateOf(0) }
+    var contentWidth by remember(text, style, fontSize, fontWeight) { mutableIntStateOf(0) }
     var viewportWidth by remember { mutableIntStateOf(0) }
-    val overflows = viewportWidth > 0 && contentWidth > viewportWidth
+    val animate = marqueeShouldAnimate(contentWidth, viewportWidth, animationEnabled, !animationsDisabled, iterations)
 
     Box(
         modifier =
-            (if (overflows) modifier.fadingEdge(horizontal = fadeWidth) else modifier)
+            (if (animate) modifier.fadingEdge(horizontal = fadeWidth) else modifier)
                 .clipToBounds()
                 .onSizeChanged { viewportWidth = it.width },
     ) {
@@ -77,21 +79,31 @@ fun MarqueeText(
             // Reached only in the frame before the marquee has measured; after that the marquee
             // owns the overflow.
             overflow = TextOverflow.Ellipsis,
-            onTextLayout = { contentWidth = it.size.width },
-            // With animations off the line stays still and ellipsizes; it then never measures as
-            // overflowing, so no edge fade is drawn over the "…" either.
+            onTextLayout = {
+                // Intrinsics remain meaningful when the inactive line is constrained/ellipsized.
+                contentWidth = maxOf(it.size.width, kotlin.math.ceil(it.multiParagraph.maxIntrinsicWidth).toInt())
+            },
+            // Inactive/reduced-motion text stays ellipsized with no marquee node or edge fade.
             modifier =
-                if (animationsDisabled) {
+                if (!animate) {
                     Modifier.fillMaxWidth()
                 } else {
                     Modifier.fillMaxWidth().basicMarquee(
-                        iterations = Int.MAX_VALUE,
+                        iterations = iterations,
                         animationMode = animationMode,
                     )
                 },
         )
     }
 }
+
+internal fun marqueeShouldAnimate(
+    contentWidth: Int,
+    viewportWidth: Int,
+    enabled: Boolean,
+    motionAllowed: Boolean,
+    iterations: Int,
+): Boolean = enabled && motionAllowed && iterations > 0 && viewportWidth > 0 && contentWidth > viewportWidth
 
 /** [MarqueeText] for plain text, which is most of them. */
 @Composable
@@ -105,6 +117,8 @@ fun MarqueeText(
     textAlign: TextAlign? = null,
     fadeWidth: Dp = 24.dp,
     animationMode: MarqueeAnimationMode = MarqueeAnimationMode.Immediately,
+    iterations: Int = Int.MAX_VALUE,
+    animationEnabled: Boolean = true,
 ) {
     MarqueeText(
         text = remember(text) { AnnotatedString(text) },
@@ -116,5 +130,7 @@ fun MarqueeText(
         textAlign = textAlign,
         fadeWidth = fadeWidth,
         animationMode = animationMode,
+        iterations = iterations,
+        animationEnabled = animationEnabled,
     )
 }

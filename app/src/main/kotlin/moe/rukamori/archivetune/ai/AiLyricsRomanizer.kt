@@ -11,22 +11,30 @@
 package moe.rukamori.archivetune.ai
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** Batches a track's lyric lines into AI romanisation requests. */
-class AiLyricsRomanizer {
+class AiLyricsRomanizer(
+    private val request: suspend (AiServiceConfig, List<String>, String) -> List<String?> =
+        { config, lines, format -> AiTextService.romanizeLines(config, lines, format) },
+) {
     /**
      * Romanises [lines] and returns a list of the same size, aligned by index.
      *
-     * Never throws for content reasons: a batch that keeps failing degrades to nulls for its lines so
+     * Never throws for content reasons: a failed batch degrades to nulls for its lines so
      * one bad stanza cannot cost the whole track its romanisation. Cancellation still propagates.
      */
     suspend fun romanize(
         config: AiServiceConfig,
         lines: List<String>,
+        isCurrent: () -> Boolean = { true },
     ): List<String?> {
-        if (lines.isEmpty()) return emptyList()
+        if (lines.isEmpty() || !config.supportsRomanization) return emptyList()
+        currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return emptyList()
 
-        val cacheKey = "${config.provider}|${config.model}|${lines.size}|${lines.hashCode()}"
+        val cacheKey = aiCacheIdentity(config.cacheIdentity, *lines.toTypedArray())
         synchronized(resultCache) { resultCache[cacheKey] }?.let { return it }
 
         // Indices are carried through the chunking so a batch can be split without losing track of
@@ -44,8 +52,13 @@ class AiLyricsRomanizer {
             }
         }
 
+        currentCoroutineContext().ensureActive()
+        if (!isCurrent()) return emptyList()
         return out.toList().also { result ->
-            synchronized(resultCache) { resultCache[cacheKey] = result }
+            // Partial/null fallback must remain retryable too.
+            if (indexed.isNotEmpty() && indexed.all { out[it.index] != null }) {
+                synchronized(resultCache) { resultCache[cacheKey] = result }
+            }
         }
     }
 
@@ -56,11 +69,7 @@ class AiLyricsRomanizer {
         if (batch.isEmpty()) return emptyList()
         return try {
             val result =
-                AiTextService.romanizeLines(
-                    config = config,
-                    lines = batch.map { it.value },
-                    formatName = "plain text",
-                )
+                request(config, batch.map { it.value }, "plain text")
             if (result.size == batch.size) {
                 result
             } else {
@@ -69,14 +78,8 @@ class AiLyricsRomanizer {
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            if (batch.size <= 1) {
-                // One line, one failure: give up on it rather than retrying forever.
-                listOf(null)
-            } else {
-                val mid = batch.size / 2
-                romanizeBatchResilient(config, batch.subList(0, mid)) +
-                    romanizeBatchResilient(config, batch.subList(mid, batch.size))
-            }
+            // A failed batch is bounded to one attempt, not 2n-1 per-line retries.
+            List(batch.size) { null }
         }
     }
 

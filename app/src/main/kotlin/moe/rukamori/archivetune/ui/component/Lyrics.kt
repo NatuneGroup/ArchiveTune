@@ -423,7 +423,7 @@ fun Lyrics(
     val scrollLyrics by rememberPreference(LyricsScrollKey, true)
     val romanizeChineseLyrics by rememberPreference(LyricsRomanizeChineseKey, true)
     val romanizeHindiLyrics by rememberPreference(LyricsRomanizeHindiKey, true)
-    val romanizeJapaneseLyrics by rememberPreference(LyricsRomanizeJapaneseKey, true)
+    val romanizeJapaneseLyrics by rememberPreference(LyricsRomanizeJapaneseKey, false)
     val romanizeKoreanLyrics by rememberPreference(LyricsRomanizeKoreanKey, true)
     val romanizeOtherLanguagesLyrics by rememberPreference(LyricsRomanizeOtherLanguagesKey, true)
     val romanizationPreferences =

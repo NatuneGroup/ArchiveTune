@@ -484,6 +484,9 @@ fun BitChordPlayerContent(
     // manual Translate action in the lyrics options menu shares the ViewModel,
     // so an undo here suppresses auto-translate exactly as it does there.
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, lyricsEntity?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, lyricsEntity?.lyrics)
+    }
     val (autoTranslateLyrics) = rememberPreference(AutoTranslateLyricsKey, defaultValue = false)
     val (translatorTargetLang) = rememberPreference(TranslatorTargetLangKey, defaultValue = "")
     val (swipeUpToOpenQueue) =

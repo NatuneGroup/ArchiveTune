@@ -10,6 +10,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -38,6 +40,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -59,12 +62,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -81,6 +89,11 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.scaleAwareSpring
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualitySection
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -113,7 +126,10 @@ private fun sumCacheSpans(cache: Cache, key: String): Long =
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DebugSettings(navController: NavController) {
+fun DebugSettings(navController: NavController, scrollTo: String? = null) {
+    val scrollState = rememberScrollState()
+    val positions = rememberPreferencePositions()
+    LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
     val (showDevDebug, onShowDevDebugChange) =
         rememberPreference(
             key = booleanPreferencesKey("dev_show_discord_debug"),
@@ -171,10 +187,15 @@ fun DebugSettings(navController: NavController) {
                         LocalPlayerAwareWindowInsets.current.only(
                             WindowInsetsSides.Horizontal,
                         ),
-                    ).verticalScroll(rememberScrollState()),
+                    ).verticalScroll(scrollState).then(positions.containerModifier()),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             PreferenceGroup(title = stringResource(R.string.experimental_features)) {
+                item {
+                    Column(positions.modifierFor("acoustic_quality")) {
+                        DeveloperAcousticQualityRow()
+                    }
+                }
                 item {
                     SwitchPreference(
                         title = { Text(stringResource(R.string.show_discord_debug_ui)) },
@@ -255,6 +276,51 @@ fun DebugSettings(navController: NavController) {
             }
 
             Spacer(modifier = Modifier.height(playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding))
+        }
+    }
+}
+
+@Composable
+private fun DeveloperAcousticQualityRow() {
+    var expanded by remember { mutableStateOf(false) }
+    val metadata = LocalPlayerConnection.current?.mediaMetadata?.collectAsStateWithLifecycle()?.value
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val active = expanded && lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val scale = if (LocalAnimationsDisabled.current) 0f else LocalAnimationScale.current
+    val expandedDescription = stringResource(
+        if (expanded) R.string.acoustic_quality_expanded else R.string.acoustic_quality_collapsed,
+    )
+    PreferenceEntry(
+        title = { Text(stringResource(R.string.acoustic_quality_title)) },
+        description = stringResource(R.string.acoustic_quality_row_description),
+        icon = { Icon(painterResource(R.drawable.graphic_eq), contentDescription = null) },
+        trailingContent = {
+            Icon(
+                painterResource(if (expanded) R.drawable.expand_less else R.drawable.expand_more),
+                contentDescription = stringResource(
+                    if (expanded) R.string.acoustic_quality_collapse else R.string.acoustic_quality_expand,
+                ),
+            )
+        },
+        modifier = Modifier.semantics { stateDescription = expandedDescription },
+        onClick = { expanded = !expanded },
+    )
+    AnimatedVisibility(
+        visible = expanded,
+        enter = if (scale <= 0f) EnterTransition.None else expandVertically(animationSpec = scaleAwareSpring(scale)),
+        exit = if (scale <= 0f) ExitTransition.None else shrinkVertically(animationSpec = scaleAwareSpring(scale)),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            val target = metadata?.let {
+                AcousticAuditTarget(it.id, it.title, it.artists.joinToString { artist -> artist.name })
+            }
+            if (target == null) {
+                Text(stringResource(R.string.acoustic_quality_no_song))
+                Button(onClick = {}, enabled = false) { Text(stringResource(R.string.acoustic_quality_run)) }
+            } else {
+                // Deactivate at collapse/navigation, while the exit animation may still retain content.
+                AcousticQualitySection(target = target, active = active)
+            }
         }
     }
 }

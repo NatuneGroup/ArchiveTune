@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.viewmodels
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -156,6 +158,7 @@ class StorageSettingsViewModel
         private val migrationState = MutableStateFlow<StorageMigrationUiModel?>(null)
         private val cacheClearState = MutableStateFlow<StorageCacheClearUiModel?>(null)
         private val activeCacheClearKinds = mutableSetOf<StorageCacheKind>()
+        private val storageSelectionInFlight = AtomicBoolean(false)
 
         val state: StateFlow<StorageSettingsScreenState> =
             combine(
@@ -222,13 +225,21 @@ class StorageSettingsViewModel
             }
         }
 
-        fun applyStorageLocationSelection() {
-            val model = (state.value as? StorageSettingsScreenState.Success)?.model ?: return
+        fun applyStorageLocationSelection(onCompletion: (Boolean) -> Unit = {}) {
+            val model = (state.value as? StorageSettingsScreenState.Success)?.model
+            if (model == null) {
+                onCompletion(false)
+                return
+            }
             val optionId = model.picker.selectedOptionId ?: model.folder.selectedOptionId
             pickerState.update { picker ->
                 picker.copy(visible = false)
             }
-            selectStorageLocation(optionId)
+            if (optionId == model.folder.selectedOptionId || !storageSelectionInFlight.compareAndSet(false, true)) {
+                onCompletion(false)
+                return
+            }
+            selectStorageLocation(optionId, onCompletion)
         }
 
         fun clearSongCache(showFeedback: Boolean = true) {
@@ -259,7 +270,8 @@ class StorageSettingsViewModel
             }
         }
 
-        private fun selectStorageLocation(optionId: String) {
+        private fun selectStorageLocation(optionId: String, onCompletion: (Boolean) -> Unit) {
+            val completionSent = AtomicBoolean(false)
             viewModelScope.launch(Dispatchers.IO) {
                 migrationState.value =
                     StorageMigrationUiModel(
@@ -270,6 +282,11 @@ class StorageSettingsViewModel
                     withContext(NonCancellable + Dispatchers.IO) {
                         setStorageFolder(optionId) { progress ->
                             migrationState.value = progress.toUiModel()
+                        }.also { result ->
+                            // Report from the non-cancellable migration even if its page was popped.
+                            if (completionSent.compareAndSet(false, true)) {
+                                onCompletion(result == StorageFolderUpdateResult.Success)
+                            }
                         }
                     }
                 migrationState.value = null
@@ -286,6 +303,10 @@ class StorageSettingsViewModel
                         restartApp = result == StorageFolderUpdateResult.Success,
                     ),
                 )
+            }.invokeOnCompletion {
+                migrationState.value = null
+                storageSelectionInFlight.set(false)
+                if (completionSent.compareAndSet(false, true)) onCompletion(false)
             }
         }
 

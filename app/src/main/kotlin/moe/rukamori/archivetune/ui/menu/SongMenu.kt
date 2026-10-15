@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
@@ -43,7 +42,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -87,6 +85,8 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualityMenuAction
 import moe.rukamori.archivetune.canvas.SpotifyCanvasProvider
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
@@ -1404,6 +1404,15 @@ fun SongMenu(
                             color = MaterialTheme.colorScheme.outlineVariant,
                         )
                     }
+
+                    AcousticQualityMenuAction(
+                        target = AcousticAuditTarget(
+                            mediaId = song.id,
+                            title = song.title,
+                            artists = song.artists.joinToString { it.name },
+                        ),
+                        onDismiss = onDismiss,
+                    )
 
                     ListItem(
                         headlineContent = { Text(text = stringResource(R.string.track_info_menu_action)) },

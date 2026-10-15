@@ -4013,29 +4013,21 @@ class MusicService :
                             Timber.tag(TAG).w("Crossfade failed with %s", error::class.java.simpleName)
                         }
                     }
-                    val handedOff =
-                        runCatching {
-                            handleCrossfadeHandoff(reason = "fade_loop_error", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
-                        }.isSuccess ||
-                            // The first hand-off threw (typically mid-promotion). Ask the policy
-                            // again with the incoming player treated as unusable: a committed fade
-                            // still carries the heard incoming position to the primary player
-                            // instead of restoring the outgoing song and discarding it.
-                            runCatching {
-                                handleCrossfadeHandoff(
-                                    reason = "fade_loop_error_cleanup_failed",
-                                    fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING,
-                                    incomingUnusable = true,
-                                )
-                            }.isSuccess
-                    if (!handedOff) {
-                        runCatching { cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "fade_loop_error_cleanup_failed") }
-                        runCatching { isCrossfading = false }
-                        runCatching { localPlayer.pauseAtEndOfMediaItems = false }
-                    }
-                    // The blend disabled skip-silence on both players; whichever path above ran
-                    // (or threw part-way), the surviving player gets the user's setting back.
-                    runCatching { localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled }
+                    cleanupCrossfadeLoopFailure(
+                        handoff = { incomingUnusable ->
+                            handleCrossfadeHandoff(
+                                reason = if (incomingUnusable) "fade_loop_error_cleanup_failed" else "fade_loop_error",
+                                fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING,
+                                incomingUnusable = incomingUnusable,
+                            )
+                        },
+                        cancel = {
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "fade_loop_error_cleanup_failed")
+                        },
+                        clearMixing = { isCrossfading = false },
+                        clearPauseAtEnd = { localPlayer.pauseAtEndOfMediaItems = false },
+                        restoreSkipSilence = { localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled },
+                    )
                 }
             }
     }
@@ -7141,6 +7133,35 @@ class MusicService :
         val stream: DirectStream,
         val expiresAtMs: Long,
     )
+
+    /**
+     * Observes an already-selected source only. The audit must never enter playback resolution,
+     * refresh an account, or select a different rendition just to obtain readable bytes.
+     * Called on the player application thread; the returned snapshot owns no playback resources.
+     */
+    internal fun acousticAuditSourceSnapshot(mediaId: String): moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot? {
+        if (!::player.isInitialized || player.currentMediaItem?.mediaId != mediaId) return null
+        val source = selectedPlaybackSourceByMediaId[mediaId] ?: AudioSourceType.YOUTUBE
+        val cached = directStreamCache[mediaId]?.takeIf { it.stream.source == source }
+        val stream = cached?.stream
+        val clearProvider = source in setOf(AudioSourceType.TIDAL, AudioSourceType.QOBUZ, AudioSourceType.QOBUZ_BACKUP)
+        val info = currentStreamInfo.value
+        val verified = clearProvider && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL &&
+            localPlayer.currentMediaItem?.mediaId == mediaId && info != null && info.mediaId == mediaId &&
+            info.source == source && stream != null && info.sampleRate == stream.sampleRate &&
+            info.bitDepth == stream.bitDepth && stream.uri.startsWith("https://") &&
+            stream.mimeType.substringBefore(';') in setOf("audio/flac", "audio/x-flac", "audio/mp4", "audio/mpeg")
+        return moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot(
+            mediaId = mediaId,
+            source = source,
+            cacheKey = sourceCacheKey(source, mediaId),
+            uri = stream?.uri?.takeIf { verified },
+            expiresAtMs = cached?.expiresAtMs ?: 0L,
+            contentLength = stream?.contentLength ?: contentLengthCache[sourceCacheKey(source, mediaId)],
+            advertisedSampleRate = authenticitySampleRateByMediaId[mediaId],
+            claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true,
+        )
+    }
 
     /**
      * Prefetches the stream URL for the next-up media item in the queue so that when the user skips

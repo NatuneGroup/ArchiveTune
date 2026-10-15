@@ -322,7 +322,7 @@
     <string name="storage_migration_cache_progress">جاري نقل التخزين المؤقت… %1$d%%</string>
     <string name="storage_migration_downloads_progress">جاري نقل التنزيلات… %1$d%%</string>
     <string name="storage_migration_warning">تحذير: متقفلش التطبيق أو تطفي جهازك أثناء العملية دي. لو عملت كده ممكن تفقد بياناتك.</string>
-    <string name="storage_folder_selected_restart">تم حفظ مجلد التخزين. هيعاد تشغيل التطبيق خلال 3 ثوانٍ.</string>
+    <string name="storage_folder_selected_restart">تم حفظ مجلد التخزين.</string>
     <string name="storage_folder_invalid">اختار مجلد صالح.</string>
     <string name="storage_folder_unsupported">المجلد ده مش متاح للاستخدام بواسطة التخزين المؤقت المدعوم بالملفات.</string>
     <string name="storage_folder_not_writable">ArchiveTune مش قادر يكتب ملفات التخزين المؤقت في المجلد ده.</string>

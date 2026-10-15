@@ -10,6 +10,22 @@ package moe.rukamori.archivetune.models
 
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
 import java.io.Serializable
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.ObjectInputStream
+import java.io.ObjectOutputStream
+
+/** Shared with MusicService's file adapter; keep the existing Java object-stream format. */
+internal object PlaybackPersistenceCodec {
+    fun read(input: InputStream): Any = ObjectInputStream(input).use { it.readObject() }
+
+    fun write(output: OutputStream, payload: Serializable) {
+        ObjectOutputStream(output).use {
+            it.writeObject(payload)
+            it.flush()
+        }
+    }
+}
 
 data class PersistQueue(
     val title: String?,

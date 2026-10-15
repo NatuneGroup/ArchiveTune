@@ -364,6 +364,7 @@ import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
 import moe.rukamori.archivetune.spotify.SpotifyWebStreamer
 import moe.rukamori.archivetune.spotify.echo.EchoDecryptingDataSource
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
+import moe.rukamori.archivetune.models.PlaybackPersistenceCodec
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
@@ -376,6 +377,7 @@ import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
 import moe.rukamori.archivetune.playback.queues.PlaylistActionTicket
 import moe.rukamori.archivetune.playback.queues.appendFiniteShuffleOrder
 import moe.rukamori.archivetune.playback.queues.finiteRecommendationsAllowed
+import moe.rukamori.archivetune.playback.queues.insertUserQueuedItems
 import moe.rukamori.archivetune.playback.queues.PlaylistLoadOwner
 import moe.rukamori.archivetune.playback.queues.integrateFinitePreload
 import moe.rukamori.archivetune.playback.queues.withCompleteYouTubePlaylist
@@ -430,8 +432,6 @@ import timber.log.Timber
 import java.io.EOFException
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.ObjectInputStream
-import java.io.ObjectOutputStream
 import java.io.Serializable
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -6433,45 +6433,31 @@ class MusicService :
                 .filterVideo(hideMusicVideos)
         if (allowedItems.isEmpty()) return
         suppressAutoPlayback = false
-        val keepInOrder = dataStore.get(QueueAddAfterManualKey, true)
-        if (!keepInOrder && kind == UserQueuedKind.ADD_TO_QUEUE) {
-            player.addMediaItems(allowedItems)
-            player.prepare()
-            return
-        }
-        val queuedItems = if (keepInOrder) allowedItems.map { it.markUserQueued(kind) } else allowedItems
         val currentIndex = player.currentMediaItemIndex
-        val hasQueue = player.mediaItemCount > 0 && currentIndex != C.INDEX_UNSET
-        val skip =
-            if (keepInOrder && hasQueue) {
-                userQueueSkipCount(upcomingUserQueuedKinds(currentIndex), kind)
-            } else {
-                0
-            }
-        val shuffled = player.shuffleModeEnabled && hasQueue
-        // In shuffle the play order is the shuffle order, so the physical slot only has to be free.
-        val insertionIndex =
-            when {
-                !hasQueue -> player.mediaItemCount
-                shuffled && kind == UserQueuedKind.ADD_TO_QUEUE -> player.mediaItemCount
-                shuffled -> currentIndex + 1
-                else -> (currentIndex + 1 + skip).coerceAtMost(player.mediaItemCount)
-            }
-        val shuffleOrder =
-            if (shuffled) {
-                buildPlayNextShuffleOrder(
-                    currentIndex = currentIndex,
-                    insertionIndex = insertionIndex,
-                    insertionCount = queuedItems.size,
-                    skipUpcoming = skip,
-                )
-            } else {
-                null
-            }
-
-        player.addMediaItems(insertionIndex, queuedItems)
-        shuffleOrder?.let(localPlayer::setShuffleOrder)
-        player.prepare()
+        insertUserQueuedItems(
+            items = allowedItems,
+            kind = kind,
+            keepInOrder = dataStore.get(QueueAddAfterManualKey, true),
+            currentIndex = currentIndex.takeUnless { it == C.INDEX_UNSET },
+            itemCount = player.mediaItemCount,
+            shuffleEnabled = player.shuffleModeEnabled,
+            upcomingKinds = { upcomingUserQueuedKinds(currentIndex) },
+            markQueued = { it.markUserQueued(kind) },
+            append = { player.addMediaItems(it) },
+            insert = { insertionIndex, queuedItems, skip, shuffled ->
+                val shuffleOrder = if (shuffled) {
+                    buildPlayNextShuffleOrder(
+                        currentIndex = currentIndex,
+                        insertionIndex = insertionIndex,
+                        insertionCount = queuedItems.size,
+                        skipUpcoming = skip,
+                    )
+                } else null
+                player.addMediaItems(insertionIndex, queuedItems)
+                shuffleOrder?.let(localPlayer::setShuffleOrder)
+            },
+            prepare = { player.prepare() },
+        )
     }
 
     fun moveQueueItemToNext(mediaItemIndex: Int) {
@@ -12401,11 +12387,9 @@ class MusicService :
         return synchronized(persistentStateLock) {
             runCatching {
                 persistentFile.inputStream().use { fis ->
-                    ObjectInputStream(fis).use { input ->
-                        val payload = input.readObject()
-                        check(payload is T) { "Unexpected persistent payload type for $fileName" }
-                        payload
-                    }
+                    val payload = PlaybackPersistenceCodec.read(fis)
+                    check(payload is T) { "Unexpected persistent payload type for $fileName" }
+                    payload
                 }
             }.onFailure { error ->
                 if (reportedPersistentReadFailures.add(fileName)) {
@@ -12455,10 +12439,7 @@ class MusicService :
         return synchronized(persistentStateLock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
-                    ObjectOutputStream(fos).use { output ->
-                        output.writeObject(payload)
-                        output.flush()
-                    }
+                    PlaybackPersistenceCodec.write(fos, payload)
                 }
 
                 if (!tempFile.renameTo(persistentFile)) {

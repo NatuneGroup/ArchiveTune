@@ -9,6 +9,42 @@
 package moe.rukamori.archivetune.playback.queues
 
 import androidx.media3.common.Player.REPEAT_MODE_OFF
+import moe.rukamori.archivetune.playback.UserQueuedKind
+import moe.rukamori.archivetune.playback.userQueueSkipCount
+
+/** Direct item/subset insertion: only explicit whole-playlist callers perform browse completion. */
+internal fun <T> insertUserQueuedItems(
+    items: List<T>,
+    kind: UserQueuedKind,
+    keepInOrder: Boolean,
+    currentIndex: Int?,
+    itemCount: Int,
+    shuffleEnabled: Boolean,
+    upcomingKinds: () -> List<UserQueuedKind>,
+    markQueued: (T) -> T,
+    append: (List<T>) -> Unit,
+    insert: (index: Int, items: List<T>, skipUpcoming: Int, shuffled: Boolean) -> Unit,
+    prepare: () -> Unit,
+) {
+    if (items.isEmpty()) return
+    if (!keepInOrder && kind == UserQueuedKind.ADD_TO_QUEUE) {
+        append(items)
+        prepare()
+        return
+    }
+    val queuedItems = if (keepInOrder) items.map(markQueued) else items
+    val hasQueue = itemCount > 0 && currentIndex != null
+    val skip = if (keepInOrder && hasQueue) userQueueSkipCount(upcomingKinds(), kind) else 0
+    val shuffled = shuffleEnabled && hasQueue
+    val index = when {
+        !hasQueue -> itemCount
+        shuffled && kind == UserQueuedKind.ADD_TO_QUEUE -> itemCount
+        shuffled -> requireNotNull(currentIndex) + 1
+        else -> (requireNotNull(currentIndex) + 1 + skip).coerceAtMost(itemCount)
+    }
+    insert(index, queuedItems, skip, shuffled)
+    prepare()
+}
 
 internal data class PlaylistActionTicket(val operation: Long, val queueGeneration: Long) {
     fun isCurrent(currentOperation: Long, currentQueueGeneration: Long): Boolean =

@@ -10,12 +10,12 @@ package moe.rukamori.archivetune.playback.queues
 
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
-import java.io.ObjectInputStream
-import java.io.ObjectOutputStream
+import java.io.ObjectStreamClass
 import kotlinx.coroutines.test.runTest
 import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.extensions.toPersistQueue
 import moe.rukamori.archivetune.models.PersistQueue
+import moe.rukamori.archivetune.models.PlaybackPersistenceCodec
 import moe.rukamori.archivetune.models.QueueData
 import moe.rukamori.archivetune.models.QueueType
 import org.junit.Assert.*
@@ -89,6 +89,22 @@ class YouTubeFinitePlaylistRestoreTest {
             assertNull(decoded.shuffleOrder)
             if (record.queueType is QueueType.YOUTUBE) assertTrue(decoded.toContinuationQueue() is YouTubeQueue)
         }
+    }
+
+    @Test fun priorRecordShapeDecodesThroughPlaybackCodecWithCompatibleDefaults() {
+        val priorShape = PersistQueue(
+            "Prior radio", listOf(finiteSongs()[43].toFixtureMetadata()), 0, 87_321L,
+            QueueType.YOUTUBE, QueueData.YouTubeData("duplicate", "RDfixture", "params", true),
+        )
+        val decoded = roundTripFinite(priorShape)
+        assertEquals(priorShape.items, decoded.items)
+        assertEquals(priorShape.queueData, decoded.queueData)
+        assertEquals(87_321L, decoded.position)
+        assertNull(decoded.shuffleOrder)
+        assertNull(decoded.manualQueueKinds)
+        assertTrue(decoded.toContinuationQueue() is YouTubeQueue)
+        assertEquals(1L, ObjectStreamClass.lookup(PersistQueue::class.java).serialVersionUID)
+        assertEquals(2L, ObjectStreamClass.lookup(QueueData.YouTubeData::class.java).serialVersionUID)
     }
 
     @Test fun legacyFiniteRecordRestoresUnknownAndRetainsSavedTimelineForStagedRecovery() {
@@ -171,8 +187,8 @@ class YouTubeFinitePlaylistRestoreTest {
 
 internal fun roundTripFinite(queue: PersistQueue): PersistQueue {
     val bytes = ByteArrayOutputStream().use { buffer ->
-        ObjectOutputStream(buffer).use { it.writeObject(queue) }
+        PlaybackPersistenceCodec.write(buffer, queue)
         buffer.toByteArray()
     }
-    return ObjectInputStream(ByteArrayInputStream(bytes)).use { it.readObject() as PersistQueue }
+    return PlaybackPersistenceCodec.read(ByteArrayInputStream(bytes)) as PersistQueue
 }

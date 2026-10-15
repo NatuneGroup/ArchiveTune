@@ -98,6 +98,38 @@ class YouTubeLoginCookieRetryTest {
     }
 
     @Test
+    fun missingContextExhaustionRetryAcceptsFreshContextAndCommitsExactlyOnce() = runTest(dispatcher) {
+        val f = AuthFixture(dispatcher)
+        var validations = 0
+        f.validate = { validations++; AuthFixture.identity(it) }
+        val vm = view(f)
+        runCurrent()
+        val oldView = vm.webRevision.value
+        vm.onContextExtracted(oldView, "SAPISID=synthetic-B", "visitor-B", null)
+        vm.onExtractionExhausted(oldView)
+        assertEquals(LoginScreenState.Error(LoginError.MissingDataSyncId), vm.screenState.value)
+        vm.retry()
+        runCurrent()
+        val newView = vm.webRevision.value
+        assertTrue(newView > oldView)
+        assertTrue(vm.ownsView(newView))
+        assertEquals(LoginScreenState.Loading, vm.screenState.value)
+        assertEquals(0, validations)
+        assertEquals(0, f.store.transactions)
+        vm.onPageReady(newView)
+        assertEquals(LoginScreenState.Empty, vm.screenState.value)
+        vm.onContextExtracted(oldView, "SAPISID=synthetic-stale", "stale", "stale")
+        repeat(2) { vm.onContextExtracted(newView, "SAPISID=synthetic-B", "visitor-B", "B") }
+        runCurrent()
+        assertEquals(1, validations)
+        assertEquals(1, f.store.transactions)
+        f.assertAccount("B")
+        assertTrue(vm.screenState.value is LoginScreenState.Success)
+        assertTrue(vm.consumeSuccess())
+        assertFalse(vm.consumeSuccess())
+    }
+
+    @Test
     fun duplicateSnapshotsSingleFlightAndChangedSelectedContextCancelsObsoleteLease() = runTest(dispatcher) {
         val f = AuthFixture(dispatcher)
         val mutex = Mutex()

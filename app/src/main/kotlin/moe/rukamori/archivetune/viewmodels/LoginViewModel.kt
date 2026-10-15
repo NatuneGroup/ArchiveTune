@@ -49,6 +49,7 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
     private var beginJob: Job? = null
     private var candidate: PlaybackAuthState? = null
     private var submitted: PlaybackAuthState? = null
+    private var submissionRevision = 0L
     private var released = true
     private var completedOrigin: YouTubeSessionOrigin? = null
     private var successConsumed = false
@@ -89,6 +90,7 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
         attempt = null
         loginJob?.cancel()
         beginJob?.cancel()
+        ++submissionRevision
         submitted = null
         completedOrigin = null
         successConsumed = false
@@ -99,7 +101,9 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
                 if (released) { repository.cancel(next); return@launch }
                 attempt = next
                 _webRevision.value += 1
-                if (retryCandidate) candidate?.let { submit(it) }
+                // An incomplete cached snapshot needs the new document's finite extraction,
+                // not another immediate missing-context failure that blocks fresh snapshots.
+                if (retryCandidate) candidate?.takeIf { it.hasPlaybackLoginContext }?.let { submit(it) }
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Exception) {
@@ -126,6 +130,7 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
     fun onError(viewRevision: Long, error: LoginError) {
         if (!ownsView(viewRevision)) return
         loginJob?.cancel()
+        ++submissionRevision
         _screenState.value = LoginScreenState.Error(error)
     }
 
@@ -134,6 +139,7 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
         val next = PlaybackAuthState(cookie = cookie, visitorData = visitor, dataSyncId = dataSyncId).normalized()
         if (candidate != next && next.dataSyncId == null) {
             loginJob?.cancel()
+            ++submissionRevision
             submitted = null
         }
         candidate = next
@@ -154,19 +160,26 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
         // account. The repository's private validation mutex keeps cancelled/new work single-flight.
         loginJob?.cancel()
         submitted = next
+        val submission = ++submissionRevision
         loginJob = viewModelScope.launch {
             _screenState.value = LoginScreenState.Loading
             repository.completeLogin(owner, next.cookie.orEmpty(), next.visitorData, next.dataSyncId)
                 .onSuccess { session ->
                     // Commit invalidates attempt ownership itself. Only this still-mounted submission
                     // may deliver its success; a later logout/switch cannot receive a stale callback.
-                    if (!released && attempt == owner && repository.isCurrent(session.origin)) {
-                        completedOrigin = session.origin
-                        _screenState.value = LoginScreenState.Success(LoginAccountUiModel(session.accountName,
-                            session.accountEmail, session.accountChannelHandle, session.authState.dataSyncId.orEmpty()))
+                    if (!released && attempt == owner && submission == submissionRevision) {
+                        if (repository.isCurrent(session.origin)) {
+                            completedOrigin = session.origin
+                            _screenState.value = LoginScreenState.Success(LoginAccountUiModel(session.accountName,
+                                session.accountEmail, session.accountChannelHandle, session.authState.dataSyncId.orEmpty()))
+                        } else {
+                            // IO may have committed before logout/switch won, while Main still
+                            // awaited this result. The mounted submission still needs Retry.
+                            _screenState.value = LoginScreenState.Error(LoginError.LoginFailed)
+                        }
                     }
                 }.onFailure { error ->
-                    if (!released && attempt == owner) {
+                    if (!released && attempt == owner && submission == submissionRevision) {
                         _screenState.value = LoginScreenState.Error(if (error is MissingYouTubeDataSyncIdException) LoginError.MissingDataSyncId else LoginError.LoginFailed)
                     }
                 }
@@ -175,6 +188,7 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
 
     fun release() {
         released = true
+        ++submissionRevision
         repository.cancel(attempt)
         attempt = null
         beginJob?.cancel()

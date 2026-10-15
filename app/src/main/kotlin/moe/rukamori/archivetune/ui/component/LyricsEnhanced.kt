@@ -417,7 +417,7 @@ fun LyricsEnhanced(
     // instrumental breaks, LyricsV2 parses with both, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
-        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings.active, lyricsEntries) {
+        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, lyricsEntries) {
             if (!aiRomanizationSettings.active) {
                 emptyList()
             } else {

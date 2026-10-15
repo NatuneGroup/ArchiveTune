@@ -32,7 +32,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.AiRomanizeLyricsKey
+import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.constants.LyricsRomanizeChineseKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeHindiKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeJapaneseKey
@@ -71,7 +71,7 @@ fun LyricsRomanisationSettings(
     // `LyricsRomanizationPreferences.aiHandled`). Greying the switches out rather than leaving them
     // looking live is the difference between "this setting is overridden" and "this setting is
     // broken" — the toggles would otherwise flip happily and change nothing on screen.
-    val (aiRomanizeLyrics) = rememberPreference(AiRomanizeLyricsKey, defaultValue = false)
+    val aiRomanizeLyrics = AiLyricsRomanization.rememberSettings().active
     val builtInEnabled = !aiRomanizeLyrics
     val overriddenDescription =
         if (aiRomanizeLyrics) stringResource(R.string.romanization_overridden_by_ai) else null
@@ -132,7 +132,7 @@ fun LyricsRomanisationSettings(
                         checked = lyricsRomanizeJapanese,
                         onCheckedChange = onLyricsRomanizeJapaneseChange,
                         isEnabled =
-                            builtInEnabled && japaneseLanguagePackState is JapaneseLanguagePackState.Installed,
+                            builtInEnabled && (japaneseLanguagePackState is JapaneseLanguagePackState.Installed || lyricsRomanizeJapanese),
                     )
                 }
 

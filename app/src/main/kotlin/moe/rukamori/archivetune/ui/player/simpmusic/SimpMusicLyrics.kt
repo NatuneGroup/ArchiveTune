@@ -88,6 +88,7 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeKoreanKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
@@ -171,22 +172,14 @@ fun SimpMusicLyrics(
     // The same romanization switches Enhanced and V2 honour. Without these the style ignored
     // every lyrics-related setting beyond text size and tap-to-seek.
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
     val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
     val (romanizeOther) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
-    val romanizationPreferences =
-        remember(romanizeJapanese, romanizeKorean, romanizeChinese, romanizeHindi, romanizeOther, aiRomanizationSettings.active) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOther,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+
 
     val currentLyrics by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val lyrics = currentLyrics?.lyrics
@@ -229,20 +222,34 @@ fun SimpMusicLyrics(
             }
     }
     val entries = parsed.orEmpty()
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entries) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entries.map { it.text })
+    }
+    val romanizationPreferences =
+        remember(romanizeJapanese, romanizeKorean, romanizeChinese, romanizeHindi, romanizeOther, aiHandlesLyrics) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOther,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
 
     val sessionKey = remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
     val aiResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     val aiLines = remember(aiResult, sessionKey, entries, aiRomanizationSettings) {
-        if (aiRomanizationSettings.active) AiLyricsRomanization.linesFor(sessionKey, entries.map { it.text })
+        if (aiHandlesLyrics) AiLyricsRomanization.linesFor(sessionKey, entries.map { it.text })
         else emptyList()
     }
     LaunchedEffect(sessionKey, entries, aiRomanizationSettings) {
-        if (aiRomanizationSettings.active && aiRomanizationSettings.auto && entries.isNotEmpty()) {
+        if (aiHandlesLyrics && aiRomanizationSettings.auto && entries.isNotEmpty()) {
             AiLyricsRomanization.request(sessionKey = sessionKey, lines = entries.map { it.text }, settings = aiRomanizationSettings)
         }
     }
     var phonetics by remember(entries, romanizationPreferences) { mutableStateOf<List<LyricsPhonetics>>(emptyList()) }
-    LaunchedEffect(entries, romanizationPreferences, aiLines) {
+    LaunchedEffect(entries, romanizationPreferences, aiLines, japanesePackReady) {
         phonetics = withContext(Dispatchers.Default) {
             val context = entries.joinToString("\n") { it.text }
             entries.mapIndexed { index, entry ->

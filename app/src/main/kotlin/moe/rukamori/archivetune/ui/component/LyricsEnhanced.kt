@@ -142,6 +142,7 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
 import moe.rukamori.archivetune.lyrics.LyricsEntry
@@ -284,25 +285,10 @@ fun LyricsEnhanced(
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
 
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
 
-    val romanizationPreferences =
-        remember(
-            romanizeJapanese,
-            romanizeKorean,
-            romanizeChinese,
-            romanizeHindi,
-            romanizeOtherLanguages,
-            aiRomanizationSettings.active,
-        ) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOtherLanguages,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+
 
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 
@@ -393,6 +379,27 @@ fun LyricsEnhanced(
             }
     }
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
+    val aiHandlesLyrics = remember(aiRomanizationSettings, lyricsEntries) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, lyricsEntries.map { it.text })
+    }
+    val romanizationPreferences =
+        remember(
+            romanizeJapanese,
+            romanizeKorean,
+            romanizeChinese,
+            romanizeHindi,
+            romanizeOtherLanguages,
+            aiHandlesLyrics,
+        ) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOtherLanguages,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
 
     // Keyed on the raw lyrics text, not on lyricsEntries: the entries now arrive a beat after the
     // first composition, and re-keying on them would put a synchronous buildSyncedLyrics straight
@@ -418,14 +425,14 @@ fun LyricsEnhanced(
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
         remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, lyricsEntries) {
-            if (!aiRomanizationSettings.active) {
+            if (!aiHandlesLyrics) {
                 emptyList()
             } else {
                 AiLyricsRomanization.linesFor(aiRomanizationSessionKey, lyricsEntries.map { it.text })
             }
         }
     LaunchedEffect(aiRomanizationSessionKey, lyricsEntries, aiRomanizationSettings) {
-        if (!aiRomanizationSettings.active || !aiRomanizationSettings.auto) return@LaunchedEffect
+        if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
         if (lyricsEntries.isEmpty()) return@LaunchedEffect
         AiLyricsRomanization.request(
             sessionKey = aiRomanizationSessionKey,
@@ -436,7 +443,7 @@ fun LyricsEnhanced(
 
     val romanizationContext = remember(lyricsEntries) { lyricsEntries.joinToString("\n") { it.text } }
 
-    LaunchedEffect(lyricsEntries, romanizationPreferences, aiRomanizedLines) {
+    LaunchedEffect(lyricsEntries, romanizationPreferences, aiRomanizedLines, japanesePackReady) {
         // Everything below (scanning + romanizing every line, often one job per word for TTML)
         // must not inherit the main dispatcher — it stutters the karaoke animation on track
         // change; run the whole batch on Default and only publish the results back.
@@ -1622,8 +1629,7 @@ private fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): Li
 private fun Double.toMilliseconds(): Int = (this * 1000.0).roundToInt().coerceAtLeast(0)
 
 /**
- * Reshapes AI romanisation — one string per lyric line — into the per-word map [buildSyncedLyrics]
- * expects.
+ * AI supplies line readings, not timed-word alignment.
  */
 private fun aiRomanizationMap(
     entries: List<LyricsEntry>,
@@ -1755,9 +1761,15 @@ private fun buildLineSyncedLrcLine(
         )
     }
 
-    val syllables = listOf(
-        KaraokeSyllable(content = entry.text, start = start, end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS, phonetic = null),
-    )
+    // Keep the existing wrapping units, but never manufacture timed phonetic alignment.
+    val syllables = entry.text.toLyricsWrappingUnits().ifEmpty { listOf(entry.text) }.map { unit ->
+        KaraokeSyllable(
+            content = unit,
+            start = start,
+            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
+            phonetic = null,
+        )
+    }
 
     return KaraokeLine.MainKaraokeLine(
         syllables = syllables,
@@ -1866,10 +1878,11 @@ private fun SingleActiveLineCluster(
                 }
 
                 val phonetic =
-                    line.syllables
-                        .mapNotNull { it.phonetic?.trim() }
-                        .filter { it.isNotEmpty() }
-                        .joinToString(" ")
+                    (line as? KaraokeLine.MainKaraokeLine)?.phonetic?.takeIf { it.isNotBlank() }
+                        ?: line.syllables
+                            .mapNotNull { it.phonetic?.trim() }
+                            .filter { it.isNotEmpty() }
+                            .joinToString(" ")
                 if (phonetic.isNotEmpty()) {
                     Text(
                         text = phonetic,

@@ -457,9 +457,10 @@ object LyricsUtils {
     }
 
     /**
-     * True when [dominantCode] — a value from [detectDominantLanguageCode] — names a language the
-     * user put in an exclusion set ("Don't auto translate these languages" / "Don't romanise these
-     * languages").
+     * Conservatively applies exclusions to the script family returned by [detectDominantLanguageCode].
+     * Without source-language metadata, Urdu/Persian/Arabic and Cyrillic/Devanagari siblings cannot
+     * be distinguished. Excluding one therefore excludes its ambiguous siblings too, not just the
+     * legacy language label used for that script. Latin-language identification remains unknown.
      */
     fun matchesExcludedLanguage(
         dominantCode: String,
@@ -478,7 +479,14 @@ object LyricsUtils {
      * its own. See [matchesExcludedLanguage].
      */
     private val EXCLUSION_ALIASES: Map<String, List<String>> =
-        mapOf("CHINESE" to listOf("CHINESE_SIMPLIFIED", "CHINESE_TRADITIONAL"))
+        mapOf(
+            // Han without kana is ambiguous, including kanji-only Japanese.
+            "CHINESE" to listOf("CHINESE_SIMPLIFIED", "CHINESE_TRADITIONAL", "JAPANESE"),
+            "ARABIC" to listOf("PERSIAN", "URDU", "PASHTO", "SINDHI", "UYGHUR"),
+            "RUSSIAN" to listOf("UKRAINIAN", "BELARUSIAN", "BULGARIAN", "SERBIAN", "MACEDONIAN", "KAZAKH", "KYRGYZ", "MONGOLIAN", "TAJIK"),
+            "HINDI" to listOf("MARATHI", "NEPALI", "SANSKRIT"),
+            "HEBREW" to listOf("YIDDISH"),
+        )
 
     /** True when [lyrics] should be sent for automatic AI translation into [targetLanguage]. */
     fun shouldAutoTranslate(
@@ -515,18 +523,17 @@ object LyricsUtils {
     }
 
     /**
-     * Returns the uppercase language code (e.g. "JAPANESE", "KOREAN", "CHINESE", "HINDI", "ARABIC",
-     * "RUSSIAN", "THAI", "HEBREW", "GREEK", "ARMENIAN", "GEORGIAN") that best describes the
-     * dominant non-Latin script in [lyrics], or `null` if the lyrics are predominantly Latin (so no
-     * exclusion can match).
+     * Returns a legacy uppercase label for the dominant non-Latin script family, not an exact
+     * language detector. Kana supplies Japanese context for Han; Han alone remains ambiguous.
+     * Latin-only or unrecognized scripts return null rather than an invented language identity.
      */
     fun detectDominantLanguageCode(lyrics: String): String? {
         if (lyrics.isBlank()) return null
         // Tally non-Latin scripts found in the lyrics. Latin/Common/Inherited are ignored.
         val scriptCounts = HashMap<UnicodeScript, Int>()
-        for (char in lyrics) {
-            if (!char.isLetter()) continue
-            val script = UnicodeScript.of(char.code)
+        for (codePoint in lyrics.codePoints().toArray()) {
+            if (!Character.isLetter(codePoint)) continue
+            val script = UnicodeScript.of(codePoint)
             when (script) {
                 UnicodeScript.LATIN,
                 UnicodeScript.COMMON,
@@ -537,7 +544,9 @@ object LyricsUtils {
         if (scriptCounts.isEmpty()) return null
         val dominantScript = scriptCounts.maxByOrNull { it.value }!!.key
         return when (dominantScript) {
-            UnicodeScript.HAN -> "CHINESE"
+            UnicodeScript.HAN -> if ((scriptCounts[UnicodeScript.HIRAGANA] ?: 0) +
+                (scriptCounts[UnicodeScript.KATAKANA] ?: 0) > 0
+            ) "JAPANESE" else "CHINESE"
             UnicodeScript.HIRAGANA, UnicodeScript.KATAKANA -> "JAPANESE"
             UnicodeScript.HANGUL -> "KOREAN"
             UnicodeScript.DEVANAGARI -> "HINDI"

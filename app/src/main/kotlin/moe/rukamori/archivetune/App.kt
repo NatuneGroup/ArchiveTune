@@ -334,7 +334,10 @@ class App :
 
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_START) syncSpotifyHistory()
+                if (event == Lifecycle.Event.ON_START) {
+                    syncSpotifyHistory()
+                    JapaneseLanguagePackManager.onForeground()
+                }
             },
         )
 

@@ -538,6 +538,9 @@ fun AppleMusicPlayerContent(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, currentLyrics?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyrics?.lyrics)
+    }
     // Observe the set of media IDs the user has dismissed translation for.
     // When a user clicks "Undo Translation", the mediaId is added to this set;
     // auto-translate is suppressed for dismissed songs until the user manually

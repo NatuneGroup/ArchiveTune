@@ -294,14 +294,6 @@ class LyricsMenuViewModel
             translationTarget = target
         }
 
-        private fun translationIdentity(prefs: Preferences, requestTarget: String): List<Any?> = listOf(
-            prefs.toAiServiceConfig().cacheIdentity,
-            prefs[AutoTranslateLyricsKey] ?: false,
-            prefs[TranslatorTargetLangKey]?.ifBlank { requestTarget } ?: requestTarget,
-            requestTarget,
-            prefs[AutoTranslateExcludedLanguagesKey] ?: emptySet<String>(),
-        )
-
         @Synchronized
         fun translateLyricsWithAi(
             mediaMetadata: MediaMetadata,
@@ -491,3 +483,11 @@ class LyricsMenuViewModel
             private const val TAG = "LyricsMenuViewModel"
         }
     }
+
+internal fun translationIdentity(prefs: Preferences, requestTarget: String): List<Any?> = listOf(
+    prefs.toAiServiceConfig().cacheIdentity,
+    prefs[AutoTranslateLyricsKey] ?: false,
+    prefs[TranslatorTargetLangKey]?.ifBlank { requestTarget } ?: requestTarget,
+    requestTarget,
+    prefs[AutoTranslateExcludedLanguagesKey] ?: emptySet<String>(),
+)

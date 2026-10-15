@@ -1410,34 +1410,37 @@ object LyricsUtils {
     suspend fun romanizeJapanese(text: String): String =
         withContext(Dispatchers.Default) {
             val tokenizer = JapaneseLanguagePackManager.tokenizerOrNull() ?: return@withContext text
-            val tokens = tokenizer.tokenize(text)
-
-            val romanizedTokens =
-                tokens.mapIndexed { index, token ->
-                    val currentReading =
-                        if (token.reading.isNullOrEmpty() || token.reading == "*") {
-                            token.surface
-                        } else {
-                            token.reading
-                        }
-                    // Normalize Hiragana → Katakana so KANA_ROMAJI_MAP can handle both.
-                    val katakanaReading = hiraganaToKatakana(currentReading)
-
-                    // Pass the next token's reading for sokuon handling at token boundaries.
-                    // Also normalized to Katakana for consistency.
-                    val nextTokenReading =
-                        if (index + 1 < tokens.size) {
-                            val nextReading =
-                                tokens[index + 1].reading?.takeIf { it.isNotEmpty() && it != "*" }
-                                    ?: tokens[index + 1].surface
-                            hiraganaToKatakana(nextReading)
-                        } else {
-                            null
-                        }
-                    katakanaToRomaji(katakanaReading, nextTokenReading)
-                }
-            romanizedTokens.joinToString(" ")
+            romanizeJapaneseWithTokenizer(text, tokenizer)
         }
+
+    internal fun romanizeJapaneseWithTokenizer(text: String, tokenizer: DownloadedJapaneseTokenizer): String {
+        val tokens = tokenizer.tokenize(text)
+        val romanizedTokens =
+            tokens.mapIndexed { index, token ->
+                val currentReading =
+                    if (token.reading.isNullOrEmpty() || token.reading == "*") {
+                        token.surface
+                    } else {
+                        token.reading
+                    }
+                // Normalize Hiragana → Katakana so KANA_ROMAJI_MAP can handle both.
+                val katakanaReading = hiraganaToKatakana(currentReading)
+
+                // Pass the next token's reading for sokuon handling at token boundaries.
+                // Also normalized to Katakana for consistency.
+                val nextTokenReading =
+                    if (index + 1 < tokens.size) {
+                        val nextReading =
+                            tokens[index + 1].reading?.takeIf { it.isNotEmpty() && it != "*" }
+                                ?: tokens[index + 1].surface
+                        hiraganaToKatakana(nextReading)
+                    } else {
+                        null
+                    }
+                katakanaToRomaji(katakanaReading, nextTokenReading)
+            }
+        return romanizedTokens.joinToString(" ")
+    }
 
     /** Converts a Katakana string to Romaji using the pre-defined [KANA_ROMAJI_MAP]. */
     fun katakanaToRomaji(
@@ -1971,13 +1974,13 @@ object LyricsUtils {
     }
 
     /** Japanese-specific per-line tokenization. See [romanizeWordsForLine] for the rationale. */
-    private suspend fun romanizeJapaneseWordsForLine(
+    internal suspend fun romanizeJapaneseWordsForLine(
         words: List<String>,
         lineText: String,
+        tokenizer: DownloadedJapaneseTokenizer? = JapaneseLanguagePackManager.tokenizerOrNull(),
     ): List<String?> = withContext(Dispatchers.Default) {
         if (words.isEmpty()) return@withContext emptyList()
-        val tokenizer = JapaneseLanguagePackManager.tokenizerOrNull()
-            ?: return@withContext words.map { null }
+        if (tokenizer == null) return@withContext words.map { null }
 
         val tokens = tokenizer.tokenize(lineText)
         if (tokens.isEmpty()) return@withContext words.map { null }
@@ -2051,16 +2054,19 @@ object LyricsUtils {
         result
     }
 
-    private suspend fun romanizeWithIcu(text: String): String =
+    internal suspend fun romanizeWithIcu(
+        text: String,
+        convert: (String) -> String = { genericRomanizationTransliterator.get().transliterate(it) },
+    ): String =
         withContext(Dispatchers.Default) {
             try {
-                genericRomanizationTransliterator.get().transliterate(text)
+                convert(text)
             } catch (_: Exception) {
                 text
             }
         }
 
-    private fun normalizeRomanizedText(
+    internal fun normalizeRomanizedText(
         original: String,
         romanized: String?,
     ): String? {

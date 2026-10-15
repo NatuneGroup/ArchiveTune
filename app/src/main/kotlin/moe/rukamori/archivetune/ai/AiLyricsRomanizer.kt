@@ -15,7 +15,10 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 /** Batches a track's lyric lines into AI romanisation requests. */
-class AiLyricsRomanizer {
+class AiLyricsRomanizer(
+    private val request: suspend (AiServiceConfig, List<String>, String) -> List<String?> =
+        { config, lines, format -> AiTextService.romanizeLines(config, lines, format) },
+) {
     /**
      * Romanises [lines] and returns a list of the same size, aligned by index.
      *
@@ -66,11 +69,7 @@ class AiLyricsRomanizer {
         if (batch.isEmpty()) return emptyList()
         return try {
             val result =
-                AiTextService.romanizeLines(
-                    config = config,
-                    lines = batch.map { it.value },
-                    formatName = "plain text",
-                )
+                request(config, batch.map { it.value }, "plain text")
             if (result.size == batch.size) {
                 result
             } else {

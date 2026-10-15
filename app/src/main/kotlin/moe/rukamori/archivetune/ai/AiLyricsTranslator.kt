@@ -11,7 +11,10 @@ package moe.rukamori.archivetune.ai
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
-class AiLyricsTranslator {
+class AiLyricsTranslator(
+    private val request: suspend (AiServiceConfig, String, List<String>, String) -> List<String> =
+        { config, target, lines, format -> AiTextService.translateLines(config, target, lines, format) },
+) {
     suspend fun translate(
         config: AiServiceConfig,
         lyrics: String,
@@ -55,12 +58,7 @@ class AiLyricsTranslator {
         if (batch.isEmpty()) return emptyList()
         // Fail the operation atomically: locally substituted originals are not translations.
         // Transport/auth/quota failures cannot be repaired by recursively splitting lyric lines.
-        val result = AiTextService.translateLines(
-            config = config,
-            targetLanguage = targetLanguage,
-            lines = batch.map { it.text },
-            formatName = formatName,
-        )
+        val result = request(config, targetLanguage, batch.map { it.text }, formatName)
         if (result.size != batch.size || result.any { it.isBlank() }) {
             throw AiServiceException("AI returned incomplete lyric segments")
         }

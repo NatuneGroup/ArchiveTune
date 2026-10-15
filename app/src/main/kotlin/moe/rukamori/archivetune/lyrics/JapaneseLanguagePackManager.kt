@@ -68,7 +68,7 @@ object JapaneseLanguagePackManager {
     const val EXPECTED_SIZE_BYTES = 13_343_016L
     private const val DOWNLOAD_URL =
         "https://repo.maven.apache.org/maven2/com/atilika/kuromoji/kuromoji-ipadic/0.9.0/kuromoji-ipadic-0.9.0.jar"
-    private const val EXPECTED_SHA256 =
+    internal const val EXPECTED_SHA256 =
         "24909fd751c0b439f7af5131b080eb65bc85062f0c4977ca4a71c76abe74e0b6"
     private const val TRANSFER_DEADLINE_MS = 180_000L
     private val autoAttemptedKey = booleanPreferencesKey("japanesePackAutoAttemptedV1")
@@ -196,9 +196,9 @@ object JapaneseLanguagePackManager {
                         if (id == generation) {
                             if (!automatic) preferences[removedKey] = false
                             val choice = preferences[LyricsRomanizeJapaneseKey]
-                            if ((automatic && choice != false && preferences[removedKey] != true) ||
-                                (!automatic && choice == startingChoice)
-                            ) preferences[LyricsRomanizeJapaneseKey] = true
+                            if (shouldEnableJapaneseAfterInstall(automatic, startingChoice, choice, preferences[removedKey] == true)) {
+                                preferences[LyricsRomanizeJapaneseKey] = true
+                            }
                         }
                     }
                     currentCoroutineContext().ensureActive()
@@ -278,7 +278,9 @@ object JapaneseLanguagePackManager {
         JapaneseLanguagePackState.Failed(requireNotNull(applicationContext).getString(message), removalFailed)
 
     private suspend fun validateAndOpen(file: File): DownloadedJapaneseTokenizer {
-        check(file.length() == EXPECTED_SIZE_BYTES && sha256(file) == EXPECTED_SHA256) { "Invalid dictionary checksum" }
+        check(file.length() == EXPECTED_SIZE_BYTES && validJapanesePackIntegrity(file.length(), sha256(file))) {
+            "Invalid dictionary checksum"
+        }
         currentCoroutineContext().ensureActive()
         return ZipFile(file).use { archive ->
             val resolver = ResourceResolver { resourceName ->
@@ -320,7 +322,7 @@ object JapaneseLanguagePackManager {
                             check(downloaded <= EXPECTED_SIZE_BYTES) { "Dictionary exceeded size limit" }
                             output.write(buffer, 0, count)
                             if (id == generation) mutableState.value = JapaneseLanguagePackState.Downloading(
-                                if (total > 0) ((downloaded * 100L) / total).toInt().coerceAtMost(99) else -1,
+                                japanesePackProgress(downloaded, total),
                             )
                         }
                         output.flush()
@@ -354,3 +356,17 @@ object JapaneseLanguagePackManager {
         }
     }
 }
+
+internal fun shouldEnableJapaneseAfterInstall(
+    automatic: Boolean,
+    startingChoice: Boolean?,
+    currentChoice: Boolean?,
+    removed: Boolean,
+): Boolean = if (automatic) currentChoice != false && !removed else currentChoice == startingChoice
+
+internal fun japanesePackProgress(downloaded: Long, total: Long): Int =
+    if (total > 0) ((downloaded * 100L) / total).toInt().coerceAtMost(99) else -1
+
+internal fun validJapanesePackIntegrity(size: Long, sha256: String): Boolean =
+    size == JapaneseLanguagePackManager.EXPECTED_SIZE_BYTES &&
+        sha256 == JapaneseLanguagePackManager.EXPECTED_SHA256

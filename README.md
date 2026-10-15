@@ -310,10 +310,12 @@ No device, visual, USB or all-language validation is claimed.
   terminal login errors and **YTPlayerUtils → InnerTubeX → NewPipe → Echo** remain;
   no personal/pool cookie bridge or new HLS/SABR/bounded-range transport is enabled.
 
-The 121 focused test methods are authored and integrated, **UNEXECUTED**.
-Independent changed-path review and separate exact-head remote BUILD/TESTS are still
-pending. This source has not been compiled or exercised against live Google login,
-YouTube page envelopes, rendered WebViews or audible playback. Historical green results do
+At the 2026-10-15 review-fix integration checkpoint, **134 focused test methods**
+are authored and integrated (the original 121 plus 13 regressions), locally unexecuted.
+The five confirmed source-review corrections await targeted recheck and separate
+exact-head remote BUILD/TESTS; actual final results belong in the candidate PR/Actions,
+not this pre-CI checkpoint. No local compilation/test execution or live Google login,
+YouTube page-envelope, rendered WebView or audible playback validation is claimed. Historical green results do
 not establish new success. See [login boundaries](docs/source-logins.md),
 [extraction provenance](docs/extraction.md) and [release gates](docs/claude/RELEASES.md);
 actual later results belong in the candidate PR/[Actions](https://github.com/NatuneGroup/ArchiveTune/actions).

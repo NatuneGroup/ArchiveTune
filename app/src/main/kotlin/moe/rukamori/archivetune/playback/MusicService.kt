@@ -364,6 +364,7 @@ import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
 import moe.rukamori.archivetune.spotify.SpotifyWebStreamer
 import moe.rukamori.archivetune.spotify.echo.EchoDecryptingDataSource
 import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
+import moe.rukamori.archivetune.models.PlaybackPersistenceCodec
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
@@ -373,6 +374,13 @@ import moe.rukamori.archivetune.playback.queues.appendableQueuePage
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
+import moe.rukamori.archivetune.playback.queues.PlaylistActionTicket
+import moe.rukamori.archivetune.playback.queues.appendFiniteShuffleOrder
+import moe.rukamori.archivetune.playback.queues.finiteRecommendationsAllowed
+import moe.rukamori.archivetune.playback.queues.insertUserQueuedItems
+import moe.rukamori.archivetune.playback.queues.PlaylistLoadOwner
+import moe.rukamori.archivetune.playback.queues.integrateFinitePreload
+import moe.rukamori.archivetune.playback.queues.withCompleteYouTubePlaylist
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistPhase
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistLoader
 import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
@@ -424,8 +432,6 @@ import timber.log.Timber
 import java.io.EOFException
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.ObjectInputStream
-import java.io.ObjectOutputStream
 import java.io.Serializable
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -631,6 +637,7 @@ class MusicService :
     }
 
     private var finiteQueueJob: Job? = null
+    private val finiteLoadOwner = PlaylistLoadOwner()
     private var playlistActionJob: Job? = null
     private var playlistActionGeneration = 0L
     private val mutablePlaylistLoadState = MutableStateFlow(PlaylistLoadState())
@@ -5606,6 +5613,7 @@ class MusicService :
     }
 
     private fun invalidatePlaylistWork() {
+        finiteLoadOwner.cancel()
         finiteQueueJob?.cancel()
         finiteQueueJob = null
         playlistActionGeneration++
@@ -5639,6 +5647,7 @@ class MusicService :
             playlistActionJob = null
             setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true))
         } else {
+            finiteLoadOwner.cancel()
             finiteQueueJob?.cancel()
             finiteQueueJob = null
             initialQueueLoadGeneration++
@@ -5667,49 +5676,53 @@ class MusicService :
         playlistActionJob?.cancel()
         val operation = ++playlistActionGeneration
         val queueGeneration = initialQueueLoadGeneration
+        val ownership = PlaylistActionTicket(operation, queueGeneration)
         retryWholePlaylistLoad = { wholeYouTubePlaylist(playlistId, shuffle, playNext) }
         setWholePlaylistState(PlaylistLoadState(loading = true, wholeAction = true, showDialog = true))
         playlistActionJob = scope.launch {
             try {
-                val page = withContext(Dispatchers.IO) { loadCompleteYouTubePlaylist(playlistId) }
-                val items = page.songs.map { it.toMediaItem() }.filterPlaybackContent(
-                    dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
-                )
-                if (operation != playlistActionGeneration || queueGeneration != initialQueueLoadGeneration) return@launch
-                playlistActionJob = null
-                setWholePlaylistState(PlaylistLoadState())
-                retryWholePlaylistLoad = null
-                if (shuffle) {
-                    val normalizedId = playlistId.removePrefix("VL").removePrefix("VL")
-                    val entries = page.songs.mapIndexed { index, song ->
-                        FinitePlaylistEntry(
-                            song.toMediaMetadata(),
-                            song.setVideoId?.takeIf(String::isNotBlank)?.let { "$normalizedId:set:$it" }
-                                ?: "$normalizedId:ordinal:$index",
-                            song.endpoint?.index,
-                        )
-                    }
-                    playQueue(
-                        YouTubePlaylistQueue(
-                            WatchEndpoint(playlistId = playlistId),
-                            snapshot = FinitePlaylistSnapshot(
-                                title = page.playlist.title, entries = entries, phase = FinitePlaylistPhase.EXHAUSTED,
-                            ),
-                            shuffled = true,
-                        ),
+                withCompleteYouTubePlaylist(playlistId,
+                    fetch = { withContext(Dispatchers.IO) { loadCompleteYouTubePlaylist(playlistId) } },
+                ) { page ->
+                    val items = page.songs.map { it.toMediaItem() }.filterPlaybackContent(
+                        dataStore.get(HideExplicitKey, false), dataStore.get(HideVideoKey, false),
                     )
-                } else if (playNext) {
-                    this@MusicService.playNext(items)
-                } else {
-                    addToQueue(items)
+                    if (!ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) return@withCompleteYouTubePlaylist
+                    playlistActionJob = null
+                    setWholePlaylistState(PlaylistLoadState())
+                    retryWholePlaylistLoad = null
+                    if (shuffle) {
+                        val normalizedId = playlistId.removePrefix("VL").removePrefix("VL")
+                        val entries = page.songs.mapIndexed { index, song ->
+                            FinitePlaylistEntry(
+                                song.toMediaMetadata(),
+                                song.setVideoId?.takeIf(String::isNotBlank)?.let { "$normalizedId:set:$it" }
+                                    ?: "$normalizedId:ordinal:$index",
+                                song.endpoint?.index,
+                            )
+                        }
+                        playQueue(
+                            YouTubePlaylistQueue(
+                                WatchEndpoint(playlistId = playlistId),
+                                snapshot = FinitePlaylistSnapshot(
+                                    title = page.playlist.title, entries = entries, phase = FinitePlaylistPhase.EXHAUSTED,
+                                ),
+                                shuffled = true,
+                            ),
+                        )
+                    } else if (playNext) {
+                        this@MusicService.playNext(items)
+                    } else {
+                        addToQueue(items)
+                    }
                 }
             } catch (error: CancellationException) {
-                if (operation == playlistActionGeneration && queueGeneration == initialQueueLoadGeneration) {
+                if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
                     setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true))
                 }
                 throw error
             } catch (_: Exception) {
-                if (operation == playlistActionGeneration && queueGeneration == initialQueueLoadGeneration) {
+                if (ownership.isCurrent(playlistActionGeneration, initialQueueLoadGeneration)) {
                     setWholePlaylistState(PlaylistLoadState(incomplete = true, wholeAction = true, showDialog = true))
                 }
             } finally {
@@ -5748,7 +5761,7 @@ class MusicService :
         val order = if (player.shuffleModeEnabled) currentShuffleIndices() else null
         player.addMediaItems(items)
         // Never randomly insert a new page into already-played shuffle history.
-        order?.let { setFiniteShuffleIndices(it + (oldCount until player.mediaItemCount).shuffled()) }
+        order?.let { setFiniteShuffleIndices(appendFiniteShuffleOrder(it, oldCount, player.mediaItemCount)) }
         if (oldCount == 0) player.prepare()
     }
 
@@ -5760,6 +5773,7 @@ class MusicService :
     ) {
         if (finiteQueueJob?.isActive == true || currentQueue !== queue || isHydratingRestoredQueue) return
         val generation = initialQueueLoadGeneration
+        val ticket = finiteLoadOwner.begin(generation, queue) ?: return
         val needsInitial = initial || queue.snapshot.continuation == null && !queue.confirmedExhausted ||
             queue.snapshot.phase == FinitePlaylistPhase.UNKNOWN
         retryFinitePlaylistLoad = {
@@ -5775,7 +5789,7 @@ class MusicService :
                 val preload = if (initial && !recovering) queue.preloadItem?.toMediaItem()?.let {
                     listOf(it).filterPlaybackContent(hideExplicit, hideVideo).singleOrNull()
                 } else null
-                if (generation != initialQueueLoadGeneration || currentQueue !== queue) return@launch
+                if (!ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) return@launch
                 if (initial && !recovering && !queue.initialTimelineCleared) {
                     queue.initialTimelineCleared = true
                     player.clearMediaItems()
@@ -5798,93 +5812,95 @@ class MusicService :
                         }
                         requests += proposal.requestsUsed
                         val status = queue.status(proposal).filterPlaybackContent(hideExplicit, hideVideo)
-                        if (generation != initialQueueLoadGeneration || currentQueue !== queue) return@bounded
-                        finiteMutationInProgress = true
-                        try {
-                            if (recovering && first) {
-                                val savedItems = player.mediaItems
-                                val savedMetadata = savedItems.map { it.metadata ?: throw IncompleteYouTubePlaylistException() }
-                                val alignment = alignLegacyFinitePlaylist(
-                                    savedMetadata, proposal.snapshot.entries,
-                                    savedItems.indices.filterTo(mutableSetOf()) { savedItems[it].userQueuedKind() != null },
-                                )
-                                    ?: throw IncompleteYouTubePlaylistException()
-                                // Insert only missing segments; never set/seek the current item.
-                                // Existing MediaItems retain manual markers, shuffle order and position.
-                                val segments = alignment.savedIndices.mapIndexed { index, mergedIndex ->
-                                    val from = if (index == 0) 0 else alignment.savedIndices[index - 1] + 1
-                                    alignment.entries.subList(from, mergedIndex).map { it.toMediaItem() }
-                                        .filterExplicit(hideExplicit).filterVideo(hideVideo).filterBlockedArtists(blockedArtistIds)
-                                }
-                                val suffix = alignment.entries.drop(alignment.savedIndices.last() + 1)
-                                    .map { it.toMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
-                                    .filterBlockedArtists(blockedArtistIds)
-                                val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
-                                queue.accept(proposal)
-                                savedItems.forEachIndexed { index, item ->
-                                    if (item.userQueuedKind() == null) {
-                                        queue.rememberOccurrence(item, alignment.entries[alignment.savedIndices[index]].key)
+                        if (!ticket.acceptIfCurrent(initialQueueLoadGeneration, currentQueue) {
+                            finiteMutationInProgress = true
+                            try {
+                                if (recovering && first) {
+                                    val savedItems = player.mediaItems
+                                    val savedMetadata = savedItems.map { it.metadata ?: throw IncompleteYouTubePlaylistException() }
+                                    val alignment = alignLegacyFinitePlaylist(
+                                        savedMetadata, proposal.snapshot.entries,
+                                        savedItems.indices.filterTo(mutableSetOf()) { savedItems[it].userQueuedKind() != null },
+                                    )
+                                        ?: throw IncompleteYouTubePlaylistException()
+                                    // Insert only missing segments; never set/seek the current item.
+                                    // Existing MediaItems retain manual markers, shuffle order and position.
+                                    val segments = alignment.savedIndices.mapIndexed { index, mergedIndex ->
+                                        val from = if (index == 0) 0 else alignment.savedIndices[index - 1] + 1
+                                        alignment.entries.subList(from, mergedIndex).map { it.toMediaItem() }
+                                            .filterExplicit(hideExplicit).filterVideo(hideVideo).filterBlockedArtists(blockedArtistIds)
                                     }
-                                }
-                                player.addMediaItems(suffix)
-                                for (index in savedItems.indices.reversed()) player.addMediaItems(index, segments[index])
-                                oldShuffle?.let { order ->
-                                    var inserted = 0
-                                    val mappedIndices = savedItems.indices.map { index ->
-                                        inserted += segments[index].size
-                                        index + inserted
+                                    val suffix = alignment.entries.drop(alignment.savedIndices.last() + 1)
+                                        .map { it.toMediaItem() }.filterExplicit(hideExplicit).filterVideo(hideVideo)
+                                        .filterBlockedArtists(blockedArtistIds)
+                                    val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                    queue.accept(proposal)
+                                    savedItems.forEachIndexed { index, item ->
+                                        if (item.userQueuedKind() == null) {
+                                            queue.rememberOccurrence(item, alignment.entries[alignment.savedIndices[index]].key)
+                                        }
                                     }
-                                    val knownIndices = mappedIndices.toSet()
-                                    val newIndices = (0 until player.mediaItemCount).filterNot { it in knownIndices }
-                                    setFiniteShuffleIndices(order.map { mappedIndices[it] } + newIndices.shuffled())
-                                }
-                            } else if (first && preload != null) {
-                                val anchor = player.mediaItems.indexOfFirst { it === preload }
-                                if (anchor < 0) throw IncompleteYouTubePlaylistException()
-                                val selected = proposal.entries.getOrNull(proposal.selectedIndex)
-                                    ?: throw IncompleteYouTubePlaylistException()
-                                val selectedKey = selected.key
-                                val selectedIndex = status.items.indexOfFirst { it.finiteOccurrence() == selectedKey }
-                                if (selectedIndex < 0) throw IncompleteYouTubePlaylistException()
-                                queue.accept(proposal)
-                                queue.preloadedKey = selectedKey
-                                val prefix = status.items.take(selectedIndex)
-                                val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
-                                player.addMediaItems(anchor, prefix)
-                                oldShuffle?.let { order ->
-                                    val adjusted = order.map { if (it >= anchor) it + prefix.size else it }
-                                    setFiniteShuffleIndices((anchor until anchor + prefix.size).toList() + adjusted)
-                                }
-                                appendFiniteItems(status.items.drop(selectedIndex + 1))
-                            } else if (first && !recovering) {
-                                queue.accept(proposal)
-                                if (player.mediaItemCount > 0) {
-                                    // These were manually inserted after the owned initial clear.
-                                    appendFiniteItems(status.items)
+                                    player.addMediaItems(suffix)
+                                    for (index in savedItems.indices.reversed()) player.addMediaItems(index, segments[index])
+                                    oldShuffle?.let { order ->
+                                        var inserted = 0
+                                        val mappedIndices = savedItems.indices.map { index ->
+                                            inserted += segments[index].size
+                                            index + inserted
+                                        }
+                                        val knownIndices = mappedIndices.toSet()
+                                        val newIndices = (0 until player.mediaItemCount).filterNot { it in knownIndices }
+                                        setFiniteShuffleIndices(order.map { mappedIndices[it] } + newIndices.shuffled())
+                                    }
+                                } else if (first && preload != null) {
+                                    val anchor = player.mediaItems.indexOfFirst { it === preload }
+                                    if (anchor < 0) throw IncompleteYouTubePlaylistException()
+                                    val selected = proposal.entries.getOrNull(proposal.selectedIndex)
+                                        ?: throw IncompleteYouTubePlaylistException()
+                                    val selectedKey = selected.key
+                                    integrateFinitePreload(status.items, selectedKey, { it.finiteOccurrence() },
+                                        insertPrefix = { prefix ->
+                                            queue.accept(proposal)
+                                            queue.preloadedKey = selectedKey
+                                            val oldShuffle = if (player.shuffleModeEnabled) currentShuffleIndices() else null
+                                            player.addMediaItems(anchor, prefix)
+                                            oldShuffle?.let { order ->
+                                                val adjusted = order.map { if (it >= anchor) it + prefix.size else it }
+                                                setFiniteShuffleIndices((anchor until anchor + prefix.size).toList() + adjusted)
+                                            }
+                                        },
+                                        appendSuffix = ::appendFiniteItems,
+                                    )
+                                } else if (first && !recovering) {
+                                    queue.accept(proposal)
+                                    if (player.mediaItemCount > 0) {
+                                        // These were manually inserted after the owned initial clear.
+                                        appendFiniteItems(status.items)
+                                    } else {
+                                        player.setMediaItems(status.items, status.mediaItemIndex, status.position)
+                                        if (status.items.isNotEmpty()) {
+                                            player.prepare()
+                                            player.playWhenReady = playWhenReady
+                                            if (player.shuffleModeEnabled) applyCurrentFirstShuffleOrder()
+                                        }
+                                    }
                                 } else {
-                                    player.setMediaItems(status.items, status.mediaItemIndex, status.position)
-                                    if (status.items.isNotEmpty()) {
-                                        player.prepare()
-                                        player.playWhenReady = playWhenReady
-                                        if (player.shuffleModeEnabled) applyCurrentFirstShuffleOrder()
-                                    }
+                                    queue.accept(proposal)
+                                    appendFiniteItems(status.items)
                                 }
-                            } else {
-                                queue.accept(proposal)
-                                appendFiniteItems(status.items)
+                                queue.timelineInstalled = true
+                                queueTitle = proposal.snapshot.title
+                            } finally {
+                                finiteMutationInProgress = false
                             }
-                            queue.timelineInstalled = true
-                            queueTitle = proposal.snapshot.title
-                        } finally {
-                            finiteMutationInProgress = false
-                        }
+                        }) return@bounded
                         first = false
                     } while (
                         queue.hasNextPage() &&
                         finiteQueueNeedsMoreItems()
                     )
                 }
-                if (generation != initialQueueLoadGeneration || currentQueue !== queue) return@launch
+                if (!ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) return@launch
                 initialQueueLoadInProgress = false
                 setFinitePlaylistState(PlaylistLoadState())
                 retryFinitePlaylistLoad = null
@@ -5893,29 +5909,30 @@ class MusicService :
                     player.seekToNextMediaItem()
                     if (resume) player.play()
                 }
-                if (queue.confirmedExhausted && dataStore.get(AutoLoadMoreKey, true) &&
-                    player.repeatMode == REPEAT_MODE_OFF && player.mediaItemCount > 0 &&
+                if (finiteRecommendationsAllowed(queue.snapshot.phase, dataStore.get(AutoLoadMoreKey, true), player.repeatMode) &&
+                    player.mediaItemCount > 0 &&
                     player.mediaItemCount - player.currentMediaItemIndex <= 3
                 ) {
                     onInfiniteQueueEnabled()
                 }
                 if (dataStore.get(PersistentQueueKey, true)) saveQueueToDisk()
             } catch (error: CancellationException) {
-                if (generation == initialQueueLoadGeneration && currentQueue === queue) {
+                if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
                     setFinitePlaylistState(PlaylistLoadState(incomplete = true))
                 }
                 throw error
             } catch (_: Exception) {
-                if (generation == initialQueueLoadGeneration && currentQueue === queue) {
+                if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     queue.fail()
                     setFinitePlaylistState(PlaylistLoadState(incomplete = true, showDialog = true))
                 }
             } finally {
-                if (generation == initialQueueLoadGeneration && currentQueue === queue) {
+                if (ticket.isCurrent(initialQueueLoadGeneration, currentQueue)) {
                     initialQueueLoadInProgress = false
                     finiteQueueJob = null
                 }
+                ticket.finish()
             }
         }
     }
@@ -6237,7 +6254,7 @@ class MusicService :
     fun onInfiniteQueueEnabled(seedMediaId: String? = null) {
         if (initialQueueLoadInProgress || isHydratingRestoredQueue || finiteMutationInProgress) return
         if (currentQueue is YouTubePlaylistQueue &&
-            (!(currentQueue as YouTubePlaylistQueue).confirmedExhausted || player.repeatMode != REPEAT_MODE_OFF)
+            !finiteRecommendationsAllowed((currentQueue as YouTubePlaylistQueue).snapshot.phase, true, player.repeatMode)
         ) return
         val currentMeta = player.currentMetadata
         val resolvedSeedMediaId =
@@ -6416,45 +6433,31 @@ class MusicService :
                 .filterVideo(hideMusicVideos)
         if (allowedItems.isEmpty()) return
         suppressAutoPlayback = false
-        val keepInOrder = dataStore.get(QueueAddAfterManualKey, true)
-        if (!keepInOrder && kind == UserQueuedKind.ADD_TO_QUEUE) {
-            player.addMediaItems(allowedItems)
-            player.prepare()
-            return
-        }
-        val queuedItems = if (keepInOrder) allowedItems.map { it.markUserQueued(kind) } else allowedItems
         val currentIndex = player.currentMediaItemIndex
-        val hasQueue = player.mediaItemCount > 0 && currentIndex != C.INDEX_UNSET
-        val skip =
-            if (keepInOrder && hasQueue) {
-                userQueueSkipCount(upcomingUserQueuedKinds(currentIndex), kind)
-            } else {
-                0
-            }
-        val shuffled = player.shuffleModeEnabled && hasQueue
-        // In shuffle the play order is the shuffle order, so the physical slot only has to be free.
-        val insertionIndex =
-            when {
-                !hasQueue -> player.mediaItemCount
-                shuffled && kind == UserQueuedKind.ADD_TO_QUEUE -> player.mediaItemCount
-                shuffled -> currentIndex + 1
-                else -> (currentIndex + 1 + skip).coerceAtMost(player.mediaItemCount)
-            }
-        val shuffleOrder =
-            if (shuffled) {
-                buildPlayNextShuffleOrder(
-                    currentIndex = currentIndex,
-                    insertionIndex = insertionIndex,
-                    insertionCount = queuedItems.size,
-                    skipUpcoming = skip,
-                )
-            } else {
-                null
-            }
-
-        player.addMediaItems(insertionIndex, queuedItems)
-        shuffleOrder?.let(localPlayer::setShuffleOrder)
-        player.prepare()
+        insertUserQueuedItems(
+            items = allowedItems,
+            kind = kind,
+            keepInOrder = dataStore.get(QueueAddAfterManualKey, true),
+            currentIndex = currentIndex.takeUnless { it == C.INDEX_UNSET },
+            itemCount = player.mediaItemCount,
+            shuffleEnabled = player.shuffleModeEnabled,
+            upcomingKinds = { upcomingUserQueuedKinds(currentIndex) },
+            markQueued = { it.markUserQueued(kind) },
+            append = { player.addMediaItems(it) },
+            insert = { insertionIndex, queuedItems, skip, shuffled ->
+                val shuffleOrder = if (shuffled) {
+                    buildPlayNextShuffleOrder(
+                        currentIndex = currentIndex,
+                        insertionIndex = insertionIndex,
+                        insertionCount = queuedItems.size,
+                        skipUpcoming = skip,
+                    )
+                } else null
+                player.addMediaItems(insertionIndex, queuedItems)
+                shuffleOrder?.let(localPlayer::setShuffleOrder)
+            },
+            prepare = { player.prepare() },
+        )
     }
 
     fun moveQueueItemToNext(mediaItemIndex: Int) {
@@ -12384,11 +12387,9 @@ class MusicService :
         return synchronized(persistentStateLock) {
             runCatching {
                 persistentFile.inputStream().use { fis ->
-                    ObjectInputStream(fis).use { input ->
-                        val payload = input.readObject()
-                        check(payload is T) { "Unexpected persistent payload type for $fileName" }
-                        payload
-                    }
+                    val payload = PlaybackPersistenceCodec.read(fis)
+                    check(payload is T) { "Unexpected persistent payload type for $fileName" }
+                    payload
                 }
             }.onFailure { error ->
                 if (reportedPersistentReadFailures.add(fileName)) {
@@ -12438,10 +12439,7 @@ class MusicService :
         return synchronized(persistentStateLock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
-                    ObjectOutputStream(fos).use { output ->
-                        output.writeObject(payload)
-                        output.flush()
-                    }
+                    PlaybackPersistenceCodec.write(fos, payload)
                 }
 
                 if (!tempFile.renameTo(persistentFile)) {

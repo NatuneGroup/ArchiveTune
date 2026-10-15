@@ -103,3 +103,15 @@ internal object FinitePlaylistLoader {
 /** Strict completion is all-or-nothing; callers must commit only after this returns. */
 suspend fun loadCompleteYouTubePlaylist(playlistId: String): PlaylistPage =
     FinitePlaylistLoader.complete(playlistId)
+
+/** The store/player edge cannot observe a partially fetched playlist. */
+internal suspend fun <T> withCompleteYouTubePlaylist(
+    playlistId: String,
+    source: FinitePlaylistSource = YouTubeFinitePlaylistSource,
+    fetch: suspend () -> PlaylistPage = { FinitePlaylistLoader.complete(playlistId, source) },
+    commit: suspend (PlaylistPage) -> T,
+): T {
+    val page = fetch()
+    coroutineContext.ensureActive()
+    return commit(page)
+}

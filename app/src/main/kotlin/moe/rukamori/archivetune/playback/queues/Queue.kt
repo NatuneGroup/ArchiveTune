@@ -34,14 +34,14 @@ interface Queue {
     ) {
         fun filterExplicit(enabled: Boolean = true) =
             if (enabled) {
-                filterItems { it.metadata?.explicit != true }
+                filterItems { keepPlaybackExplicit(it.metadata, true) }
             } else {
                 this
             }
 
         fun filterVideo(enabled: Boolean = true) =
             if (enabled) {
-                filterItems { it.mediaMetadata.extras?.getBoolean(ExtraIsMusicVideo, false) != true }
+                filterItems { keepPlaybackVideo(it.mediaMetadata.extras?.getBoolean(ExtraIsMusicVideo, false), true) }
             } else {
                 this
             }
@@ -55,29 +55,8 @@ interface Queue {
 
         private inline fun filterItems(keep: (MediaItem) -> Boolean): Status {
             if (items.isEmpty()) return this
-
-            val currentIndex = mediaItemIndex.coerceIn(items.indices)
-            var filteredIndex = 0
-            val filteredItems =
-                buildList(items.size) {
-                    items.forEachIndexed { index, item ->
-                        if (keep(item)) {
-                            if (index < currentIndex) {
-                                filteredIndex++
-                            }
-                            add(item)
-                        }
-                    }
-                }
-
-            if (filteredItems.isEmpty()) {
-                return copy(items = emptyList(), mediaItemIndex = 0)
-            }
-
-            return copy(
-                items = filteredItems,
-                mediaItemIndex = filteredIndex.coerceIn(filteredItems.indices),
-            )
+            val (filteredItems, filteredIndex) = filterQueueItems(items, mediaItemIndex, keep)
+            return copy(items = filteredItems, mediaItemIndex = filteredIndex)
         }
     }
 }
@@ -85,7 +64,7 @@ interface Queue {
 fun List<MediaItem>.filterExplicit(enabled: Boolean = true) =
     if (enabled) {
         filterNot {
-            it.metadata?.explicit == true
+            !keepPlaybackExplicit(it.metadata, true)
         }
     } else {
         this
@@ -94,7 +73,7 @@ fun List<MediaItem>.filterExplicit(enabled: Boolean = true) =
 fun List<MediaItem>.filterVideo(enabled: Boolean = true) =
     if (enabled) {
         filterNot {
-            it.mediaMetadata.extras?.getBoolean(ExtraIsMusicVideo, false) == true
+            !keepPlaybackVideo(it.mediaMetadata.extras?.getBoolean(ExtraIsMusicVideo, false), true)
         }
     } else {
         this
@@ -108,4 +87,27 @@ fun List<MediaItem>.filterBlockedArtists(blockedArtistIds: Set<String>) =
     }
 
 fun MediaItem.hasBlockedArtist(blockedArtistIds: Set<String>): Boolean =
-    metadata?.artists?.any { artist -> artist.id != null && artist.id in blockedArtistIds } == true
+    !keepPlaybackArtists(metadata, blockedArtistIds)
+
+internal fun keepPlaybackExplicit(metadata: MediaMetadata?, hide: Boolean): Boolean =
+    !hide || metadata?.explicit != true
+
+internal fun keepPlaybackVideo(isVideo: Boolean?, hide: Boolean): Boolean = !hide || isVideo != true
+
+internal fun keepPlaybackArtists(metadata: MediaMetadata?, blocked: Set<String>): Boolean =
+    metadata?.artists?.any { it.id != null && it.id in blocked } != true
+
+internal inline fun <T> filterQueueItems(items: List<T>, current: Int, keep: (T) -> Boolean): Pair<List<T>, Int> {
+    if (items.isEmpty()) return emptyList<T>() to 0
+    val currentIndex = current.coerceIn(items.indices)
+    var filteredIndex = 0
+    val filtered = buildList(items.size) {
+        items.forEachIndexed { index, item ->
+            if (keep(item)) {
+                if (index < currentIndex) filteredIndex++
+                add(item)
+            }
+        }
+    }
+    return filtered to if (filtered.isEmpty()) 0 else filteredIndex.coerceIn(filtered.indices)
+}

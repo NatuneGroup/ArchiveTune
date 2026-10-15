@@ -20,12 +20,7 @@
  * fullscreen sheet, the shared lyrics page, the Apple Music player), so it follows the global
  * LyricsModeKey like every other renderer.
  *
- * REWRITTEN rather than transliterated, and deliberately much smaller than either shared renderer:
- * it shows lyrics, follows the song, and seeks on tap. Romanisation, AI translation, per-word blur
- * and the karaoke fill all belong to Enhanced and V2 — reproducing them here would be a third copy
- * of machinery that already exists twice, and none of it is what makes this view look like
- * SimpMusic. The one thing it does share is the parse: LyricsUtils, the same functions both other
- * renderers call, so a format either works in all three or in none.
+ * Uses the shared parser and phonetic policy; only its presentation and follow behavior differ.
  */
 
 package moe.rukamori.archivetune.ui.player.simpmusic
@@ -38,11 +33,8 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -68,6 +60,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.style.TextDirection
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,6 +71,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -91,13 +88,15 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeKoreanKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
+import moe.rukamori.archivetune.lyrics.LyricsPhonetics
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
+import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsEntry.Companion.HEAD_LYRICS_ENTRY
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedWordsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.insertInstrumentalBreaks
@@ -173,25 +172,18 @@ fun SimpMusicLyrics(
     // The same romanization switches Enhanced and V2 honour. Without these the style ignored
     // every lyrics-related setting beyond text size and tap-to-seek.
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
     val (romanizeOther) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
-    val romanizationPreferences =
-        remember(romanizeJapanese, romanizeKorean, romanizeChinese, romanizeHindi, romanizeOther, aiRomanizationSettings.active) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOther,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+
 
     val currentLyrics by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val lyrics = currentLyrics?.lyrics
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
     val isSynced = remember(lyrics) { lyrics != null && (isLineSyncedLrc(lyrics) || isTtml(lyrics)) }
     val isTtmlFormat = remember(lyrics) { lyrics != null && isTtml(lyrics) }
@@ -230,6 +222,48 @@ fun SimpMusicLyrics(
             }
     }
     val entries = parsed.orEmpty()
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entries) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entries.map { it.text })
+    }
+    val romanizationPreferences =
+        remember(romanizeJapanese, romanizeKorean, romanizeChinese, romanizeHindi, romanizeOther, aiHandlesLyrics) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOther,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
+
+    val sessionKey = remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+    val aiResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
+    val aiLines = remember(aiResult, sessionKey, entries, aiRomanizationSettings) {
+        if (aiHandlesLyrics) AiLyricsRomanization.linesFor(sessionKey, entries.map { it.text })
+        else emptyList()
+    }
+    LaunchedEffect(sessionKey, entries, aiRomanizationSettings) {
+        if (aiHandlesLyrics && aiRomanizationSettings.auto && entries.isNotEmpty()) {
+            AiLyricsRomanization.request(sessionKey = sessionKey, lines = entries.map { it.text }, settings = aiRomanizationSettings)
+        }
+    }
+    var phonetics by remember(entries, romanizationPreferences) { mutableStateOf<List<LyricsPhonetics>>(emptyList()) }
+    LaunchedEffect(entries, romanizationPreferences, aiLines, japanesePackReady) {
+        phonetics = withContext(Dispatchers.Default) {
+            val context = entries.joinToString("\n") { it.text }
+            entries.mapIndexed { index, entry ->
+                if (romanizationPreferences.aiHandled) LyricsPhonetics(line = aiLines.getOrNull(index))
+                else try {
+                    phoneticsForEntry(entry, romanizationPreferences, context)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (_: Exception) {
+                    LyricsPhonetics()
+                }
+            }
+        }
+    }
 
     // The playhead lives in explicit state read through a stable provider, so a position tick
     // invalidates only the line that reads it — not this composable and not the list.
@@ -339,7 +373,7 @@ fun SimpMusicLyrics(
                     inactiveColor = inactiveColor,
                     disableAnimations = disableAnimations,
                     positionProvider = positionProvider,
-                    romanizationPreferences = romanizationPreferences,
+                    phonetics = phonetics.getOrNull(index) ?: LyricsPhonetics(),
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -368,19 +402,14 @@ private fun SimpMusicLyricsLine(
     inactiveColor: Color,
     disableAnimations: Boolean,
     positionProvider: () -> Long,
-    romanizationPreferences: LyricsRomanizationPreferences,
+    phonetics: LyricsPhonetics,
     modifier: Modifier = Modifier,
 ) {
     val original = if (entry.isInstrumental) "♪" else entry.text
     if (original.isBlank()) return
 
-    // Provider romanization under the same per-language switches Enhanced uses; when the line
-    // has one it is displayed in place of the original, which is how SimpMusic Classic treats it.
-    val romanized =
-        remember(entry, romanizationPreferences) {
-            providedRomanizedTextForEntry(entry, romanizationPreferences)
-        }
-    val displayText = romanized ?: original
+    // Presentation only: the source entry and every seek/timing/selection identity stay intact.
+    val displayText = phonetics.line ?: original
 
     // Step-up between lines eases instead of snapping; the abrupt reflow was half of the
     // "choppy" feel, and SimpMusic animates both of these too.
@@ -413,13 +442,13 @@ private fun SimpMusicLyricsLine(
         Column(modifier = modifier) {
             Text(
                 text = displayText,
-                style = style,
+                style = style.forLyricsText(displayText),
                 color = lineColor,
             )
             if (translation != null) {
                 Text(
                     text = translation,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyMedium.forLyricsText(translation),
                     color = lineColor.copy(alpha = 0.72f),
                     modifier = Modifier.padding(top = 4.dp),
                 )
@@ -428,14 +457,7 @@ private fun SimpMusicLyricsLine(
         return
     }
 
-    val words = remember(entry) { entry.words.orEmpty().filter { it.text.isNotBlank() } }
-    val romanizedWords =
-        remember(entry, words, romanizationPreferences) {
-            providedRomanizedWordsForEntry(entry, words.size, romanizationPreferences)
-        }
-    val displayedWords =
-        romanizedWords?.mapIndexed { index, word -> word ?: words[index].text }
-            ?: words.map { it.text }
+    val words = remember(entry) { entry.words.orEmpty().filter { !it.isBackground } }
     val sungThrough by remember(words) {
         derivedStateOf {
             val now = positionProvider()
@@ -444,8 +466,9 @@ private fun SimpMusicLyricsLine(
     }
 
     Column(modifier = modifier) {
-        FlowRowWords(
-            words = displayedWords,
+        TimedLyricsText(
+            entry = entry,
+            phonetics = phonetics,
             sungThrough = sungThrough,
             style = style,
             sungColor = currentColor,
@@ -455,7 +478,7 @@ private fun SimpMusicLyricsLine(
         if (translation != null) {
             Text(
                 text = translation,
-                style = MaterialTheme.typography.bodyMedium,
+                style = MaterialTheme.typography.bodyMedium.forLyricsText(translation),
                 color = lineColor.copy(alpha = 0.72f),
                 modifier = Modifier.padding(top = 4.dp),
             )
@@ -463,33 +486,42 @@ private fun SimpMusicLyricsLine(
     }
 }
 
-/**
- * The words of the sung line, wrapping like a paragraph.
- *
- * [androidx.compose.foundation.layout.FlowRow] rather than one styled string: the sung/pending
- * split is per word and changes several times a second, and rebuilding an AnnotatedString for the
- * whole line on each of those was the expensive way to say the same thing.
- */
-@OptIn(ExperimentalLayoutApi::class)
+private fun TextStyle.forLyricsText(text: String): TextStyle = copy(
+    textDirection = if (isRtlText(text)) TextDirection.Rtl else TextDirection.Ltr,
+    textAlign = if (isRtlText(text)) TextAlign.Right else TextAlign.Left,
+)
+
+/** One text layout keeps Arabic joining, combining sequences and emoji intact across timing spans. */
 @Composable
-private fun FlowRowWords(
-    words: List<String>,
+private fun TimedLyricsText(
+    entry: LyricsEntry,
+    phonetics: LyricsPhonetics,
     sungThrough: Int,
     style: TextStyle,
     sungColor: Color,
     pendingColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    FlowRow(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-    ) {
-        words.forEachIndexed { index, word ->
-            Text(
-                text = word,
-                style = style,
-                color = if (index <= sungThrough) sungColor else pendingColor,
-            )
+    val words = remember(entry) { entry.words.orEmpty().filter { !it.isBackground } }
+    val aligned = phonetics.words?.takeIf { it.size == words.size }
+    val text = if (aligned != null) aligned.mapIndexed { index, reading -> reading ?: words[index].text }.joinToString(" ")
+        else phonetics.line ?: entry.text
+    val annotated = remember(text, words, aligned, phonetics.line, sungThrough, sungColor, pendingColor) {
+        buildAnnotatedString {
+            append(text)
+            // A line-only reading is not a timed phonetic alignment.
+            if (aligned != null || phonetics.line == null) {
+                var offset = 0
+                words.forEachIndexed { index, word ->
+                    val fragment = if (aligned != null) aligned[index] ?: word.text else word.text
+                    val start = text.indexOf(fragment, offset)
+                    if (start >= 0 && fragment.isNotEmpty()) {
+                        addStyle(SpanStyle(color = if (index <= sungThrough) sungColor else pendingColor), start, start + fragment.length)
+                        offset = start + fragment.length
+                    }
+                }
+            }
         }
     }
+    Text(text = annotated, style = style.forLyricsText(text), color = sungColor, modifier = modifier)
 }

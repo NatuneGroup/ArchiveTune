@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.betterlyrics.QRCParser
 import moe.rukamori.archivetune.betterlyrics.TTMLParser
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import java.lang.Character.UnicodeScript
+import java.text.Normalizer
 import kotlin.math.roundToLong
 
 data class LyricsRomanizationPreferences(
@@ -36,6 +37,11 @@ data class LyricsRomanizationPreferences(
     val showsRomanization: Boolean
         get() = aiHandled || isEnabled
 }
+
+data class LyricsPhonetics(
+    val line: String? = null,
+    val words: List<String?>? = null,
+)
 
 @Suppress("RegExpRedundantEscape")
 object LyricsUtils {
@@ -60,7 +66,6 @@ object LyricsUtils {
         )
     private val TTML_BEGIN_ATTRIBUTE_REGEX = Regex("""\bbegin\s*=""", RegexOption.IGNORE_CASE)
     private val TTML_END_ATTRIBUTE_REGEX = Regex("""\b(?:end|dur)\s*=""", RegexOption.IGNORE_CASE)
-    private val INVISIBLE_CHARS_REGEX = Regex("""[\u200B\u200C\u200D\u2060\u00AD]""")
     private const val NBSP = '\u00A0'
     /** End given to the last word of a line whose end no further stamp pins down. */
     private const val ENHANCED_LRC_LAST_WORD_DEFAULT_DURATION_MS = 600L
@@ -407,8 +412,8 @@ object LyricsUtils {
      * quote mark or a digit is still an Arabic line, and those carry no direction of their own.
      */
     fun isRtlText(text: String): Boolean {
-        for (ch in text) {
-            when (Character.getDirectionality(ch)) {
+        for (codePoint in text.codePoints().toArray()) {
+            when (Character.getDirectionality(codePoint)) {
                 Character.DIRECTIONALITY_RIGHT_TO_LEFT,
                 Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC,
                 Character.DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING,
@@ -452,9 +457,10 @@ object LyricsUtils {
     }
 
     /**
-     * True when [dominantCode] — a value from [detectDominantLanguageCode] — names a language the
-     * user put in an exclusion set ("Don't auto translate these languages" / "Don't romanise these
-     * languages").
+     * Conservatively applies exclusions to the script family returned by [detectDominantLanguageCode].
+     * Without source-language metadata, Urdu/Persian/Arabic and Cyrillic/Devanagari siblings cannot
+     * be distinguished. Excluding one therefore excludes its ambiguous siblings too, not just the
+     * legacy language label used for that script. Latin-language identification remains unknown.
      */
     fun matchesExcludedLanguage(
         dominantCode: String,
@@ -473,7 +479,14 @@ object LyricsUtils {
      * its own. See [matchesExcludedLanguage].
      */
     private val EXCLUSION_ALIASES: Map<String, List<String>> =
-        mapOf("CHINESE" to listOf("CHINESE_SIMPLIFIED", "CHINESE_TRADITIONAL"))
+        mapOf(
+            // Han without kana is ambiguous, including kanji-only Japanese.
+            "CHINESE" to listOf("CHINESE_SIMPLIFIED", "CHINESE_TRADITIONAL", "JAPANESE"),
+            "ARABIC" to listOf("PERSIAN", "URDU", "PASHTO", "SINDHI", "UYGHUR"),
+            "RUSSIAN" to listOf("UKRAINIAN", "BELARUSIAN", "BULGARIAN", "SERBIAN", "MACEDONIAN", "KAZAKH", "KYRGYZ", "MONGOLIAN", "TAJIK"),
+            "HINDI" to listOf("MARATHI", "NEPALI", "SANSKRIT"),
+            "HEBREW" to listOf("YIDDISH"),
+        )
 
     /** True when [lyrics] should be sent for automatic AI translation into [targetLanguage]. */
     fun shouldAutoTranslate(
@@ -510,18 +523,17 @@ object LyricsUtils {
     }
 
     /**
-     * Returns the uppercase language code (e.g. "JAPANESE", "KOREAN", "CHINESE", "HINDI", "ARABIC",
-     * "RUSSIAN", "THAI", "HEBREW", "GREEK", "ARMENIAN", "GEORGIAN") that best describes the
-     * dominant non-Latin script in [lyrics], or `null` if the lyrics are predominantly Latin (so no
-     * exclusion can match).
+     * Returns a legacy uppercase label for the dominant non-Latin script family, not an exact
+     * language detector. Kana supplies Japanese context for Han; Han alone remains ambiguous.
+     * Latin-only or unrecognized scripts return null rather than an invented language identity.
      */
     fun detectDominantLanguageCode(lyrics: String): String? {
         if (lyrics.isBlank()) return null
         // Tally non-Latin scripts found in the lyrics. Latin/Common/Inherited are ignored.
         val scriptCounts = HashMap<UnicodeScript, Int>()
-        for (char in lyrics) {
-            if (!char.isLetter()) continue
-            val script = UnicodeScript.of(char.code)
+        for (codePoint in lyrics.codePoints().toArray()) {
+            if (!Character.isLetter(codePoint)) continue
+            val script = UnicodeScript.of(codePoint)
             when (script) {
                 UnicodeScript.LATIN,
                 UnicodeScript.COMMON,
@@ -532,7 +544,9 @@ object LyricsUtils {
         if (scriptCounts.isEmpty()) return null
         val dominantScript = scriptCounts.maxByOrNull { it.value }!!.key
         return when (dominantScript) {
-            UnicodeScript.HAN -> "CHINESE"
+            UnicodeScript.HAN -> if ((scriptCounts[UnicodeScript.HIRAGANA] ?: 0) +
+                (scriptCounts[UnicodeScript.KATAKANA] ?: 0) > 0
+            ) "JAPANESE" else "CHINESE"
             UnicodeScript.HIRAGANA, UnicodeScript.KATAKANA -> "JAPANESE"
             UnicodeScript.HANGUL -> "KOREAN"
             UnicodeScript.DEVANAGARI -> "HINDI"
@@ -849,8 +863,7 @@ object LyricsUtils {
     fun normalizeLyricsText(lyrics: String): String {
         val raw =
             lyrics
-                .replace("\uFEFF", "")
-                .replace(INVISIBLE_CHARS_REGEX, "")
+                .removePrefix("\uFEFF")
                 .trim { it.isWhitespace() || it == NBSP }
 
         val unwrapped = unwrapJsonEnvelope(stripCodeFence(raw))
@@ -1435,8 +1448,10 @@ object LyricsUtils {
             val romajaBuilder = StringBuilder()
             var prevFinal: String? = null
 
-            for (i in text.indices) {
-                val char = text[i]
+            // Compose only the phonetic working copy, never the displayed lyric.
+            val composed = Normalizer.normalize(text, Normalizer.Form.NFC)
+            for (i in composed.indices) {
+                val char = composed[i]
 
                 if (char in '\uAC00'..'\uD7A3') {
                     val syllableIndex = char.code - 0xAC00
@@ -1660,7 +1675,7 @@ object LyricsUtils {
      */
     fun isKorean(text: String): Boolean =
         text.any { char ->
-            (char in '\uAC00'..'\uD7A3') // Hangul Syllables
+            UnicodeScript.of(char.code) == UnicodeScript.HANGUL
         }
 
     /**
@@ -1670,8 +1685,8 @@ object LyricsUtils {
     fun isChinese(text: String): Boolean {
         if (text.isEmpty()) return false
 
-        val hanCharCount = text.count { hasScript(it, UnicodeScript.HAN) }
-        if (hanCharCount == 0) return false
+        val hanCharCount = text.codePoints().filter { UnicodeScript.of(it) == UnicodeScript.HAN }.count()
+        if (hanCharCount == 0L) return false
 
         val japaneseKanaCount = text.count { hasScript(it, UnicodeScript.HIRAGANA) || hasScript(it, UnicodeScript.KATAKANA) }
         val hangulCount = text.count { hasScript(it, UnicodeScript.HANGUL) }
@@ -1692,14 +1707,16 @@ object LyricsUtils {
     fun shouldRomanizeLyricsLine(
         text: String,
         preferences: LyricsRomanizationPreferences,
+        sourceLanguage: String? = null,
+        contextText: String = text,
     ): Boolean {
         if (!preferences.isEnabled || text.isBlank()) return false
 
         return when {
-            preferences.romanizeJapanese && looksJapanese(text) -> true
+            preferences.romanizeJapanese && looksJapanese(text, sourceLanguage, contextText) -> true
             preferences.romanizeKorean && isKorean(text) -> true
             preferences.romanizeHindi && isHindi(text) -> true
-            preferences.romanizeChinese && isChinese(text) -> true
+            preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> true
             preferences.romanizeOther && hasOtherRomanizableScript(text) -> true
             else -> false
         }
@@ -1793,18 +1810,39 @@ object LyricsUtils {
         return words
     }
 
+    suspend fun phoneticsForEntry(
+        entry: LyricsEntry,
+        preferences: LyricsRomanizationPreferences,
+        contextText: String = entry.text,
+    ): LyricsPhonetics {
+        if (!preferences.isEnabled) return LyricsPhonetics()
+        val line = providedRomanizedTextForEntry(entry, preferences)
+            ?: romanizeLyricsLine(entry.text, preferences, entry.providerRomanizedLanguage, contextText)
+        val words = entry.words?.filter { !it.isBackground }
+        val aligned = if (words.isNullOrEmpty()) null else {
+            providedRomanizedWordsForEntry(entry, words.size, preferences)
+                ?: romanizeWordsForLine(
+                    words.map { it.text }, entry.text, preferences,
+                    entry.providerRomanizedLanguage, contextText,
+                ).takeIf { readings -> readings.any { !it.isNullOrBlank() } }
+        }
+        return LyricsPhonetics(line = line, words = aligned)
+    }
+
     suspend fun romanizeLyricsLine(
         text: String,
         preferences: LyricsRomanizationPreferences,
+        sourceLanguage: String? = null,
+        contextText: String = text,
     ): String? {
-        if (!shouldRomanizeLyricsLine(text, preferences)) return null
+        if (!shouldRomanizeLyricsLine(text, preferences, sourceLanguage, contextText)) return null
 
         val romanized =
             when {
-                preferences.romanizeJapanese && looksJapanese(text) -> romanizeJapanese(text)
+                preferences.romanizeJapanese && looksJapanese(text, sourceLanguage, contextText) -> romanizeJapanese(text)
                 preferences.romanizeKorean && isKorean(text) -> romanizeKorean(text)
                 preferences.romanizeHindi && isHindi(text) -> romanizeHindi(text)
-                preferences.romanizeChinese && isChinese(text) -> romanizeWithIcu(text)
+                preferences.romanizeChinese && !looksJapanese(text, sourceLanguage, contextText) && isChinese(text) -> romanizeWithIcu(text)
                 preferences.romanizeOther && hasOtherRomanizableScript(text) -> romanizeWithIcu(text)
                 else -> null
             }
@@ -1816,14 +1854,16 @@ object LyricsUtils {
         word: String,
         lineText: String,
         preferences: LyricsRomanizationPreferences,
+        sourceLanguage: String? = null,
+        contextText: String = lineText,
     ): String? {
         if (word.isBlank()) return null
         val romanized =
             when {
-                preferences.romanizeJapanese && looksJapanese(lineText) -> romanizeJapanese(word)
+                preferences.romanizeJapanese && looksJapanese(lineText, sourceLanguage, contextText) -> romanizeJapanese(word)
                 preferences.romanizeKorean && isKorean(lineText) -> romanizeKorean(word)
                 preferences.romanizeHindi && isHindi(lineText) -> romanizeHindi(word)
-                preferences.romanizeChinese && isChinese(lineText) -> romanizeWithIcu(word)
+                preferences.romanizeChinese && !looksJapanese(lineText, sourceLanguage, contextText) && isChinese(lineText) -> romanizeWithIcu(word)
                 preferences.romanizeOther && hasOtherRomanizableScript(lineText) -> romanizeWithIcu(word)
                 else -> null
             }
@@ -1835,15 +1875,18 @@ object LyricsUtils {
         words: List<String>,
         lineText: String,
         preferences: LyricsRomanizationPreferences,
+        sourceLanguage: String? = null,
+        contextText: String = lineText,
     ): List<String?> {
         if (words.isEmpty()) return emptyList()
+        if (!preferences.isEnabled) return words.map { null }
         // Japanese: single-pass line tokenization (Nx faster than per-word).
-        if (preferences.romanizeJapanese && looksJapanese(lineText)) {
+        if (preferences.romanizeJapanese && looksJapanese(lineText, sourceLanguage, contextText)) {
             return romanizeJapaneseWordsForLine(words, lineText)
         }
         // Other languages: per-word is cheap (character-by-character), keep as-is.
         return words.map { word ->
-            romanizeLyricsWordWithLineContext(word, lineText, preferences)
+            romanizeLyricsWordWithLineContext(word, lineText, preferences, sourceLanguage, contextText)
         }
     }
 
@@ -1899,10 +1942,7 @@ object LyricsUtils {
         for (word in words) {
             val wordStart = lineText.indexOf(word, startIndex = scanOffset)
             if (wordStart < 0) {
-                // Word not found in line text (malformed TTML or whitespace mismatch).
-                // Skip — the word will have no phonetic, which is a graceful degradation.
-                result.add(null)
-                continue
+                return@withContext words.map { null }
             }
             val wordEnd = wordStart + word.length
 
@@ -1916,6 +1956,10 @@ object LyricsUtils {
             var tIdx = tokenIdx
             while (tIdx < tokenCount && tokenStarts[tIdx] < wordEnd) {
                 if (tokenEnds[tIdx] > wordStart) {
+                    // There is no trustworthy kana-to-timed-fragment alignment inside a token.
+                    if (tokenStarts[tIdx] < wordStart || tokenEnds[tIdx] > wordEnd) {
+                        return@withContext words.map { null }
+                    }
                     romajiBuilder.append(tokenRomaji[tIdx])
                 }
                 tIdx++
@@ -1929,7 +1973,11 @@ object LyricsUtils {
 
     private suspend fun romanizeWithIcu(text: String): String =
         withContext(Dispatchers.Default) {
-            genericRomanizationTransliterator.get().transliterate(text)
+            try {
+                genericRomanizationTransliterator.get().transliterate(text)
+            } catch (_: Exception) {
+                text
+            }
         }
 
     private fun normalizeRomanizedText(
@@ -1946,28 +1994,18 @@ object LyricsUtils {
         return normalized.takeUnless { it.equals(original.trim(), ignoreCase = true) }
     }
 
-    private fun looksJapanese(text: String): Boolean {
-        // Fast path: kana (Hiragana/Katakana) or iteration marks always indicate
-        // Japanese. This matches the previous behavior.
-        if (
-            text.any {
-                hasScript(it, UnicodeScript.HIRAGANA) ||
-                    hasScript(it, UnicodeScript.KATAKANA) ||
-                    it == '々' ||
-                    it == '〆' ||
-                    it == 'ヶ'
-            }
-        ) {
-            return true
+    private fun looksJapanese(
+        text: String,
+        sourceLanguage: String? = null,
+        contextText: String = text,
+    ): Boolean {
+        val language = sourceLanguage?.lowercase()?.replace('_', '-')?.substringBefore('-')
+        if (language in setOf("zh", "cmn", "yue")) return false
+        if (language == "ja") return true
+        // Han alone is ambiguous. Nearby kana is context, installed data is not language evidence.
+        return contextText.codePoints().anyMatch {
+            UnicodeScript.of(it) == UnicodeScript.HIRAGANA || UnicodeScript.of(it) == UnicodeScript.KATAKANA
         }
-        // Kanji-only text: ambiguous between Japanese and Chinese. Treat it as
-        // Japanese ONLY when the Kuromoji language pack is installed — otherwise
-        // `romanizeJapanese` would silently return the original text unchanged
-        // (a no-op), and the user would see no romanization at all. When the
-        // pack isn't installed, fall through so the Chinese ICU path can attempt
-        // romanization instead.
-        val hasKanji = text.any { it in '\u4E00'..'\u9FFF' }
-        return hasKanji && JapaneseLanguagePackManager.tokenizerOrNull() != null
     }
 
     private fun hasScript(

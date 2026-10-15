@@ -182,6 +182,9 @@ internal fun SimpMusicFullscreenLyricsSheet(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, currentLyricsEntity?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyricsEntity?.lyrics)
+    }
     val translationDismissedMediaIds by lyricsMenuViewModel.translationDismissedMediaIds
         .collectAsStateWithLifecycle()
     LaunchedEffect(
@@ -215,6 +218,7 @@ internal fun SimpMusicFullscreenLyricsSheet(
             mediaMetadata = mediaMetadata,
             lyrics = text,
             targetLanguage = translatorTargetLang,
+            automatic = true,
         )
     }
 

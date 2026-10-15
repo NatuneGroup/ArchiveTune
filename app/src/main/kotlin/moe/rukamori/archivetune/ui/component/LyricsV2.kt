@@ -139,6 +139,7 @@ import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
@@ -150,10 +151,8 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -269,28 +268,13 @@ fun LyricsV2(
     val lrcBounceEnabled = lrcBounceEnabledPreference && !v2AnimationsDisabled
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
-    val romanizationPreferences =
-        remember(
-            romanizeJapanese,
-            romanizeKorean,
-            romanizeChinese,
-            romanizeHindi,
-            romanizeOtherLanguages,
-            aiRomanizationSettings.active,
-        ) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOtherLanguages,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
+
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 
     // Apple Music style and all lyrics backgrounds always use white text so that
@@ -353,6 +337,27 @@ fun LyricsV2(
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
 
     val entriesWithWords: List<LyricsEntry> = lyricsEntries
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entriesWithWords) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entriesWithWords.map { it.text })
+    }
+    val romanizationPreferences =
+        remember(
+            romanizeJapanese,
+            romanizeKorean,
+            romanizeChinese,
+            romanizeHindi,
+            romanizeOtherLanguages,
+            aiHandlesLyrics,
+        ) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOtherLanguages,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
 
     // Per-entry cache for hasTrueWordSync() — avoids re-running the (allocating) word-sync
     // detection on every 16 ms position tick for every visible line.
@@ -368,15 +373,15 @@ fun LyricsV2(
     // instrumental breaks that LyricsEnhanced's does not, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
-        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings.active, entriesWithWords) {
-            if (!aiRomanizationSettings.active) {
+        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, entriesWithWords) {
+            if (!aiHandlesLyrics) {
                 emptyList()
             } else {
                 AiLyricsRomanization.linesFor(aiRomanizationSessionKey, entriesWithWords.map { it.text })
             }
         }
     LaunchedEffect(aiRomanizationSessionKey, entriesWithWords, aiRomanizationSettings) {
-        if (!aiRomanizationSettings.active || !aiRomanizationSettings.auto) return@LaunchedEffect
+        if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
         if (entriesWithWords.isEmpty()) return@LaunchedEffect
         AiLyricsRomanization.request(
             sessionKey = aiRomanizationSessionKey,
@@ -384,8 +389,8 @@ fun LyricsV2(
             settings = aiRomanizationSettings,
         )
     }
-    LaunchedEffect(entriesWithWords, aiRomanizedLines, aiRomanizationSettings.active) {
-        if (!aiRomanizationSettings.active) return@LaunchedEffect
+    LaunchedEffect(entriesWithWords, aiRomanizedLines, aiHandlesLyrics) {
+        if (!aiHandlesLyrics) return@LaunchedEffect
         entriesWithWords.forEachIndexed { index, entry ->
             val romanized = aiRomanizedLines.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }
             if (entry.romanizedTextFlow.value != romanized) {
@@ -394,12 +399,14 @@ fun LyricsV2(
         }
     }
 
-    LaunchedEffect(entriesWithWords, romanizationPreferences) {
+    val romanizationContext = remember(entriesWithWords) { entriesWithWords.joinToString("\n") { it.text } }
+
+    LaunchedEffect(entriesWithWords, romanizationPreferences, japanesePackReady) {
         if (!romanizationPreferences.isEnabled) {
             // Guard against clobbering AI results: when the AI engine owns romanisation the effect
             // above is the writer, and blanking the flows here would erase it on every recomposition
             // that changed `entriesWithWords`.
-            if (aiRomanizationSettings.active) return@LaunchedEffect
+            if (aiHandlesLyrics) return@LaunchedEffect
             entriesWithWords.forEach { entry ->
                 if (entry.romanizedTextFlow.value != null) {
                     entry.romanizedTextFlow.value = null
@@ -409,27 +416,12 @@ fun LyricsV2(
         }
 
         entriesWithWords.forEach { entry ->
-            val providerRomanized = providedRomanizedTextForEntry(entry, romanizationPreferences)
-            if (providerRomanized != null) {
-                if (entry.romanizedTextFlow.value != providerRomanized) {
-                    entry.romanizedTextFlow.value = providerRomanized
-                }
-                return@forEach
-            }
-
-            if (!shouldRomanizeLyricsLine(entry.text, romanizationPreferences)) {
-                if (entry.romanizedTextFlow.value != null) {
-                    entry.romanizedTextFlow.value = null
-                }
-                return@forEach
-            }
-
             // Off the UI thread: one romanization per line on Main would queue dozens of
             // dispatcher hops right as the karaoke animation starts.
             launch(Dispatchers.Default) {
                 val romanized =
                     try {
-                        romanizeLyricsLine(entry.text, romanizationPreferences)
+                        phoneticsForEntry(entry, romanizationPreferences, romanizationContext).line
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {

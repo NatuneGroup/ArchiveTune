@@ -194,6 +194,9 @@ internal fun SpatialFlowLyricsOverlay(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(currentSong.id, currentLyricsEntity?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(currentSong.id, currentLyricsEntity?.lyrics)
+    }
     val translationDismissedMediaIds by lyricsMenuViewModel.translationDismissedMediaIds
         .collectAsStateWithLifecycle()
     LaunchedEffect(
@@ -225,6 +228,7 @@ internal fun SpatialFlowLyricsOverlay(
             mediaMetadata = currentSong,
             lyrics = text,
             targetLanguage = translatorTargetLang,
+            automatic = true,
         )
     }
 

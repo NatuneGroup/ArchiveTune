@@ -17,6 +17,7 @@ import androidx.annotation.RequiresApi
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.audio.AudioOutputProvider
+import moe.rukamori.archivetune.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -197,8 +198,12 @@ object BitPerfectUsbOutput {
             clearApi34(context, device.id)
             registeredDeviceId = null
             val reason =
-                "${name.ifBlank { "The DAC" }} offers no bit-perfect mode at " +
-                    "${formatRate(config.sampleRate)} / ${channelLabel(config.channelMask)}"
+                context.getString(
+                    R.string.bit_perfect_usb_reason_no_mode,
+                    name.ifBlank { context.getString(R.string.bit_perfect_usb_default_device) },
+                    formatRate(config.sampleRate),
+                    channelLabel(config.channelMask),
+                )
             Timber.tag(TAG).i(reason)
             _status.value = Status.Fallback(name, reason)
             return null
@@ -207,7 +212,7 @@ object BitPerfectUsbOutput {
         if (!granted) {
             clearApi34(context, device.id)
             registeredDeviceId = null
-            val reason = "Android refused bit-perfect mode for this device"
+            val reason = context.getString(R.string.bit_perfect_usb_reason_refused)
             Timber.tag(TAG).w("%s (%s)", reason, name)
             _status.value = Status.Fallback(name, reason)
             return null

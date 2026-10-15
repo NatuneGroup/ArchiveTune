@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -14,6 +8,8 @@
  * Listen Together WebSocket client — ported from vivi-music (beta branch),
  * vivi-music's listentogether.ListenTogetherClient (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 
@@ -74,6 +70,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Connection state for the Listen Together feature
@@ -197,6 +194,8 @@ class ListenTogetherClient @Inject constructor(
         // how long to wait before re-sending it.
         private const val ROOM_ACTION_RETRY_WINDOW_MS = 10_000L
         private const val ROOM_ACTION_RETRY_DELAY_MS = 250L
+        private const val CONNECTION_DEADLINE_MS = 60_000L
+        private const val ROOM_ACTION_DEADLINE_MS = 90_000L
 
         // Notification constants
         private const val NOTIFICATION_CHANNEL_ID = "listen_together_channel"
@@ -473,6 +472,9 @@ class ListenTogetherClient @Inject constructor(
 
     private var webSocket: WebSocket? = null
     private var pingJob: Job? = null
+    private var reconnectJob: Job? = null
+    private val connectionDeadline = ListenTogetherRequestDeadline(scope)
+    private val roomActionDeadline = ListenTogetherRequestDeadline(scope)
     private var reconnectAttempts = 0
 
     // Session info for reconnection
@@ -485,9 +487,16 @@ class ListenTogetherClient @Inject constructor(
     // Pending actions to execute when connected
     private var pendingAction: PendingAction? = null
 
-    private var lastRoomAction: PendingAction? = null
-    private var lastRoomActionFormat: MessageFormat? = null
-    private var lastRoomActionSentAtMs: Long = 0
+    private data class SentRoomAction(
+        val action: PendingAction,
+        val format: MessageFormat,
+        val sentAtMs: Long,
+        val connection: Long,
+        val roomRequest: Long,
+        val socket: WebSocket?,
+    )
+
+    @Volatile private var lastRoomAction: SentRoomAction? = null
 
     // Wake lock to keep connection alive when in a room
     private var wakeLock: PowerManager.WakeLock? = null
@@ -528,7 +537,7 @@ class ListenTogetherClient @Inject constructor(
         true
     }
 
-    private val client = OkHttpClient.Builder()
+    private val client = OkHttpClient.Builder().withAppProxy()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
@@ -547,7 +556,7 @@ class ListenTogetherClient @Inject constructor(
 
     private fun getServerUrl(): String {
         val savedUrl = context.dataStore.get(ListenTogetherServerUrlKey, DEFAULT_SERVER_URL)
-        // If the saved URL is no longer in our list (e.g. Meowery was removed), revert to ViviMusic default
+        // Retired or unrecognized saved endpoints fall back to the supported default.
         return if (ListenTogetherServers.findByUrl(savedUrl) != null) {
             savedUrl
         } else {
@@ -594,6 +603,12 @@ class ListenTogetherClient @Inject constructor(
             return
         }
 
+        reconnectJob?.cancel()
+        reconnectJob = null
+        val attempt = connectionDeadline.start(CONNECTION_DEADLINE_MS) {
+            failPendingConnection(context.getString(R.string.listen_together_connection_timeout))
+        }
+
         // Clean up previous websocket to prevent memory leaks and duplicate events
         try {
             webSocket?.cancel()
@@ -620,6 +635,11 @@ class ListenTogetherClient @Inject constructor(
 
         webSocket = client.newWebSocket(request, object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                if (!connectionDeadline.isCurrent(attempt)) {
+                    webSocket.cancel()
+                    return
+                }
+                connectionDeadline.complete()
                 log(LogLevel.INFO, "Connected to server")
                 _connectionState.value = ConnectionState.CONNECTED
                 reconnectAttempts = 0
@@ -636,26 +656,33 @@ class ListenTogetherClient @Inject constructor(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
+                if (!connectionDeadline.isCurrent(attempt)) return
                 // Handle text messages (JSON - DEPRECATED)
                 handleMessage(text.toByteArray())
             }
 
             override fun onMessage(webSocket: WebSocket, bytes: okio.ByteString) {
+                if (!connectionDeadline.isCurrent(attempt)) return
                 // Handle binary messages (Protobuf)
                 handleMessage(bytes.toByteArray())
             }
 
             override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+                if (!connectionDeadline.isCurrent(attempt)) return
                 log(LogLevel.INFO, "Server closing connection", "Code: $code, Reason: $reason")
                 webSocket.close(1000, null)
             }
 
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                if (!connectionDeadline.isCurrent(attempt)) return
+                connectionDeadline.cancel()
                 log(LogLevel.INFO, "Connection closed", "Code: $code, Reason: $reason")
                 handleDisconnect()
             }
 
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                if (!connectionDeadline.isCurrent(attempt)) return
+                connectionDeadline.cancel()
                 log(LogLevel.ERROR, "Connection failure", t.message)
                 handleConnectionFailure(t)
             }
@@ -670,19 +697,15 @@ class ListenTogetherClient @Inject constructor(
 
     private fun executeRoomAction(action: PendingAction) {
         val avatarIndex = context.dataStore.get(ListenTogetherAvatarIndexKey, 0)
+        lastRoomAction = SentRoomAction(action, codec.format, System.currentTimeMillis(),
+            connectionDeadline.currentAttempt(), roomActionDeadline.currentAttempt(), webSocket)
         when (action) {
             is PendingAction.CreateRoom -> {
                 log(LogLevel.INFO, "Executing pending create room", action.username)
-                lastRoomAction = action
-                lastRoomActionFormat = codec.format
-                lastRoomActionSentAtMs = System.currentTimeMillis()
                 sendMessage(MessageTypes.CREATE_ROOM, CreateRoomPayload(action.username, avatarIndex))
             }
             is PendingAction.JoinRoom -> {
                 log(LogLevel.INFO, "Executing pending join room", "${action.roomCode} as ${action.username}")
-                lastRoomAction = action
-                lastRoomActionFormat = codec.format
-                lastRoomActionSentAtMs = System.currentTimeMillis()
                 sendMessage(MessageTypes.JOIN_ROOM, JoinRoomPayload(action.roomCode.uppercase(), action.username, avatarIndex))
             }
         }
@@ -695,18 +718,26 @@ class ListenTogetherClient @Inject constructor(
      * same action once in protobuf so the room code still arrives.
      */
     private fun maybeRetryRoomActionAfterProtocolUpgrade() {
-        val action = lastRoomAction ?: return
+        val sent = lastRoomAction ?: return
         lastRoomAction = null
 
-        val sentAsJson = lastRoomActionFormat == MessageFormat.JSON
+        val sentAsJson = sent.format == MessageFormat.JSON
         val nowUpgraded = codec.format == MessageFormat.PROTOBUF
-        val recent = System.currentTimeMillis() - lastRoomActionSentAtMs < ROOM_ACTION_RETRY_WINDOW_MS
+        val recent = System.currentTimeMillis() - sent.sentAtMs < ROOM_ACTION_RETRY_WINDOW_MS
         if (!sentAsJson || !nowUpgraded || !recent) return
 
+        val socket = sent.socket ?: return
         log(LogLevel.WARNING, "Create/join was rejected as JSON after a protobuf upgrade", "Retrying in protobuf")
         scope.launch {
             delay(ROOM_ACTION_RETRY_DELAY_MS)
-            executeRoomAction(action)
+            connectionDeadline.runIfCurrent(sent.connection) {
+                roomActionDeadline.runIfCurrent(sent.roomRequest, requirePending = true) {
+                    if (webSocket === socket && _connectionState.value == ConnectionState.CONNECTED &&
+                        codec.format == MessageFormat.PROTOBUF) {
+                        executeRoomAction(sent.action)
+                    }
+                }
+            }
         }
     }
 
@@ -714,6 +745,10 @@ class ListenTogetherClient @Inject constructor(
      * Disconnect from the server
      */
     fun disconnect() {
+        connectionDeadline.cancel()
+        roomActionDeadline.cancel()
+        reconnectJob?.cancel()
+        reconnectJob = null
         log(LogLevel.INFO, "Disconnecting from server")
         releaseWakeLock() // Release wake lock when disconnecting
         pingJob?.cancel()
@@ -1065,6 +1100,9 @@ class ListenTogetherClient @Inject constructor(
         val shouldReconnect = sessionToken != null || _roomState.value != null || pendingAction != null
 
         if (!isNetworkAvailable) {
+            roomActionDeadline.cancel()
+            pendingAction = null
+            lastRoomAction = null
             log(LogLevel.WARNING, "Connection failure, waiting for network", t.message)
             _connectionState.value = ConnectionState.DISCONNECTED
             return
@@ -1080,7 +1118,8 @@ class ListenTogetherClient @Inject constructor(
             log(LogLevel.INFO, "Attempting reconnect",
                 "Attempt $reconnectAttempts/$MAX_RECONNECT_ATTEMPTS, waiting ${delaySeconds}s, reason: ${t.message}")
 
-            scope.launch {
+            reconnectJob?.cancel()
+            reconnectJob = scope.launch {
                 _events.emit(ListenTogetherEvent.Reconnecting(reconnectAttempts, MAX_RECONNECT_ATTEMPTS))
                 delay(delayMs)
 
@@ -1091,6 +1130,9 @@ class ListenTogetherClient @Inject constructor(
                 }
             }
         } else {
+            roomActionDeadline.cancel()
+            pendingAction = null
+            lastRoomAction = null
             _connectionState.value = ConnectionState.ERROR
 
             // If we had a session, notify user but keep session data for manual retry
@@ -1135,7 +1177,12 @@ class ListenTogetherClient @Inject constructor(
 
             when (msgType) {
                 MessageTypes.ROOM_CREATED -> {
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? RoomCreatedPayload ?: return
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? RoomCreatedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
                     lastRoomAction = null
                     _userId.value = payload.userId
                     _role.value = RoomRole.HOST
@@ -1204,7 +1251,12 @@ class ListenTogetherClient @Inject constructor(
                 }
 
                 MessageTypes.JOIN_APPROVED -> {
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinApprovedPayload ?: return
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinApprovedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
                     lastRoomAction = null
                     _userId.value = payload.userId
                     _role.value = RoomRole.GUEST
@@ -1224,7 +1276,13 @@ class ListenTogetherClient @Inject constructor(
                 }
 
                 MessageTypes.JOIN_REJECTED -> {
-                    val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRejectedPayload ?: return
+                    val payload = roomActionDeadline.completeWithPayload(
+                        codec.decodePayload(msgType, payloadBytes, detectedFormat) as? JoinRejectedPayload,
+                    ) ?: run {
+                        failPendingConnection(context.getString(R.string.listen_together_invalid_room_response))
+                        return
+                    }
+                    lastRoomAction = null
                     log(LogLevel.WARNING, "Join rejected", payload.reason)
                     scope.launch { _events.emit(ListenTogetherEvent.JoinRejected(payload.reason)) }
                 }
@@ -1436,6 +1494,11 @@ class ListenTogetherClient @Inject constructor(
 
                 MessageTypes.ERROR -> {
                     val payload = codec.decodePayload(msgType, payloadBytes, detectedFormat) as? ErrorPayload ?: return
+                    if (payload.code != "invalid_message") {
+                        roomActionDeadline.complete()
+                        pendingAction = null
+                        lastRoomAction = null
+                    }
                     log(LogLevel.ERROR, "Server error", "${payload.code}: ${payload.message}")
 
                     // Handle specific error cases
@@ -1469,7 +1532,13 @@ class ListenTogetherClient @Inject constructor(
                         else -> {}
                     }
 
-                    scope.launch { _events.emit(ListenTogetherEvent.ServerError(payload.code, payload.message)) }
+                    val message =
+                        if (payload.code == "host_not_allowed") {
+                            context.getString(R.string.listen_together_host_not_allowed)
+                        } else {
+                            payload.message
+                        }
+                    scope.launch { _events.emit(ListenTogetherEvent.ServerError(payload.code, message)) }
                 }
 
                 MessageTypes.PONG -> {
@@ -1614,6 +1683,9 @@ class ListenTogetherClient @Inject constructor(
      * If not connected, will queue the action and connect first.
      */
     fun createRoom(username: String) {
+        roomActionDeadline.startIfIdle(ROOM_ACTION_DEADLINE_MS) {
+            failPendingConnection(context.getString(R.string.listen_together_room_request_timeout))
+        } ?: return
         // Clear any existing session to ensure we create a new room instead of reconnecting
         clearPersistedSession()
         sessionToken = null
@@ -1622,9 +1694,8 @@ class ListenTogetherClient @Inject constructor(
 
         storedUsername = username
 
-        val avatarIndex = context.dataStore.get(ListenTogetherAvatarIndexKey, 0)
         if (_connectionState.value == ConnectionState.CONNECTED) {
-            sendMessage(MessageTypes.CREATE_ROOM, CreateRoomPayload(username, avatarIndex))
+            executeRoomAction(PendingAction.CreateRoom(username))
         } else {
             log(LogLevel.INFO, "Not connected, queueing create room action")
             pendingAction = PendingAction.CreateRoom(username)
@@ -1639,8 +1710,16 @@ class ListenTogetherClient @Inject constructor(
     /**
      * Join an existing room.
      * If not connected, will queue the action and connect first.
+     * Returns false, without touching the current session, while another room request is still
+     * waiting for its answer.
      */
-    fun joinRoom(roomCode: String, username: String) {
+    fun joinRoom(roomCode: String, username: String): Boolean {
+        roomActionDeadline.startIfIdle(ROOM_ACTION_DEADLINE_MS) {
+            failPendingConnection(context.getString(R.string.listen_together_room_request_timeout))
+        } ?: run {
+            log(LogLevel.WARNING, "Join for room $roomCode ignored: another room request is in progress")
+            return false
+        }
         // Clear any existing session to ensure we join the new room instead of reconnecting
         clearPersistedSession()
         sessionToken = null
@@ -1649,9 +1728,8 @@ class ListenTogetherClient @Inject constructor(
 
         storedUsername = username
 
-        val avatarIndex = context.dataStore.get(ListenTogetherAvatarIndexKey, 0)
         if (_connectionState.value == ConnectionState.CONNECTED) {
-            sendMessage(MessageTypes.JOIN_ROOM, JoinRoomPayload(roomCode.uppercase(), username, avatarIndex))
+            executeRoomAction(PendingAction.JoinRoom(roomCode, username))
         } else {
             log(LogLevel.INFO, "Not connected, queueing join room action")
             pendingAction = PendingAction.JoinRoom(roomCode, username)
@@ -1661,12 +1739,14 @@ class ListenTogetherClient @Inject constructor(
             }
             // If CONNECTING or RECONNECTING, the action will be executed when connected
         }
+        return true
     }
 
     /**
      * Leave the current room
      */
     fun leaveRoom() {
+        roomActionDeadline.cancel()
         sendMessageNoPayload(MessageTypes.LEAVE_ROOM)
 
         // Clear session info on intentional leave
@@ -2008,6 +2088,12 @@ class ListenTogetherClient @Inject constructor(
      * Force reconnection to server (useful for manual recovery)
      */
     fun forceReconnect() {
+        connectionDeadline.cancel()
+        roomActionDeadline.cancel()
+        pendingAction = null
+        lastRoomAction = null
+        reconnectJob?.cancel()
+        reconnectJob = null
         log(LogLevel.INFO, "Forcing reconnection to server")
         reconnectAttempts = 0  // Reset attempts to retry from start
 
@@ -2023,10 +2109,25 @@ class ListenTogetherClient @Inject constructor(
         _connectionState.value = ConnectionState.DISCONNECTED
 
         // Attempt connection with reset backoff
-        scope.launch {
+        reconnectJob = scope.launch {
             delay(500)
             connect()
         }
+    }
+
+    private fun failPendingConnection(message: String) {
+        connectionDeadline.cancel()
+        roomActionDeadline.cancel()
+        reconnectJob?.cancel()
+        reconnectJob = null
+        pingJob?.cancel()
+        pingJob = null
+        pendingAction = null
+        lastRoomAction = null
+        webSocket?.cancel()
+        webSocket = null
+        _connectionState.value = ConnectionState.ERROR
+        scope.launch { _events.emit(ListenTogetherEvent.ConnectionError(message)) }
     }
 
     /**

@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -16,6 +10,8 @@
  * (com.deniscerri.ytdl.python etc). No Python is bundled; the APK's libpython.so is probed at
  * runtime (see CompactYtDlp.kt). This is the YTDLnis fallback path but compact.
  */
+
+
 
 package moe.rukamori.archivetune.playback.stream
 

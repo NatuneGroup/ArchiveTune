@@ -114,13 +114,11 @@ import me.saket.squiggles.SquigglySlider
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerHorizontalPadding
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.db.entities.FormatEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.extensions.toggleRepeatMode
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -140,7 +138,7 @@ import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
-import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val PlayerBackgroundMaxBlurRadius = 64f
 private const val ExplicitBadgeInlineId = "explicitBadge"
@@ -737,6 +735,8 @@ fun PlayerTopActions(
         PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.BITCHORD, PlayerDesignStyle.TIKTOK,
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
+        PlayerDesignStyle.LOOPER,
+        PlayerDesignStyle.FLAMINGO,
         -> {
             Unit
         }
@@ -883,14 +883,18 @@ fun PlayerTimeLabel(
                 .fillMaxWidth()
                 .padding(horizontal = PlayerHorizontalPadding + 4.dp),
     ) {
-        Text(
-            text = makeTimeString(sliderPosition ?: position),
-            style = MaterialTheme.typography.labelMedium,
-            color = textBackgroundColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.align(Alignment.CenterStart),
-        )
+        ) {
+            Text(
+                text = makeTimeString(sliderPosition ?: position),
+                style = MaterialTheme.typography.labelMedium,
+                color = textBackgroundColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
 
         if (centerContent != null) {
             Box(
@@ -901,24 +905,28 @@ fun PlayerTimeLabel(
             }
         }
 
-        Text(
-            text =
-                if (duration != C.TIME_UNSET) {
-                    if (showRemainingTime) {
-                        val remaining = duration - (sliderPosition ?: position)
-                        "-${makeTimeString(remaining.coerceAtLeast(0))}"
-                    } else {
-                        makeTimeString(duration)
-                    }
-                } else {
-                    ""
-                },
-            style = MaterialTheme.typography.labelMedium,
-            color = textBackgroundColor,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.align(Alignment.CenterEnd),
-        )
+        ) {
+            Text(
+                text =
+                    if (duration != C.TIME_UNSET) {
+                        if (showRemainingTime) {
+                            val remaining = duration - (sliderPosition ?: position)
+                            "-${makeTimeString(remaining.coerceAtLeast(0))}"
+                        } else {
+                            makeTimeString(duration)
+                        }
+                    } else {
+                        ""
+                    },
+                style = MaterialTheme.typography.labelMedium,
+                color = textBackgroundColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 
@@ -942,7 +950,7 @@ fun PlayerPlaybackControls(
     val haptic = LocalHapticFeedback.current
     val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val cinematicPlayPauseCorner by animateDpAsState(
         targetValue = if (isPlaying) 28.dp else 44.dp,
@@ -1750,6 +1758,8 @@ fun PlayerPlaybackControls(
         PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.BITCHORD, PlayerDesignStyle.TIKTOK,
         PlayerDesignStyle.SIMPMUSIC,
         PlayerDesignStyle.SPATIALFLOW,
+        PlayerDesignStyle.LOOPER,
+        PlayerDesignStyle.FLAMINGO,
         -> {
             Unit
         }
@@ -1857,16 +1867,7 @@ fun PlayerControlsContent(
         centerContent =
             if (playerDesignStyle == PlayerDesignStyle.V7 && currentFormat != null) {
                 {
-                    val codec = currentFormat.mimeType.substringAfter("/").uppercase()
-                    val label =
-                        when {
-                            codec.contains("FLAC") || codec.contains("ALAC") -> "Lossless"
-                            codec.contains("OPUS") -> codec
-                            codec.contains("AAC") -> codec
-                            codec.contains("MP4A") -> "AAC"
-                            codec.contains("VORBIS") -> "Vorbis"
-                            else -> codec
-                        }
+                    val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
                     Surface(
                         shape = RoundedCornerShape(4.dp),
                         color = textBackgroundColor.copy(alpha = 0.12f),
@@ -1984,17 +1985,12 @@ fun V8PlayerControlsContent(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (subtitle.isNotBlank()) {
-                Text(
+                MarqueeText(
                     text = subtitle,
                     style = MaterialTheme.typography.titleMedium,
                     color = secondaryForeground,
                     textAlign = TextAlign.Center,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
 
                 Spacer(Modifier.height(contentGap))
@@ -2485,17 +2481,12 @@ private fun V8Header(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
         )
-        Text(
+        MarqueeText(
             text = subtitle,
             style = MaterialTheme.typography.titleMedium,
             color = secondaryForeground,
             textAlign = TextAlign.Center,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .basicMarquee(),
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 }
@@ -2588,7 +2579,6 @@ private fun V8MetadataActions(
                     modifier =
                         Modifier
                             .fillMaxWidth()
-                            .basicMarquee()
                             .clickable(
                                 indication = null,
                                 interactionSource = remember { MutableInteractionSource() },
@@ -2600,10 +2590,7 @@ private fun V8MetadataActions(
                     onArtistClick = onArtistClick,
                     style = MaterialTheme.typography.titleMedium,
                     color = foreground,
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
@@ -2685,14 +2672,18 @@ private fun V8PlaybackProgress(
                     .fillMaxWidth()
                     .padding(top = 8.dp),
         ) {
-            Text(
-                text = makeTimeString(sliderPosition ?: position),
-                style = MaterialTheme.typography.labelMedium,
-                color = foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterStart),
-            )
+            ) {
+                Text(
+                    text = makeTimeString(sliderPosition ?: position),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = foreground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
 
             if (currentFormat != null) {
                 V8QualityChip(
@@ -2702,14 +2693,18 @@ private fun V8PlaybackProgress(
                 )
             }
 
-            Text(
-                text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
-                style = MaterialTheme.typography.labelMedium,
-                color = foreground,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterEnd),
-            )
+            ) {
+                Text(
+                    text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = foreground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -2720,10 +2715,7 @@ private fun V8QualityChip(
     foreground: Color,
     modifier: Modifier = Modifier,
 ) {
-    val label =
-        remember(currentFormat.mimeType, currentFormat.codecs) {
-            currentFormat.codecLabel()
-        }
+    val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
 
     Surface(
         shape = RoundedCornerShape(6.dp),
@@ -2882,6 +2874,9 @@ private fun V8VolumeControls(
     secondaryForeground: Color,
     onVolumeChange: (Float) -> Unit,
 ) {
+    val controller = LocalDeviceMusicVolumeController.current
+    val displayedVolume = if (controller != null) volumeDisplayFraction(controller) else volume
+    val interactions = rememberVolumeSliderInteractions(controller)
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -2893,13 +2888,17 @@ private fun V8VolumeControls(
             modifier = Modifier.size(22.dp),
         )
         V8FlatSlider(
-            value = volume.coerceIn(0f, 1f),
+            value = displayedVolume.coerceIn(0f, 1f),
             valueRange = 0f..1f,
             activeColor = foreground.copy(alpha = 0.86f),
             inactiveColor = foreground.copy(alpha = 0.24f),
             trackHeight = 8.dp,
-            onValueChange = { onVolumeChange(it.coerceIn(0f, 1f)) },
-            onValueChangeFinished = {},
+            onValueChange = {
+                controller?.startInteraction()
+                onVolumeChange(it.coerceIn(0f, 1f))
+            },
+            onValueChangeFinished = { controller?.finishInteraction() },
+            interactionSource = interactions,
             modifier =
                 Modifier
                     .weight(1f)
@@ -2926,6 +2925,7 @@ private fun V8FlatSlider(
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    interactionSource: MutableInteractionSource? = null,
 ) {
     val safeEnd = valueRange.endInclusive.coerceAtLeast(valueRange.start + 1f)
     val safeRange = valueRange.start..safeEnd
@@ -2938,6 +2938,7 @@ private fun V8FlatSlider(
         )
 
     Slider(
+        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
         value = value.coerceIn(safeRange),
         valueRange = safeRange,
         onValueChange = onValueChange,
@@ -3514,7 +3515,6 @@ private fun V9Metadata(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .basicMarquee()
                         .clickable(
                             indication = null,
                             interactionSource = remember { MutableInteractionSource() },
@@ -3527,10 +3527,7 @@ private fun V9Metadata(
                 style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
                 color = textColor.copy(alpha = 0.72f),
                 textAlign = TextAlign.Center,
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .basicMarquee(),
+                modifier = Modifier.fillMaxWidth(),
             )
         }
     }
@@ -3589,22 +3586,26 @@ private fun V9PlaybackProgress(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = makeTimeString(sliderPosition ?: position),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor.copy(alpha = 0.78f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = textColor.copy(alpha = 0.78f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = makeTimeString(sliderPosition ?: position),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = if (duration != C.TIME_UNSET) makeTimeString(duration) else "",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = textColor.copy(alpha = 0.78f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
@@ -3749,6 +3750,16 @@ private fun V9TransportButton(
     }
 }
 
+/**
+ * Without blur, Blur falls back to the artwork-colour gradient it would otherwise blur toward.
+ * Blur-gradient keeps its style and draws only the gradient, without the blurred image.
+ */
+internal fun effectivePlayerBackground(
+    playerBackground: PlayerBackgroundStyle,
+    blurOff: Boolean,
+): PlayerBackgroundStyle =
+    if (blurOff && playerBackground == PlayerBackgroundStyle.BLUR) PlayerBackgroundStyle.GRADIENT else playerBackground
+
 @Composable
 fun PlayerBackground(
     playerBackground: PlayerBackgroundStyle,
@@ -3771,10 +3782,12 @@ fun PlayerBackground(
             isMusicVideo = mediaMetadata?.isMusicVideo ?: false,
         )
     val backgroundThumbnailUrl = backgroundSwapState.displayUrl
+    val blurOff = disableBlur || !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val styleAppliesBlur =
-        effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
+        !blurOff && effectiveBlurRadius > 0f && effectiveBlurRadius >= 0.5f
+    val effectiveBackground = effectivePlayerBackground(playerBackground, blurOff)
     Box(modifier = Modifier.fillMaxSize()) {
-        when (playerBackground) {
+        when (effectiveBackground) {
             PlayerBackgroundStyle.BLUR -> {
                 // ViviMusic-faithful blur: Haze source + Haze effect with
                 // tint = Color.Black.copy(alpha = 0.30f), blurRadius = 80.dp,
@@ -3913,15 +3926,17 @@ fun PlayerBackground(
                 ) { thumbnailUrl ->
                     if (thumbnailUrl != null) {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            AsyncImage(
-                                model = thumbnailUrl.highRes(),
-                                contentDescription = "Blurred background",
-                                contentScale = ContentScale.Crop,
-                                modifier =
-                                    Modifier.fillMaxSize().let {
-                                        if (styleAppliesBlur) it.blur(radius = effectiveBlurRadius.dp) else it
-                                    },
-                            )
+                            if (!blurOff) {
+                                AsyncImage(
+                                    model = thumbnailUrl.highRes(),
+                                    contentDescription = "Blurred background",
+                                    contentScale = ContentScale.Crop,
+                                    modifier =
+                                        Modifier.fillMaxSize().let {
+                                            if (styleAppliesBlur) it.blur(radius = effectiveBlurRadius.dp) else it
+                                        },
+                                )
+                            }
                             val gradientColorStops =
                                 PlayerBackgroundColorUtils.buildBlurGradientStops(gradientColors)
                             Box(
@@ -3988,7 +4003,7 @@ fun PlayerBackground(
                                 contentScale = ContentScale.Crop,
                                 modifier =
                                     Modifier.fillMaxSize().let {
-                                        if (disableBlur) it else it.blur(radius = blurPx.dp)
+                                        if (blurOff) it else it.blur(radius = blurPx.dp)
                                     },
                                 colorFilter = ColorFilter.colorMatrix(cm),
                             )

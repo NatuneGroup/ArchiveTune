@@ -111,11 +111,6 @@
         <item quantity="many">%d titres</item>
         <item quantity="other">%d titres</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d artiste</item>
-        <item quantity="many">%d artistes</item>
-        <item quantity="other">%d artistes</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d album</item>
         <item quantity="many">%d albums</item>
@@ -227,7 +222,6 @@
     <string name="palette_neon_pink">Rose néon</string>
     <string name="palette_neon_blue">Bleu néon</string>
     <string name="palette_neon_orange">Orange néon</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Océan</string>
     <string name="palette_forest">Forêt profonde</string>
@@ -237,8 +231,6 @@
     <string name="palette_summer">Été</string>
     <string name="palette_twilight">Crépuscule</string>
     <string name="palette_aurora">Aurore</string>
-    <string name="palette_candy">Bonbon</string>
-    <string name="palette_rainbow">Arc-en-ciel</string>
     <string name="dark_theme">Thème sombre</string>
     <string name="dark_theme_on">Activé</string>
     <string name="dark_theme_off">Désactivé</string>
@@ -271,7 +263,6 @@
     <string name="lyrics_line_spacing">Espacement des lignes des paroles</string>
     <string name="content">Contenu</string>
     <string name="action_logout">Déconnexion</string>
-    <string name="action_login">Connexion</string>
     <string name="login">Se connecter</string>
     <string name="not_logged_in">Non connecté</string>
     <string name="content_language">Langue du contenu par défaut</string>
@@ -601,7 +592,6 @@
     <string name="proxy_password">Mot de passe</string>
     <string name="test_proxy_connection">Test de connexion au serveur proxy</string>
     <string name="testing_proxy_connection">Vérification de la connexion au proxy</string>
-    <string name="proxy_connection_success">Connexion via le proxy établie !</string>
     <string name="proxy_connection_failed">Échec de la connexion au serveur proxy : %s</string>
     <string name="enable_paxsenix_lyrics">Activer les paroles de Paxsenix</string>
     <string name="clear_lyrics_cache">Vider le cache des paroles</string>
@@ -678,10 +668,8 @@
     <string name="ip_rotation_refresh">Actualiser l\'adresse IP</string>
     <string name="app_icon">Icône de l\'application</string>
     <string name="display">Affichage</string>
-    <string name="youtube_synced">Synchronisé avec YouTube</string>
     <string name="your_collection">Votre Collection</string>
     <string name="discord_login_description">Connectez votre compte Discord via OAuth afin qu\'ArchiveTune puisse publier des informations de présence enrichies.</string>
-    <string name="personal_label">Personnel</string>
     <string name="lyrics_animation_style_v2_only">Disponible uniquement en mode paroles V2</string>
     <string name="discord_platform_ios">iOS</string>
     <string name="font_preference_custom">Personnalisé</string>
@@ -727,7 +715,6 @@
     <string name="total_label">total</string>
     <string name="list_view">Affichage sous forme de liste</string>
     <string name="player_background_style_v8_v9_desc">Non disponible avec les styles de lecteur V8 et V9</string>
-    <string name="account_integrations_summary">Discord, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="lyrics_mode">Mode paroles</string>
     <string name="all_artists_filter">Tous les artistes</string>
     <string name="sort_artist">Artiste</string>
@@ -802,7 +789,6 @@
     <string name="no_playlists_yet">Aucune playlist pour le moment</string>
     <string name="hide_playlist">Masquer la playlist</string>
     <string name="unhide_playlist">Afficher la playlist</string>
-    <string name="show_hidden_playlists">Afficher le contenu masqué</string>
     <string name="hide_playlist_confirm">Masquer « %1$s » dans la bibliothèque ?</string>
     <string name="lyrics_search_plain_badge">Simple</string>
     <string name="lyrics_searching_providers">Recherche de prestataires</string>
@@ -813,8 +799,6 @@
     <string name="onboarding_permission_bluetooth_connect_title">Connexion audio Bluetooth</string>
     <string name="onboarding_permission_bluetooth_connect_desc">Connectez-vous à des appareils audio Bluetooth à proximité pour écouter du contenu.</string>
     <string name="unsaved_account_dialog_no_thanks">Non, merci</string>
-    <string name="lastfm_api_credentials_default">Utilisation des identifiants par défaut</string>
-    <string name="lastfm_api_credentials_custom">Utilisation d\'identifiants personnalisés</string>
     <string name="lastfm_api_credentials_hint">Laissez les champs d\'identifiants vides pour les services compatibles qui acceptent des clés API et des secrets partagés arbitraires.</string>
     <string name="lastfm_api_key_override">Clé API</string>
     <string name="lastfm_secret_override">Secret partagé</string>
@@ -839,7 +823,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">Personnalisé</string>
     <string name="lastfm_custom_endpoint">Point de terminaison personnalisé</string>
-    <string name="lastfm_api_credentials">Identifiants API</string>
     <string name="lastfm_login_missing_credentials">Saisissez votre nom d\'utilisateur et votre mot de passe.</string>
     <string name="lastfm_login_invalid_credentials">Nom d\'utilisateur ou mot de passe incorrect.</string>
     <string name="lastfm_login_invalid_api_key">Clé API non valide.</string>
@@ -910,24 +893,19 @@
     <string name="app_icon_load_failed">Impossible de charger les icônes des applications</string>
     <string name="app_icon_change_failed">Impossible de modifier l\'icône de l\'application</string>
     <string name="show_player_volume_bar">Afficher la barre de volume</string>
-    <string name="player_volume_bar_v7_v8_only">Disponible uniquement avec les modèles de lecteurs V7 et V8</string>
     <string name="force_high_refresh_rate">Forcer un taux de rafraîchissement élevé</string>
-    <string name="max_supported_refresh_rate">Fréquence maximale prise en charge : %1$d Hz</string>
     <string name="view_debug_logs_description">Afficher et filtrer les journaux d\'application</string>
     <string name="resume_logs">Reprendre les journaux</string>
     <string name="jump_to_latest_log">Aller au dernier message</string>
     <string name="copy_log_entry">Copier l\'entrée du journal</string>
     <string name="export_logs_failed">Impossible d\'exporter les journaux</string>
     <string name="export">Exporter</string>
-    <string name="updates_subtitle_canary">Versions Canary et commits de développement récents</string>
     <string name="enable_update_notification_channel_desc">Recevez une notification lorsqu\'une nouvelle version est disponible sur le canal sélectionné</string>
-    <string name="channel_canary">Canary</string>
-    <string name="updates_canary_hosting_description">Les versions « Canary » sont publiées automatiquement à partir de la dernière branche de développement.</string>
-    <string name="updates_channel_warning_canary_title">Versions Canary</string>
-    <string name="updates_channel_warning_canary_risk">Les versions « Canary » peuvent inclure des fonctionnalités expérimentales, des modifications non finalisées ou des régressions temporaires.</string>
-    <string name="updates_channel_warning_canary_unstable">Les versions « Canary » sont fournies uniquement à des fins de test et d\'accès anticipé.\nLa stabilité, la compatibilité et les fonctionnalités ne sont pas garanties.</string>
-    <string name="updates_channel_warning_canary_acknowledgement">Remarque : le téléchargement direct depuis GitHub contourne tout contrôle supplémentaire effectué par la boutique à partir de laquelle vous avez initialement installé l\'application.\nEn poursuivant, vous reconnaissez que les versions Canary peuvent être instables et que vous les utilisez à vos propres risques.</string>
-    <string name="updates_canary_channel_confirmation">Passez sur le canal Canary pour recevoir les versions de développement.\n\nLes versions Canary sont publiées automatiquement à partir de la dernière branche de développement.\nRemarque : le téléchargement direct depuis GitHub contourne tout contrôle supplémentaire effectué par la boutique à partir de laquelle vous avez initialement installé l\'application.</string>
+    <string name="updates_nightly_hosting_description">Les versions « Nightly » sont publiées automatiquement à partir de la dernière branche de développement.</string>
+    <string name="updates_channel_warning_nightly_title">Versions Nightly</string>
+    <string name="updates_channel_warning_nightly_risk">Les versions « Nightly » peuvent inclure des fonctionnalités expérimentales, des modifications non finalisées ou des régressions temporaires.</string>
+    <string name="updates_channel_warning_nightly_unstable">Les versions « Nightly » sont fournies uniquement à des fins de test et d\'accès anticipé.\nLa stabilité, la compatibilité et les fonctionnalités ne sont pas garanties.</string>
+    <string name="updates_channel_warning_nightly_acknowledgement">Remarque : le téléchargement direct depuis GitHub contourne tout contrôle supplémentaire effectué par la boutique à partir de laquelle vous avez initialement installé l\'application.\nEn poursuivant, vous reconnaissez que les versions Nightly peuvent être instables et que vous les utilisez à vos propres risques.</string>
     <string name="onboarding_permission_device_audio_capture_title">Reconnaissance audio intégrée à l\'appareil</string>
     <string name="onboarding_permission_device_audio_capture_desc">Identifiez la musique diffusée dans d\'autres applications sans utiliser le microphone. Android vous demande à chaque fois l\'autorisation de capturer l\'écran et le son, tandis qu\'ArchiveTune traite uniquement le son.</string>
 </resources>

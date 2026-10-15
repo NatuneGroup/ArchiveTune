@@ -111,6 +111,7 @@ import moe.rukamori.archivetune.ui.component.SpotifyPlayableRow
 import moe.rukamori.archivetune.spotify.SpotifySearchItem
 import moe.rukamori.archivetune.spotify.SpotifyLibraryViewModel
 import moe.rukamori.archivetune.spotify.isSpotifyRateLimitMessage
+import moe.rukamori.archivetune.spotify.playedAtMillis
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
@@ -144,7 +145,9 @@ import moe.rukamori.archivetune.viewmodels.DateAgo
 import moe.rukamori.archivetune.viewmodels.HistoryViewModel
 import moe.rukamori.archivetune.viewmodels.RemoteHistoryUiState
 import java.time.DayOfWeek
+import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import moe.rukamori.archivetune.ui.component.IconButton as AppIconButton
@@ -180,6 +183,16 @@ fun HistoryScreen(
         mutableStateOf(TextFieldValue())
     }
     var selectedEventIds by rememberSaveable { mutableStateOf(emptyList<Long>()) }
+    // Set by the round Search button of the one-row bottom bar.
+    LaunchedEffect(navController) {
+        val handle = navController.currentBackStackEntry?.savedStateHandle ?: return@LaunchedEffect
+        handle.getStateFlow("openInPageSearch", false).collect { requested ->
+            if (requested) {
+                handle["openInPageSearch"] = false
+                isSearching = true
+            }
+        }
+    }
 
     val focusRequester = remember { FocusRequester() }
     val localListState = rememberLazyListState()
@@ -269,10 +282,11 @@ fun HistoryScreen(
                         track.artists.any { it.name.contains(searchQuery, ignoreCase = true) }
                 }
                 .groupBy { (_, playedAt) ->
+                    // The stamp is UTC; grouping on its date prefix would file a late-evening play
+                    // under tomorrow for anyone east of Greenwich.
                     val date =
-                        playedAt
-                            .take(10)
-                            .let { prefix -> runCatching { LocalDate.parse(prefix) }.getOrNull() }
+                        playedAtMillis(playedAt)
+                            ?.let { Instant.ofEpochMilli(it).atZone(ZoneId.systemDefault()).toLocalDate() }
                             ?: today
                     val daysAgo = ChronoUnit.DAYS.between(date, today).toInt()
                     when {
@@ -424,6 +438,7 @@ fun HistoryScreen(
                         topPadding = topPadding,
                         headerContent = historySourceDock,
                         sections = spotifyHistorySections,
+                        navController = navController,
                         isLoading = spotifyHistoryLoading,
                         errorMessage = spotifyHistory.errorMessage,
                         dateAgoToString = dateAgoToString,
@@ -1458,11 +1473,11 @@ private fun HistorySource.summaryResId(): Int =
     }
 
 /**
- * Spotify's play history: the last fifty tracks, most recent first.
+ * Spotify's play history, most recent first, grouped by day like the local feed.
  *
- * Flat rather than grouped by day like the local feed, because Spotify's endpoint returns a fixed
- * fifty plays with no way to page further back — a "Yesterday" heading over the tail of a
- * fifty-item window would promise an archive that is not there.
+ * It holds what the app has synced, not everything Spotify has: Spotify reports one row per
+ * playlist, album or artist played and nothing further back, so [HistorySource.SPOTIFY]'s summary
+ * line says so rather than the headings implying a complete log.
  */
 @Composable
 private fun SpotifyHistoryFeed(
@@ -1470,6 +1485,7 @@ private fun SpotifyHistoryFeed(
     topPadding: Dp,
     headerContent: @Composable () -> Unit,
     sections: Map<DateAgo, List<SpotifySearchItem.Track>>,
+    navController: NavController,
     isLoading: Boolean,
     errorMessage: String?,
     dateAgoToString: (DateAgo) -> String,
@@ -1532,7 +1548,7 @@ private fun SpotifyHistoryFeed(
                         lastIndex = tracks.lastIndex,
                         modifier = Modifier.animateItem(),
                     ) { _ ->
-                        SpotifyPlayableRow(item = track)
+                        SpotifyPlayableRow(item = track, navController = navController)
                     }
                 }
             }

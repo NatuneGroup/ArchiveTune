@@ -8,13 +8,19 @@
 
 package moe.rukamori.archivetune.ui.utils
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.draw.BlurredEdgeTreatment
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.Dp
+import moe.rukamori.archivetune.LocalBlurPolicy
 
 fun Modifier.fadingEdge(
     left: Dp? = null,
@@ -149,3 +155,34 @@ fun Modifier.smoothFadingEdge(vertical: Dp) =
         top = vertical,
         bottom = vertical,
     )
+
+@Composable
+fun Modifier.optionalBlur(
+    radius: Dp,
+    blurDisabled: Boolean = !LocalBlurPolicy.current.renderEffect,
+): Modifier = if (blurDisabled) this else this.blur(radius)
+
+/**
+ * The `graphicsLayer { renderEffect = BlurEffect(...) }` variant of [optionalBlur], for sites that
+ * blur in the layer block rather than through `Modifier.blur`. Applies no effect when the blur
+ * policy is off (or on pre-S, where RenderEffect does not exist anyway).
+ */
+@Composable
+fun Modifier.optionalRenderEffectBlur(
+    radiusX: Float,
+    radiusY: Float = radiusX,
+    edgeTreatment: BlurredEdgeTreatment = BlurredEdgeTreatment.Unbounded,
+): Modifier {
+    if (!LocalBlurPolicy.current.renderEffect) return this
+    return graphicsLayer {
+        renderEffect =
+            BlurEffect(
+                radiusX = radiusX,
+                radiusY = radiusY,
+                // Compose 1.12's BlurEffect takes a TileMode: Unbounded fades past the edges
+                // (Decal), a bounded shape clamps.
+                edgeTreatment =
+                    if (edgeTreatment == BlurredEdgeTreatment.Unbounded) TileMode.Decal else TileMode.Clamp,
+            )
+    }
+}

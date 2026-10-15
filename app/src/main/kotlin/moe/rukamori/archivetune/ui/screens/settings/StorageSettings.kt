@@ -32,18 +32,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -64,15 +61,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import moe.rukamori.archivetune.LocalDatabase
-import moe.rukamori.archivetune.LocalDownloadUtil
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
@@ -87,8 +77,6 @@ import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.MaxImageCacheSizeKey
 import moe.rukamori.archivetune.constants.MaxSongCacheSizeKey
 import moe.rukamori.archivetune.constants.SmartTrimmerKey
-import moe.rukamori.archivetune.db.entities.detectAudioExtensionFromSpans
-import moe.rukamori.archivetune.db.entities.extensionToMimeType
 import moe.rukamori.archivetune.extensions.directorySizeBytes
 import moe.rukamori.archivetune.extensions.tryOrNull
 import moe.rukamori.archivetune.storage.StorageFolderKind
@@ -98,6 +86,7 @@ import moe.rukamori.archivetune.ui.component.ActionPromptDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
@@ -123,6 +112,7 @@ fun StorageSettings(
     scrollTo: String? = null,
 ) {
     val context = LocalContext.current
+    val restartPrompt = LocalRestartPrompt.current
     val imageDiskCache = context.imageLoader.diskCache ?: return
     val playerCache = LocalPlayerConnection.current?.service?.playerCache ?: return
     val downloadCache = LocalPlayerConnection.current?.service?.downloadCache ?: return
@@ -133,14 +123,7 @@ fun StorageSettings(
     LaunchedEffect(viewModel, context) {
         viewModel.effects.collect { effect ->
             snackbarHostState.currentSnackbarData?.dismiss()
-            if (effect.restartApp) {
-                snackbarHostState.showSnackbar(
-                    message = context.getString(effect.messageResId),
-                    duration = SnackbarDuration.Indefinite,
-                )
-            } else {
-                snackbarHostState.showSnackbar(context.getString(effect.messageResId))
-            }
+            snackbarHostState.showSnackbar(context.getString(effect.messageResId))
         }
     }
 
@@ -611,7 +594,12 @@ fun StorageSettings(
             sheetState = storagePickerSheetState,
             onOptionSelected = viewModel::chooseStorageLocation,
             onDismiss = viewModel::dismissStorageLocationPicker,
-            onConfirm = viewModel::applyStorageLocationSelection,
+            onConfirm = {
+                val token = restartPrompt.beginStorageOperation()
+                viewModel.applyStorageLocationSelection { succeeded ->
+                    restartPrompt.finishStorageOperation(token, succeeded)
+                }
+            },
         )
     }
     successState?.model?.migration?.let { migration ->
@@ -980,7 +968,9 @@ private fun CacheUsagePreference(progress: Float) {
     )
 }
 
-private const val StorageRefreshIntervalMillis = 500L
+// Clears re-key the polling effects, so a finished clear refreshes at once; the interval only
+// catches growth from playback and downloads, and each poll recomposes the page.
+private const val StorageRefreshIntervalMillis = 5_000L
 private const val CacheSizeBytesPerMegabyte = 1024L * 1024L
 
 private fun cacheSizeMegabytesToBytes(sizeMegabytes: Int): Long = sizeMegabytes.toLong().coerceAtLeast(0L) * CacheSizeBytesPerMegabyte

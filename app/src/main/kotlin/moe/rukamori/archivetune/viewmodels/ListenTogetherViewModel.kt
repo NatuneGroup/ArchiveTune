@@ -1,17 +1,14 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
  * Ported from vivi-music (beta branch) viewmodels/ListenTogetherViewModel.kt (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.viewmodels
 
@@ -19,6 +16,8 @@ import androidx.lifecycle.ViewModel
 import moe.rukamori.archivetune.listentogether.ListenTogetherManager
 import androidx.lifecycle.viewModelScope
 import moe.rukamori.archivetune.listentogether.ListenTogetherEvent
+import moe.rukamori.archivetune.listentogether.ConnectionState
+import moe.rukamori.archivetune.listentogether.listenTogetherRequestFailure
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -52,6 +51,11 @@ class ListenTogetherViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             manager.events.collect { event ->
+                listenTogetherRequestFailure(event)?.let { message ->
+                    joinErrorMessage.value = message
+                    isJoiningRoom.value = false
+                    isCreatingRoom.value = false
+                }
                 when (event) {
                     is ListenTogetherEvent.JoinRejected -> {
                         val reason = event.reason
@@ -65,12 +69,26 @@ class ListenTogetherViewModel @Inject constructor(
                     }
                     is ListenTogetherEvent.JoinApproved -> {
                         isJoiningRoom.value = false
+                        isCreatingRoom.value = false
                         joinErrorMessage.value = null
                     }
                     is ListenTogetherEvent.RoomCreated -> {
                         isCreatingRoom.value = false
+                        isJoiningRoom.value = false
+                    }
+                    is ListenTogetherEvent.Disconnected -> {
+                        isJoiningRoom.value = false
+                        isCreatingRoom.value = false
                     }
                     else -> {}
+                }
+            }
+        }
+        viewModelScope.launch {
+            connectionState.collect { state ->
+                if (state == ConnectionState.ERROR || state == ConnectionState.DISCONNECTED) {
+                    isJoiningRoom.value = false
+                    isCreatingRoom.value = false
                 }
             }
         }
@@ -85,10 +103,18 @@ class ListenTogetherViewModel @Inject constructor(
     }
 
     fun createRoom(username: String) {
+        if (isCreatingRoom.value || isJoiningRoom.value) return
+        isCreatingRoom.value = true
+        isJoiningRoom.value = false
+        joinErrorMessage.value = null
         manager.createRoom(username)
     }
 
     fun joinRoom(roomCode: String, username: String) {
+        if (isCreatingRoom.value || isJoiningRoom.value) return
+        isJoiningRoom.value = true
+        isCreatingRoom.value = false
+        joinErrorMessage.value = null
         manager.joinRoom(roomCode, username)
     }
 

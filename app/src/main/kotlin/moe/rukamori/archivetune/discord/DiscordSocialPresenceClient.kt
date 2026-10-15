@@ -16,8 +16,22 @@ import org.json.JSONObject
 import timber.log.Timber
 
 object DiscordSocialPresenceClient {
+    /** Presence goes over the Discord gateway with the linked account's OAuth token. */
+    const val isAvailable = true
+
     private const val TAG = "DiscordSocialPresenceClient"
     private const val MAX_SEND_ATTEMPTS = 2
+
+    // A gateway that Discord closes sooner than this after READY counts as unstable. Each
+    // consecutive unstable close doubles the wait before the next connect, so a server that
+    // keeps dropping the session right after READY cannot drive a tight reconnect loop.
+    private const val STABLE_CONNECTION_MS = 60_000L
+    private const val RECONNECT_BACKOFF_BASE_MS = 5_000L
+    private const val RECONNECT_BACKOFF_MAX_MS = 5 * 60_000L
+
+    // Past this many unstable closes in a row, a close no longer asks for a resync on its own;
+    // only the next playback-driven update reconnects (still behind the backoff).
+    private const val MAX_UNSTABLE_AUTO_RESYNCS = 5
 
     private val mutex = Mutex()
     private val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -28,8 +42,21 @@ object DiscordSocialPresenceClient {
 
     @Volatile private var transportInvalidatedListener: ((String) -> Unit)? = null
 
+    @Volatile private var connectedAtMs = 0L
+
+    @Volatile private var unstableCloseCount = 0
+
+    @Volatile private var reconnectNotBeforeMs = 0L
+
+    @Volatile private var lastConnectedToken: String? = null
+
     val isStarted: Boolean
         get() = isConnectionUsable()
+
+    /** Time left before the gateway may be reconnected after an unstable close; 0 when allowed. */
+    fun reconnectBackoffRemainingMs(): Long = (reconnectNotBeforeMs - monotonicNowMs()).coerceAtLeast(0L)
+
+    private fun monotonicNowMs(): Long = System.nanoTime() / 1_000_000L
 
     private fun isConnectionUsable(): Boolean {
         val currentGateway = gateway
@@ -51,7 +78,7 @@ object DiscordSocialPresenceClient {
             mutex.withLock {
                 val token = accessToken.trim()
                 if (token.isBlank()) {
-                    return@withLock Result.failure(IllegalArgumentException("Discord access token is missing"))
+                    return@withLock Result.failure(DiscordAuthorizationRequiredException())
                 }
 
                 val presenceJson = buildPresencePayload(token, activity)
@@ -147,6 +174,17 @@ object DiscordSocialPresenceClient {
             return Result.success(Unit)
         }
 
+        // The backoff belongs to the token whose sessions kept closing; a relink starts clean.
+        val backoffRemainingMs = reconnectBackoffRemainingMs()
+        if (backoffRemainingMs > 0L && token == lastConnectedToken) {
+            Timber.tag(TAG).d(
+                "ensureConnected: backing off %dms after %d unstable closes",
+                backoffRemainingMs,
+                unstableCloseCount,
+            )
+            return Result.failure(DiscordReconnectBackoffException(backoffRemainingMs))
+        }
+
         if (currentGateway != null) {
             Timber.tag(TAG).d(
                 "ensureConnected: reconnecting force=%s tokenMatch=%s ready=%s",
@@ -171,6 +209,12 @@ object DiscordSocialPresenceClient {
 
             gateway = newGateway
             activeToken = token
+            if (token != lastConnectedToken) {
+                unstableCloseCount = 0
+                reconnectNotBeforeMs = 0L
+            }
+            lastConnectedToken = token
+            connectedAtMs = monotonicNowMs()
             Timber.tag(TAG).i("ensureConnected: connected")
             Result.success(Unit)
         } catch (e: CancellationException) {
@@ -207,16 +251,40 @@ object DiscordSocialPresenceClient {
     ) {
         callbackScope.launch {
             var invalidated = false
+            var shouldNotify = false
             mutex.withLock {
                 if (gateway === expectedGateway) {
                     tearDownLocked(reason)
                     invalidated = true
+                    shouldNotify = recordCloseLocked()
                 }
             }
-            if (invalidated) {
+            if (invalidated && shouldNotify) {
                 notifyTransportInvalidated(reason)
+            } else if (invalidated) {
+                Timber.tag(TAG).w(
+                    "gateway unstable (%d closes in a row); waiting for the next playback update",
+                    unstableCloseCount,
+                )
             }
         }
+    }
+
+    // must be called with mutex held; returns whether the close may request a resync by itself
+    private fun recordCloseLocked(): Boolean {
+        val now = monotonicNowMs()
+        if (now - connectedAtMs >= STABLE_CONNECTION_MS) {
+            unstableCloseCount = 0
+            reconnectNotBeforeMs = 0L
+            return true
+        }
+        val count = unstableCloseCount + 1
+        unstableCloseCount = count
+        val backoffMs =
+            (RECONNECT_BACKOFF_BASE_MS shl (count - 1).coerceAtMost(16))
+                .coerceAtMost(RECONNECT_BACKOFF_MAX_MS)
+        reconnectNotBeforeMs = now + backoffMs
+        return count <= MAX_UNSTABLE_AUTO_RESYNCS
     }
 
     private fun notifyTransportInvalidated(reason: String) {
@@ -327,3 +395,9 @@ object DiscordSocialPresenceClient {
         return payload
     }
 }
+
+class DiscordAuthorizationRequiredException : IllegalStateException("Link and authorize a Discord account first")
+
+class DiscordReconnectBackoffException(
+    val retryAfterMs: Long,
+) : IllegalStateException("Discord gateway reconnect deferred for ${retryAfterMs}ms after repeated closes")

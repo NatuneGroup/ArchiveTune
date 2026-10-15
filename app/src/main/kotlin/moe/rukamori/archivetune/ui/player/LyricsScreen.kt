@@ -16,6 +16,7 @@ import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -70,6 +71,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -101,7 +103,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.media3.common.C
 import androidx.media3.common.Player.STATE_BUFFERING
@@ -125,12 +130,9 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.BlurRadiusKey
-import moe.rukamori.archivetune.constants.DisableBlurKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyle
 import moe.rukamori.archivetune.constants.LyricsBackgroundStyleKey
-import moe.rukamori.archivetune.constants.LyricsMode
-import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerCustomBlurKey
@@ -146,16 +148,8 @@ import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
-import moe.rukamori.archivetune.ui.component.LyricsV2
 import moe.rukamori.archivetune.ui.component.PlayerSliderTrack
-import moe.rukamori.archivetune.ui.menu.LyricsMenu
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Rect
@@ -163,9 +157,10 @@ import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.PlayerPaletteCache
 import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
 import moe.rukamori.archivetune.playback.artwork.guessArtworkProvider
-import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.makeTimeString
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
@@ -201,6 +196,12 @@ private val LyricsSwipeDismissThreshold = 96.dp
  */
 val LocalLyricsScrollListener = compositionLocalOf<(Boolean) -> Unit> { {} }
 
+/**
+ * Reports from [LyricsEnhanced] while a lyric selection is in progress, so the idle auto-hide
+ * waits for the user to finish picking lines rather than dismissing them mid-selection.
+ */
+val LocalLyricsSelectionListener = compositionLocalOf<(Boolean) -> Unit> { {} }
+
 @Suppress("UNUSED_PARAMETER")
 @Composable
 fun LyricsScreen(
@@ -233,12 +234,14 @@ fun LyricsScreen(
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val currentSongLiked = currentSong?.song?.liked == true
 
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
-    val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
-    val playerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
+    val storedPlayerBackground by rememberEnumPreference(PlayerBackgroundStyleKey, PlayerBackgroundStyle.DEFAULT)
+    val selectedStyle by rememberEnumPreference(moe.rukamori.archivetune.constants.PlayerDesignStyleKey, moe.rukamori.archivetune.constants.PlayerDesignStyle.Default)
+    val playerBackground = selectedStyle.resolveBackground(storedPlayerBackground)
+    val showVolume by rememberPreferenceSnapshot().playerVolumeVisibility(selectedStyle)
     val configuredLyricsBackground by rememberEnumPreference(LyricsBackgroundStyleKey, LyricsBackgroundStyle.DEFAULT)
     val lyricsBackground = configuredLyricsBackground.resolveFor(playerBackground)
-    val disableBlur by rememberPreference(DisableBlurKey, false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val blurRadius by rememberPreference(BlurRadiusKey, 48f)
     val playerCustomImageUri by rememberPreference(PlayerCustomImageUriKey, "")
     val playerCustomBlur by rememberPreference(PlayerCustomBlurKey, 0f)
@@ -248,12 +251,12 @@ fun LyricsScreen(
     val density = LocalDensity.current
     val swipeStartRegionPx = with(density) { LyricsSwipeStartRegion.toPx() }
     val swipeDismissThresholdPx = with(density) { LyricsSwipeDismissThreshold.toPx() }
-    // The lyrics controls never hide: the bar carries the scrubber, the quality badge and the
-    // lyrics provider, none of which is worth playing hide-and-seek with, and a control you have
-    // to poke the screen to see is worse than one that is simply there.
-    // isUserScrollingLyrics is still collected because LyricsEnhanced / LyricsV2 report it through
-    // LocalLyricsScrollListener; nothing downstream needs it now.
+    // Reported by LyricsEnhanced / LyricsV2 through LocalLyricsScrollListener; a scroll counts as
+    // interaction and holds the controls up until it ends.
     var isUserScrollingLyrics by remember { mutableStateOf(false) }
+    // Reported by LyricsEnhanced through LocalLyricsSelectionListener; an open selection must not
+    // be tucked away by the idle timer under the user's finger.
+    var isSelectionActiveLyrics by remember { mutableStateOf(false) }
 
     val hapticClick =
         remember(enableHapticFeedback, view) {
@@ -383,6 +386,9 @@ fun LyricsScreen(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, currentLyrics?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyrics?.lyrics)
+    }
     // Observe the set of media IDs the user has dismissed translation for.
     // When a user clicks "Undo Translation", the mediaId is added to this set;
     // auto-translate is suppressed for dismissed songs until the user manually
@@ -538,27 +544,22 @@ fun LyricsScreen(
         }
     }
 
-    LaunchedEffect(player, playbackState, mediaMetadata.id) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(player, playbackState, mediaMetadata.id, lifecycleOwner) {
         if (playbackState != STATE_READY && playbackState != STATE_BUFFERING) return@LaunchedEffect
-        while (isActive) {
-            positionState.longValue = player.currentPosition.coerceAtLeast(0L)
-            durationState.longValue = player.duration
-            delay(250)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                positionState.longValue = player.currentPosition.coerceAtLeast(0L)
+                durationState.longValue = player.duration
+                delay(250)
+            }
         }
     }
 
-    // The lyric actions open as 4nx3b's Apple Music popup, anchored to whichever three-dot was
-    // tapped. It belongs to this screen's design, not to the Apple Music Experience switch.
     var showAnchoredLyricsMenu by remember { mutableStateOf(false) }
     var lyricsMenuAnchor by remember { mutableStateOf(Rect.Zero) }
     var headerMoreBounds by remember { mutableStateOf(Rect.Zero) }
     var controlsMoreBounds by remember { mutableStateOf(Rect.Zero) }
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
     val openLyricsMenu: (Rect) -> Unit = { anchor ->
         lyricsMenuAnchor = anchor
         showAnchoredLyricsMenu = true
@@ -571,9 +572,34 @@ fun LyricsScreen(
 
     val isLoading = playbackState == STATE_BUFFERING || sliderPosition != null
     val orientation = LocalConfiguration.current.orientation
-    // Always shown, always expanded — see the note on the controls bar above.
-    val controlsVisible = true
+    var controlsVisible by remember { mutableStateOf(true) }
+    var controlsInteractionEpoch by remember { mutableIntStateOf(0) }
     val controlsExpanded = true
+    val onControlsInteraction: () -> Unit = {
+        controlsVisible = true
+        controlsInteractionEpoch++
+    }
+    val autoHideControls =
+        shouldAutoHideLyricsControls(
+            isPlaying = isPlaying,
+            userScrollingLyrics = isUserScrollingLyrics,
+            scrubbing = sliderPosition != null,
+            menuOpen = showAnchoredLyricsMenu,
+            selectionActive = isSelectionActiveLyrics,
+        )
+    // Keyed only on the gating state and explicit interactions, never on the position ticks, so
+    // the countdown is not restarted four times a second. Plain delay rather than scaledDelay:
+    // this is an idle timeout measured against playback, and an animator scale of 0 would
+    // otherwise hide the controls the instant they appeared.
+    LaunchedEffect(autoHideControls, controlsInteractionEpoch) {
+        if (!autoHideControls) {
+            controlsVisible = true
+            return@LaunchedEffect
+        }
+        delay(AppleMusicLyricsControlsAutoHideDelayMs)
+        controlsVisible = false
+    }
+    val currentOnControlsInteraction by rememberUpdatedState(onControlsInteraction)
     val onControlsPositionChange: (Long) -> Unit = {
         sliderPosition = it
     }
@@ -606,10 +632,11 @@ fun LyricsScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                // Root-level pointer handler for the edge-swipe dismiss. Sitting on the ROOT
-                // container makes it an ancestor of every hit path: Compose delivers pointer
-                // events to the hit node and its ancestors, so taps land here even when the
-                // lyrics LazyColumn consumes them for scrolling.
+                // Root-level pointer handler for the edge-swipe dismiss and for bringing the
+                // auto-hidden controls back. Sitting on the ROOT container makes it an ancestor
+                // of every hit path: Compose delivers pointer events to the hit node and its
+                // ancestors, so taps land here even when the lyrics LazyColumn consumes them
+                // for scrolling.
                 .pointerInput(
                     swipeStartRegionPx,
                     swipeDismissThresholdPx,
@@ -617,6 +644,7 @@ fun LyricsScreen(
                 ) {
                     awaitEachGesture {
                         val down = awaitFirstDown(requireUnconsumed = false)
+                        currentOnControlsInteraction()
                         if (down.position.y <= swipeStartRegionPx) {
                             while (true) {
                                 val event = awaitPointerEvent(PointerEventPass.Initial)
@@ -639,7 +667,6 @@ fun LyricsScreen(
                 },
     ) {
         LyricsScreenBackground(
-            modifier = if (popupBackdrop != null) Modifier.layerBackdrop(popupBackdrop) else Modifier,
             style = lyricsBackground,
             mediaMetadata = mediaMetadata,
             gradientColors = gradientColors,
@@ -660,9 +687,14 @@ fun LyricsScreen(
                     .consumeUnhandledPointerInput(),
         )
 
-        CompositionLocalProvider(LocalLyricsScrollListener provides { scrolling ->
-            if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
-        }) {
+        CompositionLocalProvider(
+            LocalLyricsScrollListener provides { scrolling ->
+                if (isUserScrollingLyrics != scrolling) isUserScrollingLyrics = scrolling
+            },
+            LocalLyricsSelectionListener provides { selecting ->
+                if (isSelectionActiveLyrics != selecting) isSelectionActiveLyrics = selecting
+            },
+        ) {
             Column(
                 modifier =
                     Modifier
@@ -685,42 +717,42 @@ fun LyricsScreen(
                 )
 
                 if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
-                    AnimatedContent(
-                    targetState = controlsVisible,
-                    transitionSpec = {
-                        fadeIn(tween(180)) togetherWith fadeOut(tween(140))
-                    },
-                    label = "lyrics-landscape-controls",
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                ) { controlsVisible ->
-                    if (controlsVisible) {
-                        Row(
+                    // One Row for both controls states: the lyrics pane is composed in a single
+                    // slot and the controls only animate their share of the row away. Swapping
+                    // whole subtrees per state (the AnimatedContent this replaces) rebuilt the
+                    // lyrics renderer on every auto-hide, discarding LyricsEnhanced's selection
+                    // sheet and selected lines.
+                    val controlsFraction by animateFloatAsState(
+                        targetValue = if (controlsVisible) 1f else 0f,
+                        animationSpec = tween(180),
+                        label = "lyrics-landscape-controls",
+                    )
+                    Row(
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth()
+                                .padding(horizontal = 36.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        AppleMusicLyricsPane(
+                            foregroundColor = foregroundColor,
+                            sliderPositionProvider = { sliderPosition },
+                            lyricsSyncOffset = lyricsSyncOffset,
                             modifier =
                                 Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 36.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            AppleMusicLyricsPane(
-                                lyricsMode = lyricsMode,
-                                foregroundColor = foregroundColor,
-                                sliderPositionProvider = { sliderPosition },
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier =
-                                    Modifier
-                                        .weight(1.15f)
-                                        .fillMaxHeight()
-                                        .padding(end = 32.dp),
-                            )
+                                    .weight(1.15f + 0.85f * (1f - controlsFraction))
+                                    .fillMaxHeight()
+                                    .padding(end = 32.dp * controlsFraction),
+                        )
 
+                        if (controlsFraction > 0f) {
                             Column(
                                 modifier =
                                     Modifier
-                                        .weight(0.85f)
-                                        .widthIn(max = 420.dp),
+                                        .weight(0.85f * controlsFraction)
+                                        .widthIn(max = 420.dp)
+                                        .graphicsLayer { alpha = controlsFraction },
                                 verticalArrangement = Arrangement.Center,
                             ) {
                                 AppleMusicControls(
@@ -730,14 +762,15 @@ fun LyricsScreen(
                                     controlsExpanded = controlsExpanded,
                                     isPlaying = isPlaying,
                                     isLoading = isLoading,
-                                    volume = deviceMusicVolumeController.volumeFraction,
+                                    volumeController = deviceMusicVolumeController,
+                                    showVolume = showVolume,
                                     onPositionChange = onControlsPositionChange,
                                     onPositionChangeFinished = onControlsPositionChangeFinished,
                                     onVolumeChange = onControlsVolumeChange,
                                     onPreviousClick = onControlsPreviousClick,
                                     onPlayPauseClick = onControlsPlayPauseClick,
                                     onNextClick = onControlsNextClick,
-                                    onControlsInteraction = {},
+                                    onControlsInteraction = onControlsInteraction,
                                     foregroundColor = foregroundColor,
                                     currentFormat = currentFormat,
                                     lyricsProviderName = currentLyrics?.providerName.orEmpty(),
@@ -749,22 +782,9 @@ fun LyricsScreen(
                                 )
                             }
                         }
-                    } else {
-                        AppleMusicLyricsPane(
-                            lyricsMode = lyricsMode,
-                            foregroundColor = foregroundColor,
-                            sliderPositionProvider = { sliderPosition },
-                            lyricsSyncOffset = lyricsSyncOffset,
-                            modifier =
-                                Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 36.dp, vertical = 8.dp),
-                        )
                     }
-                }
-            } else {
+                } else {
                 AppleMusicLyricsPane(
-                    lyricsMode = lyricsMode,
                     foregroundColor = foregroundColor,
                     sliderPositionProvider = { sliderPosition },
                     lyricsSyncOffset = lyricsSyncOffset,
@@ -791,14 +811,15 @@ fun LyricsScreen(
                         controlsExpanded = controlsExpanded,
                         isPlaying = isPlaying,
                         isLoading = isLoading,
-                        volume = deviceMusicVolumeController.volumeFraction,
+                        volumeController = deviceMusicVolumeController,
+                        showVolume = showVolume,
                         onPositionChange = onControlsPositionChange,
                         onPositionChangeFinished = onControlsPositionChangeFinished,
                         onVolumeChange = onControlsVolumeChange,
                         onPreviousClick = onControlsPreviousClick,
                         onPlayPauseClick = onControlsPlayPauseClick,
                         onNextClick = onControlsNextClick,
-                        onControlsInteraction = {},
+                        onControlsInteraction = onControlsInteraction,
                         foregroundColor = foregroundColor,
                         currentFormat = currentFormat,
                         lyricsProviderName = currentLyrics?.providerName.orEmpty(),
@@ -824,7 +845,6 @@ fun LyricsScreen(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showAnchoredLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }
@@ -902,6 +922,7 @@ private fun MovingBlurBackground(
     gradientColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
+    val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val colors = if (gradientColors.isNotEmpty()) gradientColors else AppleMusicFallbackGradient
 
     val backgroundBrush =
@@ -970,7 +991,7 @@ private fun MovingBlurBackground(
         // orbiting a narrow ring around the centre. Hoisted here because the amplitude needs the
         // measured size.
         val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
-        val blurWander = rememberBlurWanderDrift(active = true, maxDriftDp = wanderMaxDrift)
+        val blurWander = rememberBlurWanderDrift(active = blurAllowed, maxDriftDp = wanderMaxDrift)
         val preSDriftScale =
             if (isPreS) {
                 val safetyMargin = 48.dp
@@ -1006,7 +1027,10 @@ private fun MovingBlurBackground(
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
             label = "lyrics-moving-blur-bg",
         ) { thumbnailUrl ->
-            if (thumbnailUrl != null) {
+            if (thumbnailUrl != null && !blurAllowed) {
+                // The colour brush below is the whole backdrop; this keeps the double-tap seek.
+                Box(Modifier.fillMaxSize().playerSeekDoubleTap())
+            } else if (thumbnailUrl != null) {
                 if (isPreS) {
                     // Bare-URL cache key: this blur deliberately shares the decoded artwork with
                     // the other requests for the song instead of caching a second copy of it.
@@ -1024,6 +1048,7 @@ private fun MovingBlurBackground(
                             colorFilter = vibrancyColorFilter,
                             modifier = Modifier
                                 .fillMaxSize()
+                                .playerSeekDoubleTap()
                                 .graphicsLayer {
                                     // Translation only: the pre-S bitmap is screen-shaped, so
                                     // rotating it would uncover the corners (the post-S path
@@ -1044,7 +1069,7 @@ private fun MovingBlurBackground(
                     // what lets it ignore the incoming constraints. The overflow is clipped by the
                     // clipToBounds on the BoxWithConstraints above.
                     Box(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
                         contentAlignment = Alignment.Center,
                     ) {
                         AsyncImage(
@@ -1103,6 +1128,7 @@ private fun AppleMusicBackground(
     gradientColors: List<Color>,
     modifier: Modifier = Modifier,
 ) {
+    val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val colors = if (gradientColors.isNotEmpty()) gradientColors else AppleMusicFallbackGradient
     val backgroundBrush =
         remember(colors) {
@@ -1136,7 +1162,10 @@ private fun AppleMusicBackground(
             transitionSpec = { fadeIn(tween(700)) togetherWith fadeOut(tween(700)) },
             label = "lyrics-apple-background",
         ) { thumbnailUrl ->
-            if (thumbnailUrl != null) {
+            if (thumbnailUrl != null && !blurAllowed) {
+                // The colour brush below is the whole backdrop; this keeps the double-tap seek.
+                Box(Modifier.fillMaxSize().playerSeekDoubleTap())
+            } else if (thumbnailUrl != null) {
                 if (isPreS) {
                     val blurredBitmap =
                         rememberPreBlurredBitmap(
@@ -1152,6 +1181,7 @@ private fun AppleMusicBackground(
                             modifier =
                                 Modifier
                                     .fillMaxSize()
+                                    .playerSeekDoubleTap()
                                     .alpha(0.62f),
                         )
                     }
@@ -1163,6 +1193,7 @@ private fun AppleMusicBackground(
                         modifier =
                             Modifier
                                 .fillMaxSize()
+                                .playerSeekDoubleTap()
                                 .blur(46.dp)
                                 .alpha(0.62f),
                     )
@@ -1363,21 +1394,19 @@ private fun AppleMusicHeaderIconButton(
 
 @Composable
 private fun AppleMusicLyricsPane(
-    lyricsMode: LyricsMode,
     foregroundColor: Color,
     sliderPositionProvider: () -> Long?,
     lyricsSyncOffset: Int,
     modifier: Modifier = Modifier,
 ) {
-    LyricsContent(
-        lyricsMode = lyricsMode,
+    SelectedLyrics(
         sliderPositionProvider = sliderPositionProvider,
         lyricsSyncOffset = lyricsSyncOffset,
         modifier =
             modifier
                 .fillMaxSize()
                 .padding(horizontal = 24.dp),
-        textColor = foregroundColor,
+        textColorOverride = foregroundColor,
     )
 }
 
@@ -1389,7 +1418,8 @@ private fun AppleMusicControls(
     controlsExpanded: Boolean,
     isPlaying: Boolean,
     isLoading: Boolean,
-    volume: Float,
+    volumeController: DeviceMusicVolumeController,
+    showVolume: Boolean,
     onPositionChange: (Long) -> Unit,
     onPositionChangeFinished: () -> Unit,
     onVolumeChange: (Float) -> Unit,
@@ -1406,6 +1436,8 @@ private fun AppleMusicControls(
     modifier: Modifier = Modifier,
     onOverflowPositioned: ((Rect) -> Unit)? = null,
 ) {
+    val displayedVolume = volumeDisplayFraction(volumeController)
+    val volumeInteractions = rememberVolumeSliderInteractions(volumeController)
     val position = positionProvider()
     val duration = durationProvider()
     val hasDuration = duration != C.TIME_UNSET && duration > 0L
@@ -1441,23 +1473,27 @@ private fun AppleMusicControls(
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    text = makeTimeString(currentPosition),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = foregroundColor.copy(alpha = 0.54f),
-                )
-                Text(
-                    text = if (hasDuration) "-${makeTimeString(remainingPosition)}" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = foregroundColor.copy(alpha = 0.54f),
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = makeTimeString(currentPosition),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = foregroundColor.copy(alpha = 0.54f),
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = if (hasDuration) "-${makeTimeString(remainingPosition)}" else "",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = foregroundColor.copy(alpha = 0.54f),
+                    )
+                }
             }
             // Centred on the row rather than placed between the two timestamps: that gap changes
             // width by a digit every time a minute rolls over, and a badge that shifts with the
             // clock reads as a glitch.
             LosslessOrStats(
-                isLoading = isLoading,
                 format = currentFormat,
                 modifier = Modifier.align(Alignment.Center).padding(horizontal = 8.dp),
             )
@@ -1527,7 +1563,7 @@ private fun AppleMusicControls(
                     )
                 }
 
-                Row(
+                if (showVolume) Row(
                     modifier =
                         Modifier
                             .fillMaxWidth()
@@ -1541,13 +1577,17 @@ private fun AppleMusicControls(
                         modifier = Modifier.size(17.dp),
                     )
                     AppleMusicSlider(
-                        value = volume.coerceIn(0f, 1f),
+                        value = displayedVolume.coerceIn(0f, 1f),
                         valueRange = 0f..1f,
                         activeColor = foregroundColor.copy(alpha = 0.88f),
                         inactiveColor = foregroundColor.copy(alpha = 0.24f),
                         trackHeight = 8.dp,
-                        onValueChange = onVolumeChange,
-                        onValueChangeFinished = {},
+                        onValueChange = {
+                            volumeController.startInteraction()
+                            onVolumeChange(it)
+                        },
+                        onValueChangeFinished = { volumeController.finishInteraction() },
+                        interactionSource = volumeInteractions,
                         modifier =
                             Modifier
                                 .weight(1f)
@@ -1657,6 +1697,7 @@ private fun AppleMusicSlider(
     onValueChange: (Float) -> Unit,
     onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
+    interactionSource: androidx.compose.foundation.interaction.MutableInteractionSource? = null,
 ) {
     val safeStart = valueRange.start
     val safeEnd = valueRange.endInclusive.coerceAtLeast(safeStart + 1f)
@@ -1670,6 +1711,7 @@ private fun AppleMusicSlider(
         )
 
     Slider(
+        interactionSource = interactionSource ?: remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
         value = value.coerceIn(safeRange),
         valueRange = safeRange,
         onValueChange = onValueChange,
@@ -1688,52 +1730,4 @@ private fun AppleMusicSlider(
         // area and makes the slider impossible to drag.
         modifier = modifier,
     )
-}
-
-@Composable
-private fun LyricsContent(
-    lyricsMode: LyricsMode,
-    sliderPositionProvider: () -> Long?,
-    lyricsSyncOffset: Int,
-    textColor: Color,
-    modifier: Modifier = Modifier,
-) {
-    when (lyricsMode) {
-        LyricsMode.V2 -> {
-            LyricsV2(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-
-        LyricsMode.ENHANCED -> {
-            LyricsEnhanced(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-
-        LyricsMode.SPOTIFY -> {
-            LyricsEnhanced(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-                spotifyStyle = true,
-            )
-        }
-
-        LyricsMode.SIMPMUSIC -> {
-            SimpMusicLyrics(
-                sliderPositionProvider = sliderPositionProvider,
-                lyricsSyncOffset = lyricsSyncOffset,
-                modifier = modifier,
-                textColorOverride = textColor,
-            )
-        }
-    }
 }

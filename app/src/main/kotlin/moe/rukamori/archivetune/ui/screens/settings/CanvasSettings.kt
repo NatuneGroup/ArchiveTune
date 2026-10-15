@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 @file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 
@@ -19,15 +15,19 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -44,7 +44,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -57,11 +59,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
@@ -151,40 +157,51 @@ private fun CanvasSettingsBody(
             .padding(top = SettingsDimensions.SectionSpacing, bottom = SettingsDimensions.ScreenBottomPadding),
         verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionSpacing) },
     ) {
+        CanvasHero(active = model.configuration.enabled)
         Surface(
             shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.primaryContainer,
+            color = if (model.configuration.enabled) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
         ) {
             CanvasSwitchRow(
                 title = stringResource(R.string.canvas_enable),
                 description = stringResource(R.string.archivetune_canvas_desc),
+                iconRes = R.drawable.auto_awesome,
                 checked = model.configuration.enabled,
                 enabled = !model.busy,
                 onCheckedChange = onEnabled,
             )
         }
-        CanvasSection(title = stringResource(R.string.canvas_source)) {
-            Column(remember { Modifier.selectableGroup() }) {
-                sources.forEach { source ->
-                    val onSelect = remember(source, onAction) { { onAction(CanvasSettingsAction.SelectSource(source)) } }
-                    CanvasChoiceRow(
-                        title = stringResource(source.labelResource()),
-                        description = when (source) {
-                            CanvasSource.ALL -> stringResource(R.string.canvas_source_all_desc)
-                            CanvasSource.SPOTIFY -> stringResource(R.string.canvas_spotify_desc)
-                            else -> null
-                        },
-                        selected = model.configuration.source == source,
-                        enabled = !model.busy,
-                        onClick = onSelect,
-                    )
-                }
+        CanvasSectionHeader(title = stringResource(R.string.canvas_source))
+        Column(
+            modifier = remember { Modifier.selectableGroup() },
+            verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap) },
+        ) {
+            sources.forEachIndexed { index, source ->
+                val onSelect = remember(source, onAction) { { onAction(CanvasSettingsAction.SelectSource(source)) } }
+                CanvasChoiceRow(
+                    title = stringResource(source.labelResource()),
+                    description = when (source) {
+                        CanvasSource.ALL -> stringResource(R.string.canvas_source_all_desc)
+                        CanvasSource.SPOTIFY -> stringResource(R.string.canvas_spotify_desc)
+                        else -> null
+                    },
+                    iconRes = source.iconResource(),
+                    shape = CanvasSectionShapes.segment(index, sources.size),
+                    selected = model.configuration.source == source,
+                    enabled = !model.busy,
+                    onClick = onSelect,
+                )
             }
         }
         Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
             CanvasSwitchRow(
                 title = stringResource(R.string.canvas_wifi_only),
                 description = stringResource(R.string.canvas_wifi_only_desc),
+                iconRes = R.drawable.wifi_proxy,
                 checked = model.configuration.wifiOnly,
                 enabled = !model.busy,
                 onCheckedChange = onWifiOnly,
@@ -192,43 +209,95 @@ private fun CanvasSettingsBody(
         }
         CanvasHealthSection(model = model, onRefresh = onRefresh)
         CanvasCacheSection(model = model, onCacheLimit = onCacheLimit, onClear = onClear)
-
     }
     CanvasSettingsDialogs(model, onAction)
 }
 
+/**
+ * Static, decorative artwork for the top of the screen. It reflects only whether Canvas is on and
+ * never shows example videos, thumbnails or metrics, so it is hidden from accessibility services.
+ */
 @Composable
-private fun CanvasSection(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionHeaderBottomPadding) }) {
-        Text(
-            title,
-            modifier = remember { Modifier.padding(horizontal = SettingsDimensions.RowHorizontalPadding) },
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainer) {
-            Column(modifier = remember { Modifier.fillMaxWidth() }, content = content)
+private fun CanvasHero(active: Boolean) {
+    val colors = MaterialTheme.colorScheme
+    val backBrush = remember(colors.tertiaryContainer, colors.secondaryContainer) {
+        Brush.linearGradient(listOf(colors.tertiaryContainer, colors.secondaryContainer))
+    }
+    val frontBrush = remember(colors.primary, colors.tertiary) {
+        Brush.linearGradient(listOf(colors.primary, colors.tertiary))
+    }
+    Surface(shape = MaterialTheme.shapes.large, color = colors.surfaceContainerLow) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(148.dp)
+                .alpha(if (active) 1f else 0.6f)
+                .clearAndSetSemantics {},
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = 34.dp)
+                    .size(width = 88.dp, height = 108.dp)
+                    .rotate(6f)
+                    .background(backBrush, RoundedCornerShape(20.dp)),
+            )
+            Box(
+                modifier = Modifier
+                    .offset(x = (-18).dp)
+                    .size(width = 96.dp, height = 116.dp)
+                    .rotate(-4f)
+                    .background(frontBrush, RoundedCornerShape(22.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.motion_photos_on),
+                    contentDescription = null,
+                    modifier = Modifier.size(36.dp),
+                    tint = colors.onPrimary,
+                )
+            }
         }
     }
+}
+
+@Composable
+private fun CanvasSectionHeader(title: String, modifier: Modifier = Modifier) {
+    Text(
+        text = title,
+        modifier = modifier
+            .padding(horizontal = SettingsDimensions.RowHorizontalPadding)
+            .padding(top = SettingsDimensions.SectionHeaderBottomPadding)
+            .semantics { heading() },
+        style = MaterialTheme.typography.titleSmall,
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
 
 @Composable
 private fun CanvasSwitchRow(
     title: String,
     description: String,
+    @DrawableRes iconRes: Int,
     checked: Boolean,
     enabled: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     val rowModifier = remember(checked, enabled, onCheckedChange) {
         Modifier.fillMaxWidth()
+            .heightIn(min = SettingsDimensions.SegmentedItemMinHeight)
             .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange)
             .padding(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding)
     }
     Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = remember { Arrangement.spacedBy(16.dp) }) {
-        Column(remember { Modifier.weight(1f) }, verticalArrangement = remember { Arrangement.spacedBy(4.dp) }) {
+        CanvasSectionIcon(iconRes = iconRes, tint = MaterialTheme.colorScheme.primary)
+        Column(remember { Modifier.weight(1f) }, verticalArrangement = remember { Arrangement.spacedBy(2.dp) }) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(description, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                description,
+                style = MaterialTheme.typography.bodyMedium,
+                color = LocalContentColor.current.copy(alpha = 0.78f),
+            )
         }
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
@@ -241,67 +310,80 @@ private fun CanvasChoiceRow(
     enabled: Boolean,
     onClick: () -> Unit,
     description: String? = null,
+    @DrawableRes iconRes: Int? = null,
+    shape: Shape? = null,
 ) {
     val rowModifier = remember(selected, enabled, onClick) {
         Modifier.fillMaxWidth()
             .selectable(selected = selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = SettingsDimensions.RowVerticalPadding)
     }
-    Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = remember { Arrangement.spacedBy(16.dp) }) {
-        RadioButton(selected = selected, onClick = null, enabled = enabled)
-        Column(remember { Modifier.weight(1f) }) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (description != null) Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    val row: @Composable () -> Unit = {
+        Row(rowModifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = remember { Arrangement.spacedBy(16.dp) }) {
+            if (iconRes != null) {
+                CanvasSectionIcon(iconRes = iconRes, tint = MaterialTheme.colorScheme.primary)
+            } else {
+                RadioButton(selected = selected, onClick = null, enabled = enabled)
+            }
+            Column(remember { Modifier.weight(1f) }) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                if (description != null) Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (iconRes != null) {
+                RadioButton(selected = selected, onClick = null, enabled = enabled)
+            }
         }
+    }
+    if (shape != null) {
+        Surface(shape = shape, color = MaterialTheme.colorScheme.surfaceContainer, content = row)
+    } else {
+        row()
     }
 }
 
 @Composable
 private fun CanvasHealthSection(model: CanvasSettingsUiModel, onRefresh: () -> Unit) {
-    Column {
+    Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionHeaderBottomPadding) }) {
         Row(
-            modifier = remember { Modifier.fillMaxWidth().padding(start = SettingsDimensions.RowHorizontalPadding) },
+            modifier = remember { Modifier.fillMaxWidth() },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = stringResource(R.string.canvas_provider_health),
-                modifier = remember { Modifier.weight(1f).semantics { heading() } },
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.primary,
+            CanvasSectionHeader(
+                title = stringResource(R.string.canvas_provider_health),
+                modifier = remember { Modifier.weight(1f) },
             )
-            TextButton(onClick = onRefresh, enabled = model.canRefreshHealth && !model.busy) {
-                Row(
-                    horizontalArrangement = remember { Arrangement.spacedBy(8.dp) },
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(painterResource(R.drawable.sync), null, modifier = remember { Modifier.size(18.dp) })
-                    Text(stringResource(R.string.refresh))
-                }
+            OutlinedButton(
+                onClick = onRefresh,
+                enabled = model.canRefreshHealth && !model.busy,
+                contentPadding = remember { PaddingValues(horizontal = 14.dp, vertical = 6.dp) },
+            ) {
+                Icon(painterResource(R.drawable.sync), null, modifier = remember { Modifier.size(18.dp) })
+                Text(stringResource(R.string.refresh), modifier = remember { Modifier.padding(start = 8.dp) })
             }
         }
         Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap) }) {
             CanvasHealthRow(
                 title = stringResource(R.string.canvas_better_lyrics),
                 health = model.health.betterLyrics,
-                iconRes = R.drawable.motion_photos_on,
+                iconRes = CanvasSource.BETTER_LYRICS.iconResource(),
                 shape = CanvasSectionShapes.top,
             )
             CanvasHealthRow(
                 title = stringResource(R.string.canvas_apple_music),
                 health = model.health.appleMusic,
-                iconRes = R.drawable.music_note,
+                iconRes = CanvasSource.APPLE_MUSIC.iconResource(),
                 shape = CanvasSectionShapes.middle,
             )
             CanvasHealthRow(
                 title = stringResource(R.string.canvas_tidal),
                 health = model.health.tidal,
-                iconRes = R.drawable.music_note,
+                iconRes = CanvasSource.TIDAL.iconResource(),
                 shape = CanvasSectionShapes.middle,
             )
             CanvasHealthRow(
                 title = stringResource(R.string.canvas_spotify),
                 health = model.health.spotify,
-                iconRes = R.drawable.music_note,
+                iconRes = CanvasSource.SPOTIFY.iconResource(),
                 shape = CanvasSectionShapes.bottom,
             )
         }
@@ -324,16 +406,26 @@ private fun CanvasHealthRow(title: String, health: CanvasHealth, @DrawableRes ic
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
         ) {
-            CanvasSectionIcon(iconRes = iconRes, tint = statusColor)
-            Column(
+            CanvasSectionIcon(iconRes = iconRes, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                text = title,
                 modifier = remember { Modifier.weight(1f) },
-                verticalArrangement = remember { Arrangement.spacedBy(4.dp) },
+                style = MaterialTheme.typography.bodyLarge,
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = remember { Arrangement.spacedBy(8.dp) },
             ) {
-                Text(title, style = MaterialTheme.typography.bodyLarge)
-                Text(stringResource(health.labelResource()), style = MaterialTheme.typography.bodyMedium, color = statusColor)
-            }
-            if (health == CanvasHealth.CHECKING) {
-                CircularProgressIndicator(modifier = remember { Modifier.size(20.dp) }, strokeWidth = 2.dp)
+                if (health == CanvasHealth.CHECKING) {
+                    CircularProgressIndicator(modifier = remember { Modifier.size(16.dp) }, strokeWidth = 2.dp)
+                } else {
+                    Box(modifier = Modifier.size(8.dp).background(statusColor, CircleShape))
+                }
+                Text(
+                    text = stringResource(health.labelResource()),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = statusColor,
+                )
             }
         }
     }
@@ -341,30 +433,33 @@ private fun CanvasHealthRow(title: String, health: CanvasHealth, @DrawableRes ic
 
 @Composable
 private fun CanvasCacheSection(model: CanvasSettingsUiModel, onCacheLimit: () -> Unit, onClear: () -> Unit) {
-    Column(verticalArrangement = remember { Arrangement.spacedBy(8.dp) }) {
-        Text(
-            text = stringResource(R.string.canvas_cache),
-            modifier = remember {
-                Modifier.padding(horizontal = SettingsDimensions.RowHorizontalPadding).semantics { heading() }
-            },
-            style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
-        )
+    val limitLabel = when (model.configuration.cacheLimitMb) {
+        0 -> stringResource(R.string.disable)
+        -1 -> stringResource(R.string.unlimited)
+        else -> model.cacheLimit
+    }
+    Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SectionHeaderBottomPadding) }) {
+        CanvasSectionHeader(title = stringResource(R.string.canvas_cache))
         Column(verticalArrangement = remember { Arrangement.spacedBy(SettingsDimensions.SegmentedItemGap) }) {
             Surface(shape = CanvasSectionShapes.top, color = MaterialTheme.colorScheme.surfaceContainerLow) {
                 Column(
-                    modifier = remember { Modifier.fillMaxWidth().padding(SettingsDimensions.RowHorizontalPadding) },
-                    verticalArrangement = remember { Arrangement.spacedBy(12.dp) },
+                    modifier = remember {
+                        Modifier.fillMaxWidth()
+                            .semantics(mergeDescendants = true) {}
+                            .padding(SettingsDimensions.RowHorizontalPadding)
+                    },
+                    verticalArrangement = remember { Arrangement.spacedBy(10.dp) },
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
-                    ) {
-                        CanvasSectionIcon(iconRes = R.drawable.storage, tint = MaterialTheme.colorScheme.primary)
+                    Column(verticalArrangement = remember { Arrangement.spacedBy(2.dp) }) {
+                        Text(stringResource(R.string.canvas_cache), style = MaterialTheme.typography.titleMedium)
                         Text(
-                            text = stringResource(R.string.size_used, model.cacheSize),
-                            modifier = remember { Modifier.weight(1f) },
-                            style = MaterialTheme.typography.headlineSmall,
+                            text = if (model.configuration.cacheLimitMb > 0) {
+                                stringResource(R.string.canvas_cache_usage, model.cacheSize, model.cacheLimit)
+                            } else {
+                                stringResource(R.string.size_used, model.cacheSize)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     if (model.busy) {
@@ -386,62 +481,69 @@ private fun CanvasCacheSection(model: CanvasSettingsUiModel, onCacheLimit: () ->
                     )
                 }
             }
-            Surface(
-                onClick = onCacheLimit,
-                enabled = !model.busy,
+            CanvasActionRow(
+                title = stringResource(R.string.max_cache_size),
+                subtitle = limitLabel,
+                iconRes = R.drawable.storage,
                 shape = CanvasSectionShapes.middle,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-            ) {
-                Row(
-                    modifier = remember {
-                        Modifier.fillMaxWidth().heightIn(min = 64.dp)
-                            .padding(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = 12.dp)
-                    },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
-                ) {
-                    Column(modifier = remember { Modifier.weight(1f) }) {
-                        Text(stringResource(R.string.max_cache_size), style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            text = when (model.configuration.cacheLimitMb) {
-                                0 -> stringResource(R.string.disable)
-                                -1 -> stringResource(R.string.unlimited)
-                                else -> model.cacheLimit
-                            },
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        painterResource(R.drawable.edit), null,
-                        modifier = remember { Modifier.size(SettingsDimensions.RowIconInnerSize) },
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-            Surface(
-                onClick = onClear,
                 enabled = !model.busy,
+                onClick = onCacheLimit,
+            )
+            CanvasActionRow(
+                title = stringResource(R.string.clear_canvas_cache),
+                subtitle = null,
+                iconRes = R.drawable.delete,
                 shape = CanvasSectionShapes.bottom,
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                contentColor = MaterialTheme.colorScheme.error,
-            ) {
-                Row(
-                    modifier = remember {
-                        Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                            .padding(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = 12.dp)
-                    },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
-                ) {
-                    Icon(painterResource(R.drawable.delete), null, modifier = remember { Modifier.size(SettingsDimensions.RowIconInnerSize) })
+                enabled = !model.busy,
+                onClick = onClear,
+                destructive = true,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CanvasActionRow(
+    title: String,
+    subtitle: String?,
+    @DrawableRes iconRes: Int,
+    shape: Shape,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    destructive: Boolean = false,
+) {
+    val accent = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = shape,
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        contentColor = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+    ) {
+        Row(
+            modifier = remember {
+                Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                    .padding(horizontal = SettingsDimensions.RowHorizontalPadding, vertical = 12.dp)
+            },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = remember { Arrangement.spacedBy(16.dp) },
+        ) {
+            CanvasSectionIcon(iconRes = iconRes, tint = accent)
+            Column(modifier = remember { Modifier.weight(1f) }) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                if (subtitle != null) {
                     Text(
-                        text = stringResource(R.string.clear_canvas_cache),
-                        modifier = remember { Modifier.weight(1f) },
-                        style = MaterialTheme.typography.labelLarge,
+                        text = subtitle,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
+            Icon(
+                painterResource(R.drawable.navigate_next), null,
+                modifier = remember { Modifier.size(SettingsDimensions.ChevronSize) },
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
@@ -474,6 +576,14 @@ private object CanvasSectionShapes {
         bottomStart = SettingsDimensions.BannerCardCornerRadius,
         bottomEnd = SettingsDimensions.BannerCardCornerRadius,
     )
+    val single = RoundedCornerShape(SettingsDimensions.BannerCardCornerRadius)
+
+    fun segment(index: Int, count: Int): Shape = when {
+        count <= 1 -> single
+        index == 0 -> top
+        index == count - 1 -> bottom
+        else -> middle
+    }
 }
 
 @Composable
@@ -536,6 +646,15 @@ private fun CanvasSource.labelResource(): Int = when (this) {
     CanvasSource.TIDAL -> R.string.canvas_tidal
     CanvasSource.SPOTIFY -> R.string.canvas_spotify
     CanvasSource.ALL -> R.string.canvas_source_all
+}
+
+@DrawableRes
+private fun CanvasSource.iconResource(): Int = when (this) {
+    CanvasSource.BETTER_LYRICS -> R.drawable.lyrics
+    CanvasSource.APPLE_MUSIC -> R.drawable.apple_music_icon
+    CanvasSource.TIDAL -> R.drawable.provider_tidal
+    CanvasSource.SPOTIFY -> R.drawable.spotify_icon
+    CanvasSource.ALL -> R.drawable.all_inclusive
 }
 
 @StringRes

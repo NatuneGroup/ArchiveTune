@@ -11,10 +11,14 @@ package moe.rukamori.archivetune
 import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.os.Build
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import coil3.ImageLoader
 import coil3.PlatformContext
 import coil3.SingletonImageLoader
@@ -27,6 +31,7 @@ import coil3.request.allowHardware
 import coil3.request.crossfade
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.Dispatchers
@@ -35,7 +40,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.deezer.DeezerAudioProvider
@@ -57,13 +61,17 @@ import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
+import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
+import moe.rukamori.archivetune.customartwork.CustomArtworkInterceptor
+import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.ui.screens.settings.ThemePalettes
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
+import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -74,9 +82,11 @@ import moe.rukamori.archivetune.utils.clearPlaybackAuthSession
 import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
+import moe.rukamori.archivetune.utils.getAsync
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.utils.toPlaybackAuthState
+import moe.rukamori.archivetune.utils.withAppProxy
 import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -84,7 +94,6 @@ import timber.log.Timber
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.net.Proxy
 import java.util.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -123,6 +132,34 @@ class App :
 
     private val didRunImageCacheTrim = AtomicBoolean(false)
 
+    private val spotifyHistorySyncing = AtomicBoolean(false)
+
+    /**
+     * Pulls Spotify's play history into the app's stored list each time the app comes to the
+     * foreground, when the user turned the sync on. The History screen only reads what this and its
+     * own visits have stored, so without it a play made in the Spotify app is missed until the screen
+     * is opened. One read per foreground at most: the repository serves a fresh cache for five
+     * minutes and holds off for a rate limit, and nothing here retries in the background.
+     */
+    private fun syncSpotifyHistory() {
+        if (!spotifyHistorySyncing.compareAndSet(false, true)) return
+        applicationScope.launch(Dispatchers.IO) {
+            try {
+                if (!dataStore.getAsync(SpotifyHistorySyncEnabledKey, false)) return@launch
+                if (dataStore.getAsync(SpotifySpDcKey, "").isBlank()) return@launch
+                // Let the screen the user opened the app for load first.
+                delay(5_000)
+                spotifyLibraryRepository.recentlyPlayed()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                reportException(error)
+            } finally {
+                spotifyHistorySyncing.set(false)
+            }
+        }
+    }
+
     private fun currentProcessName(): String? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             Application.getProcessName()
@@ -137,6 +174,9 @@ class App :
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
+        // Ahead of super.onCreate(): Hilt injects there, and an OkHttpClient built by an injected
+        // object would otherwise capture the system ProxySelector for good.
+        AppProxy.install()
         super.onCreate()
         startCanvasPolicy.start(applicationScope)
         instance = this
@@ -147,12 +187,8 @@ class App :
         YtDlpJavaScriptRuntime.initialize(this)
         BotGuardTokenGenerator.initialize(this)
         PreferenceStore.start(this)
-        applicationScope.launch(Dispatchers.IO) {
-            runCatching {
-                moe.rukamori.archivetune.ui.component.seedAppleMusicExperienceForFreshInstall(dataStore)
-            }.onFailure { Timber.w(it, "Apple Music Experience default was not applied") }
-        }
         JapaneseLanguagePackManager.initialize(this)
+        moe.rukamori.archivetune.addons.AdditionalDownloads.initialize(this)
         Timber.plant(Timber.DebugTree())
         try {
             Timber.plant(
@@ -161,6 +197,7 @@ class App :
             )
         } catch (_: Exception) {
         }
+        moe.rukamori.archivetune.logcat.PersistentLogCapture.start(this)
 
         initializeCriticalSync()
         initializeDeferredAsync()
@@ -171,9 +208,24 @@ class App :
         // Direct call like upstream: the body is map ops that cannot throw, and a
         // silent catch here would hide exactly the injection failure that matters.
         youtubeiStreamRepository.trimMemory(level)
+        // The UI cache only exists to make scrolling cheap. Once the activity is
+        // hidden the decoded artwork is reconstructible, so drop it instead of
+        // holding it for background playback that only needs the audio buffers.
+        // SingletonImageLoader.get builds the loader if none exists, which in the :crash or a
+        // service-only process would block on preferences just to clear an empty cache.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && imageLoaderCreated) {
+            runCatching { SingletonImageLoader.get(this).memoryCache?.clear() }
+        }
     }
 
     private fun initializeCriticalSync() {
+        // A collector, so editing the proxy in settings takes effect without a restart.
+        applicationScope.launch(Dispatchers.IO) {
+            dataStore.data
+                .map { ProxyUtils.configFromPreferences(it) }
+                .distinctUntilChanged()
+                .collect { AppProxy.apply(it) }
+        }
         runCatching {
             val config = com.downloader.PRDownloaderConfig.newBuilder()
                 .setReadTimeout(60_000)
@@ -183,6 +235,8 @@ class App :
             com.downloader.PRDownloader.initialize(this, config)
         }
         CanvasArtworkPlaybackCache.init(this)
+        CustomArtworkStore.init(this)
+        applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
         PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
         // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up
         // in the in-app logcat viewer with the proper tag, instead of going to
@@ -277,6 +331,15 @@ class App :
             CanvasResolverEndpoints.parse(dataStore.get(CanvasResolverEndpointsKey, ""))
         }
 
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_START) {
+                    syncSpotifyHistory()
+                    JapaneseLanguagePackManager.onForeground()
+                }
+            },
+        )
+
         // Pre-warm the Apple Music web player JWT on startup so the first
         // lyrics lookup and canvas resolution don't pay the extra ~300ms scrape
         // latency. The refresh is throttled and mutex-guarded inside the
@@ -348,16 +411,6 @@ class App :
 
                 LastFmServiceConfig.fromPreferences(prefs).apply(prefs[LastFMSessionKey])
 
-                ProxyUtils.applyYouTubeProxy(
-                    enabled = prefs[ProxyEnabledKey] == true,
-                    type = prefs[ProxyTypeKey].toEnum(defaultValue = Proxy.Type.HTTP),
-                    host = prefs[ProxyHostKey],
-                    port = prefs[ProxyPortKey],
-                    username = prefs[ProxyUsernameKey],
-                    password = prefs[ProxyPasswordKey],
-                )
-                YouTube.streamBypassProxy = YouTube.proxy != null && prefs[StreamBypassProxyKey] == true
-
                 // Re-install the rotating proxy pool when the user left IP rotation on. Without
                 // this the toggle in Internet Settings read as ON after every restart while no
                 // proxy was actually installed, so rotation appeared to do nothing. Fetching and
@@ -412,7 +465,7 @@ class App :
                     // When a community Source Pool URL is baked in, auto-discover its
                     // health-checked instances on startup so playback is seamless without any
                     // manual setup. With no provider configured this stays a cheap re-verify.
-                    val autoDiscover = BuildConfig.SOURCE_PROVIDER_URL.isNotBlank()
+                    val autoDiscover = PoolAccountManager.isEnabled && dataStore.get(UsePoolAccountsKey, true)
                     TidalInstanceHealthManager.refresh(this@App, includeDiscovery = autoDiscover, staggered = true)
                 }
             } catch (e: Exception) {
@@ -510,7 +563,19 @@ class App :
                 .map { it[UsePoolAccountsKey] ?: true }
                 .distinctUntilChanged()
                 .collect { enabled ->
-                    PoolAccountManager.setPoolAccountsEnabled(enabled)
+                    PoolAccountManager.applyPoolAccountsEnabled(this@App, enabled)
+                    if (PoolAccountManager.isPoolEnabled()) {
+                        PoolAccountManager.refresh(this@App, force = false)
+                    } else {
+                        AppleMusicAudioProvider.invalidatePoolAccountCache()
+                        QobuzAudioProvider.invalidatePoolAccountCache()
+                        DeezerAudioProvider.invalidatePoolAccountCache()
+                        moe.rukamori.archivetune.deezer.DeezerInstances.invalidatePoolInstancesCache()
+                        TidalAudioProvider.clearPoolDiscovery()
+                        if (!enabled && PoolAccountManager.isEnabled) {
+                            dataStore.edit { it.remove(TidalVerifiedInstancesKey) }
+                        }
+                    }
                 }
         }
 
@@ -568,6 +633,9 @@ class App :
 
         try {
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+                // Replacing the default handler also drops the runtime's FATAL EXCEPTION line, which
+                // is the only place the persistent log capture can see the crash.
+                android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}", throwable)
                 try {
                     val sw = StringWriter()
                     val pw = PrintWriter(sw)
@@ -605,7 +673,10 @@ class App :
         }
     }
 
+    @Volatile private var imageLoaderCreated = false
+
     override fun newImageLoader(context: PlatformContext): ImageLoader {
+        imageLoaderCreated = true
         // Coil builds this once and keeps it for the life of the process, so reading a preference
         // here before the first DataStore snapshot has landed does not just miss once — it pins the
         // image cache to the built-in defaults until the app is killed, silently ignoring the size
@@ -631,6 +702,7 @@ class App :
         val imageHttpClient =
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .connectionPool(ConnectionPool(20, 5, TimeUnit.MINUTES))
                 .connectTimeout(6, TimeUnit.SECONDS)
                 .readTimeout(10, TimeUnit.SECONDS)
@@ -643,6 +715,7 @@ class App :
         return ImageLoader
             .Builder(this)
             .components {
+                add(CustomArtworkInterceptor())
                 add(moe.rukamori.archivetune.telegram.TelegramThumbnailFetcher.Factory())
                 add(OkHttpNetworkFetcherFactory(imageHttpClient))
             }

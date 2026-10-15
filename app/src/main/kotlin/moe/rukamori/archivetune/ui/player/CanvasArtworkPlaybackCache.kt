@@ -27,7 +27,7 @@ import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
-import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.utils.StreamClientUtils
@@ -37,7 +37,7 @@ import timber.log.Timber
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.net.Proxy
+import java.net.ProxySelector
 import java.security.MessageDigest
 import java.util.LinkedHashMap
 import java.util.Locale
@@ -82,19 +82,19 @@ object CanvasArtworkPlaybackCache {
         }
 
     private val directClient: OkHttpClient by lazy {
-        canvasClient(proxy = null)
+        canvasClient(AppProxy.selector)
     }
 
     private val streamClient: OkHttpClient by lazy {
-        canvasClient(proxy = YouTube.streamOkHttpProxy)
+        canvasClient(AppProxy.streamSelector)
     }
 
-    private fun canvasClient(proxy: Proxy?): OkHttpClient {
+    private fun canvasClient(proxySelector: ProxySelector): OkHttpClient {
         return OkHttpClient
             .Builder()
-            .apply {
-                if (proxy != null) this.proxy(proxy)
-            }.connectTimeout(12, TimeUnit.SECONDS)
+            .proxySelector(proxySelector)
+            .proxyAuthenticator(AppProxy.authenticator)
+            .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(45, TimeUnit.SECONDS)
             .callTimeout(3, TimeUnit.MINUTES)
             .addInterceptor { chain ->

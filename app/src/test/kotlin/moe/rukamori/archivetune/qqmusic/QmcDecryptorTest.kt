@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Pins the container ciphers against the fixtures their reference implementations publish.
- *
  * A cipher that is subtly wrong does not throw: it produces bytes, the decoder meets noise, and the
  * track is reported unavailable with no clue as to why. Every fixture below is therefore a
  * known-answer vector taken from an upstream implementation rather than something this code
  * generated for itself, so a regression in an offset, a rotation, a segment size or an endianness
  * fails here instead of at playback.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

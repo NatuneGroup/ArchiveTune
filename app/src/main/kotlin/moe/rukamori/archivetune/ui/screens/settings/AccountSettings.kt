@@ -14,8 +14,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -126,7 +124,7 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
-import moe.rukamori.archivetune.ui.component.MarqueeText
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.screens.buildLoginRoute
 import moe.rukamori.archivetune.ui.theme.LocalYumaColors
@@ -143,7 +141,7 @@ import moe.rukamori.archivetune.utils.putLegacyPoToken
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.AccountChannelUiModel
 import moe.rukamori.archivetune.viewmodels.AccountChannelsState
-import moe.rukamori.archivetune.viewmodels.HomeViewModel
+import moe.rukamori.archivetune.viewmodels.AccountSettingsViewModel
 
 private val AccountContentMaxWidth = 840.dp
 private val AvatarSize = 72.dp
@@ -208,7 +206,7 @@ fun AccountSettings(
         YouTube.useLoginForBrowse = useLoginForBrowse
     }
 
-    val viewModel: HomeViewModel = hiltViewModel()
+    val viewModel: AccountSettingsViewModel = hiltViewModel()
     val accountNameFromViewModel by viewModel.accountName.collectAsStateWithLifecycle()
     val accountImageUrl by viewModel.accountImageUrl.collectAsStateWithLifecycle()
     val accountChannelsState by viewModel.accountChannelsState.collectAsStateWithLifecycle()
@@ -714,21 +712,17 @@ private fun AccountSummaryCard(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (accountHandle.isNotBlank()) {
-                        Text(
+                        SettingsDescriptionText(
                             text = accountHandle,
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                     if (accountEmail.isNotBlank() || !isLoggedIn) {
-                        Text(
+                        SettingsDescriptionText(
                             text = accountEmail.ifBlank { stringResource(R.string.not_logged_in) },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -883,10 +877,8 @@ private fun AccountSwitcherSheet(
                         supportingContent = {
                             val subtitle = channel.channelHandle.ifBlank { channel.byline }
                             if (subtitle.isNotBlank()) {
-                                Text(
+                                SettingsDescriptionText(
                                     text = subtitle,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         },
@@ -982,10 +974,8 @@ private fun AccountSwitcherSheet(
                         },
                         supportingContent = {
                             if (account.email.isNotBlank()) {
-                                Text(
+                                SettingsDescriptionText(
                                     text = account.email,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
                                 )
                             }
                         },
@@ -1266,18 +1256,26 @@ private fun ExpressiveRow(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(SettingsDimensions.RowTextSpacing),
             ) {
-                MarqueeText(
+                SettingsDescriptionText(
                     text = title,
                     fontWeight = FontWeight.SemiBold,
                 )
                 subtitle?.let { supportingText ->
-                    Text(
-                        text = supportingText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = subtitleMaxLines,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (subtitleMaxLines == 1) {
+                        SettingsDescriptionText(
+                            text = supportingText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            text = supportingText,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = subtitleMaxLines,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
             }
             trailing()

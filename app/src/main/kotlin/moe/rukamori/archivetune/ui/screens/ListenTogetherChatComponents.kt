@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -15,6 +9,8 @@
  * bubbles with swipe-to-reply, reactions, the Instagram-style anchored action
  * popup (morph animation + liquid glass) and the full emoji picker.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens
 
@@ -120,14 +116,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import coil3.compose.AsyncImage
 import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.colorControls
-import com.kyant.backdrop.effects.lens
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalListenTogetherManager
+import moe.rukamori.archivetune.ui.component.LiquidGlassRole
+import moe.rukamori.archivetune.ui.component.liquidGlassMaterial
+import moe.rukamori.archivetune.ui.component.liquidGlassEligible
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ListenTogetherAvatarIndexKey
 import moe.rukamori.archivetune.listentogether.ChatMessagePayload
@@ -456,31 +451,18 @@ internal fun MessageActionsPopup(
     val popupShape = RoundedCornerShape(18.dp)
 
     val frostedBlurModifier =
-        remember(backdrop) {
-            if (backdrop != null) {
-                Modifier.drawBackdrop(
-                    backdrop = backdrop,
-                    effects = {
-                        colorControls(saturation = 1.7f)
-                        blur(20f.dp.toPx())
-                        lens(
-                            refractionHeight = 16f.dp.toPx(),
-                            refractionAmount = 40f.dp.toPx(),
-                        )
-                    },
-                    onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
-                    onDrawSurface = {
-                        // A light tint keeps the white icons/labels legible over
-                        // bright chat content behind the glass.
-                        drawRect(Color.Black.copy(alpha = 0.30f))
-                    },
-                    shape = { popupShape },
-                )
-            } else {
-                Modifier
-                    .background(Color(0xF226262B), popupShape)
-                    .border(1.dp, Color.White.copy(alpha = 0.12f), popupShape)
-            }
+        if (liquidGlassEligible(backdrop)) {
+            Modifier.liquidGlassMaterial(
+                backdrop = backdrop,
+                shape = popupShape,
+                role = LiquidGlassRole.ActionMenu,
+                fallbackColor = Color(0xF226262B),
+                interactive = true,
+            )
+        } else {
+            Modifier
+                .background(Color(0xF226262B), popupShape)
+                .border(1.dp, Color.White.copy(alpha = 0.12f), popupShape)
         }
 
     Box(

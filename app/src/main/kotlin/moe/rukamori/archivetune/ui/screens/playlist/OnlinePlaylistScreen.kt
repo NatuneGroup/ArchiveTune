@@ -93,6 +93,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
 import com.valentinilk.shimmer.shimmer
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -102,9 +103,6 @@ import moe.rukamori.archivetune.R
 import android.os.Build
 import moe.rukamori.archivetune.constants.AlbumCanvasEnabledKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.db.entities.PlaylistEntity
-import moe.rukamori.archivetune.db.entities.PlaylistSongMap
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.extensions.togglePlayPause
@@ -120,7 +118,6 @@ import moe.rukamori.archivetune.ui.component.LiquidGlassIconButton
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.component.MediaDetailAction
 import moe.rukamori.archivetune.ui.component.MediaDetailHero
-import moe.rukamori.archivetune.ui.component.MediaDetailIconAction
 import moe.rukamori.archivetune.ui.component.YouTubeListItem
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
@@ -212,7 +209,7 @@ fun OnlinePlaylistScreen(
     // budget, causing the 'enhanced word-synced lyrics lag when launched from a
     // playlist page' bug. HomeScreen has no LiquidGlass, which is why the same
     // lyrics path doesn't lag from home.
-    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
     val liquidGlassHeaderActive =
         liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
@@ -857,12 +854,13 @@ fun OnlinePlaylistScreen(
         // Top App Bar — hidden when the Liquid Glass header buttons are visible
         // (matches LocalPlaylistScreen pattern). The Liquid Glass back button and
         // search+more pill handle navigation/actions when the hero is visible.
-        // The TopAppBar is only rendered during selection mode and search mode,
-        // where it provides the selection count / search TextField. Rendering the
+        // With glass active the TopAppBar is only rendered during selection mode and
+        // search mode, where it provides the selection count / search TextField; without
+        // glass (off, or overridden by Disable blur) it is the plain header. Rendering the
         // TopAppBar on top of the Liquid Glass buttons (even when transparent and
         // with empty actions) causes it to intercept pointer events in the top
         // area, making the Liquid Glass buttons unclickable.
-        if (selection || isSearching) {
+        if (!liquidGlassHeaderActive || selection || isSearching) {
             val topAppBarColors =
                 if (transparentAppBar) {
                     TopAppBarDefaults.topAppBarColors(
@@ -924,7 +922,7 @@ fun OnlinePlaylistScreen(
                 // not in selection mode, not scrolled). In selection / searching
                 // / scrolled state, the floating button has scrolled out of
                 // view so we need the TopAppBar's own back/close icon.
-                if (isSearching || selection || showTopBarTitle) {
+                if (isSearching || selection || showTopBarTitle || !liquidGlassHeaderActive) {
                     IconButton(
                         onClick = {
                             if (isSearching) {
@@ -1008,7 +1006,7 @@ fun OnlinePlaylistScreen(
                     // scrolled). Once scrolled, the floating pill has
                     // scrolled out of view, so the TopAppBar's own actions
                     // take over.
-                    if (showTopBarTitle) {
+                    if (showTopBarTitle || !liquidGlassHeaderActive) {
                         IconButton(onClick = { isSearching = true }, onLongClick = {}) {
                             Icon(
                                 painter = painterResource(R.drawable.search),
@@ -1042,7 +1040,7 @@ fun OnlinePlaylistScreen(
                 }
             },
         )
-        } // end if (selection || isSearching)
+        } // end if (!liquidGlassHeaderActive || selection || isSearching)
 
         SnackbarHost(
             hostState = snackbarHostState,

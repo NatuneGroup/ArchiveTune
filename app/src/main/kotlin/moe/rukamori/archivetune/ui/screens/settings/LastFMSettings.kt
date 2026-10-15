@@ -50,7 +50,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -63,6 +65,8 @@ import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LastFmPreferYtThumbnailsKey
 import moe.rukamori.archivetune.constants.LastFmProvider
+import moe.rukamori.archivetune.scrobbling.LastFmScrobbleQueue
+import moe.rukamori.archivetune.scrobbling.LastFmSendLovesKey
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -298,6 +302,10 @@ private fun LastFmSettingsSuccess(
     // thumbnails (clean 16:9, no baked-in bars). Read here so the toggle is
     // always in sync with the dashboard's read of the same key.
     var preferYtThumbnails by rememberPreference(LastFmPreferYtThumbnailsKey, defaultValue = false)
+    var sendLoves by rememberPreference(LastFmSendLovesKey, defaultValue = false)
+    val context = LocalContext.current
+    LaunchedEffect(Unit) { LastFmScrobbleQueue.attach(context) }
+    val pendingScrobbles by LastFmScrobbleQueue.pendingCount.collectAsStateWithLifecycle()
 
     PreferenceGroup(
         modifier = positions.modifierFor("lastfm_account"),
@@ -397,6 +405,41 @@ private fun LastFmSettingsSuccess(
                 onCheckedChange = onNowPlayingChange,
                 isEnabled = model.canEnableScrobbling && model.scrobblingEnabled,
             )
+        }
+
+        item {
+            SwitchPreference(
+                modifier = positions.modifierFor("lastfm_send_loves"),
+                title = { Text(stringResource(R.string.lastfm_send_loves)) },
+                description = stringResource(R.string.lastfm_send_loves_desc),
+                checked = sendLoves,
+                onCheckedChange = { sendLoves = it },
+                isEnabled = model.isLoggedIn,
+            )
+        }
+
+        if (pendingScrobbles > 0) {
+            item {
+                PreferenceEntry(
+                    modifier = positions.modifierFor("lastfm_pending_scrobbles"),
+                    title = { Text(stringResource(R.string.lastfm_pending_scrobbles_title)) },
+                    description =
+                        pluralStringResource(
+                            R.plurals.lastfm_pending_scrobbles_desc,
+                            pendingScrobbles,
+                            pendingScrobbles,
+                        ),
+                    trailingContent = {
+                        OutlinedButton(
+                            onClick = LastFmScrobbleQueue::flushSoon,
+                            enabled = model.isLoggedIn,
+                            shapes = ButtonDefaults.shapes(),
+                        ) {
+                            Text(stringResource(R.string.lastfm_pending_scrobbles_send_now))
+                        }
+                    },
+                )
+            }
         }
 
         item {

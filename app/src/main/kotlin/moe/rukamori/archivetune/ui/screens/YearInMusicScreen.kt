@@ -67,7 +67,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
@@ -99,18 +98,17 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongWithStats
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.ArtistMenu
 import moe.rukamori.archivetune.ui.menu.SongMenu
 import moe.rukamori.archivetune.utils.ComposeToImage
 import moe.rukamori.archivetune.utils.joinByBullet
 import moe.rukamori.archivetune.utils.makeTimeString
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.YearInMusicUiState
 import moe.rukamori.archivetune.viewmodels.YearInMusicViewModel
 import java.text.NumberFormat
@@ -180,7 +178,7 @@ private fun YearInMusicRecapScreen(
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
     val content = uiState as YearInMusicUiState.Content
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
 
     var isGeneratingImage by remember { mutableStateOf(false) }
     var isShareCaptureMode by remember { mutableStateOf(false) }
@@ -848,7 +846,7 @@ private fun TopSongRecapCard(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .blur(18.dp),
+                    .optionalBlur(18.dp),
         )
         Box(
             modifier =

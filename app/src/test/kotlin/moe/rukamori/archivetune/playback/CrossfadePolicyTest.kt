@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.playback
 
@@ -174,15 +170,23 @@ class CrossfadePolicyTest {
         fun snapshot(
             generationMatches: Boolean,
             targetIndex: Int,
+            incomingItemMatchesTarget: Boolean = true,
             error: Boolean = false,
             idle: Boolean = false,
             ended: Boolean = false,
+            ready: Boolean = true,
+            playing: Boolean = true,
+            playbackRequested: Boolean = true,
         ) = CrossfadePolicy.PromotionSnapshot(
             generationMatches = generationMatches,
             targetIndex = targetIndex,
+            incomingItemMatchesTarget = incomingItemMatchesTarget,
             hasError = error,
             isIdle = idle,
             isEnded = ended,
+            isReady = ready,
+            isPlaying = playing,
+            playbackRequested = playbackRequested,
             unsetIndex = -1,
         )
 
@@ -195,8 +199,50 @@ class CrossfadePolicyTest {
         // incoming idle/ended (e.g. readiness timeout): refuse the destructive handoff
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, idle = true)))
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, ended = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, incomingItemMatchesTarget = false)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, ready = false)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(true, 3, playing = false)))
+        assertTrue(
+            CrossfadePolicy.mayPromote(
+                snapshot(true, 3, playing = false, playbackRequested = false),
+            ),
+        )
         // target vanished from the queue (queue replacement): refuse
         assertFalse(CrossfadePolicy.mayPromote(snapshot(true, -1)))
+    }
+
+    @Test
+    fun promotionOnceOutgoingRanOutNoLongerRequiresPlayingIncoming() {
+        fun snapshot(
+            ranOut: Boolean,
+            ready: Boolean,
+            playing: Boolean,
+            error: Boolean = false,
+            idle: Boolean = false,
+            ended: Boolean = false,
+        ) = CrossfadePolicy.PromotionSnapshot(
+            generationMatches = true,
+            targetIndex = 3,
+            incomingItemMatchesTarget = true,
+            hasError = error,
+            isIdle = idle,
+            isEnded = ended,
+            isReady = ready,
+            isPlaying = playing,
+            playbackRequested = true,
+            unsetIndex = -1,
+            outgoingRanOut = ranOut,
+        )
+
+        // The outgoing song ran out and the incoming player is buffering: promote — a promoted
+        // buffering player resumes from its position when its buffer fills.
+        assertTrue(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false)))
+        // ...but a terminal incoming player is still refused.
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = true, playing = true, error = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false, idle = true)))
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = true, ready = false, playing = false, ended = true)))
+        // Without the outgoing song having run out, the old strictness holds.
+        assertFalse(CrossfadePolicy.mayPromote(snapshot(ranOut = false, ready = false, playing = true)))
     }
 
     @Test

@@ -57,6 +57,8 @@ import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 class PoTokenExtractionActivity : ComponentActivity() {
     companion object {
@@ -324,6 +326,16 @@ class PoTokenExtractionActivity : ComponentActivity() {
 
                         webViewClient =
                             object : WebViewClient() {
+                                override fun onReceivedHttpAuthRequest(
+                                    view: WebView?,
+                                    handler: HttpAuthHandler?,
+                                    host: String?,
+                                    realm: String?,
+                                ) {
+                                    if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                                    super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                                }
+
                                 override fun onPageFinished(
                                     view: WebView,
                                     url: String?,

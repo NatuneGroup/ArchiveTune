@@ -1,0 +1,10 @@
+<resources>
+    <string name="lastfm_send_loves">Love liked songs</string>
+    <string name="lastfm_send_loves_desc">Liking or unliking a song also loves or unloves it on your scrobbling account</string>
+    <string name="lastfm_pending_scrobbles_title">Scrobbles waiting to be sent</string>
+    <plurals name="lastfm_pending_scrobbles_desc">
+        <item quantity="one">%d play is saved and will be sent when the service can be reached</item>
+        <item quantity="other">%d plays are saved and will be sent when the service can be reached</item>
+    </plurals>
+    <string name="lastfm_pending_scrobbles_send_now">Send now</string>
+</resources>

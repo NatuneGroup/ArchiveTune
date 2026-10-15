@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * TikTok player style — the vertical feed.
@@ -39,8 +35,6 @@
 
 package moe.rukamori.archivetune.ui.player.tiktok
 
-import android.os.Build
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -107,6 +101,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.extensions.metadata
@@ -116,15 +111,12 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.ui.player.AppleMusicQueueSheet
 import moe.rukamori.archivetune.ui.player.LocalVideoArtworkState
 import moe.rukamori.archivetune.ui.player.LocalVideoFullscreenState
 import moe.rukamori.archivetune.ui.player.MeshBackdrop
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.utils.resize
@@ -357,12 +349,12 @@ fun TikTokPlayerContent(
     var immersive by rememberSaveable { mutableStateOf(false) }
     // Back exits inline lyrics first, immersive mode next; the separate
     // lyrics page (if something else opened it) keeps its own back handling.
-    BackHandler(enabled = lyricsOpen && !lyricsVisible) { lyricsOpen = false }
-    BackHandler(enabled = immersive && !lyricsVisible) { immersive = false }
+    PlayerInlinePageBackHandler(enabled = lyricsOpen && !lyricsVisible) { lyricsOpen = false }
+    PlayerInlinePageBackHandler(enabled = immersive && !lyricsVisible) { immersive = false }
     // Registered last so it wins the back dispatch while the queue is open —
     // back closes the queue before anything else (the lyrics/immersive
     // handlers are mutually exclusive with it by construction anyway).
-    BackHandler(enabled = queueOpen && !lyricsVisible) { queueOpen = false }
+    PlayerInlinePageBackHandler(enabled = queueOpen && !lyricsVisible) { queueOpen = false }
     // Reset both when the player sheet collapses so re-expanding always
     // shows the full feed chrome, and when the lyrics page opens.
     LaunchedEffect(state.isExpanded, lyricsVisible) {
@@ -416,30 +408,12 @@ fun TikTokPlayerContent(
     // queue sheet over the artwork blurred at 72dp (AppleMusicPlayer's Modifier.blur(72.dp) canvas
     // backdrop) — the sheet's translucent glassy rows are designed for that frosted field, not for
     // a sharp cover (user report 2026-09-03: "the background is transparent.
-    val canBlurFeed = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val canBlurFeed = moe.rukamori.archivetune.LocalBlurPolicy.current.renderEffect
     val feedBlur by animateDpAsState(
         targetValue = if (queueOpen && canBlurFeed) TIKTOK_QUEUE_FEED_BLUR else 0.dp,
         animationSpec = tween(600, easing = FastOutSlowInEasing),
         label = "tiktokQueueFeedBlur",
     )
-
-    // ── The lyrics overflow popup's frosted backdrop ──
-    // The Apple Music style's lyrics overflow popup is real frosted glass:
-    // the player content records itself into a layer backdrop and the popup
-    // samples it (32dp blur + vibrancy). The feed gets the exact same
-    // treatment here — the popup IS the Apple Music popup, so it gets the
-    // Apple Music blur too (user report 2026-09-02: "the lyrics popup that
-    // opens doesn't have blur. I want the exact same popup for lyrics
-    // overflow menu from Apple music style"). Below Android S there is no
-    // RuntimeShader and the popup falls back to its plain dark-glass card —
-    // the same fallback the Apple Music style shows on those devices.
-    // Gated like the Apple Music player's own popup (4nx3b): only with Liquid Glass on.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
 
     // The feed root's bounds in root space, kept live — the popup anchor
     // below is converted into the popup's parent (root Box) space with them.
@@ -486,10 +460,10 @@ fun TikTokPlayerContent(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(TIKTOK_EMPTY_BACKDROP)
+                .then(if (LocalPlayerPresentation.current.sharedBackground) Modifier else Modifier.background(TIKTOK_EMPTY_BACKDROP))
                 .onGloballyPositioned { rootBounds = it.boundsInRoot() },
     ) {
-        MeshBackdrop(
+        if (!LocalPlayerPresentation.current.sharedBackground) MeshBackdrop(
             palette = meshPalette,
             trackKey = backdropMetadata.id,
             reduceAnimation = LocalAnimationsDisabled.current,
@@ -507,16 +481,9 @@ fun TikTokPlayerContent(
                 Modifier
                     .fillMaxSize()
                     .let { base ->
-                        if (feedBlur > 0.dp) base.blur(feedBlur) else base
-                    }
-                    .let { base ->
-                        // Recording the backdrop layer costs a full-screen layer every frame, so
-                        // the pager only records it while the popup is on screen (4nx3b).
-                        if (popupBackdrop != null && lyricsOpen && showLyricsMenu) {
-                            base.layerBackdrop(popupBackdrop)
-                        } else {
-                            base
-                        }
+                        // canBlurFeed is checked here too so a policy-off does not let the
+                        // blur finish its exit animation.
+                        if (canBlurFeed && feedBlur > 0.dp) base.blur(feedBlur) else base
                     },
             // One page either side is pre-composed so the incoming page is fully
             // rendered before it slides in; nothing beyond that is composed,
@@ -694,10 +661,7 @@ fun TikTokPlayerContent(
             }
         }
 
-        // ── Lyrics overflow (the anchored Apple Music popup) ── Rendered as a SIBLING of the pager
-        // (the backdrop-capturing layer) at the player's root.
-        // Canary had swapped this for the plain bottom sheet, believing AnchoredLyricsOverflowMenu
-        // was missing from this tree; it is in LyricsMenu.kt, so 4nx3b's popup is restored.
+        // ── Lyrics overflow ── A sibling of the pager so the anchored popup is not blurred with it.
         if (lyricsOpen && showLyricsMenu) {
             AnchoredLyricsOverflowMenu(
                 iconBoundsInRoot = lyricsPopupAnchor,
@@ -706,7 +670,6 @@ fun TikTokPlayerContent(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }

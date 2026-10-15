@@ -1,15 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
+ * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- */
+
 
 package moe.rukamori.archivetune.ui.screens.settings
 
@@ -34,11 +31,13 @@ import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.dataStore
+import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Result of a "Check source" probe. The [summary] is shown in a Toast / dialog body;
@@ -55,7 +54,7 @@ object SourceCheckService {
     private const val KOZU_PROBE_YT_ID = "dQw4w9WgXcQ"
 
     private val client by lazy {
-        OkHttpClient.Builder()
+        OkHttpClient.Builder().withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
@@ -77,6 +76,7 @@ object SourceCheckService {
                 AudioSourceType.APPLE -> checkAppleMusic()
                 AudioSourceType.AMAZON -> checkAmazon(context)
                 AudioSourceType.QQ -> checkQqMusic(context)
+                AudioSourceType.SPOTIFY -> checkSpotifyStream(context)
                 AudioSourceType.JIOSAAVN -> checkJioSaavn()
                 AudioSourceType.YOUTUBE -> SourceCheckResult(
                     healthy = true,
@@ -84,6 +84,38 @@ object SourceCheckService {
                 )
             }
         }
+
+    private suspend fun checkSpotifyStream(context: Context): SourceCheckResult {
+        if (!SpotifyStreamingAccount.isSignedIn(context)) {
+            return SourceCheckResult(
+                healthy = false,
+                summary = "No streaming account is connected. Sign in from Integration → Spotify streaming " +
+                    "with a second Spotify account, not the one the catalog uses, then switch the source on.",
+            )
+        }
+        // A token is withheld when the catalog turns out to be signed in with this same account,
+        // so its absence covers both an expired session and a collision.
+        val token =
+            SpotifyStreamingAccount.accessToken(context)
+                ?: return SourceCheckResult(
+                    healthy = false,
+                    summary = "The streaming account did not get a session. Its sign-in has expired, or the " +
+                        "catalog is now signed in with the same account. Sign in again with a separate account.",
+                )
+        val profile =
+            SpotifyStreamingAccount.fetchProfile(token)
+                ?: return SourceCheckResult(
+                    healthy = false,
+                    summary = "Spotify issued a session but did not return the account profile. Try again later.",
+                )
+        val who = profile.displayName ?: profile.userId
+        val method = SpotifyStreamingAccount.resolveMethod(context).name
+        return SourceCheckResult(
+            healthy = true,
+            summary = "Streaming as $who using the $method method. Tracks that cannot be resolved fall " +
+                "through to the next source.",
+        )
+    }
 
     private suspend fun checkQqMusic(context: Context): SourceCheckResult {
         val session =
@@ -497,6 +529,7 @@ object SourceCheckService {
         val client =
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .connectTimeout(4, TimeUnit.SECONDS)
                 .readTimeout(4, TimeUnit.SECONDS)
                 .callTimeout(4, TimeUnit.SECONDS)

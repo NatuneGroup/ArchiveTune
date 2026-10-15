@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens.settings
 
@@ -47,6 +43,8 @@ import moe.rukamori.archivetune.ui.component.AuthWebViewScreen
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import java.util.concurrent.atomic.AtomicBoolean
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 const val LASTFM_LIBREFM_LOGIN_ROUTE = "settings/lastfm/librefm-login"
 
@@ -151,6 +149,16 @@ fun LibreFmLoginScreen(navController: NavController) {
         factory = { ctx ->
             WebView(ctx).apply {
                 webViewClient = object : WebViewClient() {
+                    override fun onReceivedHttpAuthRequest(
+                        view: WebView?,
+                        handler: HttpAuthHandler?,
+                        host: String?,
+                        realm: String?,
+                    ) {
+                        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                        super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                    }
+
                     override fun onPageStarted(
                         view: WebView,
                         url: String?,

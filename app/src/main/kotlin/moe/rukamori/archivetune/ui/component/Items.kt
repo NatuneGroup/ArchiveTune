@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.AnimatedVisibility
@@ -55,7 +56,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -73,7 +73,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
@@ -111,12 +110,10 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
 import moe.rukamori.archivetune.constants.GridThumbnailCornerRadius
 import moe.rukamori.archivetune.constants.GridThumbnailHeight
 import moe.rukamori.archivetune.constants.ListItemHeight
 import moe.rukamori.archivetune.constants.ListThumbnailSize
-import moe.rukamori.archivetune.constants.SwipeToSongKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
@@ -142,7 +139,6 @@ import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.ui.utils.thumbnailSourceRatio
 import moe.rukamori.archivetune.utils.joinByBullet
 import moe.rukamori.archivetune.utils.makeTimeString
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.math.roundToInt
 
@@ -400,7 +396,7 @@ fun SongListItem(
     showActiveContainer: Boolean = true,
     trailingContent: @Composable RowScope.() -> Unit = {},
 ) {
-    val swipeEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
+    val swipeEnabled = LocalItemPreferences.current.swipeToSongEnabled
     val resolvedSwipeContentBackgroundColor = swipeContentBackgroundColor ?: MaterialTheme.colorScheme.surface
 
     val content: @Composable () -> Unit = {
@@ -548,35 +544,6 @@ fun ArtistListItem(
         )
     },
     trailingContent = trailingContent,
-    modifier = modifier,
-)
-
-@Composable
-fun ArtistGridItem(
-    artist: Artist,
-    modifier: Modifier = Modifier,
-    badges: @Composable RowScope.() -> Unit = {
-        if (artist.artist.bookmarkedAt != null) {
-            Icon.Favorite()
-        }
-    },
-    fillMaxWidth: Boolean = false,
-) = GridItem(
-    title = artist.artist.name,
-    subtitle = pluralStringResource(R.plurals.n_song, artist.songCount, artist.songCount),
-    badges = badges,
-    thumbnailContent = {
-        ItemThumbnail(
-            thumbnailUrl = artist.artist.thumbnailUrl,
-            isActive = false,
-            isPlaying = false,
-            shape = RoundedCornerShape(GridThumbnailCornerRadius),
-            contentScale = ContentScale.Crop,
-            maxSizePx = 544,
-            modifier = Modifier.fillMaxSize(),
-        )
-    },
-    fillMaxWidth = fillMaxWidth,
     modifier = modifier,
 )
 
@@ -755,59 +722,6 @@ fun PlaylistListItem(
 )
 
 @Composable
-fun PlaylistGridItem(
-    playlist: Playlist,
-    modifier: Modifier = Modifier,
-    autoPlaylist: Boolean = false,
-    badges: @Composable RowScope.() -> Unit = {},
-    fillMaxWidth: Boolean = false,
-) = GridItem(
-    title = {
-        Text(
-            text = playlist.playlist.name,
-            style = MaterialTheme.typography.bodyLarge,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.basicMarquee().fillMaxWidth(),
-        )
-    },
-    subtitle = {
-        Text(
-            text = playlistCountText(playlist = playlist, autoPlaylist = autoPlaylist),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.secondary,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    },
-    badges = badges,
-    thumbnailContent = {
-        val width = maxWidth
-        PlaylistThumbnail(
-            thumbnails = playlist.thumbnails,
-            size = width,
-            placeHolder = {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    Icon(
-                        painter = painterResource(playlistPlaceholderIcon(playlist, autoPlaylist)),
-                        contentDescription = null,
-                        tint = LocalContentColor.current.copy(alpha = 0.8f),
-                        modifier = Modifier.size(width / 2),
-                    )
-                }
-            },
-            shape = RoundedCornerShape(GridThumbnailCornerRadius),
-        )
-    },
-    fillMaxWidth = fillMaxWidth,
-    modifier = modifier,
-)
-
-@Composable
 private fun playlistCountText(
     playlist: Playlist,
     autoPlaylist: Boolean,
@@ -839,75 +753,6 @@ private fun playlistPlaceholderIcon(
         stringResource(R.string.cached_playlist) -> R.drawable.cached
         else -> if (autoPlaylist) R.drawable.trending_up else R.drawable.queue_music
     }
-
-@Composable
-fun LibraryPinnedCollectionTile(
-    title: String,
-    @DrawableRes iconRes: Int,
-    modifier: Modifier = Modifier,
-    subtitle: String? = null,
-    accentColor: Color = MaterialTheme.colorScheme.primary,
-) {
-    Card(
-        shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-        modifier = modifier,
-    ) {
-        Box(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors =
-                                listOf(
-                                    accentColor.copy(alpha = 0.28f),
-                                    MaterialTheme.colorScheme.surfaceContainerHigh,
-                                    MaterialTheme.colorScheme.surfaceContainerLow,
-                                ),
-                        ),
-                    ),
-        ) {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-            ) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.76f),
-                    shape = CircleShape,
-                ) {
-                    Icon(
-                        painter = painterResource(iconRes),
-                        contentDescription = null,
-                        tint = accentColor,
-                        modifier = Modifier.padding(12.dp),
-                    )
-                }
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    subtitle?.takeIf { it.isNotBlank() }?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
 
 private val LibraryCardThumbnailSize = 72.dp
 private val LibraryCardGlowElevation = 34.dp
@@ -1126,7 +971,7 @@ fun YouTubeListItem(
     trailingContent: @Composable RowScope.() -> Unit = {},
     badges: @Composable RowScope.() -> Unit = { YTItemBadges(item) },
 ) {
-    val swipeEnabled by rememberPreference(SwipeToSongKey, defaultValue = true)
+    val swipeEnabled = LocalItemPreferences.current.swipeToSongEnabled
 
     val content: @Composable () -> Unit = {
         val subtitle =
@@ -1214,7 +1059,7 @@ fun YouTubeGridItem(
     isPlaying: Boolean = false,
     fillMaxWidth: Boolean = false,
 ) {
-    val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val resolvedThumbnailRatio = thumbnailRatio ?: item.preferredThumbnailRatio(cropThumbnailToSquare)
 
     GridItem(
@@ -1394,7 +1239,7 @@ fun ItemThumbnail(
                     }
                 },
     ) {
-        val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+        val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
         val isYouTubeThumb = thumbnailUrl?.contains("ytimg.com", ignoreCase = true) == true
         val shouldApplySquareCrop = cropThumbnailToSquare && isYouTubeThumb && kotlin.math.abs(thumbnailRatio - 1f) < 0.001f
         val resolvedContentScale = contentScale ?: if (shouldApplySquareCrop) ContentScale.Crop else ContentScale.Fit
@@ -1552,7 +1397,7 @@ fun LocalThumbnail(
                 .aspectRatio(thumbnailRatio)
                 .clip(shape),
     ) {
-        val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+        val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
         val isYouTubeThumb = thumbnailUrl?.contains("ytimg.com", ignoreCase = true) == true
         val shouldApplySquareCrop = cropThumbnailToSquare && isYouTubeThumb && kotlin.math.abs(thumbnailRatio - 1f) < 0.001f
         val widthPx = if (maxWidth == Dp.Infinity) null else with(density) { maxWidth.roundToPx().coerceAtLeast(1) }

@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.player
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import android.annotation.SuppressLint
 import android.view.ViewTreeObserver
 import android.widget.Toast
@@ -63,7 +64,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -102,7 +102,6 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AutoLoadMoreKey
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.ListItemHeight
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
@@ -147,7 +146,7 @@ fun Queue(
     onShowLyrics: () -> Unit = {},
     pureBlack: Boolean,
 ) {
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val clipboardManager = LocalClipboard.current
@@ -155,16 +154,16 @@ fun Queue(
     val bottomSheetPageState = LocalBottomSheetPageState.current
 
     val playerConnection = LocalPlayerConnection.current ?: return
-    val isPlaying by playerConnection.isPlaying.collectAsState()
-    val repeatMode by playerConnection.repeatMode.collectAsState()
+    val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
+    val repeatMode by playerConnection.repeatMode.collectAsStateWithLifecycle()
 
-    val currentWindowIndex by playerConnection.currentWindowIndex.collectAsState()
-    val mediaMetadata by playerConnection.mediaMetadata.collectAsState()
-    val currentSong by playerConnection.currentSong.collectAsState(initial = null)
+    val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
+    val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val currentSongLiked = currentSong?.song?.liked == true
 
-    val currentFormat by playerConnection.currentFormat.collectAsState(initial = null)
-    val queueTitle by playerConnection.queueTitle.collectAsState()
+    val currentFormat by playerConnection.currentFormat.collectAsStateWithLifecycle(initialValue = null)
+    val queueTitle by playerConnection.queueTitle.collectAsStateWithLifecycle()
 
     val selectedSongs = remember { mutableStateListOf<MediaMetadata>() }
     val selectedItems = remember { mutableStateListOf<Timeline.Window>() }
@@ -184,7 +183,7 @@ fun Queue(
 
     var locked by rememberPreference(QueueEditLockKey, defaultValue = true)
     var infiniteQueueEnabled by rememberPreference(AutoLoadMoreKey, defaultValue = true)
-    val infiniteQueueLoading by playerConnection.service.infiniteQueueLoading.collectAsState()
+    val infiniteQueueLoading by playerConnection.service.infiniteQueueLoading.collectAsStateWithLifecycle()
 
     val playerDesignStyle by rememberEnumPreference(
         key = PlayerDesignStyleKey,
@@ -293,7 +292,7 @@ fun Queue(
         )
     }
 
-    val queueWindows by playerConnection.queueWindows.collectAsState()
+    val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
     val currentWindow =
         remember(currentWindowIndex, queueWindows) {
             queueWindows.getOrNull(currentWindowIndex)
@@ -593,8 +592,10 @@ fun Queue(
                     )
                 }
 
-                PlayerDesignStyle.V9, PlayerDesignStyle.V10 -> {
-                    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsState()
+                // Looper draws its own transport but opens the shared queue sheet (its onQueueClick),
+                // so it keeps the modern collapsed peek rather than opting out of the sheet.
+                PlayerDesignStyle.V9, PlayerDesignStyle.V10, PlayerDesignStyle.LOOPER -> {
+                    val shuffleModeEnabled by playerConnection.shuffleModeEnabled.collectAsStateWithLifecycle()
                     QueueCollapsedContentV9(
                         showCodecOnPlayer = showCodecOnPlayer,
                         currentFormat = currentFormat,
@@ -699,6 +700,11 @@ fun Queue(
                     // SpatialFlow carries its own sliding queue drawer, so the shared sheet would
                     // be a second queue over the top of it.
                 }
+
+                PlayerDesignStyle.FLAMINGO -> {
+                    // Flamingo's queue is one of its own pages, reached from its transport, and
+                    // its collapsed peek height is 0dp.
+                }
             }
 
             if (showSleepTimerDialog) {
@@ -717,7 +723,7 @@ fun Queue(
             }
         },
     ) {
-        val queueWindows by playerConnection.queueWindows.collectAsState()
+        val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
         val mutableQueueWindows =
             remember {
                 mutableStateListOf<Timeline.Window>().apply {

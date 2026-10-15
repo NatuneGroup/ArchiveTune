@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="japanese_pack_description">日本語歌詞をローマ字化するオフライン辞書（13,343,016 バイト）です。翻訳やアプリの表示言語用ではありません。端末の地域が日本の場合、Wi-Fi またはモバイル通信で一度だけ自動ダウンロードされることがあります。ここで削除すると、自動で再インストールされなくなります。</string>
+    <string name="japanese_pack_checking">日本語のオフライン辞書を確認中…</string>
+    <string name="japanese_pack_removing">日本語辞書を削除中…</string>
+    <string name="japanese_pack_preparing">日本語辞書をダウンロードまたは検証中…</string>
+    <string name="japanese_pack_retry">再試行</string>
+    <string name="japanese_pack_invalid">日本語辞書が破損しているか使用できません。もう一度ダウンロードしてください。</string>
+    <string name="japanese_pack_failed">日本語辞書をインストールできませんでした。通信環境と空き容量を確認して再試行してください。</string>
+    <string name="japanese_pack_remove_failed">日本語辞書の削除を完了できませんでした。もう一度削除してください。</string>
+</resources>

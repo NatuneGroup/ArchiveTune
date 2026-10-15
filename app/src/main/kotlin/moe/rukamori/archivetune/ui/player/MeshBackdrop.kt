@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * The mesh-gradient backdrop: four luminous colour blobs sampled from the album art, drawn as
@@ -39,7 +35,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
@@ -65,6 +60,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 
 private val FallbackColors =
     listOf(
@@ -167,7 +163,7 @@ fun MeshBackdrop(
                 .graphicsLayer {
                     scaleX = 1.3f
                     scaleY = 1.3f
-                }.blur(blurRadius),
+                }.optionalBlur(blurRadius),
     ) {
         val t = fade.value
         val from = previous.value

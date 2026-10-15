@@ -18,6 +18,7 @@ import moe.rukamori.archivetune.playback.ImmersivePlayerData
 import moe.rukamori.archivetune.playback.ImmersivePlayerRepository
 import moe.rukamori.archivetune.ui.player.immersive.ImmersivePlayerArtist
 import moe.rukamori.archivetune.ui.player.immersive.ImmersivePlayerUiModel
+import moe.rukamori.archivetune.ui.player.streamQuality
 import javax.inject.Inject
 
 class ObserveImmersivePlayerUseCase @Inject constructor(
@@ -49,6 +50,7 @@ class ObserveImmersivePlayerUseCase @Inject constructor(
             canSkipNext = data.canSkipNext,
             isLiked = data.song?.song?.liked == true,
             formatDetails = formatDetails,
+            streamQuality = data.format?.streamQuality(),
             outputDevice = data.outputDevice,
             canvas = canvas,
             durationMs = metadata.duration.coerceAtLeast(0) * 1_000L,

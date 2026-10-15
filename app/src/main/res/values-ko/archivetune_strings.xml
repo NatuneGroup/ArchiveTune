@@ -65,7 +65,6 @@
     <string name="news_no_results_desc">다른 검색어를 사용해 보세요.</string>
     <string name="news_important_badge">중요</string>
     <string name="news_tooltip_title">새로운 공지사항</string>
-    <string name="news_tooltip_body">읽지 않은 개발자 공지사항이 있습니다.</string>
     <string name="news_author_on_date">%1$s · %2$s</string>
     <plurals name="news_article_count">
         <item quantity="other">%d개의 글</item>
@@ -181,9 +180,6 @@
     <string name="lyrics_romanize_chinese">중국어 가사 로마자 표기</string>
     <string name="lyrics_romanize_hindi">힌디어 가사 로마자 표기</string>
     <string name="lyrics_romanize_other_languages">기타 비라틴어 가사 로마자 표기</string>
-    <string name="quick_picks_display_mode">빠른 선곡 표시 모드</string>
-    <string name="quick_picks_display_mode_card">카드</string>
-    <string name="quick_picks_display_mode_list">목록</string>
     <string name="discord">Discord</string>
     <string name="advanced_login">고급 로그인 (토큰)</string>
     <string name="token_hidden">탭하여 토큰 보기</string>
@@ -196,8 +192,6 @@
     <string name="general">일반</string>
     <string name="proxy">프록시</string>
     <string name="default_lib_chips">기본 보관함 필터 칩 변경</string>
-    <string name="set_quick_picks">빠른 선곡 항목 설정</string>
-    <string name="last_song_listened">최근 감상한 곡 기준</string>
     <string name="dont_show">표시 안 함</string>
     <string name="app_language">앱 언어</string>
     <string name="open_supported_links">지원되는 링크 기본값으로 열기</string>
@@ -221,7 +215,6 @@
     <string name="not_logged_in_youtube">YouTube 계정에 로그인되지 않음</string>
     <string name="default_links">지원되는 링크 열기</string>
     <string name="open_app_settings_error">앱 설정을 열 수 없습니다.</string>
-    <string name="release_notes">릴리스 노트</string>
     <string name="all_time">전체 기간</string>
     <string name="past_24_hours">최근 24시간</string>
     <string name="past_week">지난주</string>
@@ -437,7 +430,7 @@
     <string name="storage_location_removable_named">SD 카드 (%s)</string>
     <string name="aod_customize_preview">실시간 미리보기</string>
     <string name="aod_customize_title">AOD 맞춤 설정</string>
-    <string name="storage_folder_selected_restart">저장 폴더가 선택되었습니다. 적용을 위해 3초 후 앱이 자동으로 재시작됩니다.</string>
+    <string name="storage_folder_selected_restart">저장 폴더가 선택되었습니다.</string>
     <string name="aod_customize_vertical_spacing">세로 간격</string>
     <string name="player_design_v8">이머시브 익스텐디드</string>
     <string name="spotify_playlists">Spotify 재생목록</string>
@@ -478,7 +471,6 @@
     <string name="aod_alignment_end">오른쪽 정렬</string>
     <string name="about_contributors">기여자 목록</string>
     <string name="aod_customize_dp_value">%1$d dp</string>
-    <string name="about_respecter">존경 및 명예 기여자</string>
     <string name="aod_customize_layout">레이아웃</string>
     <string name="aod_customize_progress">진행</string>
     <string name="aod_customize_slider_style">슬라이더 스타일</string>
@@ -491,7 +483,6 @@
     <string name="storage_location_sheet_title">저장 위치</string>
     <string name="music_recognition_history_empty_title">인식된 곡이 아직 없습니다.</string>
     <string name="year_in_music_ranked_albums">자주 찾은 앨범</string>
-    <string name="about_content_desc_website">웹사이트</string>
     <string name="aod_customize_background_style">배경 스타일</string>
     <string name="year_in_music_recap">Recap</string>
     <string name="about_content_desc_github">GitHub</string>
@@ -540,7 +531,6 @@
     <string name="android_auto_mixes_and_radios">맞춤형 믹스 및 라디오</string>
     <string name="aod_customize_show_thumbnail">썸네일 표시</string>
     <string name="aod_shape_rounded">둥근 사각형</string>
-    <string name="external_service">외부 서비스</string>
     <string name="aod_customize_percent_value">%1$d%%</string>
     <string name="storage_cache_clear_failed">캐시를 비울 수 없습니다. SD 카드 접근 권한을 확인해 주세요.</string>
     <string name="aod_customize_show_album">앨범명 표시</string>
@@ -555,7 +545,6 @@
     <string name="storage_cache_clear_warning">정말로 캐시 데이터를 모두 삭제하시겠습니까? (이 작업은 되돌릴 수 없습니다.)</string>
     <string name="history_duration_desc">기록에 반영할 최소 감상 시간 설정</string>
     <string name="history_duration_seconds">%1$s 초</string>
-    <string name="top_albums">인기 앨범</string>
     <string name="theme_creator_title">테마 제작기</string>
     <string name="theme_import_failed_title">테마 가져오기 실패</string>
     <string name="theme_applied">테마가 성공적으로 적용되었습니다.</string>
@@ -567,7 +556,6 @@
     <string name="restore_file_not_found">백업 파일을 찾을 수 없습니다.</string>
     <string name="restore_select_backup">복원할 백업 파일 선택</string>
     <string name="about_contributor_translation">번역 기여자</string>
-    <string name="about_license">오픈소스 라이선스</string>
     <string name="about_license_unknown">알 수 없는 라이선스</string>
     <string name="about_position_developers">개발자</string>
     <string name="about_position_yuki">dummy reze | admin</string>

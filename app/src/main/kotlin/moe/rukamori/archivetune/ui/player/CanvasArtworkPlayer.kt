@@ -53,12 +53,14 @@ import androidx.media3.ui.compose.SURFACE_TYPE_TEXTURE_VIEW
 import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import coil3.compose.AsyncImage
+import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.di.CanvasCacheEntryPoint
-import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import okhttp3.OkHttpClient
 import timber.log.Timber
 import java.util.Locale
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 
 private const val CanvasPlaybackStallCheckIntervalMs = 1_000L
 private const val CanvasPlaybackStallTimeoutMs = 5_000L
@@ -104,6 +106,16 @@ fun CanvasArtworkPlayer(
             ?.takeIf { it.isNotBlank() }
             ?.takeUnless { it == primary }
     val initial = primary ?: fallback ?: return
+    if (CustomArtworkStore.isCustomImageCanvasUrl(initial)) {
+        CustomImageCanvas(
+            url = initial,
+            visible = visible,
+            resizeMode = resizeMode,
+            onFrameCaptured = onFrameCaptured,
+            modifier = modifier,
+        )
+        return
+    }
     var currentUrl by remember(initial) { mutableStateOf(initial) }
     var isVideoReady by remember(initial) { mutableStateOf(false) }
     var hasPlaybackFailed by remember(initial) { mutableStateOf(false) }
@@ -120,7 +132,7 @@ fun CanvasArtworkPlayer(
         remember {
             OkHttpClient
                 .Builder()
-                .proxy(YouTube.streamOkHttpProxy)
+                .withAppStreamProxy()
                 .addInterceptor { chain ->
                     val request = chain.request()
                     val host = request.url.host
@@ -380,6 +392,8 @@ fun CanvasArtworkPlayer(
         val lowercaseUrl = normalized.lowercase(Locale.ROOT)
         val mimeType =
             when {
+                // User-picked canvases come in any container; let ExoPlayer infer it from the extension.
+                CustomArtworkStore.isCustomCanvasUrl(normalized) -> null
                 lowercaseUrl.contains("m3u8") -> MimeTypes.APPLICATION_M3U8
                 lowercaseUrl.contains("mp4") -> MimeTypes.VIDEO_MP4
                 primary != null && currentUrl == primary -> MimeTypes.APPLICATION_M3U8
@@ -522,6 +536,28 @@ private fun Int.toContentScale(): ContentScale =
 
         else -> ContentScale.Fit
     }
+
+/** Still or animated (GIF/WebP via Coil's animated decoder) user canvas; no video pipeline needed. */
+@Composable
+private fun CustomImageCanvas(
+    url: String,
+    visible: Boolean,
+    resizeMode: Int,
+    onFrameCaptured: ((Bitmap?) -> Unit)?,
+    modifier: Modifier,
+) {
+    val frameCallback by rememberUpdatedState(onFrameCaptured)
+    // Snapshot consumers blur a captured video frame; with no frame they keep the cover behind
+    // this image, which is the right backdrop for a still canvas.
+    LaunchedEffect(url) { frameCallback?.invoke(null) }
+    if (!visible) return
+    AsyncImage(
+        model = url,
+        contentDescription = null,
+        contentScale = resizeMode.toContentScale(),
+        modifier = modifier.clipToBounds(),
+    )
+}
 
 private fun ExoPlayer.setCanvasPlayback(isPlaying: Boolean) {
     if (isPlaying) {

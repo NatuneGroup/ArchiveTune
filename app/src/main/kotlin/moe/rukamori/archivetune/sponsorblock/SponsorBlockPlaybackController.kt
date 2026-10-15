@@ -1,21 +1,18 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 package moe.rukamori.archivetune.sponsorblock
 
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import moe.rukamori.archivetune.extensions.metadata
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -52,14 +49,7 @@ class SponsorBlockPlaybackController
                     mediaItem: MediaItem?,
                     reason: Int,
                 ) {
-                    // Podcast episodes have no segments; skip the lookup entirely.
-                    val tag = mediaItem?.localConfiguration?.tag
-                    if ((tag as? moe.rukamori.archivetune.models.MediaMetadata)?.isPodcast == true) {
-                        segments = emptyList()
-                        skippedEndsMs.clear()
-                        return
-                    }
-                    reload(mediaItem?.mediaId)
+                    reload(mediaItem)
                 }
             }
 
@@ -68,7 +58,7 @@ class SponsorBlockPlaybackController
             this.player = player
             this.scope = scope
             player.addListener(listener)
-            reload(player.currentMediaItem?.mediaId)
+            reload(player.currentMediaItem)
             watcher =
                 scope.launch {
                     while (isActive) {
@@ -111,10 +101,12 @@ class SponsorBlockPlaybackController
             player.seekTo(segment.endMs)
         }
 
-        private fun reload(mediaId: String?) {
+        private fun reload(mediaItem: MediaItem?) {
             segments = emptyList()
             skippedEndsMs.clear()
-            val id = mediaId ?: return
+            // Podcast episodes have no segments, on attach as much as on a transition.
+            if (mediaItem?.metadata?.isPodcast == true) return
+            val id = mediaItem?.mediaId ?: return
             val scope = scope ?: return
             scope.launch {
                 val loaded = repository.segments(id)

@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.utils.rememberOpeningTransitionFinished
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -682,6 +683,7 @@ private fun AodPreviewCard(
     val previewControlSize = (settings.controlSize * 0.58f).coerceIn(30f, 50f).dp
     val previewHorizontalPadding = (settings.horizontalPadding * 0.55f).coerceIn(12f, 36f).dp
     val previewSpacing = (settings.verticalSpacing * 0.48f).coerceIn(6f, 18f).dp
+    val openingTransitionFinished = rememberOpeningTransitionFinished()
 
     ElevatedCard(
         modifier = modifier.fillMaxWidth(),
@@ -717,6 +719,9 @@ private fun AodPreviewCard(
                             shape = MaterialTheme.shapes.extraLarge,
                         ),
             ) {
+                // The frame and background show at once; the preview contents wait for the
+                // page's opening transition so they are not composed inside its frames.
+                if (!openingTransitionFinished) return@Box
                 if (settings.showExitButton) {
                     Icon(
                         painter = painterResource(R.drawable.close),

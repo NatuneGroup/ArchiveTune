@@ -4,6 +4,8 @@
 
     <uses-sdk tools:overrideLibrary="com.mocharealm.accompanist.lyrics.ui" />
 
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -147,7 +149,9 @@
 
             <!-- Share filter -->
             <!-- Listen Together invite links: the share URL handed out by the
-                 room screen, and the direct custom scheme for browser opens. -->
+                 room screen, and the direct custom scheme for browser opens.
+                 Hosts mirror ListenTogetherServers.inviteHosts: the JSON servers
+                 plus the retired onrender host, so older invites still open. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
 
@@ -155,6 +159,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
 
                 <data android:scheme="https" />
+                <data android:host="devilmi-vivi-music-listen-together.hf.space" />
                 <data android:host="vivimusic-listen-together.onrender.com" />
                 <data android:pathPrefix="/listen" />
             </intent-filter>

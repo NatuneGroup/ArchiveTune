@@ -105,7 +105,7 @@ fun LibraryArtistsScreen(
     // or multi-select below it, so it is its own screen rather than a branch threaded through
     // this one. The source arrives from the Library, which owns the selector.
     if (librarySource == LibrarySource.SPOTIFY) {
-        LibrarySpotifyArtistsScreen()
+        LibrarySpotifyArtistsScreen(navController)
         return
     }
 

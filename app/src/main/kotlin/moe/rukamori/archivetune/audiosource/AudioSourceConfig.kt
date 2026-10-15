@@ -316,15 +316,12 @@ object TitleMatch {
  * they stay free of any DataStore/Android dependencies and are trivially testable.
  */
 object AudioSourceConfig {
-    /** Sources that can actually stream lossless/hi-res, in their built-in default priority. */
     /**
-     * The resolution chain. Deliberately does NOT list [AudioSourceType.AMAZON].
-     *
-     * Amazon serves CENC-protected fragmented MP4 and this fork ships no decryption step, so its
-     * resolver can only ever return null. Listing it here would put a guaranteed miss in front of
-     * every listener's chain — a wasted step on every track, for a source that cannot play. It
-     * belongs here the day a resolver exists, and not before; the account, pool and settings
-     * plumbing around it is complete and waiting.
+     * Every playback source, in their built-in default priority. Spotify, Amazon and QQ sit just
+     * above YouTube and default to off; YouTube stays last as the terminal fallback. Whether a
+     * source can actually resolve is the enabled flags' business ([DEFAULT_ENABLED] plus the
+     * sign-in state) — the order itself only ranks the sources, and a disabled one is filtered
+     * out before playback ever sees it.
      */
     val DEFAULT_ORDER: List<AudioSourceType> =
         listOf(
@@ -334,8 +331,21 @@ object AudioSourceConfig {
             AudioSourceType.DEEZER,
             AudioSourceType.APPLE,
             AudioSourceType.JIOSAAVN,
+            AudioSourceType.AMAZON,
+            AudioSourceType.QQ,
+            AudioSourceType.SPOTIFY,
             AudioSourceType.YOUTUBE,
         )
+
+    /**
+     * The enabled defaults every consumer of the source flags shares (the settings UI, the
+     * resolver and the download chain read this rather than carrying their own copy). Tidal and
+     * YouTube are on out of the box, everything else is off. Spotify's switch additionally does
+     * nothing until a streaming account is signed in, so it counts as enabled only when that is
+     * true as well.
+     */
+    val DEFAULT_ENABLED: Map<AudioSourceType, Boolean> =
+        AudioSourceType.entries.associateWith { it == AudioSourceType.TIDAL || it == AudioSourceType.YOUTUBE }
 
     private fun parseType(name: String): AudioSourceType? =
         runCatching { AudioSourceType.valueOf(name.trim().uppercase()) }.getOrNull()
@@ -373,55 +383,19 @@ object AudioSourceConfig {
     }
 
     /**
-     * Whether a source is enabled. If the stored set is null (never configured), fall back to the
-     * provided per-source [default]. YouTube is not special-cased: it is a normal toggleable source
-     * whose default is supplied by the caller (true in both the resolver and the settings UI),
-     * so turning it off disables it like any other source.
-     */
-    fun isEnabled(
-        source: AudioSourceType,
-        enabledSet: Set<String>?,
-        default: Boolean,
-    ): Boolean {
-        val set = enabledSet ?: return default
-        return set.any { parseType(it) == source }
-    }
-
-    /**
-     * The ordered list of sources to actually attempt for playback resolution: enabled sources in
-     * the user's chosen priority order. The single stored order is authoritative — the source at
-     * the top of the list is the preferred source — so there is no separate "primary" control to
-     * reconcile.
-     */
-    fun resolutionChain(
-        rawOrder: String?,
-        enabledSet: Set<String>?,
-        defaults: Map<AudioSourceType, Boolean>,
-    ): List<AudioSourceType> =
-        parseOrder(rawOrder).filter { source ->
-            isEnabled(source, enabledSet, defaults[source] ?: false)
-        }
-
-    /**
-     * The stored order with [source] present, sitting just above YouTube.
+     * One-time migration of a stored order to the current source catalogue: entries the CSV has
+     * never heard of are inserted directly above YouTube, where [parseOrder] would place them at
+     * read time, and unknown names are dropped. Persisted so backups and the stored CSV agree
+     * with what the resolver serves.
      *
-     * Sources outside [DEFAULT_ORDER] — Amazon and QQ, which join the chain only after the user asks
-     * for them — can never enter the order any other way: the picked order is authoritative, and the
-     * picker can only reorder what it was given. Without this, switching such a source on would
-     * change a preference the resolver never consults, and the source would stay unreachable while
-     * its toggle claimed otherwise.
-     *
-     * Placed above YouTube because that is the only position where a source acts as a lossless
-     * override; below it, the chain has already fallen through to YouTube.
+     * A blank order stays blank — it keeps tracking [DEFAULT_ORDER], which is how a factory-reset
+     * or restored-blank install picks up new sources without a pinned hand-written list. The
+     * function is idempotent: its output always contains every [DEFAULT_ORDER] member, so running
+     * it again changes nothing.
      */
-    fun withSourceAdded(
-        rawOrder: String?,
-        source: AudioSourceType,
-    ): String {
-        val parsed = parseOrder(rawOrder)
-        if (source in parsed) return parsed.joinToString(",") { it.name }
-        val above = parsed.filterNot { it == AudioSourceType.YOUTUBE }
-        return (above + source + AudioSourceType.YOUTUBE).joinToString(",") { it.name }
+    fun migrateStoredOrder(rawOrder: String?): String {
+        if (rawOrder.isNullOrBlank()) return rawOrder ?: ""
+        return parseOrder(rawOrder).joinToString(",") { it.name }
     }
 }
 
@@ -523,3 +497,12 @@ object SongSourceQobuzBackupVideoId {
         videoId: String?,
     ): String = SongSourceQobuzTrackId.withOverride(raw, songId, videoId)
 }
+
+data class CurrentStreamInfo(
+    val mediaId: String,
+    val source: AudioSourceType,
+    val label: String,
+    val protocol: String? = null,
+    val sampleRate: Int? = null,
+    val bitDepth: Int? = null,
+)

@@ -20,16 +20,10 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilledTonalIconButton
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -97,59 +91,6 @@ fun NewActionButton(
 }
 
 @Composable
-fun NewMenuItem(
-    headlineContent: @Composable () -> Unit,
-    leadingContent: @Composable (() -> Unit)? = null,
-    trailingContent: @Composable (() -> Unit)? = null,
-    supportingContent: @Composable (() -> Unit)? = null,
-    onClick: (() -> Unit)? = null,
-    enabled: Boolean = true,
-    modifier: Modifier = Modifier,
-) {
-    val content: @Composable () -> Unit = {
-        ListItem(
-            headlineContent = headlineContent,
-            leadingContent = leadingContent,
-            trailingContent = trailingContent,
-            supportingContent = supportingContent,
-            modifier = Modifier.padding(horizontal = 4.dp),
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-            tonalElevation = 0.dp,
-        )
-    }
-
-    if (onClick == null) {
-        Box(modifier = modifier.fillMaxWidth()) {
-            content()
-        }
-    } else {
-        Surface(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = modifier.fillMaxWidth(),
-            shape = MaterialTheme.shapes.large,
-            color = Color.Transparent,
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-fun NewMenuSectionHeader(
-    text: String,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleSmall,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = modifier.padding(horizontal = 20.dp, vertical = 12.dp),
-    )
-}
-
-@Composable
 fun NewActionGrid(
     actions: List<NewAction>,
     modifier: Modifier = Modifier,
@@ -197,74 +138,6 @@ data class NewAction(
     val backgroundColor: Color = Color.Unspecified,
     val contentColor: Color = Color.Unspecified,
 )
-
-@Composable
-fun NewMenuContent(
-    headerContent: @Composable (() -> Unit)? = null,
-    actionGrid: @Composable (() -> Unit)? = null,
-    menuItems: @Composable (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        headerContent?.invoke()
-        actionGrid?.invoke()
-
-        if (actionGrid != null && menuItems != null) {
-            HorizontalDivider(
-                modifier = Modifier.padding(vertical = 16.dp),
-                color = MaterialTheme.colorScheme.outlineVariant,
-            )
-        }
-
-        menuItems?.invoke()
-    }
-}
-
-@Composable
-fun NewIconButton(
-    icon: @Composable () -> Unit,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    backgroundColor: Color = Color.Unspecified,
-    contentColor: Color = Color.Unspecified,
-) {
-    val containerColor = if (backgroundColor.isSpecified) backgroundColor else MaterialTheme.colorScheme.surfaceContainerHigh
-    val iconContentColor = if (contentColor.isSpecified) contentColor else MaterialTheme.colorScheme.onSurfaceVariant
-
-    FilledTonalIconButton(
-        onClick = onClick,
-        modifier = modifier,
-        enabled = enabled,
-        shapes = IconButtonDefaults.shapes(),
-        colors =
-            IconButtonDefaults.filledTonalIconButtonColors(
-                containerColor = containerColor,
-                contentColor = iconContentColor,
-            ),
-    ) {
-        icon()
-    }
-}
-
-@Composable
-fun NewMenuContainer(
-    content: @Composable () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(bottom = 32.dp),
-    ) {
-        content()
-    }
-}
 
 @Composable
 fun MenuSurfaceSection(

@@ -12,6 +12,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.ImageBitmap
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.models.ActiveOutputDevice
+import moe.rukamori.archivetune.ui.player.StreamQuality
 
 @Immutable
 sealed interface ImmersivePlayerScreenState {
@@ -38,6 +39,8 @@ data class ImmersivePlayerUiModel(
     val canSkipNext: Boolean,
     val isLiked: Boolean,
     val formatDetails: String,
+    /** The shared stream classification behind the on-screen quality badge. */
+    val streamQuality: StreamQuality? = null,
     val outputDevice: ActiveOutputDevice,
     val canvas: CanvasVideo?,
     val canvasFrame: ImageBitmap? = null,

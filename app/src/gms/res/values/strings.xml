@@ -1,11 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="support_archivetune_title">Support ArchiveTune ❤️</string>
-    <string name="support_archivetune_description">Love the app? Tap to watch a quick ad and support its development.</string>
-    <string name="support_archivetune_preparing">Opening the support page…</string>
-    <string name="support_archivetune_unavailable">The support page is currently unavailable.</string>
-    <string name="support_archivetune_retry">The support page couldn’t be opened. Tap to try again.</string>
-    <string name="support_archivetune_failed">The support page couldn’t be opened.</string>
     <string name="drive_backup_title">Google Drive backup</string>
     <string name="drive_backup_account">Google account</string>
     <string name="drive_backup_choose_account">Choose an account</string>

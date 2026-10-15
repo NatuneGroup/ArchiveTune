@@ -5,13 +5,6 @@
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
 package moe.rukamori.archivetune.ui.screens.search
 
 import android.widget.Toast
@@ -57,39 +50,23 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CancellationException
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppBarHeight
-import moe.rukamori.archivetune.innertube.YouTube
-import moe.rukamori.archivetune.innertube.models.AlbumItem
-import moe.rukamori.archivetune.innertube.models.ArtistItem
-import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.spotify.SpotifyPlaybackResolver
 import moe.rukamori.archivetune.spotify.SpotifySearchItem
-import moe.rukamori.archivetune.models.toMediaMetadata
-import moe.rukamori.archivetune.spotify.SpotifyReleaseTarget
-import moe.rukamori.archivetune.spotify.resolveSpotifyRelease
-import moe.rukamori.archivetune.spotify.searchYouTubeCatalogItem
 import moe.rukamori.archivetune.ui.component.ChipsRow
 import moe.rukamori.archivetune.ui.component.EmptyPlaceholder
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.rememberSpotifyCatalogOpener
 import moe.rukamori.archivetune.viewmodels.SpotifySearchViewModel
-import moe.rukamori.archivetune.utils.reportException
-
-/** How long an album or artist tap may spend finding its YouTube Music page (as on the Spotify home). */
-private const val ResolveTimeoutMs = 20_000L
-
-/** Sentinel route: the tapped release was started as playback, so there is no page to open. */
-private const val SPOTIFY_RELEASE_PLAYED = "__spotify_release_played__"
 
 private enum class SpotifySearchFilter {
     ALL,
@@ -127,7 +104,7 @@ internal fun SpotifyOnlineSearchResult(
             }
         }
 
-    LaunchedEffect(lazyListState, state.hasMore, state.isLoading) {
+    LaunchedEffect(lazyListState, state.hasMore, state.isLoading, visibleItems) {
         if (!state.hasMore) return@LaunchedEffect
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
             .collect { lastIndex ->
@@ -257,32 +234,7 @@ private fun SpotifySearchResultRow(
     val context = LocalContext.current
     val menuState = LocalMenuState.current
     var resolving by remember(item.key) { mutableStateOf(false) }
-    // Albums and artists open their YouTube Music pages, resolved the way the Spotify home does.
-    // They used to be handed to open.spotify.com, which left the app for the Spotify client or a
-    // browser; the in-app pages are the ones that play.
-    fun openInApp(resolveRoute: suspend () -> String?) {
-        if (resolving) return
-        resolving = true
-        coroutineScope.launch {
-            try {
-                val route = withTimeoutOrNull(ResolveTimeoutMs) { withContext(Dispatchers.IO) { resolveRoute() } }
-                if (route == SPOTIFY_RELEASE_PLAYED) {
-                    // Already handled: the release started playing instead of opening a page.
-                } else if (route != null) {
-                    navController.navigate(route)
-                } else {
-                    Toast.makeText(context, context.getString(R.string.no_results_found), Toast.LENGTH_SHORT).show()
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                reportException(error)
-                Toast.makeText(context, context.getString(R.string.no_results_found), Toast.LENGTH_SHORT).show()
-            } finally {
-                resolving = false
-            }
-        }
-    }
+    val catalogOpener = rememberSpotifyCatalogOpener(navController)
 
     val onClick: () -> Unit = {
         when (item) {
@@ -318,37 +270,16 @@ private fun SpotifySearchResultRow(
             is SpotifySearchItem.Playlist -> navController.navigate("spotify_playlist/${item.id}")
             is SpotifySearchItem.Album -> {
                 val album = item.value
-                openInApp {
-                    val query =
-                        listOfNotNull(album.name, album.artists.firstOrNull()?.name)
-                            .filter(String::isNotBlank)
-                            .joinToString(" ")
-                    when (
-                        val target =
-                            resolveSpotifyRelease(
-                                query = query,
-                                searchAlbum = { searchYouTubeCatalogItem<AlbumItem>(it, YouTube.SearchFilter.FILTER_ALBUM) },
-                                searchSong = { searchYouTubeCatalogItem<SongItem>(it, YouTube.SearchFilter.FILTER_SONG) },
-                            )
-                    ) {
-                        is SpotifyReleaseTarget.AlbumPage -> "album/${target.browseId}"
-                        is SpotifyReleaseTarget.Song -> {
-                            // One-song release with no album page: play it rather than dead-end (#160).
-                            withContext(Dispatchers.Main) {
-                                playerConnection?.playQueue(YouTubeQueue.radio(target.song.toMediaMetadata()))
-                            }
-                            SPOTIFY_RELEASE_PLAYED
-                        }
-                        null -> null
-                    }
-                }
+                catalogOpener.openAlbum(
+                    key = item.key,
+                    albumId = album.id,
+                    albumName = album.name,
+                    artistName = album.artists.firstOrNull()?.name,
+                )
             }
 
             is SpotifySearchItem.Artist ->
-                openInApp {
-                    searchYouTubeCatalogItem<ArtistItem>(item.value.name, YouTube.SearchFilter.FILTER_ARTIST)
-                        ?.let { "artist/${it.id}" }
-                }
+                catalogOpener.openArtist(key = item.key, artistName = item.value.name)
         }
     }
 
@@ -357,7 +288,9 @@ private fun SpotifySearchResultRow(
         isActive = item is SpotifySearchItem.Track && mediaMetadata?.spotifyTrackId == item.id,
         isPlaying = isPlaying,
         trailingContent = {
-            if (resolving) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            if (resolving || catalogOpener.resolvingKey == item.key) {
+                CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
         },
         modifier = Modifier.clickable(onClick = onClick),
     )

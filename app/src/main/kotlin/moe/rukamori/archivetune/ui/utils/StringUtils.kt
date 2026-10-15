@@ -63,3 +63,8 @@ fun formatCompactCount(count: Long): String {
         else -> prefix + (abs / 1_000_000_000) + "B"
     }
 }
+
+fun numberFormatter(n: Int) =
+    DecimalFormat("#,###")
+        .format(n)
+        .replace(",", ".")

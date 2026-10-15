@@ -84,8 +84,6 @@
     <string name="custom_order">自訂排序</string>
     <string name="list_view">清單布局</string>
     <string name="grid_view">網格布局</string>
-    <string name="personal_label">個人</string>
-    <string name="youtube_synced">已同步</string>
     <string name="options_label">選項</string>
     <string name="top_artist_badge">最愛藝人</string>
     <string name="no_artist_yet">暫無藝人</string>
@@ -172,7 +170,6 @@
     <string name="delete">刪除</string>
     <string name="hide_playlist">隱藏播放清單</string>
     <string name="unhide_playlist">取消隱藏播放清單</string>
-    <string name="show_hidden_playlists">顯示隱藏內容</string>
     <string name="hide_playlist_confirm">從媒體庫中隱藏%1$s？</string>
     <string name="remove_from_history">從歷史記錄中移除</string>
     <string name="remove_from_playlist">從播放清單中移除</string>
@@ -230,9 +227,6 @@
     <string name="duplicates_description_multiple">%d歌已存在於播放清單</string>
     <plurals name="n_song">
         <item quantity="other">%d首歌曲</item>
-    </plurals>
-    <plurals name="n_artist">
-        <item quantity="other">%d位藝人</item>
     </plurals>
     <plurals name="n_album">
         <item quantity="other">%d個專輯</item>
@@ -351,7 +345,6 @@
     <string name="palette_neon_pink">電波粉</string>
     <string name="palette_neon_blue">電光藍</string>
     <string name="palette_neon_orange">高壓橙</string>
-    <string name="palette_cyberpunk">霓虹幻</string>
     <string name="palette_synthwave">魔幻紫</string>
     <string name="palette_ocean">蔚藍海</string>
     <string name="palette_forest">森林綠</string>
@@ -361,8 +354,6 @@
     <string name="palette_summer">夏日黃</string>
     <string name="palette_twilight">暮光紫</string>
     <string name="palette_aurora">極光綠</string>
-    <string name="palette_candy">糖果粉</string>
-    <string name="palette_rainbow">七彩紅</string>
     <string name="dark_theme">深色主題</string>
     <string name="dark_theme_on">開啟</string>
     <string name="dark_theme_off">關閉</string>
@@ -417,7 +408,6 @@
     <string name="lyrics_line_spacing">歌詞行距</string>
     <string name="content">內容</string>
     <string name="action_logout">登出</string>
-    <string name="action_login">登入</string>
     <string name="login">登入</string>
     <string name="not_logged_in">未登入</string>
     <string name="playback_confirmation_required">播放前需確認</string>
@@ -448,7 +438,6 @@
     <string name="proxy_password">密碼</string>
     <string name="test_proxy_connection">測試代理連接</string>
     <string name="testing_proxy_connection">正在測試代理連接</string>
-    <string name="proxy_connection_success">代理連線成功！</string>
     <string name="proxy_connection_failed">代理連線失敗：%s</string>
     <string name="proxy_connection_invalid_configuration">無效的代理主機或端口</string>
     <string name="ip_rotation">IP 輪換</string>
@@ -575,7 +564,6 @@
     <string name="restore_success">備份還原成功</string>
     <string name="restore_failed">備份還原失敗</string>
     <string name="discord_integration">Discord 集成</string>
-    <string name="account_integrations_summary">Discord, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="discord_login_description">透過 OAuth 連接您的 Discord 帳戶，以便 ArchiveTune 發布「豐富狀態」（Rich Presence）。</string>
     <string name="discord_open_authorization">打開 Discord 授權</string>
     <string name="discord_waiting_for_authorization">正在等待 Discord 授權…</string>
@@ -609,9 +597,6 @@
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_provider_custom">自訂</string>
     <string name="lastfm_custom_endpoint">自訂端點</string>
-    <string name="lastfm_api_credentials">API 憑證</string>
-    <string name="lastfm_api_credentials_default">使用預設憑證</string>
-    <string name="lastfm_api_credentials_custom">使用自訂憑證</string>
     <string name="lastfm_api_credentials_hint">對於接受任意 API 金鑰和共用金鑰的相容服務，請將憑證留空。</string>
     <string name="lastfm_api_key_override">API 金鑰</string>
     <string name="lastfm_secret_override">共享金鑰</string>

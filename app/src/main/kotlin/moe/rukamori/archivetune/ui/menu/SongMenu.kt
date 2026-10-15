@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.HorizontalDivider
@@ -43,7 +42,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -87,6 +85,8 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualityMenuAction
 import moe.rukamori.archivetune.canvas.SpotifyCanvasProvider
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
@@ -118,7 +118,7 @@ import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
 import moe.rukamori.archivetune.ui.component.SongListItem
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
-import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
+import moe.rukamori.archivetune.ui.utils.TrackInfoAndSpecs
 import moe.rukamori.archivetune.ui.utils.YtimgResizePolicy
 import moe.rukamori.archivetune.ui.utils.resize
 import moe.rukamori.archivetune.utils.SpeedDialPin
@@ -1405,8 +1405,17 @@ fun SongMenu(
                         )
                     }
 
+                    AcousticQualityMenuAction(
+                        target = AcousticAuditTarget(
+                            mediaId = song.id,
+                            title = song.title,
+                            artists = song.artists.joinToString { it.name },
+                        ),
+                        onDismiss = onDismiss,
+                    )
+
                     ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.details)) },
+                        headlineContent = { Text(text = stringResource(R.string.track_info_menu_action)) },
                         leadingContent = {
                             Icon(
                                 painter = painterResource(R.drawable.info),
@@ -1417,13 +1426,30 @@ fun SongMenu(
                             Modifier.clickable {
                                 onDismiss()
                                 bottomSheetPageState.show {
-                                    ShowMediaInfo(song.id)
+                                    TrackInfoAndSpecs(
+                                        trackId = song.id,
+                                        title = song.title,
+                                        artists = song.artists.joinToString { it.name },
+                                        album = song.album?.title ?: song.song.albumName,
+                                        artwork = song.thumbnailUrl,
+                                        durationMs = song.song.duration.takeIf { it > 0 }?.times(1_000L),
+                                    )
                                 }
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
                 }
             }
+        }
+
+        item {
+            CustomArtworkMenuSection(
+                songId = song.id,
+                thumbnailUrl = song.song.thumbnailUrl,
+                title = song.song.title,
+                artistName = song.artists.firstOrNull()?.name.orEmpty(),
+                albumTitle = song.album?.title ?: song.song.albumName,
+            )
         }
         } // end else (showSleepTimerSheet)
     }

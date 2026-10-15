@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.telegram
 
@@ -27,6 +23,7 @@ import java.io.InputStream
 import java.security.MessageDigest
 import java.util.zip.GZIPInputStream
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Loads TDLib's native library, fetching it on demand when the build did not bundle it. */
 object TdLibNativeLibrary {
@@ -58,6 +55,7 @@ object TdLibNativeLibrary {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             // No callTimeout: this is a ~10 MB body and the deadline that matters is per-read.

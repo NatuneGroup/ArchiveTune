@@ -5,13 +5,6 @@
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
 package moe.rukamori.archivetune.spotify
 
 import kotlinx.coroutines.test.runTest
@@ -19,6 +12,7 @@ import moe.rukamori.archivetune.innertube.models.Album
 import moe.rukamori.archivetune.innertube.models.AlbumItem
 import moe.rukamori.archivetune.innertube.models.AlbumReleaseType
 import moe.rukamori.archivetune.innertube.models.SongItem
+import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Test
@@ -98,5 +92,50 @@ class SpotifyReleaseResolutionTest {
                 searchSong = { loneSong },
             ),
         )
+    }
+
+    @Test
+    fun releaseYouTubeMusicDoesNotIndexPlaysSpotifysOwnTracks() = runTest {
+        val tracks = listOf(SpotifyTrack(id = "4uLU6hMCjMI75M1A2tKUQC", name = "Lone Single"))
+
+        val target =
+            resolveSpotifyRelease(
+                query = "Lone Single Someone",
+                searchAlbum = { null },
+                searchSong = { null },
+                spotifyTracks = { tracks },
+            )
+
+        assertEquals(SpotifyReleaseTarget.SpotifyTracks(tracks), target)
+    }
+
+    @Test
+    fun releaseNobodyKnowsResolvesToNothing() = runTest {
+        val target =
+            resolveSpotifyRelease(
+                query = "Unknown Unknown",
+                searchAlbum = { null },
+                searchSong = { null },
+                spotifyTracks = { emptyList() },
+            )
+
+        assertEquals(null, target)
+    }
+
+    @Test
+    fun spotifyTracksAreNotAskedWhenTheSongIndexAnswers() = runTest {
+        var spotifyAsked = false
+
+        resolveSpotifyRelease(
+            query = "Sinners On The Moon Sam Feldt",
+            searchAlbum = { null },
+            searchSong = { song("MPREb_IQWedkSYpdu") },
+            spotifyTracks = {
+                spotifyAsked = true
+                emptyList()
+            },
+        )
+
+        assertFalse(spotifyAsked)
     }
 }

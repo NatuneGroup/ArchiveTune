@@ -1,20 +1,15 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 /*
- * The stream-quality badge — "Lossless", "Hi-Res Lossless", "Hi-Quality", or "Upgrading Quality"
- * while a better stream is still being resolved.
+ * The stream-quality badge — "Lossless", "Hi-Res Lossless", or the codec of a lossy stream.
  *
  * Written for the BitChord player, and now shared: the lyrics screen shows the same badge between
  * its two timestamps for every player style, so it lives in ui.player rather than inside one
@@ -55,83 +50,30 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
-import java.util.Locale
 
 // ── The codec / quality badge (adapted to ArchiveTune's FormatEntity) ─────────
 
 /**
- * The gap between the two timestamps under the seek bar: just the "Lossless"
- * badge when one applies, and nothing otherwise. The measured stats line lives
- * inside the sleeve instead — the badge is a claim, the sleeve is where the
- * evidence is.
+ * The gap between the two timestamps under the seek bar. The text comes from [streamQuality], the
+ * same classification the other player styles' chips read, so the lyrics page and the player page
+ * behind it always name the stream the same way.
  */
 @Composable
 fun LosslessOrStats(
-    isLoading: Boolean,
     format: FormatEntity?,
     modifier: Modifier = Modifier,
 ) {
-    val lossless = format?.isLossless() == true
-    val hiRes = lossless && (format?.sampleRate ?: 0) >= 88_200
-    val hiQuality = !lossless && (format?.bitrate ?: 0) >= 250_000
-    when {
-        // Still resolving — nothing measured yet to confirm with, so this is a
-        // statement of intent, not a result.
-        format == null || (isLoading && !lossless) -> LosslessLabel(
-            text = "Upgrading Quality",
-            animated = false,
-            modifier = modifier,
-        )
-        lossless -> LosslessLabel(
-            // Same line Tidal, Qobuz and Apple Music draw it at.
-            text = if (hiRes) "Hi-Res Lossless" else "Lossless",
-            // Shimmer is reserved for the thing that was asked for and
-            // confirmed. It is what makes the badge read as an achievement
-            // rather than a label, which only one of these two is.
-            animated = true,
-            modifier = modifier,
-        )
-        // Lossy, but the good end of lossy.
-        hiQuality -> LosslessLabel(
-            text = "Hi-Quality",
-            animated = false,
-            modifier = modifier,
-        )
-        else -> {}
-    }
+    val quality = format?.streamQuality() ?: return
+    LosslessLabel(
+        text = quality.label(),
+        // Shimmer is reserved for the thing that was asked for and confirmed. It is what makes
+        // the badge read as an achievement rather than a label.
+        animated = quality.isLossless,
+        modifier = modifier,
+    )
 }
 
-/** Whether the stream is a lossless codec. */
-private fun FormatEntity.isLossless(): Boolean =
-    mimeType.endsWith("flac") || mimeType.endsWith("alac")
-
-/**
- * "FLAC · 320 kbps · 48.0 kHz" — whichever of those the format actually
- * reports. A figure it hasn't is dropped rather than filled in, so a short
- * line means little was known, never that something was invented.
- */
-internal fun FormatEntity.describe(): String {
-    val parts = buildList {
-        codecLabel(mimeType)?.let(::add)
-        if (!isLossless()) add("${bitrate / 1000} kbps")
-        sampleRate?.let { add("%.1f kHz".format(Locale.ROOT, it / 1000f)) }
-    }
-    return parts.joinToString(" · ").takeIf { it.isNotEmpty() } ?: ""
-}
-
-/** The codec under its usual name rather than its MIME type. */
-internal fun codecLabel(mimeType: String?): String? = when {
-    mimeType == null -> null
-    mimeType.endsWith("opus") -> "Opus"
-    mimeType.endsWith("mp4a-latm") -> "AAC"
-    mimeType.endsWith("vorbis") -> "Vorbis"
-    mimeType.endsWith("mpeg") -> "MP3"
-    mimeType.endsWith("flac") -> "FLAC"
-    mimeType.endsWith("alac") -> "ALAC"
-    else -> mimeType.substringAfter('/').uppercase(Locale.ROOT)
-}
-
-/** A lossless-wave glyph ahead of the quality tag — "Upgrading Quality", "Hi-Quality", "Lossless". */
+/** A lossless-wave glyph ahead of the quality tag. */
 @Composable
 private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = Modifier) {
     Row(
@@ -142,11 +84,11 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
         Icon(
             painter = painterResource(R.drawable.ic_lossless_wave),
             contentDescription = null,
-            tint = Color.White.copy(alpha = if (animated) 0.7f else 0.45f),
-            modifier = Modifier.size(13.dp),
+            tint = Color.White.copy(alpha = if (animated) 0.78f else 0.68f),
+            modifier = Modifier.size(18.dp),
         )
         Spacer(Modifier.width(4.dp))
-        if (animated) {
+        if (animated && !moe.rukamori.archivetune.LocalAnimationsDisabled.current) {
             ShimmerText(text = text)
         } else {
             Text(
@@ -154,7 +96,7 @@ private fun LosslessLabel(text: String, animated: Boolean, modifier: Modifier = 
                 style = MaterialTheme.typography.labelMedium.copy(
                     fontSize = (MaterialTheme.typography.labelMedium.fontSize.value + 1).sp,
                 ),
-                color = Color.White.copy(alpha = 0.45f),
+                color = Color.White.copy(alpha = 0.68f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -183,7 +125,7 @@ private fun ShimmerText(text: String) {
         ),
         label = "lossless-shimmer-progress",
     )
-    val baseColor = Color.White.copy(alpha = 0.55f)
+    val baseColor = Color.White.copy(alpha = 0.68f)
     val brush = if (widthPx <= 0) {
         Brush.linearGradient(listOf(baseColor, baseColor))
     } else {

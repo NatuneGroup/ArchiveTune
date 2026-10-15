@@ -1,28 +1,22 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The Home tab's QQ Music page.
- *
  * It is the third of the Home pages, and the only one whose content belongs to the account rather
  * than to the app: each section is one of QQ Music's charts, and its songs are played by the
  * account's own QQ Music source. The sections are drawn with the app's own rows — the same
  * thumbnail-over-title list every song list in the app uses — so a QQ song sits in the queue and in
  * the player exactly like a song from anywhere else, and tapping one plays its section from there,
  * which is what every other song list does.
- *
  * Nothing on this page is required to exist: QQ can answer with a feed this build cannot read, or
  * not answer at all, and both are states with a retry rather than an empty page or a crash.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens
 

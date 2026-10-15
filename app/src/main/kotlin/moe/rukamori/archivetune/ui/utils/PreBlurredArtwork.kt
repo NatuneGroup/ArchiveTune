@@ -10,7 +10,6 @@ package moe.rukamori.archivetune.ui.utils
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.os.Build
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,6 +28,7 @@ import coil3.toBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalBlurPolicy
 import moe.rukamori.archivetune.utils.ImageBlurUtils
 
 /**
@@ -58,7 +58,9 @@ fun rememberPreBlurredBitmap(
     cacheKey: String = "$imageUrl#preblur",
 ): Bitmap? {
     if (imageUrl.isNullOrBlank()) return null
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) return null
+    // The blur policy: with "Disable blur effects" on there is no CPU fallback either, and on S+
+    // there never was one (the platform blur is better) — the caller shows its plain fallback.
+    if (!LocalBlurPolicy.current.cpuFallback) return null
 
     val context = LocalContext.current
     val imageLoader = context.imageLoader

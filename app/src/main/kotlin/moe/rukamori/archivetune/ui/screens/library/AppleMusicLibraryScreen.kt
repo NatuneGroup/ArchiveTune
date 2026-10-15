@@ -1,18 +1,11 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * The Apple Music Experience's Library tab.
- *
  * The experience switch already replaced the album/playlist headers, the tab bar and the player, but
  * the Library tab still rendered the fork's chip-and-inline-content layout, so the switch's "Apple
  * Music library" half was a style with nothing to style. This is the missing screen: a large title
@@ -20,13 +13,13 @@
  * language AppleMusicPlaylistRow established for the playlists inside those sections — same side
  * padding, same artwork column width, same hairline inset to the text column, taken from the
  * constants that file exports for callers that need to line up with it.
- *
  * The sections themselves are the app's existing screens, opened in place rather than duplicated;
  * they render no header of their own, so the compact back row above them is the only chrome.
- *
  * The root list carries the YTM/Spotify selector the chip layout has: the sections below read one
  * source, and this layout is the only Library screen its user ever sees.
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens.library
 

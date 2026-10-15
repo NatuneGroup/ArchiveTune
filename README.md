@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/icon.png" width="160" height="160" alt="ArchiveTune Logo" style="border-radius: 22%">
+  <img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/icon.png" width="160" height="160" alt="ArchiveTune Logo" style="border-radius: 22%">
 
   <h1>ArchiveTune</h1>
 
@@ -20,19 +20,19 @@
   </p>
 
   <p align="center">
-    <a href="https://github.com/vossgraves/ArchiveTune"><b>Official Website</b></a> •
+    <a href="https://github.com/NatuneGroup/ArchiveTune"><b>Official Website</b></a> •
     <a href="#features"><b>Features</b></a> •
-    <a href="https://github.com/vossgraves/ArchiveTune"><b>Privacy</b></a> •
+    <a href="PRIVACY.md"><b>Privacy</b></a> •
     <a href="#download-now"><b>Download</b></a> •
     <a href="#screenshots"><b>Screenshots</b></a> •
-    <a href="https://github.com/rukamori/ArchiveTune/issues/new/choose"><b>Support</b></a>
+    <a href="https://github.com/NatuneGroup/ArchiveTune/issues/new/choose"><b>Support</b></a>
   </p>
 
   <div align="center">
-    <img src="https://img.shields.io/github/v/release/rukamori/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Latest Version" />
-    <img src="https://img.shields.io/github/downloads/rukamori/ArchiveTune/total?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Downloads" />
-    <img src="https://img.shields.io/github/stars/rukamori/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Stars" />
-    <img src="https://img.shields.io/github/license/rukamori/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e" alt="License" />
+    <img src="https://img.shields.io/github/v/release/NatuneGroup/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Latest Version" />
+    <img src="https://img.shields.io/github/downloads/NatuneGroup/ArchiveTune/total?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Downloads" />
+    <img src="https://img.shields.io/github/stars/NatuneGroup/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e&logo=github" alt="Stars" />
+    <img src="https://img.shields.io/github/license/NatuneGroup/ArchiveTune?style=for-the-badge&color=6366f1&labelColor=1e1e2e" alt="License" />
     <img src="https://img.shields.io/badge/Architecture-MVVM-6366f1?style=for-the-badge&labelColor=1e1e2e&logo=kotlin" alt="MVVM Architecture" />
     <img src="https://img.shields.io/badge/Language-Kotlin-7f52ff?style=for-the-badge&logo=kotlin&color=6366f1&labelColor=1e1e2e" alt="Kotlin Language" />
     <img src="https://img.shields.io/badge/Toolkit-Jetpack_Compose-4285f4?style=for-the-badge&logo=jetpack-compose&color=6366f1&labelColor=1e1e2e" alt="Jetpack Compose Toolkit" />
@@ -64,15 +64,15 @@
 
 <div align="center">
 
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_1.jpg" alt="Browse" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_2.jpg" alt="Live Lyrics" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_3.jpg" alt="Theme Customization" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_4.jpg" alt="Live Statistics" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_5.jpg" alt="Artist" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_6.jpg" alt="Album" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_7.jpg" alt="Player" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_8.jpg" alt="Settings" width="30%" />
-<img src="https://github.com/rukamori/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_9.jpg" alt="Settings" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_1.jpg" alt="Browse" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_2.jpg" alt="Live Lyrics" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_3.jpg" alt="Theme Customization" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_4.jpg" alt="Live Statistics" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_5.jpg" alt="Artist" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_6.jpg" alt="Album" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_7.jpg" alt="Player" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_8.jpg" alt="Settings" width="30%" />
+<img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/phoneScreenshots/screenshot_9.jpg" alt="Settings" width="30%" />
 
 </div>
 
@@ -91,7 +91,9 @@
           <li>Multiple account support with quick switching</li>
           <li>Ad-free playback with background listening</li>
           <li>Your playlists, liked songs, and subscriptions appear after sign-in</li>
-          <li>Support local file and local song playback
+          <li>Support local file and local song playback</li>
+          <li>Multiple audio sources (Tidal, Qobuz, Deezer, Amazon, QQ Music, JioSaavn, Telegram and more), tried in the order you choose, with YouTube as the final fallback</li>
+          <li>Sources you turn off are skipped everywhere: playback, prefetch, crossfade, Cast and downloads</li>
           <li>Fast startup and lightweight performance</li>
           <li>Built for a private, uninterrupted listening experience</li>
         </ul>
@@ -103,7 +105,7 @@
         <ul>
           <li>EBU R128 loudness normalization</li>
           <li>Tempo, pitch, and playback speed controls</li>
-          <li>Crossfade between tracks</li>
+          <li>Crossfade and automix between tracks, with bounded hand-off and recovery policies</li>
           <li>System equalizer and spatial audio integration</li>
         </ul>
       </div>
@@ -114,7 +116,7 @@
       <div align="left">
         <h3>Lyrics &amp; Discovery</h3>
         <ul>
-          <li>Live synced lyrics</li>
+          <li>Live synced lyrics, including word-by-word karaoke and TTML lyrics</li>
           <li>Lyrics translation, AI Lyrics translation and romanization</li>
           <li>Music recognition for songs around you</li>
           <li>Listening statistics whenever you want them</li>
@@ -141,8 +143,11 @@
         <ul>
           <li>Material 3 design language</li>
           <li>Album-art powered dynamic colors</li>
-          <li>Up to 9 different player styles</li>
-          <li>Up to 8 different player background styles</li>
+          <li>17 different player styles, including BitChord, TikTok, SimpMusic, SpatialFlow, Looper, Flamingo and Apple Music</li>
+          <li>8 different player background styles, shared across the player styles that support them</li>
+          <li>Liquid glass surfaces, including the SukiSU liquid glass navigation bar</li>
+          <li>Predictive back gesture (with an option to keep the original back animation)</li>
+          <li>Animations follow the system animation speed</li>
           <li>Responsive layouts for different screen sizes</li>
           <li>Clean browsing, player, artist, album, and lyrics views</li>
         </ul>
@@ -156,6 +161,7 @@
           <li>Dynamic color theming options</li>
           <li>Gesture customization</li>
           <li>Animation and layout tuning</li>
+          <li>Option to disable all blur effects</li>
           <li>Flexible controls to shape the app around your workflow</li>
         </ul>
       </div>
@@ -183,13 +189,13 @@
   <tbody>
     <tr>
       <td align="center">
-        <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/rukamori/ArchiveTune/">
+        <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/NatuneGroup/ArchiveTune/">
           <img src="https://github.com/ImranR98/Obtainium/blob/main/assets/graphics/badge_obtainium.png" height="50" alt="Get ArchiveTune on Obtainium">
         </a>
       </td>
       <td align="center">
         <a href="https://apt.izzysoft.de/fdroid/index/apk/moe.rukamori.archivetune">
-          <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/757d5932832e1da27ced56de98c5ad1275cf0db1/assets/IzzyOnDroidButtonBorder.svg" height="50" alt="Get ArchiveTune on IzzyOnDroid">
+          <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/757d5932832e1da27ced56de98c5ad1275cf0db1/assets/IzzyOnDroidButtonBorder.svg" height="50" alt="Get ArchiveTune on IzzyOnDroid">
         </a>
       </td>
     </tr>
@@ -198,8 +204,8 @@
     </tr>
     <tr>
       <td align="center" colspan="2">
-        <a href="https://github.com/rukamori/ArchiveTune/releases/latest">
-          <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/main/assets/badge_github.png" height="50" alt="Get ArchiveTune on GitHub">
+        <a href="https://github.com/NatuneGroup/ArchiveTune/releases/latest">
+          <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/main/assets/badge_github.png" height="50" alt="Get ArchiveTune on GitHub">
         </a>
       </td>
     </tr>
@@ -215,7 +221,7 @@
       </td>
       <td align="center">
         <a href="https://unclouded.app/apps/archivetune/">
-          <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/dev/assets/badge_unclouded.png" height="50" alt="Get ArchiveTune on Unclouded">
+          <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/dev/assets/badge_unclouded.png" height="50" alt="Get ArchiveTune on Unclouded">
         </a>
       </td>
     </tr>
@@ -227,20 +233,52 @@
 <table>
   <thead>
     <tr>
-      <th align="center">GitHub Actions</th>
+      <th align="center">GitHub Pre-releases</th>
     </tr>
   </thead>
   <tbody>
     <tr>
       <td align="center">
-        <a href="https://nightly.link/rukamori/ArchiveTune/workflows/build/dev/app-gms-mobile-universal-release">
-          <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/main/assets/badge_github.png" height="50" alt="Download the latest ArchiveTune nightly build">
+        <a href="https://github.com/NatuneGroup/ArchiveTune/releases">
+          <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/main/assets/badge_github.png" height="50" alt="Download the latest ArchiveTune nightly build">
         </a>
       </td>
     </tr>
   </tbody>
 </table>
 </div>
+
+### Release Channels
+
+ArchiveTune has two update channels:
+
+- **Stable** is built from the `main` branch and published as regular GitHub releases.
+- **Nightly** is built from the `dev` branch and published as `N`-tagged GitHub pre-releases (for example `N202610141200`). It gets new features first and may be less polished.
+
+Both channels are signed with the same key, so updates install over the existing app in place.
+
+The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has been retired. Final Canary `C202610141722` shipped at `a1a04ea02`; the branch is frozen. A stored Canary choice migrates to Nightly.
+
+The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
+
+### Current development follow-up (not yet released)
+
+- Stable and Nightly remain explicit user choices on every build; build identity supplies only the unset default. Offers retain channel association and require a known newer version code.
+- Visible overflowing settings descriptions scroll automatically for finite passes, respecting lifecycle and reduced motion. Restart-scoped edits keep the running values until restart and share one **Restart now / Later** dialog after persistence; Later never restarts automatically.
+- The acoustic heat graph is available in Developer settings and shared player/song menus. Opening it does not analyze: **Run / Cancel / Retry** owns a bounded, source-bound excerpt. Seekable local file/content, supported clear current streams and complete source-bound cache are supported; DRM/inaccessible inputs can be unavailable. Spectral suspicion is heuristic, not proof of original losslessness or physical DAC output.
+- Existing DSP maintenance updates Oboe to 1.11.0, Signalsmith Linear to 0.6.5 and retained libusb to 1.0.30; Stretch stays 1.4.0 and soxr 0.1.3. No new engine or default audio policy. libusb/soxr are trimmed Android subsets, rebuilt through the app's CMake/Gradle path, not full standalone upstream test distributions. Active USB output remains; only an unreachable older USB module was removed, with its MIT license retained.
+- Integrated lyrics changes preserve semantic Unicode, use conservative script-family exclusions and metadata/kana-aware phonetics, and give SimpMusic the shared built-in/provider/AI policy with shaped, source-spaced timed text. Unaligned readings fall back to a line instead of invented word timing; this is not exact language detection or universal pronunciation.
+- AI translation accepts complete validated results, keeps failures retryable and binds caches/results to settings and the current lyrics target. DeepL has explicit target codes and does not claim romanization support. All active translation surfaces invalidate changed targets; automatic calls retain exclusion gates. Downloader requests own separate staging/latches; Listen Together retries retain connection/request identity; Spotify refresh/sign-in/sign-out serialize account mutation.
+- Japanese dictionary automation uses primary system-device locale region JP, never IP geolocation. One persisted best-effort foreground consideration may download over Wi-Fi or cellular; offline consumes that consideration, with manual retry still available. Explicit off/removal prevents automatic installation. Download/checksum/tokenizer work stays off the startup/render thread, and the pinned 13,343,016-byte IPADIC pack is optional offline-romaji data, not UI translation or a universal language engine.
+
+Implementation, separate bounded final cleanup, three independent source reviews and their
+confirmed fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods
+(including real pinned IPADIC/production-tokenizer coverage) were integrated but not yet executed.
+For actual exact-head build/lint and unit-test outcomes, consult the candidate PR and
+[GitHub Actions](https://github.com/NatuneGroup/ArchiveTune/actions); source review is not a CI pass.
+The new dev draft PR must pass both separate parallel gates before history-preserving merge
+and Nightly/manifest verification.
+No device, visual, USB or all-language validation is claimed.
 
 > [!WARNING]  
 > **Notes:** The trusted download source is listed above; we are not responsible for any risks you may encounter from downloading from other sources.
@@ -266,13 +304,20 @@ ArchiveTune belongs to everyone. Help us localize the experience for your region
 </div>
 
 ### ✨ Project Contributors
-<a href="https://github.com/rukamori/ArchiveTune/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=rukamori/ArchiveTune&columns=6" />
+<a href="https://github.com/NatuneGroup/ArchiveTune/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=NatuneGroup/ArchiveTune&columns=6" />
 </a>
 
 ### 🛠️ Development & Engineering
 Interested in building the project or contributing? ArchiveTune is built on a high-performance Kotlin stack.
 <a href="CONTRIBUTING.md"><b>Read the Build & Contribution Guide →</b></a>
+
+Use JDK 21, Android compile SDK 37 and NDK `30.0.16248370`, the checked-in Gradle
+9.6.1 wrapper and recursive submodules. The debug app runs on Android 8.0/API 26+.
+Build/lint with `./gradlew assembleGmsMobileUniversalDebug lintGmsMobileUniversalDebug`;
+tests use `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. The current constrained
+mission defers JVM/build/test execution to final remote CI; that is not a general ban on
+local contributor builds. See [release gates](docs/claude/RELEASES.md) before publishing.
 
 ---
 
@@ -282,6 +327,15 @@ ArchiveTune is made possible by the work of many open-source projects and commun
 
 - **Metrolist** by [Mostafa Alagamy](https://github.com/mostafaalagamy/Metrolist) for the base framework.
 - **SimpMusic** by [maxrave-dev](https://github.com/maxrave-dev/SimpMusic) for the lyrics API provider.
+- **4nx3b** [ArchiveTune](https://github.com/4nx3b/ArchiveTune) for the upstream base and the Bini, Genius, LRCRed and Megalobiz lyrics providers.
+- **rukamori** [ArchiveTune](https://github.com/rukamori/ArchiveTune) for the original ArchiveTune project this fork builds on.
+- **tryptz** [Tryptify](https://github.com/tryptz/Tryptify) and [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) for the audio engine this app's DSP chain, parametric/AutoEq, USB audio output and pitch/time stretch are ported from.
+- **Clash-Projects** [LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) for the native audio engine, bit-perfect USB output and Last.fm dashboard.
+- **Marcelo Silva** for the previously vendored decent-usb-audio-driver (MIT). Its unreachable implementation was removed; the [license and attribution](audio/decent-usb-audio-driver/LICENSE) are retained.
+- [libusb](https://libusb.info), [SoX Resampler](https://sourceforge.net/projects/soxr/) and [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) for USB access, resampling and pitch shifting.
+- [brahmkshatriya/echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) for how Spotify's web player reads its recently played list.
+
+Full per-project detail, licences and the files each one touches are in [docs/CREDITS.md](docs/CREDITS.md).
 - [BetterLyrics](https://better-lyrics.boidu.dev/) for word-by-word lyrics, unison and artwork provider support.
 - [Material Color Utilities](https://github.com/material-foundation/material-color-utilities)
 - [Read You](https://github.com/Ashinch/ReadYou) and [Seal](https://github.com/JunkFood02/Seal) for UI component inspiration.
@@ -312,8 +366,8 @@ See the [`LICENSE`](LICENSE) file for the complete GPLv3 terms.
 ---
 
 <div align="center">
-  <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/dev/fastlane/metadata/android/en-US/images/ArchiveTuneFull.png" alt="ArchiveTune Banner" style="width: 100%; max-width: 500px;">
+  <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/dev/fastlane/metadata/android/en-US/images/ArchiveTuneFull.png" alt="ArchiveTune Banner" style="width: 100%; max-width: 500px;">
   <p><b>If ArchiveTune elevated your music experience, please consider giving us a ⭐</b></p>
   <br />
-  <img src="https://raw.githubusercontent.com/rukamori/ArchiveTune/refs/heads/dev/assets/badge_part.png" alt="ArchiveTune Banner" style="width: 180px">
+  <img src="https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/refs/heads/dev/assets/badge_part.png" alt="ArchiveTune Banner" style="width: 180px">
 </div>

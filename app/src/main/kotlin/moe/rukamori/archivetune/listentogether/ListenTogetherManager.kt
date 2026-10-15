@@ -1,29 +1,24 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Listen Together player bridge — ported from vivi-music (beta branch),
  * vivi-music's listentogether.ListenTogetherManager (GPL-3.0).
- *
  * Adaptations for ArchiveTune (all marked with PORT-NOTE below):
- *  - PlayerConnection exposes `player: Player` (the service's active player)
- *    instead of vivi's `player: ExoPlayer`; every member used here exists on
- *    the media3 Player interface, so no casts were needed.
- *  - vivi's PlayerConnection carried Listen-Together hooks
- *    (shouldBlockPlaybackChanges / allowInternalSync / onSkipPrevious /
- *    onSkipNext / onRestartSong / setMuted/isMuted). ArchiveTune's
- *    PlayerConnection has none of them yet, so the manager does not touch
- *    them; guest playback gating is left to the integration phase.
+ * - PlayerConnection exposes `player: Player` (the service's active player)
+ * instead of vivi's `player: ExoPlayer`; every member used here exists on
+ * the media3 Player interface, so no casts were needed.
+ * - vivi's PlayerConnection carried Listen-Together hooks
+ * (shouldBlockPlaybackChanges / allowInternalSync / onSkipPrevious /
+ * onSkipNext / onRestartSong / setMuted/isMuted). ArchiveTune's
+ * PlayerConnection has none of them yet, so the manager does not touch
+ * them; guest playback gating is left to the integration phase.
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 
@@ -108,6 +103,9 @@ class ListenTogetherManager @Inject constructor(
     private var playerConnection: PlayerConnection? = null
     private var playerFollowJob: Job? = null
     private var eventCollectorJob: Job? = null
+    private var typingExpiryJob: Job? = null
+    private var idleDisconnectCollectorJob: Job? = null
+    private var roleCollectorJob: Job? = null
     private var queueObserverJob: Job? = null
     private var volumeObserverJob: Job? = null
     private var playerListenerRegistered = false
@@ -395,7 +393,10 @@ class ListenTogetherManager @Inject constructor(
                 .collect { enabled ->
                     syncHostVolumeEnabled.value = enabled
                 }
-
+        }
+        // A separate coroutine: collect never returns, so a second collector after the first in
+        // the same launch was never reached and the smart-resync switch did nothing.
+        scope.launch {
             context.dataStore.data
                 .map { it[ListenTogetherSmartResyncKey] ?: true }
                 .distinctUntilChanged()
@@ -423,7 +424,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Expire stale typing indicators.
-        scope.launch {
+        typingExpiryJob?.cancel()
+        typingExpiryJob = scope.launch {
             while (true) {
                 delay(1000)
                 val now = System.currentTimeMillis()
@@ -435,7 +437,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Idle Disconnect Timer (15 minutes) - saves resources if user connects but never joins
-        scope.launch {
+        idleDisconnectCollectorJob?.cancel()
+        idleDisconnectCollectorJob = scope.launch {
             combine(connectionState, client.roomState) { cState, rState ->
                 cState to rState
             }.collect { (cState, rState) ->
@@ -451,7 +454,8 @@ class ListenTogetherManager @Inject constructor(
         }
 
         // Role change listener
-        scope.launch {
+        roleCollectorJob?.cancel()
+        roleCollectorJob = scope.launch {
             role.collect { newRole ->
                 try {
                     val previousRole = lastRole
@@ -1587,9 +1591,6 @@ class ListenTogetherManager @Inject constructor(
     }
 
     /**
-     * Disconnect from the server
-     */
-    /**
      * Drops the held connection when its service is destroyed. This singleton deliberately keeps
      * the connection across MainActivity's onStop (its player getter follows the live service, so
      * room sync keeps working in the background), but once the service itself is gone the
@@ -1629,6 +1630,9 @@ class ListenTogetherManager @Inject constructor(
             }
     }
 
+    /**
+     * Disconnect from the server
+     */
     fun disconnect() {
         Timber.tag(TAG).d("Disconnecting from server")
         cleanup()
@@ -1644,11 +1648,12 @@ class ListenTogetherManager @Inject constructor(
     }
 
     /**
-     * Join an existing room
+     * Join an existing room. False when the request was not sent because another room request is
+     * still pending.
      */
-    fun joinRoom(roomCode: String, username: String) {
+    fun joinRoom(roomCode: String, username: String): Boolean {
         Timber.tag(TAG).d("Joining room $roomCode as $username")
-        client.joinRoom(roomCode, username)
+        return client.joinRoom(roomCode, username)
     }
 
     /**

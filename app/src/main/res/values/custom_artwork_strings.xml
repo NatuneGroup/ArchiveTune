@@ -1,0 +1,13 @@
+<resources>
+    <string name="custom_artwork_set_cover">Set custom cover</string>
+    <string name="custom_artwork_set_canvas">Set custom canvas</string>
+    <string name="custom_artwork_remove_cover">Remove custom cover</string>
+    <string name="custom_artwork_remove_canvas">Remove custom canvas</string>
+    <string name="custom_artwork_cover_saved">Custom cover set</string>
+    <string name="custom_artwork_canvas_saved">Custom canvas set</string>
+    <string name="custom_artwork_cover_removed">Custom cover removed</string>
+    <string name="custom_artwork_canvas_removed">Custom canvas removed</string>
+    <string name="custom_artwork_too_large">The file is larger than %1$d MB</string>
+    <string name="custom_artwork_unsupported">This file type is not supported</string>
+    <string name="custom_artwork_failed">Could not save the custom artwork</string>
+</resources>

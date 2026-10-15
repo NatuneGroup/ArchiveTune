@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.lyrics
 
@@ -18,6 +14,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import android.content.Context
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
+import moe.rukamori.archivetune.ai.toAiServiceConfig
+import moe.rukamori.archivetune.utils.dataStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -68,7 +70,7 @@ object AiLyricsRomanization {
          * romanisers immediately, so a configured-but-not-automatic setup shows AI results only, on
          * demand, rather than silently mixing the two engines' spellings.
          */
-        val active: Boolean get() = enabled && config.canCallApi
+        val active: Boolean get() = enabled && config.supportsRomanization
 
         companion object {
             val Disabled =
@@ -96,6 +98,50 @@ object AiLyricsRomanization {
     private val inFlight = ConcurrentHashMap<String, Deferred<List<String?>>>()
     private val cache = ConcurrentHashMap<String, Map<String, String>>()
 
+    @Volatile private var currentSettings: Settings? = null
+    private var settingsGeneration = 0L
+    private var visibleSession: String? = null
+    private var observing = false
+
+    @Synchronized
+    private fun updateSettings(settings: Settings) {
+        if (currentSettings == settings) return
+        currentSettings = settings
+        settingsGeneration++
+        inFlight.values.forEach { it.cancel() }
+        inFlight.clear()
+        cache.clear()
+        _results.value = null
+        _running.value = false
+    }
+
+    @Synchronized
+    fun observeSettings(context: Context) {
+        if (observing) return
+        observing = true
+        scope.launch {
+            context.applicationContext.dataStore.data.collect { prefs ->
+                updateSettings(Settings(
+                    enabled = prefs[AiRomanizeLyricsKey] ?: false,
+                    auto = prefs[AutoAiRomanizeLyricsKey] ?: false,
+                    excludedLanguages = prefs[AiRomanizeExcludedLanguagesKey] ?: emptySet(),
+                    config = prefs.toAiServiceConfig(),
+                ))
+            }
+        }
+    }
+
+    /** Shared fallback policy: excluded/ineligible AI must not suppress other phonetics. */
+    fun isEligible(
+        settings: Settings,
+        lines: List<String>,
+        sourceLanguageHints: List<String> = emptyList(),
+    ): Boolean {
+        if (!settings.active || lines.isEmpty()) return false
+        return LyricsUtils.isAutomaticLanguageEligible(
+            lines.joinToString("\n"), settings.excludedLanguages, sourceLanguageHints)
+    }
+
     private val _results = MutableStateFlow<Result?>(null)
 
     /**
@@ -117,6 +163,7 @@ object AiLyricsRomanization {
      */
     @Composable
     fun rememberSettings(): Settings {
+        observeSettings(LocalContext.current)
         val (enabled) = rememberPreference(AiRomanizeLyricsKey, defaultValue = false)
         val (auto) = rememberPreference(AutoAiRomanizeLyricsKey, defaultValue = false)
         val (excluded) = rememberPreference(AiRomanizeExcludedLanguagesKey, defaultValue = emptySet())
@@ -168,7 +215,7 @@ object AiLyricsRomanization {
                         )
                     },
             )
-        }
+        }.also { updateSettings(it) }
     }
 
     /**
@@ -179,17 +226,26 @@ object AiLyricsRomanization {
     fun sessionKey(
         mediaId: String?,
         lyrics: String?,
-    ): String = "${mediaId.orEmpty()}|${lyrics?.length ?: 0}|${lyrics?.hashCode() ?: 0}"
+        sourceLanguageHints: List<String> = LyricsUtils.sourceLanguageHints(lyrics),
+    ): String = "${mediaId.orEmpty()}|${lyrics?.length ?: 0}|${lyrics?.hashCode() ?: 0}|${hintIdentity(sourceLanguageHints)}"
+
+    private fun hintIdentity(hints: List<String>): String =
+        hints.mapNotNull(LyricsUtils::validatedSourceLanguage).distinct().sorted().joinToString(",")
 
     /**
      * Resolves romanisation for [lines] in the caller's own index space, or an empty list when
      * nothing has been fetched for [sessionKey] yet.
      */
+    @Synchronized
     fun linesFor(
         sessionKey: String,
         lines: List<String>,
+        sourceLanguageHints: List<String> = emptyList(),
     ): List<String?> {
-        val byLine = cache[sessionKey] ?: return emptyList()
+        selectSession(sessionKey)
+        val settings = currentSettings ?: return emptyList()
+        if (!isEligible(settings, lines, sourceLanguageHints)) return emptyList()
+        val byLine = cache["$sessionKey|${hintIdentity(sourceLanguageHints)}"] ?: return emptyList()
         return lines.map { byLine[it.trim()] }
     }
 
@@ -222,69 +278,71 @@ object AiLyricsRomanization {
      * not to, when nothing needs romanising, or when the track's dominant language is excluded — the
      * caller does not have to pre-check any of that.
      */
+    @Synchronized
     fun request(
         sessionKey: String,
         lines: List<String>,
         settings: Settings,
+        sourceLanguageHints: List<String> = emptyList(),
     ) {
-        if (!settings.active) return
-        if (lines.isEmpty()) return
-
-        cache[sessionKey]?.let { cached ->
-            publish(sessionKey, cached)
-            return
-        }
-        if (inFlight.containsKey(sessionKey)) return
-
-        // The exclusion list is checked against the whole lyric rather than per line: a single track
-        // is one language for this purpose, and per-line detection would send a Japanese song's
-        // occasional English hook to the model as if it were a different track.
-        //
-        // Comparison goes through LyricsUtils so this and the translation gate agree on what an
-        // exclusion means — including that a detected "CHINESE" has to match the picker's
-        // CHINESE_SIMPLIFIED / CHINESE_TRADITIONAL, which a direct string compare never did.
-        val dominant = LyricsUtils.detectDominantLanguageCode(lines.joinToString("\n"))
-        if (dominant != null && LyricsUtils.matchesExcludedLanguage(dominant, settings.excludedLanguages)) {
-            Timber.tag(TAG).d("skipping %s: %s is excluded", sessionKey, dominant)
-            return
-        }
-        // Nothing to do for lyrics that are already Latin script. Reuses the built-in detectors so
-        // the two engines agree on which lines are candidates at all.
+        updateSettings(settings)
+        selectSession(sessionKey)
+        if (settings != currentSettings || !isEligible(settings, lines, sourceLanguageHints)) return
         if (lines.none { LyricsUtils.hasRomanizableScript(it) }) return
-
-        val job =
-            scope.async {
-                _running.value = true
-                try {
-                    romanizer.romanize(settings.config, lines)
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (t: Throwable) {
-                    Timber.tag(TAG).w(t, "AI romanisation failed for %s", sessionKey)
-                    emptyList()
-                } finally {
-                    _running.value = false
+        val cacheKey = "$sessionKey|${hintIdentity(sourceLanguageHints)}"
+        cache[cacheKey]?.let { publish(sessionKey, it); return }
+        if (inFlight.containsKey(sessionKey)) return
+        val generation = settingsGeneration
+        val job = scope.async(start = CoroutineStart.LAZY) {
+            romanizer.romanize(settings.config, lines) {
+                synchronized(this@AiLyricsRomanization) { generation == settingsGeneration }
+            }
+        }
+        inFlight[sessionKey] = job
+        _running.value = true
+        scope.launch {
+            try {
+                val result = job.await()
+                synchronized(this@AiLyricsRomanization) {
+                    if (generation != settingsGeneration || visibleSession != sessionKey ||
+                        !isEligible(settings, lines, sourceLanguageHints)) return@synchronized
+                    val byLine = LinkedHashMap<String, String>()
+                    lines.forEachIndexed { index, line ->
+                        result.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }?.let {
+                            byLine.putIfAbsent(line.trim(), it)
+                        }
+                    }
+                    // Do not turn a partially failed track into a permanent session-cache hit.
+                    if (byLine.isNotEmpty() && lines.filter { LyricsUtils.hasRomanizableScript(it) }
+                            .all { byLine.containsKey(it.trim()) }) {
+                        cache[cacheKey] = byLine
+                        trimCache(cacheKey)
+                        publish(sessionKey, byLine)
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                Timber.tag(TAG).w("AI romanisation failed")
+            } finally {
+                synchronized(this@AiLyricsRomanization) {
+                    inFlight.remove(sessionKey, job)
+                    _running.value = inFlight.isNotEmpty()
                 }
             }
-        inFlight[sessionKey] = job
-        scope.async {
-            val result = runCatching { job.await() }.getOrDefault(emptyList())
-            inFlight.remove(sessionKey)
-            // Index-aligned coming out of the romanizer, then immediately folded into the text-keyed
-            // form every reader uses. `associate` would keep the *last* occurrence of a repeated
-            // line; build it forwards so a chorus resolves from the first, which is the one whose
-            // batch had the most surrounding context.
-            val byLine = LinkedHashMap<String, String>(result.size)
-            lines.forEachIndexed { index, line ->
-                val romanized = result.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEachIndexed
-                byLine.putIfAbsent(line.trim(), romanized)
-            }
-            if (byLine.isNotEmpty()) {
-                cache[sessionKey] = byLine
-                trimCache(sessionKey)
-                publish(sessionKey, byLine)
-            }
         }
+        job.start()
+    }
+
+    private fun selectSession(sessionKey: String) {
+        if (visibleSession == sessionKey) return
+        visibleSession = sessionKey
+        inFlight.entries.filter { it.key != sessionKey }.forEach { (key, job) ->
+            job.cancel()
+            inFlight.remove(key, job)
+        }
+        _results.value = null
+        _running.value = inFlight.isNotEmpty()
     }
 
     private fun publish(

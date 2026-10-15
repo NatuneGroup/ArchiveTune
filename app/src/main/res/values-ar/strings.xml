@@ -117,14 +117,6 @@
         <item quantity="many">%d أغنية</item>
         <item quantity="other">%d أغنية</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="zero">لا يوجد فنانون</item>
-        <item quantity="one">فنان واحد</item>
-        <item quantity="two">فنانان</item>
-        <item quantity="few">%d فنانين</item>
-        <item quantity="many">%d فنان</item>
-        <item quantity="other">%d فنان</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="zero">لا توجد ألبومات</item>
         <item quantity="one">ألبوم واحد</item>
@@ -260,7 +252,6 @@
     <string name="palette_neon_pink">وردي نيون</string>
     <string name="palette_neon_blue">أزرق نيون</string>
     <string name="palette_neon_orange">برتقالي نيون</string>
-    <string name="palette_cyberpunk">سايبربانك</string>
     <string name="palette_synthwave">سينثويف</string>
     <string name="palette_ocean">محيط</string>
     <string name="palette_forest">غابة عميقة</string>
@@ -270,8 +261,6 @@
     <string name="palette_summer">صيف</string>
     <string name="palette_twilight">الشفق</string>
     <string name="palette_aurora">أورورا</string>
-    <string name="palette_candy">حلوى</string>
-    <string name="palette_rainbow">قوس قزح</string>
     <string name="dark_theme">السمة الداكنة</string>
     <string name="dark_theme_on">مفعل</string>
     <string name="dark_theme_off">معطل</string>
@@ -308,7 +297,6 @@
     <string name="lyrics_line_spacing">تباعد أسطر الكلمات</string>
     <string name="content">المحتوى</string>
     <string name="action_logout">تسجيل خروج</string>
-    <string name="action_login">تسجيل دخول</string>
     <string name="login">تسجيل الدخول</string>
     <string name="not_logged_in">لم يتم تسجيل الدخول</string>
     <string name="content_language">لغة المحتوى الافتراضي</string>

@@ -36,10 +36,11 @@ import java.util.zip.ZipFile
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resumeWithException
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @Singleton
 class DriveBackupRepository @Inject constructor(@ApplicationContext private val context: Context) {
-    private val client = OkHttpClient.Builder()
+    private val client = OkHttpClient.Builder().withAppProxy()
         .connectTimeout(30, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(60, TimeUnit.SECONDS)
@@ -162,7 +163,7 @@ class DriveBackupRepository @Inject constructor(@ApplicationContext private val 
             while (entries.hasMoreElements()) {
                 currentCoroutineContext().ensureActive()
                 val entry = entries.nextElement()
-                if (entry.name !in ARCHIVE_ENTRIES || !names.add(entry.name) || entry.isDirectory) {
+                if (!isArchiveEntry(entry.name) || !names.add(entry.name) || entry.isDirectory) {
                     throw DriveBackupException(DriveBackupFailure.INVALID)
                 }
                 zip.getInputStream(entry).use { input ->
@@ -202,6 +203,13 @@ class DriveBackupRepository @Inject constructor(@ApplicationContext private val 
                 }
             }
         }
+    }
+
+    private fun isArchiveEntry(name: String): Boolean {
+        if (name in ARCHIVE_ENTRIES) return true
+        val font = name.removePrefix("${BackupArchiveRepository.FONTS_ZIP_PREFIX}/")
+        return font != name && font.isNotEmpty() && '/' !in font && '\\' !in font &&
+            font.endsWith(".ttf", ignoreCase = true)
     }
 
     private suspend fun checksum(file: File): String {

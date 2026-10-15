@@ -1,19 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 package moe.rukamori.archivetune.deezer
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.audiosource.TrackMatching
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -24,8 +24,10 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
+import java.util.LinkedHashSet
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Resolves playable Deezer streams for a track, mirroring the shape of
@@ -78,6 +80,7 @@ object DeezerAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
@@ -119,6 +122,18 @@ object DeezerAudioProvider {
             failureCache.clear()
         }
     }
+
+    fun invalidatePoolAccountCache() {
+        pooledSessionKeysToEvict(sessions.keys, manualAccount?.arl).forEach(sessions::remove)
+        streamCache.clear()
+        failureCache.clear()
+    }
+
+    internal fun pooledSessionKeysToEvict(
+        sessionArls: Collection<String>,
+        manualArl: String?,
+    ): Set<String> =
+        sessionArls.filterTo(LinkedHashSet()) { it != manualArl }
 
     /** True when at least one credential (manual or pooled) is available. Cheap: no network. */
     fun hasAccounts(): Boolean = manualAccount != null || PoolAccountManager.deezerAccounts().isNotEmpty()
@@ -292,6 +307,14 @@ object DeezerAudioProvider {
     fun resolve(
         query: Query,
         format: String,
+    ): Resolved? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveWithinAttempt(query, format)
+        }
+
+    private fun resolveWithinAttempt(
+        query: Query,
+        format: String,
     ): Resolved? {
         val accounts = accounts()
         if (accounts.isEmpty() && !DeezerInstances.hasInstances()) {
@@ -316,22 +339,41 @@ object DeezerAudioProvider {
         // instead of the whole source going silent.
         val ordered = accounts.sortedByDescending { it.premium }
         for (account in ordered) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             val session =
                 runCatching { session(account) }
-                    .onFailure { Timber.tag(TAG).w(it, "session failed for pooled account") }
-                    .getOrNull() ?: continue
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "session failed for pooled account")
+                    }
+                    .getOrNull()
+            if (session == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
+                continue
+            }
 
             val match =
                 runCatching { matchTrack(session, query) }
-                    .onFailure { Timber.tag(TAG).w(it, "search failed") }
-                    .getOrNull() ?: continue
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "search failed")
+                    }
+                    .getOrNull()
+            if (match == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
+                continue
+            }
             val trackId = match.id
 
             val media =
                 runCatching { requestUrl(session, trackId, format) }
-                    .onFailure { Timber.tag(TAG).w(it, "get_url failed for track %s", trackId) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        Timber.tag(TAG).w(it, "get_url failed for track %s", trackId)
+                    }
                     .getOrNull()
             if (media == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
                 // The session may have gone stale mid-resolve; drop it so the next attempt re-auths.
                 sessions.remove(account.arl)
                 continue
@@ -369,12 +411,15 @@ object DeezerAudioProvider {
 
         // Accounts first (they report the exact tier), then the API-instance tier, which serves
         // already-decrypted audio from the instance's own accounts.
+        if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
         resolveViaInstance(query)?.let { stream ->
             streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
             return stream
         }
 
-        failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+            failureCache[cacheKey] = System.currentTimeMillis() + FAILURE_CACHE_MS
+        }
         return null
     }
 
@@ -431,12 +476,9 @@ object DeezerAudioProvider {
         )
     }
 
-    // ---------------------------------------------------------------------------------------------
-    // Session
-    // ---------------------------------------------------------------------------------------------
-
     /** Returns a live session for [account], reusing a cached one until it ages out. */
-    private fun session(account: PoolAccountManager.DeezerPoolAccount): Session {
+    private fun session(account: PoolAccountManager.DeezerPoolAccount): Session? {
+        if (account.arl != manualAccount?.arl && !PoolAccountManager.isPoolEnabled()) return null
         val now = System.currentTimeMillis()
         sessions[account.arl]?.let { if (now - it.establishedAt < SESSION_TTL_MS) return it }
 
@@ -480,6 +522,7 @@ object DeezerAudioProvider {
                 masterSecret = account.masterSecret,
                 establishedAt = now,
             )
+        if (account.arl != manualAccount?.arl && !PoolAccountManager.isPoolEnabled()) return null
         sessions[account.arl] = session
         return session
     }
@@ -508,7 +551,7 @@ object DeezerAudioProvider {
                 .header("Cookie", "arl=$arl")
                 .post(body)
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) throw java.io.IOException("gateway HTTP ${response.code}")
             return JSONObject(response.body?.string().orEmpty())
         }
@@ -597,7 +640,7 @@ object DeezerAudioProvider {
                 .url("https://api.deezer.com/track/isrc:${java.net.URLEncoder.encode(isrc, "UTF-8")}")
                 .header("Accept", "application/json")
                 .build()
-        client.newCall(req).execute().use { res ->
+        client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
             if (!res.isSuccessful) return null
             val obj = JSONObject(res.body?.string() ?: return null)
             // Not-found and rate-limit responses come back as { "error": { … } } with HTTP 200.
@@ -682,7 +725,7 @@ object DeezerAudioProvider {
                 .build()
 
         val json =
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) throw java.io.IOException("get_url HTTP ${response.code}")
                 JSONObject(response.body?.string().orEmpty())
             }
@@ -728,7 +771,7 @@ object DeezerAudioProvider {
                         .url("https://api.deezer.com/search?q=${java.net.URLEncoder.encode(q, "UTF-8")}&limit=10")
                         .header("Accept", "application/json")
                         .build()
-                client.newCall(req).execute().use { res ->
+                client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
                     if (!res.isSuccessful) {
                         Timber.tag(TAG).w("search HTTP %d for '%s'", res.code, q)
                         return@use null
@@ -786,7 +829,7 @@ object DeezerAudioProvider {
                         .url("https://api.deezer.com/search?q=$encoded&limit=$limit")
                         .header("Accept", "application/json")
                         .build()
-                client.newCall(req).execute().use { res ->
+                client.newCall(req).withAudioSourceAttemptDeadline().execute().use { res ->
                     if (!res.isSuccessful) {
                         Timber.tag(TAG).w("searchCandidates HTTP %d for '%s'", res.code, trimmed)
                         return@use emptyList<Metadata>()
@@ -855,9 +898,13 @@ object DeezerAudioProvider {
         return titleScore * 0.45 + artistScore * 0.30 + albumScore * 0.15 + durationScore * 0.10
     }
 
+    // Letters and digits of any script: an ASCII-only class blanked Japanese and other non-Latin
+    // titles, and two blank strings compared as a perfect match.
+    private val NON_LETTER_DIGIT_SPACE_REGEX = Regex("[^\\p{L}\\p{N} ]")
+
     private fun normalizedSimilarity(a: String, b: String): Double {
-        val na = a.lowercase().trim().replace(Regex("[^a-z0-9 ]"), "")
-        val nb = b.lowercase().trim().replace(Regex("[^a-z0-9 ]"), "")
+        val na = a.lowercase().trim().replace(NON_LETTER_DIGIT_SPACE_REGEX, "")
+        val nb = b.lowercase().trim().replace(NON_LETTER_DIGIT_SPACE_REGEX, "")
         if (na == nb) return 1.0
         if (na.isBlank() || nb.isBlank()) return 0.0
         val sa = na.split(" ").toSet()
@@ -886,7 +933,7 @@ object DeezerAudioProvider {
             runCatching {
                 val account = accounts().firstOrNull()
                     ?: throw java.io.IOException("no Deezer account for lyrics")
-                val session = session(account)
+                val session = session(account) ?: throw java.io.IOException("Deezer account is no longer available")
 
                 val query = Query(mediaId = "lyrics", title = title, artists = listOfNotNull(artist), album = album, durationMs = durationMs)
                 val match = lookup(query) ?: throw java.io.IOException("no Deezer match for lyrics")

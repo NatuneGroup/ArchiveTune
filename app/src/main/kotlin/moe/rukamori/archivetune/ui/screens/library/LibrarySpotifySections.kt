@@ -5,13 +5,6 @@
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
-/*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
 package moe.rukamori.archivetune.ui.screens.library
 
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.spotify.SpotifyLibraryViewModel
@@ -46,13 +40,17 @@ import moe.rukamori.archivetune.ui.component.SpotifyPlayableRow
 
 /** The Library's Songs, Artists and Albums sections on the Spotify source. */
 @Composable
-fun LibrarySpotifySongsScreen(viewModel: SpotifyLibraryViewModel = hiltViewModel()) {
+fun LibrarySpotifySongsScreen(
+    navController: NavController,
+    viewModel: SpotifyLibraryViewModel = hiltViewModel(),
+) {
     val state by viewModel.likedSongs.collectAsStateWithLifecycle()
     val accountRevision by viewModel.accountRevision.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel, accountRevision) { viewModel.loadLikedSongs() }
 
     SpotifySectionList(
         items = remember(state.items) { state.items.orEmpty().map(SpotifySearchItem::Track) },
+        navController = navController,
         isRefreshing = state.isLoading || (state.items == null && state.errorMessage == null),
         errorMessage = state.errorMessage,
         onRefresh = { viewModel.loadLikedSongs(force = true) },
@@ -60,13 +58,17 @@ fun LibrarySpotifySongsScreen(viewModel: SpotifyLibraryViewModel = hiltViewModel
 }
 
 @Composable
-fun LibrarySpotifyArtistsScreen(viewModel: SpotifyLibraryViewModel = hiltViewModel()) {
+fun LibrarySpotifyArtistsScreen(
+    navController: NavController,
+    viewModel: SpotifyLibraryViewModel = hiltViewModel(),
+) {
     val state by viewModel.artists.collectAsStateWithLifecycle()
     val accountRevision by viewModel.accountRevision.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel, accountRevision) { viewModel.loadArtists() }
 
     SpotifySectionList(
         items = remember(state.items) { state.items.orEmpty().map(SpotifySearchItem::Artist) },
+        navController = navController,
         isRefreshing = state.isLoading || (state.items == null && state.errorMessage == null),
         errorMessage = state.errorMessage,
         onRefresh = { viewModel.loadArtists(force = true) },
@@ -74,13 +76,17 @@ fun LibrarySpotifyArtistsScreen(viewModel: SpotifyLibraryViewModel = hiltViewMod
 }
 
 @Composable
-fun LibrarySpotifyAlbumsScreen(viewModel: SpotifyLibraryViewModel = hiltViewModel()) {
+fun LibrarySpotifyAlbumsScreen(
+    navController: NavController,
+    viewModel: SpotifyLibraryViewModel = hiltViewModel(),
+) {
     val state by viewModel.albums.collectAsStateWithLifecycle()
     val accountRevision by viewModel.accountRevision.collectAsStateWithLifecycle()
     LaunchedEffect(viewModel, accountRevision) { viewModel.loadAlbums() }
 
     SpotifySectionList(
         items = remember(state.items) { state.items.orEmpty().map(SpotifySearchItem::Album) },
+        navController = navController,
         isRefreshing = state.isLoading || (state.items == null && state.errorMessage == null),
         errorMessage = state.errorMessage,
         onRefresh = { viewModel.loadAlbums(force = true) },
@@ -90,6 +96,7 @@ fun LibrarySpotifyAlbumsScreen(viewModel: SpotifyLibraryViewModel = hiltViewMode
 @Composable
 private fun SpotifySectionList(
     items: List<SpotifySearchItem>,
+    navController: NavController,
     isRefreshing: Boolean,
     errorMessage: String?,
     onRefresh: () -> Unit,
@@ -145,7 +152,7 @@ private fun SpotifySectionList(
                 key = SpotifySearchItem::key,
                 contentType = { "spotify_section_row" },
             ) { item ->
-                SpotifyPlayableRow(item)
+                SpotifyPlayableRow(item, navController)
             }
         }
     }

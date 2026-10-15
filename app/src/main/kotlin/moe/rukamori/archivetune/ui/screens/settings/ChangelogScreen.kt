@@ -39,11 +39,8 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -55,7 +52,6 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.material3.ToggleButton
@@ -71,7 +67,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
@@ -101,19 +96,18 @@ import java.util.Locale
 @Composable
 fun ChangelogScreen(
     navController: NavController,
-    channel: UpdateChannel = UpdateChannel.STABLE,
+    channel: UpdateChannel,
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
-    var releases by remember { mutableStateOf<List<ReleaseInfo>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var currentTag by remember { mutableStateOf<String?>(null) }
+    var releases by remember(channel) { mutableStateOf<List<ReleaseInfo>>(emptyList()) }
+    var isLoading by remember(channel) { mutableStateOf(true) }
+    var error by remember(channel) { mutableStateOf<String?>(null) }
+    var currentTag by remember(channel) { mutableStateOf<String?>(null) }
 
     suspend fun loadReleases(forceRefresh: Boolean) {
         val result =
             when (channel) {
-                UpdateChannel.CANARY -> Updater.getAllCanaryReleases(forceRefresh = forceRefresh)
                 UpdateChannel.NIGHTLY -> Updater.getAllNightlyReleases(forceRefresh = forceRefresh)
                 else -> Updater.getAllReleases(forceRefresh = forceRefresh)
             }
@@ -130,10 +124,9 @@ fun ChangelogScreen(
         isLoading = false
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(channel) {
         val cachedReleases =
             when (channel) {
-                UpdateChannel.CANARY -> Updater.getCachedCanaryReleases()
                 UpdateChannel.NIGHTLY -> Updater.getCachedNightlyReleases()
                 else -> Updater.getCachedReleases()
             }

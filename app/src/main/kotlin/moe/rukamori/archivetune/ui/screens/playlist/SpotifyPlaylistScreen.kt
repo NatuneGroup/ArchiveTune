@@ -75,7 +75,9 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import com.google.common.collect.ImmutableList
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
@@ -99,12 +101,9 @@ import moe.rukamori.archivetune.ui.component.LiquidGlassActionPill
 import moe.rukamori.archivetune.ui.component.LiquidGlassIconButton
 import moe.rukamori.archivetune.ui.component.MediaDetailAction
 import moe.rukamori.archivetune.ui.component.MediaDetailHero
-import moe.rukamori.archivetune.ui.component.MediaDetailIconAction
 import moe.rukamori.archivetune.ui.component.SpotifyTrackListItem
 import moe.rukamori.archivetune.ui.component.layerBackdrop
 import android.os.Build
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen
 import moe.rukamori.archivetune.ui.component.rememberBackdrop
 import moe.rukamori.archivetune.ui.utils.HeaderDownloadItem
@@ -113,6 +112,7 @@ import moe.rukamori.archivetune.ui.utils.HeaderDownloadState
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.ui.utils.headerDownloadState
 import moe.rukamori.archivetune.ui.utils.resize
+import timber.log.Timber
 import moe.rukamori.archivetune.ui.utils.sendAddMissingDownloads
 import moe.rukamori.archivetune.ui.utils.sendRemoveDownloads
 import moe.rukamori.archivetune.utils.makeTimeString
@@ -140,6 +140,7 @@ fun SpotifyPlaylistScreen(
     val systemBarsTopPadding = LocalStableSystemBarsTopPadding.current
     val snackbarHostState = remember { SnackbarHostState() }
     val downloadActionFailedMessage = stringResource(R.string.download_action_failed)
+    val trackUnavailableMessage = stringResource(R.string.spotify_track_unavailable)
     val latestDownloads by rememberUpdatedState(downloads)
 
     // Save scroll position when entering search, restore when leaving.
@@ -335,6 +336,10 @@ fun SpotifyPlaylistScreen(
             resolvingTrackId = preloadTrack.id
             try {
                 val preloadItem = SpotifyPlaybackResolver.resolveToMetadata(preloadTrack)
+                if (preloadItem == null) {
+                    snackbarHostState.showSnackbar(trackUnavailableMessage)
+                    return@launch
+                }
                 playerConnection?.playQueue(
                     SpotifyPlaylistQueue(
                         playlistId = currentPlaylist.id,
@@ -344,6 +349,11 @@ fun SpotifyPlaylistScreen(
                         preloadItem = preloadItem,
                     ),
                 )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Timber.tag("SpotifyPlayback").w("Selected track resolution failed: %s", error::class.java.simpleName)
+                snackbarHostState.showSnackbar(trackUnavailableMessage)
             } finally {
                 resolvingTrackId = null
             }
@@ -353,7 +363,7 @@ fun SpotifyPlaylistScreen(
     // Liquid Glass backdrop: created unconditionally (cheap — just a GraphicsLayer handle). The
     // actual content recording happens when `Modifier.layerBackdrop(artworkBackdrop)` is applied to
     // the LazyColumn below.
-    val liquidGlassEnabled by rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
     val liquidGlassHeaderActive =
         liquidGlassEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val lyricsFullScreen = LocalPlayerLyricsFullScreen.current
@@ -633,13 +643,14 @@ fun SpotifyPlaylistScreen(
 
         // Top App Bar — hidden when the Liquid Glass header buttons are visible
         // (matches LocalPlaylistScreen pattern). The Liquid Glass back button and
-        // search pill handle navigation when the hero is visible. The TopAppBar is
-        // only rendered during search mode (search TextField) and loading state
-        // (back navigation while playlist loads). Rendering the TopAppBar on top of
+        // search pill handle navigation when the hero is visible. With glass active the
+        // TopAppBar is only rendered during search mode (search TextField) and loading
+        // state (back navigation while playlist loads); without glass (off, or overridden
+        // by Disable blur) it is the plain header. Rendering the TopAppBar on top of
         // the Liquid Glass buttons (even when transparent and with empty actions)
         // causes it to intercept pointer events in the top area, making the Liquid
         // Glass buttons unclickable.
-        if (isSearching || playlist == null) {
+        if (!liquidGlassHeaderActive || isSearching || playlist == null) {
         TopAppBar(
             colors = topAppBarColors,
             windowInsets =
@@ -684,7 +695,7 @@ fun SpotifyPlaylistScreen(
                 // Hide the back arrow when the SimpMusic-style floating liquid
                 // glass back button is visible (artwork shown, not searching,
                 // not scrolled).
-                if (isSearching || showTopBarTitle) {
+                if (isSearching || showTopBarTitle || !liquidGlassHeaderActive) {
                     IconButton(
                         onClick = {
                             if (isSearching) {
@@ -709,7 +720,7 @@ fun SpotifyPlaylistScreen(
                 }
             },
             actions = {
-                if (!isSearching && showTopBarTitle) {
+                if (!isSearching && (showTopBarTitle || !liquidGlassHeaderActive)) {
                     IconButton(
                         onClick = { isSearching = true },
                         onLongClick = {},
@@ -723,7 +734,7 @@ fun SpotifyPlaylistScreen(
             },
             scrollBehavior = scrollBehavior,
         )
-        } // end if (isSearching || playlist == null)
+        } // end if (!liquidGlassHeaderActive || isSearching || playlist == null)
 
         SnackbarHost(
             hostState = snackbarHostState,

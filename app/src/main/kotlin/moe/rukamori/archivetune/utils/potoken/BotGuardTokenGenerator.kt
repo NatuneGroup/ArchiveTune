@@ -42,6 +42,9 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import moe.rukamori.archivetune.utils.withAppProxy
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 /**
  * Generates cryptographically valid PoTokens by running YouTube's BotGuard challenge inside a
@@ -69,6 +72,7 @@ object BotGuardTokenGenerator {
     private val httpClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .callTimeout(20, TimeUnit.SECONDS)
             .build()
 
@@ -608,6 +612,16 @@ object BotGuardTokenGenerator {
                                     }
                                 webViewClient =
                                     object : WebViewClient() {
+                                        override fun onReceivedHttpAuthRequest(
+                                            view: WebView?,
+                                            handler: HttpAuthHandler?,
+                                            host: String?,
+                                            realm: String?,
+                                        ) {
+                                            if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+                                            super.onReceivedHttpAuthRequest(view, handler, host, realm)
+                                        }
+
                                         override fun onRenderProcessGone(
                                             view: WebView,
                                             detail: android.webkit.RenderProcessGoneDetail,

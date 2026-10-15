@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -17,13 +11,14 @@
  * Tidal/Qobuz/Deezer/Apple Music. Shaped like TidalSettings — instances + auth, no account.
  */
 
+
+
 package moe.rukamori.archivetune.ui.screens.settings
 
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
@@ -54,7 +49,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
-import moe.rukamori.archivetune.audiosource.AudioSourceConfig
+import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.constants.AmazonAudioQuality
 import moe.rukamori.archivetune.constants.AmazonAudioQualityKey
 import moe.rukamori.archivetune.constants.AmazonBypassTokenKey
@@ -62,8 +57,6 @@ import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.AmazonInstancesKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtExpiryMsKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
-import moe.rukamori.archivetune.constants.AudioSourceOrderKey
-import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
@@ -85,18 +78,9 @@ fun AmazonSettings(
 ) {
     val context = LocalContext.current
 
-    val (enabled, onEnabledChangeRaw) = rememberPreference(AmazonEnabledKey, false)
-    val (orderRaw, onOrderChange) = rememberPreference(AudioSourceOrderKey, "")
-    // Turning the source on has to write it into the order as well. AMAZON is deliberately not a
-    // member of AudioSourceConfig.DEFAULT_ORDER, and the order picker can only reorder what it is
-    // given, so without this the toggle would flip a preference the resolver never reads and
-    // playback would stay on YouTube with no indication why. Mirrors QqMusicSettings.
-    val onEnabledChange: (Boolean) -> Unit = { next ->
-        onEnabledChangeRaw(next)
-        if (next) {
-            onOrderChange(AudioSourceConfig.withSourceAdded(orderRaw, AudioSourceType.AMAZON))
-        }
-    }
+    val (enabled, onEnabledChange) = rememberPreference(AmazonEnabledKey, false)
+    // The toggle flips only its own flag; the source already sits in the order (default just
+    // above YouTube) and the user positions it in "Preferred sources".
     val (audioQuality, onAudioQualityChange) =
         rememberEnumPreference(AmazonAudioQualityKey, AmazonAudioQuality.Default)
     val (storedInstances, onStoredInstancesChange) = rememberPreference(AmazonInstancesKey, "")
@@ -106,7 +90,7 @@ fun AmazonSettings(
 
     val instanceCount =
         remember(storedInstances) {
-            storedInstances.split('\n').map { it.trim() }.count { it.isNotEmpty() }
+            AmazonInstances.parseBaseUrls(storedInstances).size
         }
 
     var showInstancesDialog by remember { mutableStateOf(false) }
@@ -122,14 +106,7 @@ fun AmazonSettings(
             singleLine = false,
             isInputValid = { true },
             onDone = { raw ->
-                onStoredInstancesChange(
-                    raw
-                        .split('\n')
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .distinct()
-                        .joinToString("\n"),
-                )
+                onStoredInstancesChange(AmazonInstances.parseBaseUrls(raw).joinToString("\n"))
             },
             onDismiss = { showInstancesDialog = false },
         )

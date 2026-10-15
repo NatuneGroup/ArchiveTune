@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * SimpMusic's fullscreen lyrics page.
@@ -93,6 +89,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -109,7 +106,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import coil3.compose.AsyncImage
 import kotlin.math.cos
 import kotlin.math.sin
@@ -134,15 +134,10 @@ import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.ui.component.LocalMenuState
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
-import android.os.Build
 import androidx.media3.common.Player
 import androidx.navigation.NavController
 import kotlinx.coroutines.delay
@@ -171,15 +166,6 @@ internal fun SimpMusicFullscreenLyricsSheet(
         mutableStateOf(androidx.compose.ui.geometry.Rect.Zero)
     }
 
-    // Gated on Liquid Glass like 4nx3b and every other style's popup, so the glass goes away with
-    // the toggle off instead of staying on in this one style.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
-
     val currentSong by playerConnection.currentSong.collectAsStateWithLifecycle(initialValue = null)
     val liked = currentSong?.song?.liked == true
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
@@ -196,6 +182,9 @@ internal fun SimpMusicFullscreenLyricsSheet(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, currentLyricsEntity?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyricsEntity?.lyrics)
+    }
     val translationDismissedMediaIds by lyricsMenuViewModel.translationDismissedMediaIds
         .collectAsStateWithLifecycle()
     LaunchedEffect(
@@ -229,6 +218,7 @@ internal fun SimpMusicFullscreenLyricsSheet(
             mediaMetadata = mediaMetadata,
             lyrics = text,
             targetLanguage = translatorTargetLang,
+            automatic = true,
         )
     }
 
@@ -253,14 +243,17 @@ internal fun SimpMusicFullscreenLyricsSheet(
     var lyricsSyncOffset by rememberSaveable(mediaMetadata?.id) { mutableIntStateOf(0) }
     var isScrubbing by remember { mutableStateOf(false) }
     var duration by remember { mutableLongStateOf(-1L) }
-    LaunchedEffect(mediaMetadata.id, isPlaying) {
-        while (isActive) {
-            val d = playerConnection.player.duration
-            if (d > 0) duration = d
-            if (!isScrubbing) {
-                sliderPosition = playerConnection.player.currentPosition.coerceAtLeast(0L)
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(mediaMetadata.id, isPlaying, lifecycleOwner) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (isActive) {
+                val d = playerConnection.player.duration
+                if (d > 0) duration = d
+                if (!isScrubbing) {
+                    sliderPosition = playerConnection.player.currentPosition.coerceAtLeast(0L)
+                }
+                delay(200L)
             }
-            delay(200L)
         }
     }
 
@@ -360,42 +353,39 @@ internal fun SimpMusicFullscreenLyricsSheet(
         Box(modifier = Modifier.fillMaxSize()) {
 
             Box(
-                modifier =
-                    Modifier.fillMaxSize().let { base ->
-                        if (popupBackdrop != null && showAnchoredLyricsMenu) {
-                            base.layerBackdrop(popupBackdrop)
-                        } else {
-                            base
-                        }
-                    },
+                modifier = Modifier.fillMaxSize(),
             ) {
 
             Box(
                 modifier =
                     Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.linearGradient(
-                                colors =
-                                    listOf(
-                                        startColor,
-                                        midColor1,
-                                        midColor2,
-                                        endColor.copy(alpha = 0.9f),
-                                        endColor,
-                                    ),
-                                start =
-                                    Offset(
-                                        x = animatedOffsetX + (cos(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
-                                        y = animatedOffsetY + (sin(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
-                                    ),
-                                end =
-                                    Offset(
-                                        x = animatedOffsetX + 2500f + (cos((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
-                                        y = animatedOffsetY + 2500f + (sin((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
-                                    ),
-                            ),
-                        ),
+                        // Drawn rather than set with background(): the three infinite animations
+                        // are read here, in the draw phase, so they never recompose the sheet.
+                        .drawBehind {
+                            drawRect(
+                                Brush.linearGradient(
+                                    colors =
+                                        listOf(
+                                            startColor,
+                                            midColor1,
+                                            midColor2,
+                                            endColor.copy(alpha = 0.9f),
+                                            endColor,
+                                        ),
+                                    start =
+                                        Offset(
+                                            x = animatedOffsetX + (cos(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
+                                            y = animatedOffsetY + (sin(animatedAngle * Math.PI.toFloat() / 180f) * 800f),
+                                        ),
+                                    end =
+                                        Offset(
+                                            x = animatedOffsetX + 2500f + (cos((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                            y = animatedOffsetY + 2500f + (sin((animatedAngle + 180f) * Math.PI.toFloat() / 180f) * 800f),
+                                        ),
+                                ),
+                            )
+                        },
             )
 
             Column(
@@ -540,12 +530,11 @@ internal fun SimpMusicFullscreenLyricsSheet(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         } else {
-                            LyricsEnhanced(
+                            SelectedLyrics(
                                 sliderPositionProvider = { if (isScrubbing) sliderPosition else null },
                                 lyricsSyncOffset = lyricsSyncOffset,
                                 modifier = Modifier.fillMaxSize(),
                                 textColorOverride = Color.White,
-                                spotifyStyle = lyricsMode == LyricsMode.SPOTIFY,
                             )
                         }
                     } else {
@@ -782,7 +771,6 @@ internal fun SimpMusicFullscreenLyricsSheet(
                     lyricsSyncOffset = lyricsSyncOffset,
                     onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
                     onDismiss = { showAnchoredLyricsMenu = false },
-                    backdrop = popupBackdrop,
                 )
             }
         }

@@ -1,15 +1,13 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * YumaPlayer (2026) | Modified work by MuwMx
  * ArchiveTune (2026) | Original work by © Rukamori
  * GPL-3.0 License | Contributors: see git history
+ * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
+ * YumaPlayer (2026) | Modified work by MuwMx
  */
+
 
 package moe.rukamori.archivetune.ui.screens
 
@@ -94,8 +92,6 @@ import moe.rukamori.archivetune.ui.component.GridItem
 import moe.rukamori.archivetune.ui.component.ItemThumbnail
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.SpotifyTrackListItem
-import moe.rukamori.archivetune.ui.component.glassAwareCardBorder
-import moe.rukamori.archivetune.ui.component.glassAwareCardColor
 import moe.rukamori.archivetune.ui.component.pressScaleClickable
 import moe.rukamori.archivetune.utils.joinByBullet
 
@@ -199,7 +195,7 @@ fun SpotifyHomeScreen(
         }
     }
 
-    Box(
+    SpotifyHomeLayout(
         modifier = Modifier
             .fillMaxSize()
             .then(
@@ -280,40 +276,11 @@ fun SpotifyHomeScreen(
                             )
                         }
 
-                        val quickPicks = pickQuickPicksSection(state.sections)
-                        if (quickPicks != null) {
-                            item(key = "spotify_quick_picks_header", contentType = "section_header") {
-                                HomeSectionHeader(
-                                    title = stringResource(R.string.quick_picks),
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
-                            item(key = "spotify_quick_picks", contentType = "quick_picks") {
-                                val quickPicksTitle = resolveSpotifySectionTitle(quickPicks)
-                                val onQuickPickClick: (SpotifyTrack) -> Unit = { track ->
-                                    if (mediaMetadata?.spotifyTrackId == track.id) {
-                                        viewModel.cancelSelection()
-                                        playerConnection.player.togglePlayPause()
-                                    } else {
-                                        viewModel.onAction(
-                                            SpotifyHomeAction.TrackClick(track, quickPicks.tracks, quickPicksTitle),
-                                        )
-                                    }
-                                }
-                                // Spotify's own shelf; shown for every Spotify home.
-                                SpotifyQuickPicksCarousel(
-                                    tracks = quickPicks.tracks,
-                                    activeTrackId = mediaMetadata?.spotifyTrackId,
-                                    isPlaying = isPlaying,
-                                    resolvingItemKey = resolvingItemKey,
-                                    onTrackClick = onQuickPickClick,
-                                    modifier = Modifier.animateItem(),
-                                )
-                            }
-                        }
-
-                        // The promoted shelf is skipped here so it is not drawn twice.
-                        state.sections.filterNot { it === quickPicks }.forEachIndexed { index, section ->
+                        // Sections render in the order Spotify's feed returns them. An earlier pass
+                        // hoisted the first track shelf to the top under a "Quick Picks" header with
+                        // a hero carousel; YumaPlayer has neither, and the extra header plus the
+                        // reorder were the most visible reason this screen did not match it.
+                        state.sections.forEachIndexed { index, section ->
                             item(
                                 key = "spotify_section_title_${section.title}_$index",
                                 contentType = "section_header"
@@ -555,7 +522,10 @@ private fun SpotifyHomeCard(
             )
             if (isResolving) SpotifySelectionIndicator()
         },
-        modifier = modifier.pressScaleClickable(onClick = onClick),
+        modifier = modifier
+            .spotifyHomeSurface(RoundedCornerShape(24.dp))
+            .pressScaleClickable(onClick = onClick)
+            .padding(8.dp),
     )
 }
 
@@ -739,18 +709,12 @@ private fun SpotifyQuickGridCell(
     isArtist: Boolean,
     isResolving: Boolean = false,
 ) {
-    // The plate these cells sit on is the page's one card surface: a translucent tint over the glass
-    // backdrop when Liquid Glass is on, the ordinary Material 3 card colour when it is off. It used
-    // to be a fixed white wash, which read as glass whether or not the app was in that look and left
-    // white-on-white text in a light theme.
     val cellShape = RoundedCornerShape(8.dp)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .clip(cellShape)
-            .background(glassAwareCardColor())
-            .glassAwareCardBorder(cellShape)
+            .spotifyHomeSurface(cellShape)
             .pressScaleClickable(onClick = onClick)
     ) {
         AsyncImage(

@@ -1,19 +1,18 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
  * Ported from vivi-music (beta branch) ui/screens/settings/integrations/ListenTogetherSettings.kt (GPL-3.0).
  */
 
+
+
 package moe.rukamori.archivetune.ui.screens.settings
+
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
 
 import android.widget.Toast
 import androidx.compose.foundation.background
@@ -50,8 +49,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -71,7 +68,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -466,7 +462,7 @@ fun ListenTogetherSettings(
                     },
                     title = { Text(stringResource(R.string.listen_together_username)) },
                     description = {
-                        Text(username.ifEmpty { stringResource(R.string.not_set) })
+                        SettingsDescriptionText(username.ifEmpty { stringResource(R.string.not_set) })
                     },
                     onClick = if (roomState == null) {
                         { showUsernameDialog = true }
@@ -478,12 +474,10 @@ fun ListenTogetherSettings(
                     icon = painterResource(R.drawable.cloud),
                     title = { Text(stringResource(R.string.listen_together_server_url)) },
                     description = {
-                        Text(
+                        SettingsDescriptionText(
                             selectedServer?.let { server ->
                                 "${server.name} - ${server.location}"
                             } ?: serverUrl,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
                         )
                     },
                     onClick = { showServerUrlDialog = true }
@@ -822,12 +816,10 @@ private fun ServerChooserDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
+                            SettingsDescriptionText(
                                 text = server.url,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         if (isSelected) {

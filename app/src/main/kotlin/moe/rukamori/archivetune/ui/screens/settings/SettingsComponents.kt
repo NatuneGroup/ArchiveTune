@@ -10,6 +10,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -23,8 +25,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -39,9 +39,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularWavyProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -54,126 +52,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.theme.LocalYumaColors
 import moe.rukamori.archivetune.ui.theme.yumaClickable
 import moe.rukamori.archivetune.ui.theme.yumaGlassCard
 import moe.rukamori.archivetune.ui.theme.yumaSegmentPosition
-@Composable
-fun SettingsProfileHeader(
-    state: SettingsProfileState,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val title =
-        when {
-            state.isLoading -> stringResource(R.string.loading)
-            state.isLoggedIn -> state.accountName.ifBlank { stringResource(R.string.account) }
-            else -> stringResource(R.string.login)
-        }
-    val subtitle =
-        when {
-            state.isLoggedIn && state.accountEmail.isNotBlank() -> state.accountEmail
-            state.isLoggedIn -> state.accountName.ifBlank { null }
-            else -> null
-        }
+import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
+import moe.rukamori.archivetune.constants.DisableBlurKey
+import moe.rukamori.archivetune.utils.StartupSettings
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
+import androidx.compose.runtime.staticCompositionLocalOf
 
-    Card(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .padding(horizontal = SettingsDimensions.ScreenHorizontalPadding)
-                .clickable(onClick = onClick),
-        shape = RoundedCornerShape(SettingsDimensions.BannerCardCornerRadius),
-        colors =
-            CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-            ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(SettingsDimensions.ProfileCardAvatarSize)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (state.isLoading) {
-                    CircularWavyProgressIndicator(
-                        modifier = Modifier.size(SettingsDimensions.BannerIconInnerSize),
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    )
-                } else if (state.isLoggedIn && !state.accountImageUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = state.accountImageUrl,
-                        contentDescription = null,
-                        modifier =
-                            Modifier
-                                .fillMaxSize()
-                                .clip(CircleShape),
-                    )
-                } else {
-                    Icon(
-                        painter =
-                            painterResource(
-                                if (state.isLoggedIn) R.drawable.account else R.drawable.login,
-                            ),
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.size(SettingsDimensions.ProfileCardAvatarIconSize),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(16.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                subtitle?.let { s ->
-                    Text(
-                        text = s,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            Icon(
-                painter = painterResource(R.drawable.navigate_next),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f),
-                modifier = Modifier.size(SettingsDimensions.ChevronSize),
-            )
-        }
-    }
+val LocalSettingsPreferenceSnapshot = staticCompositionLocalOf<PreferenceSnapshot> {
+    error("SettingsScreen must provide its single preference snapshot")
 }
 
 @Composable
@@ -347,187 +245,6 @@ fun SettingsUpdateBanner(
 }
 
 @Composable
-fun SettingsGroupCard(
-    group: SettingsGroup,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier) {
-        Text(
-            text = group.title.uppercase(),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            letterSpacing = MaterialTheme.typography.labelSmall.letterSpacing * 1.2f,
-            modifier =
-                Modifier.padding(
-                    horizontal = SettingsDimensions.SectionHeaderHorizontalPadding,
-                    vertical = SettingsDimensions.SectionHeaderBottomPadding,
-                ),
-        )
-
-        val groupYuma = LocalYumaColors.current
-        Box(
-            modifier =
-                Modifier.yumaGlassCard(
-                    shape = RoundedCornerShape(SettingsDimensions.GroupCardCornerRadius),
-                    backgroundColor = groupYuma.glassBackground,
-                    borderColor = groupYuma.glassBorder,
-                ),
-        ) {
-            Column {
-                group.items.forEachIndexed { index, item ->
-                    SettingsRow(
-                        item = item,
-                        showDivider = index < group.items.size - 1,
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun SettingsRow(
-    item: SettingsItem,
-    showDivider: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    val effectiveAccent =
-        if (item.accentColor.isSpecified) {
-            item.accentColor
-        } else {
-            MaterialTheme.colorScheme.primary
-        }
-
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.98f else 1f,
-        animationSpec = SettingsAnimations.pressSpring(),
-        label = "rowScale",
-    )
-    val bgAlpha by animateFloatAsState(
-        targetValue = if (isPressed) 0.06f else 0f,
-        animationSpec = SettingsAnimations.pressSpring(),
-        label = "rowBgAlpha",
-    )
-
-    Column(modifier = modifier) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .graphicsLayer {
-                        scaleX = scale
-                        scaleY = scale
-                    }.background(MaterialTheme.colorScheme.primary.copy(alpha = bgAlpha))
-                    .focusable()
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = item.onClick,
-                    ).padding(
-                        horizontal = SettingsDimensions.RowHorizontalPadding,
-                        vertical = SettingsDimensions.RowVerticalPadding,
-                    ),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(SettingsDimensions.RowIconSize)
-                        .clip(CircleShape)
-                        .background(effectiveAccent.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (item.showUpdateIndicator) {
-                    BadgedBox(
-                        badge = {
-                            Badge(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(8.dp),
-                            )
-                        },
-                    ) {
-                        Icon(
-                            painter = item.icon,
-                            contentDescription = null,
-                            tint = effectiveAccent,
-                            modifier = Modifier.size(SettingsDimensions.RowIconInnerSize),
-                        )
-                    }
-                } else {
-                    Icon(
-                        painter = item.icon,
-                        contentDescription = null,
-                        tint = effectiveAccent,
-                        modifier = Modifier.size(SettingsDimensions.RowIconInnerSize),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(14.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                item.subtitle?.let { subtitle ->
-                    Spacer(modifier = Modifier.height(1.dp))
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color =
-                            if (item.showUpdateIndicator) {
-                                effectiveAccent
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            item.badge?.let { badge ->
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ) {
-                    Text(
-                        text = badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(4.dp))
-
-            Icon(
-                painter = painterResource(R.drawable.navigate_next),
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                modifier = Modifier.size(SettingsDimensions.ChevronSize),
-            )
-        }
-
-        if (showDivider) {
-            HorizontalDivider(
-                modifier = Modifier.padding(start = SettingsDimensions.DividerStartIndent),
-                thickness = SettingsDimensions.DividerThickness,
-                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
-            )
-        }
-    }
-}
-
-@Composable
 fun SettingsSectionLabel(
     text: String,
     modifier: Modifier = Modifier,
@@ -601,7 +318,7 @@ fun SettingsSegmentedItem(
                         },
                     ) {
                         Icon(
-                            painter = item.icon,
+                            painter = painterResource(item.icon),
                             contentDescription = null,
                             tint = iconContentColor,
                             modifier = Modifier.size(SettingsDimensions.SegmentedIconSize),
@@ -609,7 +326,7 @@ fun SettingsSegmentedItem(
                     }
                 } else {
                     Icon(
-                        painter = item.icon,
+                        painter = painterResource(item.icon),
                         contentDescription = null,
                         tint = iconContentColor,
                         modifier = Modifier.size(SettingsDimensions.SegmentedIconSize),
@@ -633,12 +350,10 @@ fun SettingsSegmentedItem(
                 )
                 item.subtitle?.let { subtitle ->
                     Spacer(modifier = Modifier.height(SettingsDimensions.RowTextSpacing))
-                    Text(
+                    SettingsDescriptionText(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -738,98 +453,6 @@ internal fun segmentedSettingsItemShape(
 }
 
 @Composable
-fun SettingsFlatItem(
-    item: SettingsItem,
-    modifier: Modifier = Modifier,
-) {
-    val effectiveAccent =
-        if (item.accentColor.isSpecified) {
-            item.accentColor
-        } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
-        }
-
-    Surface(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable(onClick = item.onClick),
-        color = Color.Transparent,
-    ) {
-        Row(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (item.showUpdateIndicator) {
-                BadgedBox(
-                    badge = {
-                        Badge(
-                            containerColor = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.size(8.dp),
-                        )
-                    },
-                    modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                ) {
-                    Icon(
-                        painter = item.icon,
-                        contentDescription = null,
-                        tint = effectiveAccent,
-                    )
-                }
-            } else {
-                Icon(
-                    painter = item.icon,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 8.dp, end = 16.dp),
-                )
-            }
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.title,
-                    maxLines = if (item.subtitle == null) 2 else 1,
-                    style = MaterialTheme.typography.titleLarge.copy(fontSize = 20.sp),
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-                item.subtitle?.let { subtitle ->
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color =
-                            if (item.showUpdateIndicator) {
-                                effectiveAccent
-                            } else {
-                                MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                            },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-            }
-
-            item.badge?.let { badge ->
-                Spacer(modifier = Modifier.width(6.dp))
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                ) {
-                    Text(
-                        text = badge,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
 fun SettingsSearchResultItem(
     result: SearchResultItem,
     onClick: () -> Unit,
@@ -854,50 +477,67 @@ fun SettingsSearchResultItem(
                     borderColor = resultYuma.glassBorder,
                 ).yumaClickable(onClick = onClick),
     ) {
-        Row(
+        Column(
             modifier =
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(effectiveAccent.copy(alpha = 0.12f)),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Icon(
-                    painter = result.parentIcon,
-                    contentDescription = null,
-                    tint = effectiveAccent,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = result.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (result.parentTitle.isNotBlank()) {
+                Box(
+                    modifier =
+                        Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(effectiveAccent.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(result.parentIcon),
+                        contentDescription = null,
+                        tint = effectiveAccent,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = result.parentTitle,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        text = result.title,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
+                    if (result.parentTitle.isNotBlank()) {
+                        SettingsDescriptionText(
+                            text = result.parentTitle,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+                result.switchControl?.let { switchControl ->
+                    Spacer(Modifier.width(12.dp))
+                    switchControl()
                 }
             }
-            result.switchControl?.let { switchControl ->
-                Spacer(Modifier.width(12.dp))
-                switchControl()
+            result.restartPending?.let { restartPending ->
+                val prefs = LocalSettingsPreferenceSnapshot.current
+                RestartToApplyNotice(visible = restartPending(StartupSettings.pending(prefs.current)))
+            }
+            if (result.blurOverridden) {
+                val blurDisabled = LocalSettingsPreferenceSnapshot.current[DisableBlurKey, false]
+                if (blurDisabled) {
+                    Text(
+                        text = stringResource(R.string.blur_setting_overridden),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 56.dp, top = 4.dp),
+                    )
+                }
             }
         }
     }

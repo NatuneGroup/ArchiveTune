@@ -1,0 +1,393 @@
+/*
+ * ArchiveTune (2026)
+ * © Rukamori — github.com/rukamori
+ * GPL-3.0 License | Contributors: see git history
+ *
+ * JNI bridges for the 32-bit float DSP and the AAudio exclusive output.
+ *
+ * Kotlin hosts:
+ *  - moe.rukamori.archivetune.playback.dsp.FloatDsp        (object, static methods)
+ *  - moe.rukamori.archivetune.playback.dsp.AaudioNativeStream (instance, long handle)
+ *
+ * Buffer convention: media3 audio processors hand out DIRECT ByteBuffers
+ * (little-endian PCM); every buffer argument here must be direct so the
+ * address can be taken without a copy.
+ */
+
+#include <jni.h>
+
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <memory>
+#include <vector>
+
+#include "dsp/float_dsp.h"
+#include "dsp/aaudio_output.h"
+
+#define JNI_FUNC_FLOATDSP(name) \
+    Java_moe_rukamori_archivetune_playback_dsp_FloatDsp_##name
+#define JNI_FUNC_AASTREAM(name) \
+    Java_moe_rukamori_archivetune_playback_dsp_AaudioNativeStream_##name
+
+using archivetune::dsp::FloatDsp;
+using archivetune::dsp::AaudioExclusiveStream;
+
+namespace {
+
+inline FloatDsp* dspOf(jlong handle) {
+    return reinterpret_cast<FloatDsp*>(static_cast<intptr_t>(handle));
+}
+
+inline AaudioExclusiveStream* streamOf(jlong handle) {
+    return reinterpret_cast<AaudioExclusiveStream*>(static_cast<intptr_t>(handle));
+}
+
+float* directFloats(JNIEnv* env, jobject buffer, jint samples) {
+    auto* ptr = static_cast<float*>(env->GetDirectBufferAddress(buffer));
+    if (ptr == nullptr) return nullptr;
+    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(samples) * 4) return nullptr;
+    return ptr;
+}
+int16_t* directShorts(JNIEnv* env, jobject buffer, jint samples) {
+    auto* ptr = static_cast<int16_t*>(env->GetDirectBufferAddress(buffer));
+    if (ptr == nullptr) return nullptr;
+    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(samples) * 2) return nullptr;
+    return ptr;
+}
+
+// The input window [offsetBytes, offsetBytes + bytes) of a direct buffer, or
+// null if it does not fit.
+const uint8_t* directWindow(JNIEnv* env, jobject buffer, jint offsetBytes, jlong bytes) {
+    auto* base = static_cast<const uint8_t*>(env->GetDirectBufferAddress(buffer));
+    if (base == nullptr || offsetBytes < 0) return nullptr;
+    if (env->GetDirectBufferCapacity(buffer) < static_cast<jlong>(offsetBytes) + bytes) return nullptr;
+    return base + offsetBytes;
+}
+
+// Bounds frames * channels well inside jint.
+bool validShape(jint frames, jint channels) {
+    return frames > 0 && frames <= (1 << 24) && channels > 0 && channels <= 32;
+}
+
+// Reused across calls so the audio thread allocates only when a block is
+// larger than any seen before.
+std::vector<float>& scratchFor(size_t samples) {
+    thread_local std::vector<float> scratch;
+    if (scratch.size() < samples) scratch.resize(samples);
+    return scratch;
+}
+
+}  // namespace
+
+// ---------------------------------------------------------------------------
+// FloatDsp (Kotlin object — static natives)
+// ---------------------------------------------------------------------------
+
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_FLOATDSP(nativeCreate)(
+    JNIEnv* env, jclass, jint sampleRate, jint channels) {
+    try {
+        return reinterpret_cast<jlong>(new FloatDsp(sampleRate, channels));
+    } catch (...) {
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeRelease)(
+    JNIEnv*, jclass, jlong handle) {
+    delete dspOf(handle);
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeSetEngaged)(
+    JNIEnv*, jclass, jlong handle, jboolean engaged) {
+    if (FloatDsp* dsp = dspOf(handle)) {
+        dsp->setEngaged(engaged != JNI_FALSE);
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeReset)(
+    JNIEnv*, jclass, jlong handle) {
+    if (FloatDsp* dsp = dspOf(handle)) {
+        dsp->reset();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeSetLimiterCeiling)(
+    JNIEnv*, jclass, jlong handle, jfloat ceilingDb) {
+    if (FloatDsp* dsp = dspOf(handle)) {
+        dsp->setLimiterCeilingDb(ceilingDb);
+    }
+}
+
+// 16-bit in (window starts at inOffsetBytes) -> float out. frames*channels
+// samples on both sides.
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToFloat)(
+    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
+    jint frames, jint channels) {
+    try {
+        FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
+        const jint samples = frames * channels;
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
+        auto* outPtr = directFloats(env, out, samples);
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
+        for (jint i = 0; i < samples; ++i) {
+            outPtr[i] = static_cast<float>(inPtr[i]) / 32768.0f;
+        }
+        dsp->process(outPtr, frames, channels);
+    } catch (...) {
+    }
+}
+
+// float in (window starts at inOffsetBytes) -> float out.
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessFloatToFloat)(
+    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
+    jint frames, jint channels) {
+    try {
+        FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
+        const jint samples = frames * channels;
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 4);
+        auto* outPtr = directFloats(env, out, samples);
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const float*>(inBytes);
+        std::memmove(outPtr, inPtr, static_cast<size_t>(samples) * sizeof(float));
+        dsp->process(outPtr, frames, channels);
+    } catch (...) {
+    }
+}
+
+// 16-bit in (window starts at inOffsetBytes) -> dithered 16-bit out (the
+// default-sink path).
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_FLOATDSP(nativeProcessShortToShort)(
+    JNIEnv* env, jclass, jlong handle, jobject in, jint inOffsetBytes, jobject out,
+    jint frames, jint channels) {
+    try {
+        FloatDsp* dsp = dspOf(handle);
+        if (!validShape(frames, channels)) return;
+        const jint samples = frames * channels;
+        const auto* inBytes = directWindow(env, in, inOffsetBytes, static_cast<jlong>(samples) * 2);
+        auto* outPtr = directShorts(env, out, samples);
+        if (dsp == nullptr || inBytes == nullptr || outPtr == nullptr) return;
+        const auto* inPtr = reinterpret_cast<const int16_t*>(inBytes);
+        // Convert up, process in 32-bit float, dither back down.
+        float* scratch = scratchFor(static_cast<size_t>(samples)).data();
+        for (jint i = 0; i < samples; ++i) {
+            scratch[i] = static_cast<float>(inPtr[i]) / 32768.0f;
+        }
+        dsp->process(scratch, frames, channels);
+        dsp->toShort(scratch, outPtr, static_cast<size_t>(samples));
+    } catch (...) {
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AaudioNativeStream (Kotlin class — instance natives with a long handle)
+// ---------------------------------------------------------------------------
+
+namespace {
+thread_local jint gLastOpenError = 0;
+}  // namespace
+
+// Returns the stream handle, or 0 on failure with the AAudio code kept for
+// nativeLastOpenError. The handle's sign carries no meaning: arm64 heap
+// pointers are tagged in the top byte, so a valid handle is often negative.
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativeOpen)(
+    JNIEnv*, jobject, jint sampleRate, jint channels, jint deviceId,
+    jboolean exclusive, jint usage, jint contentType, jint bufferCapacityFrames) {
+    gLastOpenError = 0;
+    try {
+        auto* stream = new AaudioExclusiveStream();
+        const int32_t result = stream->open(
+            sampleRate, channels, deviceId, exclusive != JNI_FALSE,
+            usage, contentType, bufferCapacityFrames);
+        if (result != 0 /* AAUDIO_OK */) {
+            delete stream;
+            gLastOpenError = result;
+            return 0;
+        }
+        return reinterpret_cast<jlong>(stream);
+    } catch (...) {
+        gLastOpenError = -896 /* AAUDIO_ERROR_INTERNAL */;
+        return 0;
+    }
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeLastOpenError)(
+    JNIEnv*, jobject) {
+    return gLastOpenError;
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeClose)(
+    JNIEnv*, jobject, jlong handle) {
+    AaudioExclusiveStream* stream = streamOf(handle);
+    if (stream != nullptr) {
+        stream->close();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeRelease)(
+    JNIEnv*, jobject, jlong handle) {
+    delete streamOf(handle);
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeStart)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        stream->requestStart();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativePause)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        stream->requestPause();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeFlush)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        stream->requestFlush();
+    }
+}
+
+extern "C" JNIEXPORT void JNICALL JNI_FUNC_AASTREAM(nativeStop)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        stream->requestStop();
+    }
+}
+
+/**
+ * Blocking write of a DIRECT PCM ByteBuffer's [position, limit) window,
+ * scaled by volume. `isFloat` selects the encoding of the buffer's contents;
+ * the AAudio stream itself is always float — 16-bit input is up-converted on
+ * the way in. Returns frames written, or a negative AAudio error code.
+ */
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeWrite)(
+    JNIEnv* env, jobject, jlong handle, jobject buffer, jint offsetBytes,
+    jint frames, jint channels, jboolean isFloat, jfloat volume, jint timeoutMs) {
+    try {
+        AaudioExclusiveStream* stream = streamOf(handle);
+        if (stream == nullptr) return -899 /* AAUDIO_ERROR_INVALID_STATE */;
+        if (!validShape(frames, channels)) return -898 /* AAUDIO_ERROR_ILLEGAL_ARGUMENT */;
+        const jint samples = frames * channels;
+        auto* base = static_cast<uint8_t*>(env->GetDirectBufferAddress(buffer));
+        const jlong capacity = env->GetDirectBufferCapacity(buffer);
+        if (base == nullptr || offsetBytes < 0 ||
+            capacity < static_cast<jlong>(offsetBytes) +
+                           static_cast<jlong>(samples) * (isFloat != JNI_FALSE ? 4 : 2)) {
+            return -898 /* AAUDIO_ERROR_ILLEGAL_ARGUMENT */;
+        }
+        const auto* data = base + offsetBytes;
+        if (isFloat != JNI_FALSE && volume == 1.0f) {
+            // Zero-copy fast path: the chain already produced float PCM at
+            // unity volume — write the window as it sits.
+            return static_cast<jint>(stream->write(
+                reinterpret_cast<const float*>(data),
+                static_cast<size_t>(frames), channels, timeoutMs));
+        }
+        // Convert (and scale) into scratch first.
+        float* scratch = scratchFor(static_cast<size_t>(samples)).data();
+        if (isFloat != JNI_FALSE) {
+            auto* inPtr = reinterpret_cast<const float*>(data);
+            for (jint i = 0; i < samples; ++i) {
+                scratch[i] = inPtr[i] * volume;
+            }
+        } else {
+            auto* inPtr = reinterpret_cast<const int16_t*>(data);
+            for (jint i = 0; i < samples; ++i) {
+                scratch[i] = (static_cast<float>(inPtr[i]) / 32768.0f) * volume;
+            }
+        }
+        return static_cast<jint>(stream->write(
+            scratch, static_cast<size_t>(frames), channels, timeoutMs));
+    } catch (...) {
+        return -900 /* AAUDIO_ERROR_INTERNAL */;
+    }
+}
+
+// Presented frame position, or -1 while the stream has no valid timestamp
+// (not started yet, paused, or stopped). Reporting framesWritten in that case
+// would run the clock ahead by the whole buffer and then jump back. With
+// `extrapolate` the position is advanced from the timestamp's capture time,
+// since AAudio refreshes timestamps only once per burst.
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativePositionFrames)(
+    JNIEnv*, jobject, jlong handle, jboolean extrapolate) {
+    AaudioExclusiveStream* stream = streamOf(handle);
+    if (stream == nullptr) return -1;
+    const AaudioExclusiveStream::Timestamp ts = stream->timestamp();
+    if (!ts.valid) return -1;
+    int64_t position = ts.framePosition;
+    const int32_t rate = stream->sampleRate();
+    if (extrapolate != JNI_FALSE && rate > 0) {
+        timespec now{};
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        const int64_t nowNanos =
+            static_cast<int64_t>(now.tv_sec) * 1000000000LL + now.tv_nsec;
+        const int64_t elapsed = nowNanos - ts.timeNanos;
+        if (elapsed > 0) {
+            position += elapsed * rate / 1000000000LL;
+        }
+    }
+    const int64_t written = stream->framesWritten();
+    return position < written ? position : written;
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeSessionId)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->sessionId();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeSampleRate)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->sampleRate();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeChannelCount)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->channelCount();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jint JNICALL JNI_FUNC_AASTREAM(nativeXRunCount)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->xRunCount();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativeBufferCapacityFrames)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->bufferCapacityFrames();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jlong JNICALL JNI_FUNC_AASTREAM(nativeBufferSizeFrames)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->bufferSizeFrames();
+    }
+    return 0;
+}
+
+extern "C" JNIEXPORT jboolean JNICALL JNI_FUNC_AASTREAM(nativeIsExclusive)(
+    JNIEnv*, jobject, jlong handle) {
+    if (AaudioExclusiveStream* stream = streamOf(handle)) {
+        return stream->isExclusive() ? JNI_TRUE : JNI_FALSE;
+    }
+    return JNI_FALSE;
+}

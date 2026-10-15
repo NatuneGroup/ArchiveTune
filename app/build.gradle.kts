@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.security.MessageDigest
 import java.util.Properties
 
 @DisableCachingByDefault(because = "Validation-only task has no outputs.")
@@ -55,6 +56,47 @@ if (localPropertiesFile.exists()) {
 val baseVersionName = "15.0.0"
 val baseVersionCode = 1500
 
+val forkRevision = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "rev-parse", "--short=12", "HEAD")
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("unknown")
+val forkBranch = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "branch", "--show-current")
+    }.standardOutput.asText.get().trim().ifEmpty { "detached" }
+}.getOrDefault("unknown").filter { it.isLetterOrDigit() || it in "/._-" }
+val forkDirty = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "status", "--porcelain", "--untracked-files=no")
+    }.standardOutput.asText.get().isNotBlank()
+}.getOrDefault(false)
+
+// Settings › Additional downloads fetches optional files from addons/ instead of packing them into
+// the APK. The URL pins the last commit that touched addons/ and the digest is this build's copy,
+// so an installed app always fetches the exact bytes it was built with, however later releases
+// change them. Empty outside a git checkout, which hides the downloads rather than guessing.
+val addonsRevision = runCatching {
+    providers.exec {
+        workingDir(rootDir)
+        commandLine("git", "log", "-1", "--format=%H", "--", "addons")
+    }.standardOutput.asText.get().trim()
+}.getOrDefault("")
+val addonsBaseUrl =
+    if (addonsRevision.length == 40) {
+        "https://raw.githubusercontent.com/NatuneGroup/ArchiveTune/$addonsRevision/addons"
+    } else {
+        ""
+    }
+fun addonSha256(relativePath: String): String =
+    rootDir.resolve("addons/$relativePath").takeIf { it.isFile }?.let { file ->
+        MessageDigest.getInstance("SHA-256").digest(file.readBytes())
+            .joinToString("") { "%02x".format(it) }
+    } ?: ""
+
 val discordApplicationId =
     (
         localProperties.getProperty("DISCORD_APPLICATION_ID")
@@ -105,6 +147,12 @@ tasks.configureEach {
 // committed debug keystore was removed from the tree (same key now lives only in
 // GitHub Secrets) and must not be restored.
 
+// Automix's local beat/vocal analysis runs on ONNX models through the onnxruntime AAR:
+// ~27 MiB of native runtime per ABI (double in a universal APK) plus ~13 MiB of models.
+// Off by default — the slim APK ships without either and the analyzers fall back to the
+// plain crossfade path, which they already treat as a missing model. CI builds the full
+// variant as a separate artifact with -Pautomix=true.
+val automix = (project.findProperty("automix") as String?)?.toBoolean() ?: false
 android {
     namespace = "moe.rukamori.archivetune"
     compileSdk = 37
@@ -124,6 +172,15 @@ android {
         versionCode = System.getenv("VERSION_CODE_OVERRIDE")?.trim()?.toIntOrNull() ?: baseVersionCode
         versionName =
             System.getenv("VERSION_NAME_OVERRIDE")?.trim()?.takeIf { it.isNotEmpty() } ?: baseVersionName
+        buildConfigField("String", "FORK_REVISION", "\"$forkRevision\"")
+        buildConfigField("String", "FORK_BRANCH", "\"$forkBranch\"")
+        buildConfigField("boolean", "FORK_DIRTY", forkDirty.toString())
+        buildConfigField("String", "ADDONS_BASE_URL", "\"$addonsBaseUrl\"")
+        buildConfigField(
+            "String",
+            "SPATIALFLOW_FONT_SHA256",
+            "\"${addonSha256("fonts/spatialflow_google_sans_flex.ttf")}\"",
+        )
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -172,7 +229,7 @@ android {
             "String",
             "TDLIB_NATIVE_BASE_URL",
             "\"${project.findProperty("tdlibNativeBaseUrl") as String?
-                ?: "https://github.com/4nx3b/ArchiveTune/releases/download/tdlight-2b51b33"}\"",
+                ?: "https://github.com/NatuneGroup/ArchiveTune/releases/download/tdlight-2b51b33"}\"",
         )
 
         // Base URL of the community Source Pool website (Next.js). When set, the app auto-discovers
@@ -250,15 +307,15 @@ android {
                 .trim()
                 .equals("true", ignoreCase = true)
         buildConfigField("boolean", "IS_NIGHTLY", "$isNightlyBuild")
-        // True only for builds produced by the canary workflow (it sets IS_CANARY_BUILD), which
-        // tracks the separate `canary` branch. Defaults the updater to the CANARY channel.
-        val isCanaryBuild =
-            (System.getenv("IS_CANARY_BUILD") ?: localProperties.getProperty("IS_CANARY_BUILD") ?: "")
-                .trim()
-                .equals("true", ignoreCase = true)
-        buildConfigField("boolean", "IS_CANARY", "$isCanaryBuild")
         buildConfigField("String", "DISTRIBUTION", "\"gms\"")
         buildConfigField("boolean", "UPDATER_AVAILABLE", "true")
+        // The LastWave engine links Google Oboe (prefab), which requires the
+        // shared C++ STL. All native targets then build against c++_shared.
+        externalNativeBuild {
+            cmake {
+                arguments += "-DANDROID_STL=c++_shared"
+            }
+        }
     }
 
     flavorDimensions += listOf("distribution", "device", "abi")
@@ -289,6 +346,7 @@ android {
         create("tv") {
             dimension = "device"
             buildConfigField("String", "DEVICE", "\"tv\"")
+            ndk { abiFilters += listOf("armeabi-v7a", "x86") }
         }
         create("automotive") {
             dimension = "device"
@@ -348,10 +406,22 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Slim builds do not package the runtime, so keeping the whole package there would
+            // only pin dead classes into the dex.
+            if (automix) proguardFiles("proguard-onnx.pro")
         }
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
+            val qaOptimized = providers.gradleProperty("qaOptimized").orNull?.toBoolean() ?: false
+            isMinifyEnabled = qaOptimized
+            isShrinkResources = qaOptimized
+            if (qaOptimized) {
+                proguardFiles(
+                    getDefaultProguardFile("proguard-android-optimize.txt"),
+                    "proguard-rules.pro",
+                )
+            }
         }
     }
 
@@ -377,10 +447,71 @@ android {
         warningsAsErrors = false
         abortOnError = false
         checkDependencies = false
+        // lintVital re-analyses the whole app on every assembleRelease and, with abortOnError off,
+        // can never fail the build. On a 4-vCPU runner it ran beside R8 for minutes and slowed it.
+        // PR builds still run the full :app:lint task.
+        checkReleaseBuilds = false
     }
 
     androidResources {
         generateLocaleConfig = true
+        // Restrict resource locales to the languages the app itself ships translations for
+        // (app/src/main/res/values-*) plus the base languages of every entry in the in-app
+        // language picker (LanguageCodeToName), so androidx/Play/Media3 translations for
+        // other locales are dropped from resources.arsc. Measured against the canary APK:
+        // ~1.16 MB of the stored (uncompressible) resources.arsc. Entries use aapt2 -c
+        // qualifier syntax ("de-rDE", "zh-rTW"); "in"/"iw" are the legacy Java codes aapt2
+        // normalizes to id/he, "nb" covers the picker's "no". The default (English) config
+        // is always kept and must not be listed.
+        localeFilters += listOf(
+            "en",
+            "en-rGB",
+            "ar",
+            "arz",
+            "bg",
+            "cs",
+            "da",
+            "de",
+            "de-rDE",
+            "el",
+            "es",
+            "et",
+            "fi",
+            "fr",
+            "hi",
+            "hr",
+            "hu",
+            "in",
+            "in-rID",
+            "it",
+            "iw",
+            "ja",
+            "jv",
+            "ko",
+            "lt",
+            "lv",
+            "ml",
+            "ms",
+            "nb",
+            "nl",
+            "pl",
+            "pt",
+            "pt-rBR",
+            "ro",
+            "ru",
+            "sa",
+            "sk",
+            "sr",
+            "sv",
+            "ta",
+            "th",
+            "tr",
+            "uk",
+            "ur",
+            "vi",
+            "zh-rCN",
+            "zh-rTW",
+        )
     }
 
     // Automix's native analysis front end (tempo/key/energy/structure DSP plus the mel and vocal
@@ -401,6 +532,19 @@ android {
             if ((project.findProperty("slimTdlib") as String?)?.toBoolean() ?: true) {
                 excludes += "**/libtdjni.so"
             }
+            if (!automix) {
+                excludes += listOf(
+                    "**/libonnxruntime.so",
+                    "**/libonnxruntime4j_jni.so",
+                )
+            } else {
+                // Analysis targets arm64 phones; the x86_64 copy exists for emulators and
+                // Chromebooks and doubles the runtime's cost in a universal APK.
+                excludes += listOf(
+                    "lib/x86_64/libonnxruntime.so",
+                    "lib/x86_64/libonnxruntime4j_jni.so",
+                )
+            }
             keepDebugSymbols += listOf(
                 "**/libandroidx.graphics.path.so",
                 "**/libdatastore_shared_counter.so"
@@ -413,6 +557,14 @@ android {
             excludes += "META-INF/LICENSE.md"
             // Installed on demand from Lyrics settings; saves roughly 13 MiB per APK.
             excludes += "com/atilika/kuromoji/ipadic/*.bin"
+            // BouncyCastle PQ legacy parameters and localized error strings ship inside bcpkix/bcprov
+            // jars but are only reachable through the desktop PQ APIs the app never calls; upstream
+            // excludes them. Dropped by mistake during the packaging-block rewrite — ~1.17 MiB.
+            excludes += "org/bouncycastle/pqc/legacy/picnic/**"
+            excludes += "org/bouncycastle/x509/CertPathReviewerMessages*.properties"
+            // org/mozilla/javascript/resources and org/commonmark/internal/util hold no classes,
+            // only properties files read at runtime (Rhino's message bundle, commonmark's HTML
+            // entity table, loaded by a static initializer); excluding them crashes on first use.
             // Additional safe META-INF / metadata excludes — none of these are read at runtime by
             // the app or any of its libraries (verified by checking for ServiceLoader / reflection
             // usage on each). They are pure build-time / IDE metadata and just bloat every APK.
@@ -437,6 +589,14 @@ android {
             excludes += "META-INF/build.archives"
             excludes += "META-INF/com.android.tools/**"
             excludes += "META-INF/proguard/**"
+        }
+    }
+
+    if (automix) {
+        // The analysis models ride in their own asset dir so the default APK never
+        // packages them; the trackers already treat a missing asset as no analysis.
+        sourceSets.getByName("main") {
+            assets.srcDir("src/automix/assets")
         }
     }
 
@@ -471,7 +631,6 @@ dependencies {
     implementation(libs.hilt.navigation)
     implementation(libs.datastore)
     implementation(libs.work.runtime)
-    implementation("androidx.browser:browser:1.10.0")
 
     implementation(libs.compose.runtime)
     implementation(libs.compose.foundation)
@@ -516,8 +675,12 @@ dependencies {
     implementation("androidx.glance:glance-appwidget:1.1.1")
     implementation("androidx.glance:glance-material3:1.1.1")
 
+    implementation(libs.androidx.webkit)
+
     implementation(libs.media3)
     implementation("androidx.media3:media3-exoplayer-hls:${libs.versions.media3.get()}")
+    // LastWave audio engine output backend (Oboe/AAudio, prefab)
+    implementation("com.google.oboe:oboe:1.11.0")
     implementation(libs.media3.session)
     implementation(libs.media3.okhttp)
     implementation("androidx.media3:media3-ui:${libs.versions.media3.get()}")
@@ -572,11 +735,14 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.json)
-    // InnerTubeX — first extractor tier behind playback/stream/AudioStreamRepository. Its own
+    // InnerTubeX — first extractor tier behind the shipped YouTube resolver. Its own
     // InnerTube client and cipher stack sit beside :core's; they share no package namespace, so
     // the NewPipe extractor classes are unaffected.
     implementation(libs.innertubex)
-    implementation(libs.kotlinx.serialization.protobuf)
+    // The same MetrolistExtractor artifact :core already ships (core declares it `implementation`,
+    // so it is not on :app's compile classpath). Declared here only so the NewPipe tier can drive
+    // NewPipe's stream extractor directly; Gradle resolves one copy, so the APK does not grow.
+    implementation(libs.metrolist.extractor)
     implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.cio)

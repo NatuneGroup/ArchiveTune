@@ -31,7 +31,6 @@ package moe.rukamori.archivetune.ui.component
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.foundation.MutatorMutex
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.snapshotFlow
@@ -45,10 +44,10 @@ import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.util.fastFirstOrNull
 import androidx.compose.ui.unit.IntSize
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.withFrameNanos
@@ -180,9 +179,11 @@ class LiquidGlassDragAnimation(
     private val scaleYAnimation =
         Animatable(initialScale, 0.001f)
 
-    private val mutatorMutex = MutatorMutex()
-
-    private val velocityTracker = VelocityTracker()
+    // The release job is held so a stale relax wait (it suspends until the pill's slide settles)
+    // is cancelled by the next press instead of piling up: a tap burst used to stack several
+    // release waits and keep the glass inflated and wobbling. Repeated presses need no holder —
+    // each Animatable restarts its own animateTo from the current value.
+    private var releaseJob: Job? = null
 
     val value: Float get() = valueAnimation.value
     val targetValue: Float get() = valueAnimation.targetValue
@@ -229,7 +230,10 @@ class LiquidGlassDragAnimation(
     }
 
     fun press() {
-        velocityTracker.resetTracking()
+        // A new press supersedes a relax that is still pending, and repeated presses continue
+        // the same expansion (each Animatable restarts from its current value, never from 0).
+        releaseJob?.cancel()
+        releaseJob = null
         animationScope.launch {
             launch { pressProgressAnimation.animateTo(1f, pressProgressAnimationSpec) }
             launch { scaleXAnimation.animateTo(pressedScale, scaleXAnimationSpec) }
@@ -238,16 +242,18 @@ class LiquidGlassDragAnimation(
     }
 
     fun release() {
-        animationScope.launch {
-            awaitFrame()
-            if (value != targetValue) {
-                val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
-                snapshotFlow { valueAnimation.value }.first { abs(it - valueAnimation.targetValue) < threshold }
+        releaseJob?.cancel()
+        releaseJob =
+            animationScope.launch {
+                awaitFrame()
+                if (value != targetValue) {
+                    val threshold = (valueRange.endInclusive - valueRange.start) * 0.025f
+                    snapshotFlow { valueAnimation.value }.first { abs(it - valueAnimation.targetValue) < threshold }
+                }
+                launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
+                launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
+                launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
             }
-            launch { pressProgressAnimation.animateTo(0f, pressProgressAnimationSpec) }
-            launch { scaleXAnimation.animateTo(initialScale, scaleXAnimationSpec) }
-            launch { scaleYAnimation.animateTo(initialScale, scaleYAnimationSpec) }
-        }
     }
 
     fun updateValue(value: Float) {
@@ -258,25 +264,24 @@ class LiquidGlassDragAnimation(
     }
 
     fun animateToValue(value: Float) {
+        val targetValue = value.coerceIn(valueRange)
+        val hadVelocity = velocity != 0f
+        press()
         animationScope.launch {
-            mutatorMutex.mutate {
-                press()
-                val targetValue = value.coerceIn(valueRange)
-                launch { valueAnimation.animateTo(targetValue, valueAnimationSpec) }
-                if (velocity != 0f) {
-                    launch { velocityAnimation.animateTo(0f, velocityAnimationSpec) }
-                }
-                release()
+            valueAnimation.animateTo(targetValue, valueAnimationSpec)
+            if (hadVelocity) {
+                velocityAnimation.animateTo(0f, velocityAnimationSpec)
             }
         }
+        release()
     }
 
     private fun updateVelocity() {
-        velocityTracker.addPosition(
-            System.currentTimeMillis(),
-            Offset(value, 0f),
-        )
-        val targetVelocity = velocityTracker.calculateVelocity().x / (valueRange.endInclusive - valueRange.start)
+        // The squash/stretch driver reads the value animation's own velocity. It advances in
+        // play time — the same scaled clock the pill's motion runs on — so the stretch stays
+        // honest at every animator scale, where a wall-clock tracker would exaggerate it below
+        // 1x and flatten it above.
+        val targetVelocity = valueAnimation.velocity / (valueRange.endInclusive - valueRange.start)
         animationScope.launch { velocityAnimation.animateTo(targetVelocity, velocityAnimationSpec) }
     }
 }

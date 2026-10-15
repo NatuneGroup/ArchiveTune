@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.applemusic
 
@@ -35,11 +31,6 @@ object AppleMusicVirtualStream {
         val offset: Int,
         val size: Int,
         val headerSize: Int,
-    )
-
-    private class ParsedPlaylistInfo(
-        val mediaUrl: String,
-        val durationsSec: List<Double>,
     )
 
     /** Result of [build]: the virtual stream bytes plus the raw DRM URI (Apple's `uri` field). */

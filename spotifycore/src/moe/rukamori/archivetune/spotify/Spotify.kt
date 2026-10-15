@@ -22,9 +22,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.content.TextContent
+import io.ktor.http.encodeURLPathPart
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -65,7 +65,10 @@ object Spotify {
     @Volatile
     var accessToken: String? = null
 
+    private val graphQlCooldown = SpotifyRequestCooldown()
+
     private const val GQL_URL = "https://api-partner.spotify.com/pathfinder/v2/query"
+    private const val SPCLIENT_URL = "https://spclient.wg.spotify.com"
 
     private fun randomUserAgent(): String {
         val osOptions =
@@ -91,6 +94,11 @@ object Spotify {
 
     private val restClient by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) {
                 json(json)
             }
@@ -109,6 +117,7 @@ object Spotify {
         HttpClient(OkHttp) {
             engine {
                 config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
                     connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
                     readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
                     writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -130,6 +139,7 @@ object Spotify {
         override val message: String,
         val retryAfterSec: Long = 0,
         cause: Throwable? = null,
+        val quotaExceeded: Boolean = false,
     ) : Exception(message, cause)
 
     @Volatile
@@ -201,7 +211,7 @@ object Spotify {
 
         for ((hashIdx, sha256Hash) in hashCandidates.withIndex()) {
             val body = buildGqlBody(operationName, sha256Hash, variables)
-            val result = executeGqlWithRetries(operationName, token, body)
+            val result = executeGqlRequest(operationName, token, body)
 
             if (result.isPersistedQueryNotFound) {
                 if (hashIdx < hashCandidates.lastIndex) {
@@ -240,69 +250,66 @@ object Spotify {
         val isPersistedQueryNotFound: Boolean,
     )
 
-    private suspend fun executeGqlWithRetries(
+    private suspend fun executeGqlRequest(
         operationName: String,
         token: String,
         body: JsonObject,
     ): GqlResult {
-        val maxRetries = 3
-        for (attempt in 0 until maxRetries) {
-            log(
-                "D",
-                "GQL POST $operationName" +
-                    if (attempt > 0) " [retry $attempt]" else "",
+        val blockedSeconds = graphQlCooldown.remainingSeconds()
+        if (blockedSeconds > 0L) {
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSeconds, quotaExceeded = graphQlCooldown.quotaExceeded)
+        }
+        log("D", "GQL POST $operationName")
+
+        val response =
+            gqlClient.post(GQL_URL) {
+                header("Authorization", "Bearer $token")
+                setBody(
+                    TextContent(
+                        body.toString(),
+                        ContentType.Application.Json.withParameter("charset", "UTF-8"),
+                    ),
+                )
+            }
+
+        log("D", "GQL POST $operationName -> ${response.status.value}")
+
+        if (response.status == HttpStatusCode.Unauthorized) {
+            throw SpotifyException(401, "Token expired or invalid")
+        }
+        if (response.status == HttpStatusCode.TooManyRequests) {
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val retryAfter = graphQlCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
+            log("W", "GQL $operationName -> 429, GraphQL calls are blocked for ${retryAfter}s")
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = retryAfter,
+                quotaExceeded = quotaExceeded,
             )
-
-            val response =
-                gqlClient.post(GQL_URL) {
-                    header("Authorization", "Bearer $token")
-                    setBody(
-                        TextContent(
-                            body.toString(),
-                            ContentType.Application.Json.withParameter("charset", "UTF-8"),
-                        ),
-                    )
-                }
-
-            log("D", "GQL POST $operationName -> ${response.status.value}")
-
-            if (response.status == HttpStatusCode.Unauthorized) {
-                throw SpotifyException(401, "Token expired or invalid")
-            }
-            if (response.status == HttpStatusCode.TooManyRequests) {
-                val retryAfter = response.headers["Retry-After"]?.toLongOrNull() ?: (2L * (attempt + 1))
-                if (attempt < maxRetries - 1) {
-                    log("W", "GQL $operationName -> 429, waiting ${retryAfter}s (attempt ${attempt + 1}/$maxRetries)")
-                    delay(retryAfter * 1000)
-                    continue
-                }
-                throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter)
-            }
-            if (response.status == HttpStatusCode.PreconditionFailed) {
-                return GqlResult(json = null, isPersistedQueryNotFound = true)
-            }
-            if (response.status.value !in 200..299) {
-                val bodyText = response.bodyAsText()
-                log("E", "GQL $operationName FAILED: ${response.status.value} — ${bodyText.take(200)}")
-                throw SpotifyException(response.status.value, "GraphQL error ${response.status.value}: $bodyText")
-            }
-
-            val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
-
-            val errors = responseJson.arr("errors")
-            if (errors != null && errors.isNotEmpty()) {
-                val errorMsg = errors[0].jsonObject.str("message") ?: "Unknown GraphQL error"
-                if (errorMsg.contains("PersistedQueryNotFound", ignoreCase = true)) {
-                    return GqlResult(json = null, isPersistedQueryNotFound = true)
-                }
-                log("E", "GQL $operationName returned error: $errorMsg")
-                throw SpotifyException(400, "GraphQL: $errorMsg")
-            }
-
-            return GqlResult(json = responseJson, isPersistedQueryNotFound = false)
+        }
+        if (response.status == HttpStatusCode.PreconditionFailed) {
+            return GqlResult(json = null, isPersistedQueryNotFound = true)
+        }
+        if (response.status.value !in 200..299) {
+            val bodyText = response.bodyAsText()
+            log("E", "GQL $operationName FAILED: ${response.status.value} — ${bodyText.take(200)}")
+            throw SpotifyException(response.status.value, "GraphQL error ${response.status.value}: $bodyText")
         }
 
-        throw SpotifyException(429, "Rate limited after $maxRetries retries")
+        val responseJson = json.parseToJsonElement(response.bodyAsText()).jsonObject
+
+        val errors = responseJson.arr("errors")
+        if (errors != null && errors.isNotEmpty()) {
+            val errorMsg = errors[0].jsonObject.str("message") ?: "Unknown GraphQL error"
+            if (errorMsg.contains("PersistedQueryNotFound", ignoreCase = true)) {
+                return GqlResult(json = null, isPersistedQueryNotFound = true)
+            }
+            log("E", "GQL $operationName returned error: $errorMsg")
+            throw SpotifyException(400, "GraphQL: $errorMsg")
+        }
+
+        return GqlResult(json = responseJson, isPersistedQueryNotFound = false)
     }
 
     // ── REST core (fallback for endpoints without GQL equivalent) ────────
@@ -325,12 +332,10 @@ object Spotify {
      * sent, and a 429 arms it for at least the documented window, so retrying inside the window
      * cannot succeed and is not attempted.
      */
-    @Volatile
-    private var restBlockedUntilMs = 0L
+    private val restCooldown = SpotifyRequestCooldown()
 
-    /** Seconds until [restBlockedUntilMs] clears, rounded up, or 0 when REST may be called. */
     private fun restCooldownSecondsRemaining(): Long =
-        (restBlockedUntilMs - System.currentTimeMillis() + 999).coerceAtLeast(0) / 1000
+        restCooldown.remainingSeconds()
 
     private suspend inline fun <reified T> authenticatedGet(
         endpoint: String,
@@ -344,7 +349,7 @@ object Spotify {
         val blockedSec = restCooldownSecondsRemaining()
         if (blockedSec > 0) {
             log("W", "REST $endpoint — skipping, app-wide REST cooldown has ${blockedSec}s left")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec)
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec, quotaExceeded = restCooldown.quotaExceeded)
         }
 
         log("D", "REST GET $endpoint")
@@ -359,11 +364,15 @@ object Spotify {
             throw SpotifyException(401, "Token expired or invalid")
         }
         if (response.status == HttpStatusCode.TooManyRequests) {
-            val cooldownMs = rateLimitCooldownMillis(response.headers["Retry-After"]?.toLongOrNull())
-            restBlockedUntilMs = maxOf(restBlockedUntilMs, System.currentTimeMillis() + cooldownMs)
-            val remainingSec = restCooldownSecondsRemaining()
+            val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+            val remainingSec = restCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
             log("W", "REST $endpoint -> 429, every REST call is blocked for ${remainingSec}s")
-            throw SpotifyException(429, "Rate limited", retryAfterSec = remainingSec)
+            throw SpotifyException(
+                429,
+                if (quotaExceeded) "Rate limited: Spotify API quota exceeded" else "Rate limited",
+                retryAfterSec = remainingSec,
+                quotaExceeded = quotaExceeded,
+            )
         }
         if (response.status.value !in 200..299) {
             val bodyText = response.bodyAsText()
@@ -440,6 +449,8 @@ object Spotify {
             artists = artists,
             album = album,
             durationMs = parseGqlTrackDurationMs(trackData),
+            explicit = spotifyReportedExplicit(trackData),
+            externalIds = spotifyReportedExternalIds(trackData),
             uri = uri.ifEmpty { null },
         )
     }
@@ -470,27 +481,22 @@ object Spotify {
     // ── User Profile (GQL with REST fallback) ──────────────────────────
 
     suspend fun me(): Result<SpotifyUser> =
-        runCatching {
-            try {
-                val response =
-                    graphqlPost(
-                        operationName = "profileAttributes",
-                    )
-                val profile =
-                    response.obj("data")?.obj("me")?.obj("profile")
+        spotifyRequestResult {
+            spotifyGraphQlWithRestFallback(
+                graphQl = {
+                    val response = graphqlPost(operationName = "profileAttributes")
+                    val profile = response.obj("data")?.obj("me")?.obj("profile")
                         ?: throw SpotifyException(500, "Invalid profileAttributes response")
-
-                val uri = profile.str("uri") ?: ""
-                SpotifyUser(
-                    id = uri.substringAfterLast(":"),
-                    displayName = profile.str("name"),
-                    email = null,
-                    images = parseGqlImages(profile.obj("avatar")?.arr("sources")),
-                )
-            } catch (e: Exception) {
-                log("W", "GQL me() failed, falling back to REST: ${e.message}")
-                authenticatedGet<SpotifyUser>("me")
-            }
+                    val uri = profile.str("uri") ?: ""
+                    SpotifyUser(
+                        id = uri.substringAfterLast(":"),
+                        displayName = profile.str("name"),
+                        email = null,
+                        images = parseGqlImages(profile.obj("avatar")?.arr("sources")),
+                    )
+                },
+                rest = { authenticatedGet<SpotifyUser>("me") },
+            )
         }
 
     // ── Playlists (GQL: libraryV3) ──────────────────────────────────────
@@ -1252,21 +1258,44 @@ object Spotify {
             }
         }
 
-    // ── Recently played (REST — no GQL equivalent) ──────────────────────
+    // ── Recently played (web player's play contexts, REST as the fallback) ──
 
     /**
-     * The user's play history, most recent first. Spotify caps this at the last
-     * [SPOTIFY_HISTORY_WINDOW] plays and pages it by timestamp cursor rather than offset, so there is
-     * no `offset` here and no way to reach further back — the endpoint simply does not offer it.
+     * The user's play history, most recent first, at most [SPOTIFY_HISTORY_WINDOW] rows.
      *
-     * [afterMillis] is that cursor: a Unix millisecond timestamp, exclusive. Passing the newest play
-     * the caller already holds asks for the plays since it, which is what keeps a refresh from
-     * re-reading the whole window. `after` and `before` are mutually exclusive server-side, which is
-     * why only one of them is ever sent.
+     * Read first from the web player's own history ([recentlyPlayedFromContexts]) — one row per
+     * context the account played, ending on the track it last played there — because the per-play
+     * REST endpoint (`me/player/recently-played`) answers the web player's token with a 429 that is
+     * the client's shared quota, not anything this app did. REST remains as the fallback for the day
+     * the web player's endpoint moves; its `after` cursor is why [afterMillis] exists: a Unix
+     * millisecond timestamp, exclusive, so a refresh asks only for the plays since the newest one the
+     * caller holds. Neither source can reach further back than this window.
      */
     suspend fun recentlyPlayed(
         limit: Int = SPOTIFY_HISTORY_WINDOW,
         afterMillis: Long? = null,
+    ): Result<SpotifyPaging<SpotifyPlayHistory>> =
+        runCatching {
+            try {
+                recentlyPlayedFromContexts(limit = limit, afterMillis = afterMillis)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: SpotifyException) {
+                // 401 must reach the caller's token refresh, and a 429 is Spotify naming a wait: REST
+                // sits behind a stricter limit of its own, so asking it next only deepens the block.
+                if (error.statusCode == 401 || error.statusCode == 429) throw error
+                log("W", "history via play contexts failed (${error.statusCode}), trying REST")
+                restRecentlyPlayed(limit = limit, afterMillis = afterMillis).getOrElse { restError ->
+                    if (restError is CancellationException) throw restError
+                    error.addSuppressed(restError)
+                    throw error
+                }
+            }
+        }
+
+    private suspend fun restRecentlyPlayed(
+        limit: Int,
+        afterMillis: Long?,
     ): Result<SpotifyPaging<SpotifyPlayHistory>> =
         runCatching {
             authenticatedGet("me/player/recently-played") {
@@ -1274,6 +1303,105 @@ object Spotify {
                 afterMillis?.let { parameter("after", it) }
             }
         }
+
+    /** The signed-in account's id, which the play-context endpoint wants in its path. */
+    @Volatile
+    private var historyUserId: String? = null
+
+    /** Its own gate: this host is not `api.spotify.com`, so a REST 429 says nothing about it. */
+    private val historyCooldown = SpotifyRequestCooldown()
+
+    /**
+     * Forgets what belongs to the signed-in account. Called when the account changes, so the next
+     * history read asks for the new account's id rather than the old one's.
+     */
+    fun forgetAccount() {
+        historyUserId = null
+    }
+
+    /**
+     * The web player's own history: `spclient.wg.spotify.com/recently-played/v3/user/{id}` names the
+     * contexts the account last played from and the track each ended on, and
+     * `fetchEntitiesForRecentlyPlayed` turns those track URIs into titles, artists and artwork.
+     *
+     * Two requests however many plays there are, and neither touches the shared REST quota. Only
+     * plays newer than [afterMillis] are hydrated, so a delta refresh costs one small lookup.
+     */
+    private suspend fun recentlyPlayedFromContexts(
+        limit: Int,
+        afterMillis: Long?,
+    ): SpotifyPaging<SpotifyPlayHistory> {
+        val token =
+            accessToken ?: throw SpotifyException(401, "Not authenticated").also {
+                log("E", "history — no token")
+            }
+        val blockedSec = historyCooldown.remainingSeconds()
+        if (blockedSec > 0) {
+            throw SpotifyException(429, "Rate limited", retryAfterSec = blockedSec, quotaExceeded = historyCooldown.quotaExceeded)
+        }
+        val userId = historyUserId ?: me().getOrThrow().id.also { historyUserId = it }
+        if (userId.isBlank()) throw SpotifyException(500, "Spotify profile carried no user id")
+
+        val response =
+            gqlClient.get("$SPCLIENT_URL/recently-played/v3/user/${userId.encodeURLPathPart()}/recently-played") {
+                header("Authorization", "Bearer $token")
+                parameter("format", "json")
+                parameter("offset", 0)
+                parameter("limit", limit.coerceIn(1, SPOTIFY_HISTORY_WINDOW))
+                parameter("filter", "default,collection-new-episodes")
+            }
+        log("D", "history GET play contexts -> ${response.status.value}")
+        when {
+            response.status == HttpStatusCode.Unauthorized -> throw SpotifyException(401, "Token expired or invalid")
+            response.status == HttpStatusCode.TooManyRequests -> {
+                val quotaExceeded = isSpotifyQuotaExceededResponse(response.bodyAsText())
+                val retryAfter = historyCooldown.recordRateLimit(response.headers["Retry-After"], quotaExceeded)
+                throw SpotifyException(429, "Rate limited", retryAfterSec = retryAfter, quotaExceeded = quotaExceeded)
+            }
+            response.status.value !in 200..299 ->
+                throw SpotifyException(response.status.value, "Spotify history error ${response.status.value}")
+        }
+
+        val plays =
+            parseRecentPlayContexts(response.bodyAsText())
+                .filter { afterMillis == null || it.playedAtMillis > afterMillis }
+        if (plays.isEmpty()) return SpotifyPaging(limit = limit)
+
+        val tracks = fetchRecentlyPlayedTracks(plays.map { it.trackUri }.distinct())
+        val items = plays.toPlayHistory(tracks)
+        return SpotifyPaging(items = items, total = items.size, limit = limit)
+    }
+
+    private suspend fun fetchRecentlyPlayedTracks(uris: List<String>): Map<String, SpotifyTrack> {
+        val resolved = HashMap<String, SpotifyTrack>(uris.size)
+        for (batch in uris.chunked(SPOTIFY_HISTORY_WINDOW)) {
+            val response =
+                graphqlPost(
+                    operationName = "fetchEntitiesForRecentlyPlayed",
+                    variables = buildJsonObject { putJsonArray("uris") { batch.forEach { add(it) } } },
+                )
+            resolved += parseRecentlyPlayedLookup(response)
+        }
+        return resolved
+    }
+
+    /**
+     * Tracks in a `fetchEntitiesForRecentlyPlayed` response, by URI. Entries that are not tracks, or
+     * that Spotify answers with `NotFound`, are skipped.
+     */
+    fun parseRecentlyPlayedLookup(response: JsonObject): Map<String, SpotifyTrack> {
+        val lookup = response.obj("data")?.arr("lookup") ?: return emptyMap()
+        val tracks = HashMap<String, SpotifyTrack>(lookup.size)
+        for (element in lookup) {
+            val wrapper = (element as? JsonObject) ?: continue
+            if (wrapper.str("__typename") != "TrackResponseWrapper") continue
+            val data = wrapper.obj("data") ?: continue
+            if (data.str("__typename") == "NotFound") continue
+            val uri = data.str("uri") ?: wrapper.str("_uri") ?: continue
+            tracks[uri] = parseGqlTrack(data, uriOverride = uri)
+        }
+        return tracks
+    }
 
     // ── Top Artists (REST fallback — no GQL equivalent) ─────────────────
 
@@ -1315,24 +1443,17 @@ object Spotify {
         limit: Int = 20,
         offset: Int = 0,
     ): Result<SpotifySearchResult> =
-        runCatching {
-            try {
-                hydrateSearchTracks(searchGraphQl(query, types, limit, offset))
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (error: Throwable) {
-                // The internal search endpoint is useful but its persisted hash and response shape
-                // can rotate independently of the public API. Keep catalog search usable when that
-                // happens; the same web-player token is accepted by Spotify's REST search endpoint.
-                log("W", "GQL search failed; falling back to REST search: ${error.message}")
-                searchRest(query, types, limit, offset)
-            }
+        spotifyRequestResult {
+            spotifyGraphQlWithRestFallback(
+                graphQl = { hydrateSearchTracks(searchGraphQl(query, types, limit, offset)) },
+                rest = { searchRest(query, types, limit, offset) },
+            )
         }
 
     private suspend fun hydrateSearchTracks(result: SpotifySearchResult): SpotifySearchResult {
         val tracks = result.tracks?.items.orEmpty()
         if (tracks.isEmpty()) return result
-        val ids = tracks.mapNotNull { it.id.takeIf(String::isNotBlank) }.distinct()
+        val ids = tracks.filter(SpotifyTrack::needsRestMetadata).mapNotNull { it.id.takeIf(String::isNotBlank) }.distinct()
         if (ids.isEmpty()) return result
 
         val hydrated =

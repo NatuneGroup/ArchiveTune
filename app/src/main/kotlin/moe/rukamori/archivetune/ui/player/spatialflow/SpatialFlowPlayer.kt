@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * SpatialFlow player style.
@@ -33,7 +29,6 @@
 package moe.rukamori.archivetune.ui.player.spatialflow
 
 import android.content.Intent
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
@@ -60,6 +55,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
@@ -106,6 +102,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
@@ -114,8 +111,9 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.exoplayer.offline.Download
 import androidx.media3.ui.AspectRatioFrameLayout
-import kotlinx.coroutines.delay
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlayer
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.source.ShuffleOrder
@@ -133,10 +131,12 @@ import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.playback.MusicHapticsSettings
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
+import moe.rukamori.archivetune.ui.menu.PlayerMenu
+import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
+import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.utils.highRes
-import androidx.compose.foundation.layout.heightIn
 import androidx.navigation.NavController
 
 
@@ -206,6 +206,8 @@ fun SpatialFlowPlayerContent(
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val presentation = LocalPlayerPresentation.current
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
 
@@ -310,7 +312,7 @@ fun SpatialFlowPlayerContent(
             }
         }
 
-    BackHandler(enabled = lyricsModeEnabled || queueExpanded) {
+    PlayerInlinePageBackHandler(enabled = lyricsModeEnabled || queueExpanded) {
         if (lyricsModeEnabled) {
             lyricsModeEnabled = false
         } else if (queueExpanded) {
@@ -326,8 +328,6 @@ fun SpatialFlowPlayerContent(
     // permission is denied.
     var hapticsEnabled by remember { mutableStateOf(MusicHapticsSettings.isEnabled(context)) }
 
-    // ---- Canvas gating (Apple Music recipe) --------------------------------
-    //
     // The canvas layers (frosted twin + sharp stage) STAY in composition while
     // lyrics are open; rendering stops in two steps. Playback freezes the
     // instant lyrics open — the decoder and both TextureView composites quit
@@ -340,11 +340,11 @@ fun SpatialFlowPlayerContent(
     val canvasAvailable = !canvasPrimaryUrl.isNullOrBlank() || !canvasFallbackUrl.isNullOrBlank()
     var canvasPlayingForLyrics by remember { mutableStateOf(true) }
     var canvasSurfacesForLyrics by remember { mutableStateOf(true) }
-    LaunchedEffect(lyricsModeEnabled) {
+    LaunchedEffect(lyricsModeEnabled, animationsDisabled) {
         if (lyricsModeEnabled) {
             canvasPlayingForLyrics = false
             canvasSurfacesForLyrics = true
-            delay(SfLyricsBackdropMorphMs.toLong())
+            if (!animationsDisabled) moe.rukamori.archivetune.scaledDelay(SfLyricsBackdropMorphMs.toLong())
             canvasSurfacesForLyrics = false
         } else {
             canvasPlayingForLyrics = true
@@ -353,7 +353,7 @@ fun SpatialFlowPlayerContent(
     }
     val lyricsBackdropProgress by animateFloatAsState(
         targetValue = if (lyricsModeEnabled) 1f else 0f,
-        animationSpec = tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
+        animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = SfLyricsBackdropMorphMs, easing = FastOutSlowInEasing),
         label = "SfLyricsCanvasFade",
     )
 
@@ -373,10 +373,10 @@ fun SpatialFlowPlayerContent(
         modifier =
             modifier
                 .fillMaxSize()
-                .background(backgroundBrush)
+                .then(if (presentation.sharedBackground) Modifier else Modifier.background(backgroundBrush))
                 .onGloballyPositioned { playerRootTopY = it.positionInRoot().y },
     ) {
-        SpatialFlowBlurredBackdrop(
+        if (!presentation.sharedBackground) SpatialFlowBlurredBackdrop(
             artUrl = artUrl,
             // When the canvas owns the player the AM scrim (below) replaces
             // this backdrop's own gradient — stacking both made the frosted
@@ -391,8 +391,8 @@ fun SpatialFlowPlayerContent(
             // the small surface, upscaled 6x (+10% overscan). It runs the FULL
             // height of the player so the same canvas keeps playing, blurred,
             // behind the bottom controls — and fades out + stops rendering
-            // while the lyrics overlay is up.
-            Box(
+            // while the lyrics overlay is up. Skipped entirely without blur.
+            if (moe.rukamori.archivetune.LocalBlurPolicy.current.any && !presentation.sharedBackground) Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -423,7 +423,7 @@ fun SpatialFlowPlayerContent(
             // down the player — the colours the Apple Music player style itself
             // paints over its blurred canvas backdrop, so the liquid blur reads
             // correctly instead of too bright.
-            Box(
+            if (!presentation.sharedBackground) Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -469,7 +469,7 @@ fun SpatialFlowPlayerContent(
             }
         }
 
-        MaterialTheme(typography = SpatialFlowTypography) {
+        MaterialTheme(typography = rememberSpatialFlowTypography()) {
                 val configuration = LocalConfiguration.current
                 val screenWidth = configuration.screenWidthDp.dp
                 val screenHeight = configuration.screenHeightDp.dp
@@ -488,7 +488,7 @@ fun SpatialFlowPlayerContent(
                 var lyricsButtonCenterInRoot by remember { mutableStateOf<Offset?>(null) }
                 val lyricsRevealProgress by animateFloatAsState(
                     targetValue = if (lyricsModeEnabled) 1f else 0f,
-                    animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing),
+                    animationSpec = if (animationsDisabled) androidx.compose.animation.core.snap() else tween(durationMillis = 340, easing = FastOutSlowInEasing),
                     label = "LyricsCircularReveal",
                 )
 
@@ -528,7 +528,26 @@ fun SpatialFlowPlayerContent(
                         color = contentSecondary,
                     )
 
-                    Spacer(modifier = Modifier.size(48.dp))
+                    IconButton(onClick = {
+                        menuState.show {
+                            PlayerMenu(
+                                mediaMetadata = mediaMetadata,
+                                navController = navController,
+                                playerBottomSheetState = state,
+                                onShowDetailsDialog = {
+                                    bottomSheetPageState.show { ShowMediaInfo(mediaMetadata.id) }
+                                },
+                                onDismiss = menuState::dismiss,
+                            )
+                        }
+                    }) {
+                        Icon(
+                            painter = painterResource(R.drawable.more_vert),
+                            contentDescription = stringResource(R.string.acoustic_quality_menu),
+                            tint = contentColor.copy(alpha = 0.8f),
+                            modifier = Modifier.size(28.dp),
+                        )
+                    }
                 }
 
                 if (canvasAvailable) {
@@ -546,10 +565,9 @@ fun SpatialFlowPlayerContent(
                         mediaMetadata = mediaMetadata,
                         queueWindows = queueWindows,
                         currentWindowIndex = currentWindowIndex,
-                        userScrollEnabled = !lyricsModeEnabled && !queueExpanded,
+                        userScrollEnabled = presentation.swipeArtwork && !lyricsModeEnabled && !queueExpanded,
                         artUrl = artUrl,
-                        isPlaying = isPlaying,
-                        cornerRadius = 16.dp,
+                        cornerRadius = presentation.radius(16.dp),
                         shadowElevation = 16.dp,
                         onPlaySongAtWindow = { windowIndex ->
                             val window = queueWindows.getOrNull(windowIndex) ?: return@SpatialFlowArtworkPager
@@ -1020,15 +1038,12 @@ fun SpatialFlowPlayerContent(
                     syncedLyrics = syncedLyrics,
                     plainLyrics = plainLyrics,
                     lyricsProvider = currentLyricsEntity?.providerName,
-                    currentPositionProvider = positionProvider,
                     contentReady = lyricsContentReady,
                     backgroundBrush = lyricsBackgroundBrush,
                     artUrl = artUrl,
                     revealProgressProvider = { lyricsRevealProgress },
                     revealCenterProvider = { lyricsButtonCenterInRoot },
                     contentColor = contentColor,
-                    contentSecondary = contentSecondary,
-                    onSeekTo = onSeek,
                     onDismiss = { lyricsModeEnabled = false },
                     modifier = Modifier.fillMaxSize(),
                 )
@@ -1119,12 +1134,12 @@ private fun SpatialFlowArtworkPager(
     currentWindowIndex: Int,
     userScrollEnabled: Boolean,
     artUrl: String?,
-    isPlaying: Boolean,
     cornerRadius: androidx.compose.ui.unit.Dp,
     shadowElevation: androidx.compose.ui.unit.Dp,
     onPlaySongAtWindow: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
     val pagerState =
         rememberPagerState(initialPage = currentWindowIndex.coerceAtLeast(0)) {
             queueWindows.size.coerceAtLeast(1)
@@ -1135,7 +1150,8 @@ private fun SpatialFlowArtworkPager(
             currentWindowIndex < pagerState.pageCount &&
             pagerState.currentPage != currentWindowIndex
         ) {
-            pagerState.animateScrollToPage(currentWindowIndex)
+            if (animationsDisabled) pagerState.scrollToPage(currentWindowIndex)
+            else pagerState.animateScrollToPage(currentWindowIndex)
         }
     }
 
@@ -1171,6 +1187,7 @@ private fun SpatialFlowArtworkPager(
                 modifier =
                     Modifier
                         .fillMaxSize()
+                        .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                         .shadow(shadowElevation, RoundedCornerShape(cornerRadius))
                         .clip(RoundedCornerShape(cornerRadius)),
                 contentAlignment = Alignment.Center,
@@ -1181,7 +1198,7 @@ private fun SpatialFlowArtworkPager(
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         onError = { isError = true },
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().playerSeekDoubleTap(),
                     )
                 } else {
                     Box(

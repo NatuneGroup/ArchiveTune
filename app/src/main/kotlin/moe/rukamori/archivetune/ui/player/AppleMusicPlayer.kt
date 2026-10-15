@@ -28,6 +28,7 @@ import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -80,6 +81,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -125,20 +127,23 @@ import androidx.media3.common.Player.STATE_ENDED
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.constants.AutoTranslateExcludedLanguagesKey
 import moe.rukamori.archivetune.constants.AppleMusicAnimatedArtworkKey
+import moe.rukamori.archivetune.constants.AppleMusicBackdropWanderKey
+import moe.rukamori.archivetune.constants.AppleMusicPauseScaleKey
+import moe.rukamori.archivetune.constants.AppleMusicSeekGrowKey
+import moe.rukamori.archivetune.constants.AppleMusicTitleMarqueeKey
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
-import moe.rukamori.archivetune.db.entities.isLossless
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
@@ -154,10 +159,6 @@ import moe.rukamori.archivetune.constants.LyricsModeKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.ui.menu.LyricsMenu
 import moe.rukamori.archivetune.ui.menu.AnchoredLyricsOverflowMenu
-import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
-import moe.rukamori.archivetune.ui.component.rememberBackdrop
-import moe.rukamori.archivetune.ui.component.layerBackdrop
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.geometry.Rect
@@ -324,6 +325,7 @@ fun AppleMusicPlayerContent(
     modifier: Modifier = Modifier,
     landscape: Boolean = false,
 ) {
+    val presentation = LocalPlayerPresentation.current
     // In-place queue morph state. When the user taps the queue button (or
     // swipes up on the controls area), we toggle this state instead of
     // opening the separate queue BottomSheet. The artwork + title row then
@@ -363,10 +365,9 @@ fun AppleMusicPlayerContent(
         lyricsOpen = !lyricsOpen
     }
 
-    // Back handler: when the in-place queue or lyrics is open, back closes
-    // it first (before the outer player-collapse BackHandler in Player.kt).
+    // When the in-place queue or lyrics is open, back closes it before the player collapses.
     val morphOpen = queueOpen || lyricsOpen
-    androidx.activity.compose.BackHandler(enabled = morphOpen) {
+    moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler(enabled = morphOpen) {
         if (lyricsOpen) lyricsOpen = false
         if (queueOpen) queueOpen = false
     }
@@ -384,10 +385,6 @@ fun AppleMusicPlayerContent(
         queueOpen = false
         lyricsOpen = false
     }
-
-    // Show controls when lyrics or queue opens, then honor the shared five-second
-    // auto-hide setting.
-    var playerControlsExpanded by remember(mediaMetadata.id) { mutableStateOf(true) }
 
     // Propagate inline-lyrics visibility to the parent so back-stack screens
     // suspend their GPU work during the morph.
@@ -408,12 +405,29 @@ fun AppleMusicPlayerContent(
     // In landscape the artwork column stays on screen beside the lyric sheet, so the backdrop keeps
     // its canvas and its cover look instead of handing off to the lyrics backdrop (4nx3b 998edf62c).
     val lyricsTakesBackdrop = lyricsOpen && !landscape
+
+    // === COVER ↔ LYRICS backdrop hand-off === The backdrop's blur, zoom and drift are all
+    // driven by this one progress value, so the hand-off is a single continuous morph.
+    // Declared ahead of the effects below so they can wait on the morph itself instead of a
+    // wall-clock copy of its duration.
+    val lyricsBackdropProgress =
+        animateFloatAsState(
+            targetValue = if (lyricsTakesBackdrop) 1f else 0f,
+            animationSpec =
+                tween(
+                    durationMillis = AmLyricsBackdropMorphMs,
+                    easing = FastOutSlowInEasing,
+                ),
+            label = "am-lyrics-backdrop-progress",
+        )
+
     var canvasVisibleForLyrics by remember { mutableStateOf(true) }
     LaunchedEffect(lyricsTakesBackdrop) {
         if (lyricsTakesBackdrop) {
-            // Keep canvas visible while the backdrop cross-dissolve runs.
+            // Keep canvas visible while the backdrop cross-dissolve runs, and tear it down only
+            // once the morph has actually landed, at whatever scale it runs.
             canvasVisibleForLyrics = true
-            delay(AmLyricsBackdropMorphMs.toLong())
+            snapshotFlow { lyricsBackdropProgress.value }.first { it >= 1f }
             canvasVisibleForLyrics = false
         } else {
             canvasVisibleForLyrics = true
@@ -429,7 +443,7 @@ fun AppleMusicPlayerContent(
         if (lyricsTakesBackdrop) {
             lyricsBackdropActive = true
         } else {
-            delay(AmLyricsBackdropMorphMs.toLong())
+            snapshotFlow { lyricsBackdropProgress.value }.first { it <= 0f }
             lyricsBackdropActive = false
         }
     }
@@ -447,9 +461,10 @@ fun AppleMusicPlayerContent(
         // on Dispatchers.Default and only the composition is left on the main thread. Keeping it
         // long hurts: the AnimatedVisibility fadeIn below is 400ms, so almost all of it would be
         // spent on an empty box and the lyrics would arrive as a pop rather than a fade. The
-        // renderers' own first-focus fade covers the remainder.
+        // renderers' own first-focus fade covers the remainder. The span rides the animator
+        // scale — the morph it is deferring behind is scaled too.
         lyricsContentReady = false
-        delay(AppleMusicLyricsContentDeferMs)
+        scaledDelay(AppleMusicLyricsContentDeferMs)
         lyricsContentReady = true
     }
     // Nothing to re-summon any more; kept as a no-op so the call sites that report a tap stay
@@ -472,18 +487,9 @@ fun AppleMusicPlayerContent(
     val driftDpToPx = with(density) { 1.dp.toPx() }
     val lyricsSwipeDismissThresholdPx = with(density) { 96.dp.toPx() }
 
-    // === COVER ↔ LYRICS backdrop hand-off === The backdrop's blur, zoom and drift are all
-    // driven by this one progress value, so the hand-off is a single continuous morph.
-    val lyricsBackdropProgress =
-        animateFloatAsState(
-            targetValue = if (lyricsTakesBackdrop) 1f else 0f,
-            animationSpec =
-                tween(
-                    durationMillis = AmLyricsBackdropMorphMs,
-                    easing = FastOutSlowInEasing,
-                ),
-            label = "am-lyrics-backdrop-progress",
-        )
+    // Optional backdrop wander: while lyrics are open the blurred backdrop zooms and drifts.
+    // Off keeps the COVER look (static blur at [AmCoverBlurScale]) in every state.
+    val (backdropWanderEnabled) = rememberPreference(AppleMusicBackdropWanderKey, defaultValue = true)
 
     // Hoist the thumbnail corner radius preference so it can be used both for the COVER state's
     // artwork clip AND for the sharedBounds overlay clip during morph transitions. Read locally
@@ -532,6 +538,9 @@ fun AppleMusicPlayerContent(
     val (autoTranslateExcludedLanguages) =
         rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, currentLyrics?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, currentLyrics?.lyrics)
+    }
     // Observe the set of media IDs the user has dismissed translation for.
     // When a user clicks "Undo Translation", the mediaId is added to this set;
     // auto-translate is suppressed for dismissed songs until the user manually
@@ -597,14 +606,6 @@ fun AppleMusicPlayerContent(
     var showAnchoredLyricsMenu by remember { mutableStateOf(false) }
     var moreIconBounds by remember { mutableStateOf(Rect.Zero) }
     val onMorePositioned: (Rect) -> Unit = remember { { bounds -> moreIconBounds = bounds } }
-    // A live glass backdrop records a layer every frame, so it only exists while the popup can
-    // actually be shown on top of it.
-    val popupBackdrop: PlatformBackdrop? =
-        if (rememberLiquidGlassEnabled() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            rememberBackdrop(Color.Transparent)
-        } else {
-            null
-        }
     LaunchedEffect(lyricsOpen) {
         if (!lyricsOpen) showAnchoredLyricsMenu = false
     }
@@ -644,8 +645,7 @@ fun AppleMusicPlayerContent(
     BoxWithConstraints(
         modifier =
             Modifier
-                .fillMaxSize()
-                .let { base -> if (popupBackdrop != null) base.layerBackdrop(popupBackdrop) else base },
+                .fillMaxSize(),
     ) {
         val sharpArtworkHeight = if (landscape) maxHeight else maxHeight * 0.55f
         // The FULL player height — used as the artwork sizing reference so the
@@ -694,10 +694,11 @@ fun AppleMusicPlayerContent(
         // the backdrop mirrors the canvas video in real time. Pre-Android-12 falls back to
         // the album-art blur (RenderEffect is unavailable, so blurring a video surface
         // efficiently isn't possible).
-        val useCanvasBackdrop = canvasActive && !videoShowing && !isPreS
+        val blurAllowed = moe.rukamori.archivetune.LocalBlurPolicy.current.any
+        val useCanvasBackdrop = canvasActive && !videoShowing && !isPreS && blurAllowed
         val context = LocalContext.current
         val preBlurredBitmap =
-            if (videoShowing || useCanvasBackdrop) {
+            if (videoShowing || useCanvasBackdrop || presentation.sharedBackground) {
                 null
             } else {
                 // Pre-S has no RenderEffect, so Modifier.blur is a no-op there and the blur has to
@@ -713,7 +714,7 @@ fun AppleMusicPlayerContent(
                 )
             }
 
-        if (!videoShowing) {
+        if (!videoShowing && !presentation.sharedBackground) {
             // Backdrop rendering — one blurred-artwork node for every state, plus (on canvas songs)
             // the live canvas video composited over it. • COVER / QUEUE state — the artwork sits at
             // [AmCoverBlurScale] with no drift.
@@ -722,13 +723,17 @@ fun AppleMusicPlayerContent(
             // lyrics-page behaviour): the colour mass traverses the whole display instead of
             // orbiting near the centre.
             val wanderMaxDrift = movingBlurWanderMaxDriftDp(maxWidth, maxHeight)
-            val blurWander = rememberBlurWanderDrift(active = lyricsBackdropActive, maxDriftDp = wanderMaxDrift)
+            val blurWander =
+                rememberBlurWanderDrift(
+                    active = lyricsBackdropActive && backdropWanderEnabled && blurAllowed,
+                    maxDriftDp = wanderMaxDrift,
+                )
             val driftGraphicsLayer: GraphicsLayerScope.() -> Unit = {
                 // Deferred state reads: draw phase only. See the comment on
                 // lyricsBackdropProgress for why this is a continuous ramp
                 // rather than the `if (lyricsOpen && lyricsContentReady)` step
-                // it replaced.
-                val progress = lyricsBackdropProgress.value
+                // it replaced. Off keeps the COVER look: no zoom, no drift.
+                val progress = if (backdropWanderEnabled) lyricsBackdropProgress.value else 0f
                 // Scale [AmLyricsBlurDriftScale] (lyrics fully open) together with the
                 // [backdropFootprint] the node is sized to leaves the rotated layer covering every
                 // screen corner plus the ±120dp drift — see blurBackdropFootprint for the budget.
@@ -808,7 +813,13 @@ fun AppleMusicPlayerContent(
                         maxDriftDp = wanderMaxDrift,
                     )
                 }
-            Box(
+            if (!blurAllowed) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = mediaMetadata.id,
+                    artworkUrl = artworkUrl,
+                    modifier = Modifier.matchParentSize(),
+                )
+            } else Box(
                 modifier =
                     Modifier
                         .matchParentSize()
@@ -894,7 +905,7 @@ fun AppleMusicPlayerContent(
                             },
                 )
             }
-            val preBlurLoading = isPreS && preBlurredBitmap == null && !canvasActive
+            val preBlurLoading = isPreS && blurAllowed && preBlurredBitmap == null && !canvasActive
             // Brightened scrim — matches ViviMusic's brighter aesthetic. Kept deliberately light
             // over the blurred artwork (0.15/0.28/0.50 on the canvas path, 0.28/0.42/0.60 over the
             // pre-S bitmap) so its colour shows through; only the un-blurred placeholder while the
@@ -956,17 +967,13 @@ fun AppleMusicPlayerContent(
                         // never auto-hides or tap-summons them over it (4nx3b does both), so
                         // tapping the artwork swaps the right half between lyrics and controls.
                         // The controls' lyrics button and Back keep working as before.
-                        val heroInteraction = remember { MutableInteractionSource() }
                         Box(
                             modifier =
                                 Modifier
                                     .weight(1f)
                                     .fillMaxWidth()
-                                    .clickable(
-                                        interactionSource = heroInteraction,
-                                        indication = null,
-                                        onClick = toggleLyrics,
-                                    ).padding(horizontal = AppleMusicContentPadding),
+                                    .playerSeekDoubleTap(onTap = toggleLyrics)
+                                    .padding(horizontal = AppleMusicContentPadding),
                             contentAlignment = Alignment.Center,
                         ) {
                             AppleMusicSharpArtwork(
@@ -1118,7 +1125,7 @@ fun AppleMusicPlayerContent(
                             // transitions, but hoisting it outside AnimatedContent
                             // breaks touch routing (see comment above the lyrics
                             // overlay for details).
-                            Box(modifier = Modifier.fillMaxSize()) {
+                            Box(modifier = Modifier.fillMaxSize().playerSeekDoubleTap()) {
                                 AppleMusicSharpArtwork(
                                     artworkRequest = artworkRequest,
                                     artworkUrl = artworkUrl,
@@ -1377,7 +1384,6 @@ fun AppleMusicPlayerContent(
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = { showAnchoredLyricsMenu = false },
-                backdrop = popupBackdrop,
             )
         }
     }
@@ -1530,17 +1536,17 @@ private fun AppleMusicSharpArtwork(
                                 .coerceAtMost(artworkHeightLimit)
                                 .coerceAtLeast(artworkMinSize)
                         }
-                // Pause-scale animation (non-canvas songs only). When the
-                // music is paused, the artwork shrinks slightly (~8%) to
-                // mirror Apple Music's behavior. When playback resumes, it
-                // restores to full size. This only applies to the
-                // immersiveExtendedCard branch (static artwork — no Spotify
-                // Canvas, no music video). Canvas songs continue playing
-                // their loop regardless of audio play state, so shrinking
-                // them would look wrong.
+                // Pause-scale animation (non-canvas songs only), gated on the pause-shrink
+                // preference. When the music is paused, the artwork shrinks slightly (~8%) to
+                // mirror Apple Music's behavior. When playback resumes, it restores to full
+                // size. This only applies to the immersiveExtendedCard branch (static
+                // artwork — no Spotify Canvas, no music video). Canvas songs continue
+                // playing their loop regardless of audio play state, so shrinking them
+                // would look wrong.
+                val (pauseScaleEnabled) = rememberPreference(AppleMusicPauseScaleKey, defaultValue = true)
                 val artworkPauseScale by animateFloatAsState(
-                    targetValue = if (isPlaying) 1f else 0.92f,
-                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                    targetValue = if (isPlaying || !pauseScaleEnabled) 1f else 0.92f,
+                    animationSpec = if (moe.rukamori.archivetune.LocalAnimationsDisabled.current) snap() else tween(durationMillis = 320, easing = FastOutSlowInEasing),
                     label = "artworkPauseScale",
                 )
                 Box(
@@ -1554,6 +1560,7 @@ private fun AppleMusicSharpArtwork(
                         modifier =
                             Modifier
                                 .size(artworkSize)
+                                .ordinarySleeve(LocalPlayerPresentation.current.hideSleeve)
                                 .graphicsLayer {
                                     scaleX = artworkPauseScale
                                     scaleY = artworkPauseScale
@@ -1792,12 +1799,16 @@ private fun AppleMusicControlsColumn(
         // chip (Lossless / AAC / OPUS) centered, -remaining on the right.
         // The chip is tappable and opens the song-detail bottom sheet.
         Box(Modifier.fillMaxWidth()) {
-            Text(
-                text = makeTimeString(sliderPosition ?: currentPosition),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.55f),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterStart),
-            )
+            ) {
+                Text(
+                    text = makeTimeString(sliderPosition ?: currentPosition),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.55f),
+                )
+            }
             if (currentFormat != null) {
                 AppleMusicQualityChip(
                     currentFormat = currentFormat,
@@ -1805,12 +1816,16 @@ private fun AppleMusicControlsColumn(
                     modifier = Modifier.align(Alignment.Center),
                 )
             }
-            Text(
-                text = "-" + makeTimeString((duration - (sliderPosition ?: currentPosition)).coerceAtLeast(0L)),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.55f),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.align(Alignment.CenterEnd),
-            )
+            ) {
+                Text(
+                    text = "-" + makeTimeString((duration - (sliderPosition ?: currentPosition)).coerceAtLeast(0L)),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.55f),
+                )
+            }
         }
     }
 
@@ -1883,7 +1898,7 @@ private fun AppleMusicControlsColumn(
     // which has proper drag tracking (dragging state + rememberUpdatedState) so the
     // fill follows the finger during a drag instead of lagging behind the rounded
     // device-volume step.
-    AppleMusicVolumeRow(
+    if (LocalPlayerPresentation.current.showVolume) AppleMusicVolumeRow(
         volume = volume,
         onVolumeChange = onVolumeChange,
         modifier = Modifier.fillMaxWidth(),
@@ -2125,6 +2140,7 @@ private fun AppleMusicBottomButton(
  * Single-line marquee text with an edge fade that only appears once the laid-out text is wider
  * than the space it's given, plus a tap target. Shared by the full title/artist row and the mini
  * header's compact one — both used the same measure-and-fade shape before this was pulled out.
+ * Gated on the scrolling-titles preference: off renders static ellipsis text instead.
  */
 @Composable
 private fun AppleMusicMarqueeLine(
@@ -2134,11 +2150,12 @@ private fun AppleMusicMarqueeLine(
     onClick: () -> Unit,
     fontWeight: FontWeight? = null,
 ) {
+    val (titleMarqueeEnabled) = rememberPreference(AppleMusicTitleMarqueeKey, defaultValue = true)
     val layout = remember { mutableStateOf<TextLayoutResult?>(null) }
     val viewport = remember { mutableStateOf(0) }
     val hasOverflow = viewport.value > 0 && (layout.value?.size?.width ?: 0) > viewport.value
     Box(
-        modifier = (if (hasOverflow) Modifier.fillMaxWidth().viewportEdgeFade() else Modifier.fillMaxWidth())
+        modifier = (if (hasOverflow && titleMarqueeEnabled) Modifier.fillMaxWidth().viewportEdgeFade() else Modifier.fillMaxWidth())
             .clipToBounds()
             .onSizeChanged { viewport.value = it.width }
             .clickable(
@@ -2155,7 +2172,7 @@ private fun AppleMusicMarqueeLine(
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             onTextLayout = { layout.value = it },
-            modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+            modifier = if (titleMarqueeEnabled) Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE) else Modifier.fillMaxWidth(),
         )
     }
 }
@@ -2239,7 +2256,7 @@ private fun SharedTransitionScope.AppleMusicMiniHeader(
                 model = artworkRequest ?: artworkUrl,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().ordinarySleeve(LocalPlayerPresentation.current.hideSleeve),
             )
         }
         Spacer(Modifier.width(12.dp))
@@ -2298,6 +2315,9 @@ private fun AppleMusicSeekBar(
     onScrubFinished: () -> Unit,
 ) {
     val enabled = duration > 0L
+    // Optional seek swell: the bar fattens and brightens while dragged. Off keeps the idle
+    // size and alpha throughout the drag.
+    val (seekGrowEnabled) = rememberPreference(AppleMusicSeekGrowKey, defaultValue = true)
     var dragging by remember { mutableStateOf(false) }
     var dragFraction by remember { mutableFloatStateOf(0f) }
     val playedFraction =
@@ -2336,7 +2356,8 @@ private fun AppleMusicSeekBar(
                         },
                     )
                 }.drawWithContent {
-                    val trackHeight = if (dragging) 10.dp.toPx() else 7.dp.toPx()
+                    val swelling = dragging && seekGrowEnabled
+                    val trackHeight = if (swelling) 10.dp.toPx() else 7.dp.toPx()
                     val top = (size.height - trackHeight) / 2f
                     val radius = CornerRadius(trackHeight / 2f)
                     drawRoundRect(
@@ -2346,7 +2367,7 @@ private fun AppleMusicSeekBar(
                         cornerRadius = radius,
                     )
                     drawRoundRect(
-                        color = Color.White.copy(alpha = if (dragging) 1f else 0.85f),
+                        color = Color.White.copy(alpha = if (swelling) 1f else 0.85f),
                         topLeft = Offset(0f, top),
                         size = Size(size.width * shownFraction, trackHeight),
                         cornerRadius = radius,
@@ -2365,12 +2386,9 @@ private fun AppleMusicQualityChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val label = remember(currentFormat.mimeType, currentFormat.codecs) {
-        currentFormat.codecLabel()
-    }
-    val lossless = remember(currentFormat.codecs, currentFormat.mimeType) {
-        currentFormat.isLossless()
-    }
+    val quality = remember(currentFormat) { currentFormat.streamQuality() }
+    val label = quality.label()
+    val lossless = quality.isLossless
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = Color.White.copy(alpha = 0.1f),

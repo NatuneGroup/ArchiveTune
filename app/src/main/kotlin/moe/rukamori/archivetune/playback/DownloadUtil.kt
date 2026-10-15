@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.playback
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.os.SystemClock
 import androidx.core.content.getSystemService
 import androidx.core.net.toUri
 import android.net.Uri
@@ -45,15 +46,21 @@ import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.audiosource.TitleMatch
+import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.constants.AudioQuality
 import moe.rukamori.archivetune.constants.AudioQualityKey
+import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.DownloadSource
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
 import moe.rukamori.archivetune.constants.DownloadSourceOrderKey
 import moe.rukamori.archivetune.constants.DeezerAudioQuality
 import moe.rukamori.archivetune.constants.DeezerAudioQualityKey
+import moe.rukamori.archivetune.constants.DeezerEnabledKey
+import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
 import moe.rukamori.archivetune.constants.QobuzAudioQuality
 import moe.rukamori.archivetune.constants.QobuzAudioQualityKey
+import moe.rukamori.archivetune.constants.QobuzBackupEnabledKey
+import moe.rukamori.archivetune.constants.QobuzEnabledKey
 import moe.rukamori.archivetune.constants.SaavnAudioQuality
 import moe.rukamori.archivetune.constants.SaavnAudioQualityKey
 import moe.rukamori.archivetune.constants.SongSourceOverrideKey
@@ -61,6 +68,8 @@ import moe.rukamori.archivetune.constants.SongSourceQobuzBackupVideoIdKey
 import moe.rukamori.archivetune.constants.SongSourceQobuzTrackIdKey
 import moe.rukamori.archivetune.constants.TidalAudioQuality
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
+import moe.rukamori.archivetune.constants.TidalEnabledKey
+import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
 import moe.rukamori.archivetune.constants.toFormatId
 import moe.rukamori.archivetune.constants.toFormatName
 import moe.rukamori.archivetune.db.MusicDatabase
@@ -73,6 +82,8 @@ import moe.rukamori.archivetune.deezer.DeezerDecryptingDataSource
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.playback.stream.StreamPurpose
+import moe.rukamori.archivetune.playback.stream.YouTubeFailsafeChain
 import moe.rukamori.archivetune.playback.stream.codecsFromMimeType
 import moe.rukamori.archivetune.utils.AuthScopedCacheValue
 import moe.rukamori.archivetune.utils.PoolAccountManager
@@ -82,6 +93,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.enumPreference
 import moe.rukamori.archivetune.utils.preference
 import moe.rukamori.archivetune.utils.isLowDataModeActive
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 import moe.rukamori.archivetune.utils.retryWithoutPlaybackLoginContext
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
@@ -115,6 +127,33 @@ class DownloadUtil
         // this path used to consult is no longer read: the settings UI only ever writes this order,
         // so the order list is the one source of truth for which sources a download may use.
         private val downloadSourceOrderCsv by preference(context, DownloadSourceOrderKey, "")
+        // The playback source toggles, read at download time. Downloads keep their own source
+        // order, but a source the user turned off for playback is skipped here too (user
+        // decision 2026-10-13) — the same rule the playback cache shortcut follows.
+        private val tidalPlaybackEnabled by
+            preference(context, TidalEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL))
+        private val qobuzPlaybackEnabled by
+            preference(context, QobuzEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ))
+        private val qobuzBackupPlaybackEnabled by
+            preference(context, QobuzBackupEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ_BACKUP))
+        private val deezerPlaybackEnabled by
+            preference(context, DeezerEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.DEEZER))
+        private val jioSaavnPlaybackEnabled by
+            preference(context, JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN))
+        private val youTubePlaybackEnabled by
+            preference(context, YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE))
+
+        /** The playback-enabled set the download chain is gated by (Spotify is not a download source). */
+        private val playbackEnabledSources: Set<AudioSourceType>
+            get() =
+                setOfNotNull(
+                    AudioSourceType.TIDAL.takeIf { tidalPlaybackEnabled },
+                    AudioSourceType.QOBUZ.takeIf { qobuzPlaybackEnabled },
+                    AudioSourceType.QOBUZ_BACKUP.takeIf { qobuzBackupPlaybackEnabled },
+                    AudioSourceType.DEEZER.takeIf { deezerPlaybackEnabled },
+                    AudioSourceType.JIOSAAVN.takeIf { jioSaavnPlaybackEnabled },
+                    AudioSourceType.YOUTUBE.takeIf { youTubePlaybackEnabled },
+                )
         private val qobuzAudioQuality by enumPreference(context, QobuzAudioQualityKey, QobuzAudioQuality.FLAC)
         private val tidalAudioQuality by enumPreference(context, TidalAudioQualityKey, TidalAudioQuality.FLAC)
         private val saavnAudioQuality by enumPreference(context, SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320)
@@ -136,7 +175,7 @@ class DownloadUtil
         private val mediaOkHttpClient: OkHttpClient by lazy {
             OkHttpClient
                 .Builder()
-                .proxy(YouTube.streamOkHttpProxy)
+                .withAppStreamProxy()
                 .followRedirects(true)
                 .followSslRedirects(true)
                 .retryOnConnectionFailure(true)
@@ -277,39 +316,34 @@ class DownloadUtil
                 // Instead, sum the actual cached spans and compare against
                 // FormatEntity.contentLength — only treat the cache as
                 // complete when we actually have the full file.
+                // Only keys the gated download chain could produce are reused, in its order, so a
+                // complete cache entry from a disabled or lower-ranked source is never copied.
+                val eligibleCacheKeys = gatedDownloadCacheKeys(mediaId)
+                val youTubeAllowed = DownloadSourceConfig.youTubeFallbackAllowed(playbackEnabledSources)
                 val expectedLength = database.getSongByIdBlocking(mediaId)?.format?.contentLength ?: 0L
                 if (expectedLength > 0L) {
-                    val cachedBytes = runCatching {
-                        playerCache.getCachedSpans(mediaId).sumOf { it.length }
-                    }.getOrDefault(0L)
-                    if (cachedBytes >= expectedLength) {
-                        return@Factory dataSpec
-                    }
-                }
-                // Same check for source-prefixed cache keys — only return
-                // when we actually have the full file, not on partial cache.
-                for (sourcePrefix in DownloadSourceConfig.CACHE_KEY_PREFIXES) {
-                    val sourceKey = "$sourcePrefix$mediaId"
-                    val sourceExpected = expectedLength // same expected length across sources
-                    if (sourceExpected > 0L) {
+                    for (cacheKey in eligibleCacheKeys) {
                         val cachedBytes = runCatching {
-                            playerCache.getCachedSpans(sourceKey).sumOf { it.length }
+                            playerCache.getCachedSpans(cacheKey).sumOf { it.length }
                         }.getOrDefault(0L)
-                        if (cachedBytes >= sourceExpected) {
-                            return@Factory dataSpec.buildUpon().setKey(sourceKey).build()
+                        if (cachedBytes >= expectedLength) {
+                            return@Factory if (cacheKey == mediaId) dataSpec else dataSpec.buildUpon().setKey(cacheKey).build()
                         }
                     }
                 }
                 // Fallback: if we have no expected length info at all, do a
                 // bounded check that requires the WHOLE dataSpec.length to be
                 // cached (only meaningful when dataSpec.length is set).
-                if (dataSpec.length >= 0 && playerCache.isCached(mediaId, dataSpec.position, dataSpec.length)) {
+                if (youTubeAllowed && dataSpec.length >= 0 && playerCache.isCached(mediaId, dataSpec.position, dataSpec.length)) {
                     return@Factory dataSpec
                 }
                 // No usable cache — proceed to resolve a fresh URL.
                 val lowDataModeActive = context.isLowDataModeActive()
                 if (!lowDataModeActive) {
                     resolvePreferredDownloadDataSpec(dataSpec, mediaId)?.let { return@Factory it }
+                }
+                if (!youTubeAllowed) {
+                    throw IOException("No enabled download source resolved $mediaId (YouTube is switched off)")
                 }
                 val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
                 val streamCacheKey = buildSongUrlCacheKey(mediaId, requestedAudioQuality)
@@ -325,14 +359,7 @@ class DownloadUtil
                     }
                 val playbackData =
                     runBlocking(Dispatchers.IO) {
-                        context.retryWithoutPlaybackLoginContext {
-                            YTPlayerUtils.playerResponseForDownload(
-                                mediaId,
-                                audioQuality = requestedAudioQuality,
-                                connectivityManager = connectivityManager,
-                                networkMetered = lowDataModeActive,
-                            )
-                        }
+                        resolveYouTubeDownload(mediaId, requestedAudioQuality, lowDataModeActive)
                     }.getOrThrow()
                 persistPlaybackMetadata(mediaId, playbackData)
 
@@ -429,9 +456,10 @@ class DownloadUtil
         init {
             downloadScope.launch {
                 val result = mutableMapOf<String, Download>()
-                val cursor = downloadManager.downloadIndex.getDownloads()
-                while (cursor.moveToNext()) {
-                    result[cursor.download.request.id] = cursor.download
+                downloadManager.downloadIndex.getDownloads().use { cursor ->
+                    while (cursor.moveToNext()) {
+                        result[cursor.download.request.id] = cursor.download
+                    }
                 }
                 downloads.value = result
             }
@@ -485,9 +513,10 @@ class DownloadUtil
                 runCatching { PoolAccountManager.refresh(appContext) }
             }
 
-            // Fast path: bytes already cached under any source-prefixed key — no work to do. The
-            // DownloadManager will pick them up via the resolver in [youtubeDataSourceFactory].
-            for (key in DownloadSourceConfig.cacheKeysFor(mediaId)) {
+            // Fast path: bytes already cached under a key the gated download chain allows — no
+            // work to do. The DownloadManager will pick them up via the resolver in
+            // [youtubeDataSourceFactory], which applies the same gate.
+            for (key in gatedDownloadCacheKeys(mediaId)) {
                 val spans = runCatching { playerCache.getCachedSpans(key) }.getOrNull().orEmpty()
                 if (spans.isNotEmpty()) {
                     val expected = database.getSongByIdBlocking(mediaId)?.format?.contentLength ?: 0L
@@ -525,17 +554,11 @@ class DownloadUtil
             // YouTube Music fallback — prefer M4A/AAC over Opus/WebM so the
             // resulting file is .m4a (jaudiotagger-readable) rather than .webm
             // (jaudiotagger-unreadable).
+            if (!DownloadSourceConfig.youTubeFallbackAllowed(playbackEnabledSources)) return null
             val requestedAudioQuality = resolveDownloadAudioQuality(lowDataModeActive)
-            val playbackData = runCatching {
-                appContext.retryWithoutPlaybackLoginContext {
-                    YTPlayerUtils.playerResponseForDownload(
-                        mediaId,
-                        audioQuality = requestedAudioQuality,
-                        connectivityManager = connectivityManager,
-                        networkMetered = lowDataModeActive,
-                    )
-                }.getOrThrow()
-            }.getOrNull() ?: return null
+            val playbackData =
+                resolveYouTubeDownload(mediaId, requestedAudioQuality, lowDataModeActive).getOrNull()
+                    ?: return null
             persistPlaybackMetadata(mediaId, playbackData)
             val fetched = runCatching {
                 fetchStreamIntoPlayerCache(
@@ -548,6 +571,39 @@ class DownloadUtil
                 )
             }.isSuccess
             return if (fetched) mediaId else null
+        }
+
+        /**
+         * The shipped resolver, then InnerTubeX, NewPipe and finally echo — the same chain
+         * playback uses ([YouTubeFailsafeChain]). Without the fallbacks a "Video unavailable" from
+         * the shipped client order failed the download even when the same track still played.
+         */
+        private suspend fun resolveYouTubeDownload(
+            mediaId: String,
+            requestedAudioQuality: AudioQuality,
+            lowDataModeActive: Boolean,
+        ): Result<YTPlayerUtils.PlaybackData> {
+            val shippedStartedAt = SystemClock.elapsedRealtime()
+            return appContext
+                .retryWithoutPlaybackLoginContext {
+                    YTPlayerUtils.playerResponseForDownload(
+                        mediaId,
+                        audioQuality = requestedAudioQuality,
+                        connectivityManager = connectivityManager,
+                        networkMetered = lowDataModeActive,
+                    )
+                }.recoverCatching { primaryFailure ->
+                    YouTubeFailsafeChain.recover(
+                        context = appContext,
+                        mediaId = mediaId,
+                        primaryFailure = primaryFailure,
+                        shippedStartedAtMs = shippedStartedAt,
+                        audioQuality = requestedAudioQuality,
+                        networkMetered = lowDataModeActive,
+                        purpose = StreamPurpose.DOWNLOAD,
+                        connectivityManager = connectivityManager,
+                    )
+                }
         }
 
         /**
@@ -669,7 +725,12 @@ class DownloadUtil
             val directQobuzBackupVideoId =
                 SongSourceQobuzBackupVideoId.get(readPreference(SongSourceQobuzBackupVideoIdKey), mediaId)
 
-            val chain = DownloadSourceConfig.resolutionChain(downloadSourceOrderCsv, pinnedSource)
+            val chain =
+                DownloadSourceConfig.resolutionChain(
+                    rawOrder = downloadSourceOrderCsv,
+                    pinnedSource = pinnedSource,
+                    playbackEnabled = playbackEnabledSources,
+                )
             val pinnedDownloadSource = pinnedSource?.let(DownloadSourceConfig::fromAudioSource)
             for (source in chain) {
                 // Deezer's public catalogue lookup fills in ISRC / album name / thumbnail, which is
@@ -727,6 +788,14 @@ class DownloadUtil
             }
             return null
         }
+
+        private fun gatedDownloadCacheKeys(mediaId: String): List<String> =
+            DownloadSourceConfig.downloadCacheKeys(
+                rawOrder = downloadSourceOrderCsv,
+                pinnedSource = SongSourceOverride.get(readPreference(SongSourceOverrideKey), mediaId),
+                playbackEnabled = playbackEnabledSources,
+                mediaId = mediaId,
+            )
 
         private fun resolvePreferredDownloadDataSpec(
             dataSpec: DataSpec,

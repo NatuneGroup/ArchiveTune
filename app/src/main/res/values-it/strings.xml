@@ -107,10 +107,6 @@
         <item quantity="one">%d canzone</item>
         <item quantity="other">%d brani</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d artista</item>
-        <item quantity="other">%d artisti</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d album</item>
         <item quantity="other">%d album</item>
@@ -222,7 +218,6 @@
     <string name="palette_neon_pink">Rosa neon</string>
     <string name="palette_neon_blue">Blu neon</string>
     <string name="palette_neon_orange">Arancione neon</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Oceano</string>
     <string name="palette_forest">Foresta profonda</string>
@@ -232,8 +227,6 @@
     <string name="palette_summer">Estate</string>
     <string name="palette_twilight">Crepuscolo</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Caramella</string>
-    <string name="palette_rainbow">Arcobaleno</string>
     <string name="dark_theme">Tema oscuro</string>
     <string name="dark_theme_on">Su</string>
     <string name="dark_theme_off">Spento</string>
@@ -266,7 +259,6 @@
     <string name="lyrics_line_spacing">Interlinea del testo</string>
     <string name="content">Contenuto</string>
     <string name="action_logout">Esci</string>
-    <string name="action_login">Accedi</string>
     <string name="login">Accedi</string>
     <string name="not_logged_in">Non effettuato l\'accesso</string>
     <string name="content_language">Lingua del contenuto predefinita</string>
@@ -510,7 +502,6 @@
     <string name="proxy_password">Password</string>
     <string name="test_proxy_connection">Test connessione Proxy</string>
     <string name="testing_proxy_connection">Testando la connessione al proxy…</string>
-    <string name="proxy_connection_success">Connessione al proxy riuscita!</string>
     <string name="proxy_connection_failed">Connessione al proxy non riuscita: %s</string>
     <string name="stream_bypass_proxy">Bypassa il prosy per lo stream</string>
     <string name="stream_bypass_proxy_desc">Usa il tuo IP diretto per la riproduzione stream per evitare IP mismatch</string>

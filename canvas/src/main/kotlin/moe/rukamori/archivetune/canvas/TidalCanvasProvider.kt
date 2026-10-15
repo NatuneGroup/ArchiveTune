@@ -31,6 +31,7 @@ object TidalCanvasProvider {
         HttpClient(OkHttp) {
             engine {
                 config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
                     addInterceptor { CanvasRequestPolicy.intercept(it, CanvasSource.TIDAL) }
                 }
             }

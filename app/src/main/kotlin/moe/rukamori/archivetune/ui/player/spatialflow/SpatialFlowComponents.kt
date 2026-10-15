@@ -6,13 +6,6 @@
  */
 
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
  * SpatialFlow player style — shared UI components.
  *
  * Ports of SpatialFlow's PlayerUiComponents.kt
@@ -81,7 +74,8 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
+import moe.rukamori.archivetune.ui.player.label
+import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.player.rememberOfflineArtworkImageRequest
 import moe.rukamori.archivetune.ui.utils.rememberPreBlurredBitmap
@@ -168,7 +162,13 @@ internal fun SpatialFlowBlurredBackdrop(
 
     Box(modifier = modifier) {
         if (artUrl != null) {
-            if (isPreS) {
+            if (!moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
+                moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                    mediaId = artUrl,
+                    artworkUrl = artUrl,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else if (isPreS) {
                 preBlurredBitmap?.let { bmp ->
                     Image(
                         bitmap = bmp.asImageBitmap(),
@@ -426,17 +426,16 @@ internal fun WavySliderWithLabels(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                text = formatDuration(displayPos),
-                style = MaterialTheme.typography.labelSmall,
-                color = contentSecondary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatDuration(displayPos),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentSecondary,
+                )
+            }
 
             if (currentFormat != null) {
-                val label =
-                    remember(currentFormat.mimeType, currentFormat.codecs) {
-                        currentFormat.codecLabel()
-                    }
+                val label = remember(currentFormat) { currentFormat.streamQuality() }.label()
                 Row(
                     modifier =
                         Modifier
@@ -461,11 +460,13 @@ internal fun WavySliderWithLabels(
                 }
             }
 
-            Text(
-                text = formatDuration(duration),
-                style = MaterialTheme.typography.labelSmall,
-                color = contentSecondary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = formatDuration(duration),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = contentSecondary,
+                )
+            }
         }
     }
 }

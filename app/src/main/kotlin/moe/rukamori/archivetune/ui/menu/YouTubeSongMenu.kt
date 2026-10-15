@@ -40,7 +40,6 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -77,6 +76,8 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualityMenuAction
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderPackageKey
@@ -96,7 +97,7 @@ import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
-import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
+import moe.rukamori.archivetune.ui.utils.TrackInfoAndSpecs
 import moe.rukamori.archivetune.utils.SpeedDialPin
 import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.joinByBullet
@@ -927,8 +928,17 @@ fun YouTubeSongMenu(
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
 
+                    AcousticQualityMenuAction(
+                        target = AcousticAuditTarget(
+                            mediaId = song.id,
+                            title = song.title,
+                            artists = song.artists.joinToString { it.name },
+                        ),
+                        onDismiss = onDismiss,
+                    )
+
                     ListItem(
-                        headlineContent = { Text(text = stringResource(R.string.details)) },
+                        headlineContent = { Text(text = stringResource(R.string.track_info_menu_action)) },
                         leadingContent = {
                             Icon(
                                 painter = painterResource(R.drawable.info),
@@ -939,7 +949,14 @@ fun YouTubeSongMenu(
                             Modifier.clickable {
                                 onDismiss()
                                 bottomSheetPageState.show {
-                                    ShowMediaInfo(song.id)
+                                    TrackInfoAndSpecs(
+                                        trackId = song.id,
+                                        title = song.title,
+                                        artists = song.artists.joinToString { it.name },
+                                        album = song.album?.name,
+                                        artwork = song.thumbnail,
+                                        durationMs = song.duration?.toLong()?.times(1_000L),
+                                    )
                                 }
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),

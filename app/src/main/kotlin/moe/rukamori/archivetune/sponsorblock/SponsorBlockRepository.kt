@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.sponsorblock
 
@@ -28,9 +24,6 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.SponsorBlockApiUrlKey
 import moe.rukamori.archivetune.constants.SponsorBlockCategoriesKey
@@ -40,6 +33,7 @@ import timber.log.Timber
 import java.security.MessageDigest
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Fetches skip segments from a SponsorBlock instance. */
 @Singleton
@@ -52,6 +46,11 @@ class SponsorBlockRepository
 
         private val client by lazy {
             HttpClient(OkHttp) {
+                engine {
+                    config {
+                        withAppProxy()
+                    }
+                }
                 install(ContentNegotiation) { json(json) }
                 install(HttpTimeout) {
                     connectTimeoutMillis = 8_000
@@ -82,27 +81,6 @@ class SponsorBlockRepository
                 apiUrl = normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey]) ?: SPONSORBLOCK_DEFAULT_API_URL,
             )
         }
-
-        /**
-         * Settings as a flow, so screens observe instead of re-reading: the
-         * mapping lives here once, next to [settings], instead of being
-         * duplicated at every call site.
-         */
-        fun observeSettings(): Flow<SponsorBlockSettings> =
-            context.dataStore.data
-                .map { preferences ->
-                    SponsorBlockSettings(
-                        enabled = preferences[SponsorBlockEnabledKey] ?: false,
-                        categories =
-                            preferences[SponsorBlockCategoriesKey]
-                                ?.mapNotNull(SponsorBlockCategory::fromApiName)
-                                ?.toSet()
-                                ?: SponsorBlockCategory.Defaults,
-                        apiUrl =
-                            normalizeSponsorBlockApiUrl(preferences[SponsorBlockApiUrlKey])
-                                ?: SPONSORBLOCK_DEFAULT_API_URL,
-                    )
-                }.distinctUntilChanged()
 
         /**
          * Segments for [videoId], or an empty list when the feature is off, the id is not a YouTube

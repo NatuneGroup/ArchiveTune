@@ -52,6 +52,7 @@ import moe.rukamori.archivetune.playback.MusicService.MusicBinder
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.playback.smart.SmartFadeRuntimeState
 import moe.rukamori.archivetune.ui.player.refetchCanvasArtworkForPlayback
 import moe.rukamori.archivetune.telegram.TelegramClient
 import moe.rukamori.archivetune.telegram.TelegramMediaId
@@ -121,6 +122,21 @@ class PlayerConnection(
 
     /** Media3's own definition: ready, wanted, and not suppressed. */
     val isAudioAdvancing = MutableStateFlow(player.isPlaying)
+
+    /**
+     * Read-only to the UI: a transition is audibly blending two tracks right now — a
+     * plain crossfade, or an automix mix. The BitChord and Flamingo seek bars morph
+     * (fill collapse + sheen) while it holds.
+     */
+    val isMixing =
+        combine(
+            service.crossfadeMixing,
+            SmartFadeRuntimeState.mixing,
+        ) { crossfade, automix -> crossfade || automix }.stateIn(
+            connectionScope,
+            SharingStarted.Lazily,
+            service.crossfadeMixing.value || SmartFadeRuntimeState.mixing.value,
+        )
     val mediaMetadata = service.currentMediaMetadata
     val currentSong =
         mediaMetadata.flatMapLatest {
@@ -134,6 +150,9 @@ class PlayerConnection(
         mediaMetadata.flatMapLatest { mediaMetadata ->
             database.format(mediaMetadata?.id)
         }
+    val decodedPcmFormat = service.decodedPcmFormat
+    val reportedAudioFormat = service.reportedAudioFormat
+    val androidAudioOutputFormat = service.androidAudioOutputFormat
 
     val queueTitle = MutableStateFlow<String?>(null)
     val queueWindows = MutableStateFlow<List<Timeline.Window>>(emptyList())
@@ -420,6 +439,14 @@ class PlayerConnection(
         service.toggleLike()
     }
 
+    /** Pushes a canvas the user picked to the open player surfaces without waiting for a track change. */
+    internal suspend fun publishCanvasArtwork(
+        mediaId: String,
+        artwork: CanvasArtwork,
+    ) {
+        _canvasArtworkUpdates.emit(CanvasArtworkUpdate(mediaId = mediaId, artwork = artwork))
+    }
+
     internal suspend fun refetchCanvasArtwork(
         metadata: MediaMetadata,
         requireVertical: Boolean,
@@ -463,6 +490,10 @@ class PlayerConnection(
     }
 
     fun seekToNext() {
+        // Next during a fade commits the song that is fading in (user decision 2026-10-13):
+        // the promotion IS the skip, so no seekToNext may follow — it would restart that
+        // song from 0.
+        if (service.commitCrossfadeForSkipNext()) return
         service.prepareForManualSkip()
         player.seekToNext()
         player.prepare()
@@ -474,6 +505,19 @@ class PlayerConnection(
         player.seekToPrevious()
         player.prepare()
         player.playWhenReady = true
+    }
+
+    fun seekBy(deltaMs: Long) {
+        if (deltaMs == 0L) return
+        val activePlayer = player
+        if (!activePlayer.isCurrentMediaItemSeekable) return
+        activePlayer.seekTo(
+            resolveSeekByTargetMs(
+                currentPositionMs = activePlayer.currentPosition,
+                deltaMs = deltaMs,
+                durationMs = activePlayer.duration,
+            ),
+        )
     }
 
     override fun onPlaybackStateChanged(state: Int) {

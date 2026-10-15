@@ -8,20 +8,11 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import androidx.compose.foundation.layout.WindowInsets
+import moe.rukamori.archivetune.utils.PendingRestart
+import androidx.annotation.DrawableRes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.painter.Painter
-
-@Immutable
-data class SettingsProfileState(
-    val isLoading: Boolean,
-    val isLoggedIn: Boolean,
-    val accountName: String,
-    val accountEmail: String,
-    val accountImageUrl: String?,
-)
 
 @Immutable
 data class SettingsGroup(
@@ -33,7 +24,7 @@ data class SettingsGroup(
 @Immutable
 data class SettingsItem(
     val key: String,
-    val icon: Painter,
+    @DrawableRes val icon: Int,
     val title: String,
     val subtitle: String? = null,
     val badge: String? = null,
@@ -64,6 +55,10 @@ data class SettingsChild(
     val title: String,
     val scrollKey: String,
     val keywords: List<String> = emptyList(),
+    /** Set on restart-scoped settings: which [PendingRestart] flag this row's switch can raise. */
+    val restartPending: ((PendingRestart) -> Boolean)? = null,
+    /** Set on blur-dependent rows that Disable blur effects overrides. */
+    val blurOverridden: Boolean = false,
     val switchControl: (@Composable () -> Unit)? = null,
 )
 
@@ -75,11 +70,14 @@ data class SettingsChild(
 data class SearchResultItem(
     val title: String,
     val parentTitle: String,
-    val parentIcon: Painter,
+    @DrawableRes val parentIcon: Int,
     val parentKey: String,
     val parentAccentColor: Color = Color.Unspecified,
     val parentRoute: String?,
     val scrollKey: String?,
     val onClick: () -> Unit,
+    val restartPending: ((PendingRestart) -> Boolean)? = null,
+    /** Set on blur-dependent rows that Disable blur effects overrides. */
+    val blurOverridden: Boolean = false,
     val switchControl: (@Composable () -> Unit)? = null,
 )

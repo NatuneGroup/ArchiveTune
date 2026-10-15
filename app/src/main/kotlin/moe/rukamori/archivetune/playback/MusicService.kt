@@ -48,6 +48,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.ParserException
 import androidx.media3.common.PlaybackException
@@ -61,6 +62,7 @@ import androidx.media3.common.Player.STATE_IDLE
 import androidx.media3.common.Timeline
 import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
@@ -72,6 +74,7 @@ import androidx.media3.datasource.cache.CacheDataSink
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
 import androidx.media3.datasource.cache.ContentMetadata
+import androidx.media3.datasource.cache.ContentMetadataMutations
 import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
 import androidx.media3.exoplayer.drm.DrmSessionManager
@@ -87,6 +90,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
 import androidx.media3.exoplayer.audio.AudioTrackAudioOutputProvider
+import androidx.media3.exoplayer.audio.DefaultAudioOffloadSupportProvider
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.ShuffleOrder.DefaultShuffleOrder
@@ -108,10 +112,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -158,6 +160,7 @@ import moe.rukamori.archivetune.constants.CrossfadeDurationKey
 import moe.rukamori.archivetune.constants.CrossfadeEnabledKey
 import moe.rukamori.archivetune.constants.CrossfadeGaplessKey
 import moe.rukamori.archivetune.constants.DeviceMutePlaybackRecoveryVolumeKey
+import moe.rukamori.archivetune.constants.RejectSuspectedUpscaledAudioKey
 import moe.rukamori.archivetune.constants.DiscordShowWhenPausedKey
 import moe.rukamori.archivetune.constants.DiscordTokenKey
 import moe.rukamori.archivetune.constants.DownloadSourceConfig
@@ -200,8 +203,12 @@ import moe.rukamori.archivetune.constants.AppleMusicQuality
 import moe.rukamori.archivetune.constants.AppleMusicQualityKey
 import moe.rukamori.archivetune.constants.TidalAudioQualityKey
 import moe.rukamori.archivetune.constants.TidalEnabledKey
+import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.constants.UsbExclusiveAudioKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.TidalInstancesKey
+import moe.rukamori.archivetune.applemusic.AppleMusicCatalog
+import moe.rukamori.archivetune.applemusic.AppleMusicSearchItem
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.constants.AudioSourceOrderKey
 import moe.rukamori.archivetune.constants.TidalAccountFirstKey
@@ -232,6 +239,9 @@ import moe.rukamori.archivetune.constants.AmazonInstancesKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtExpiryMsKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
+import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
+import moe.rukamori.archivetune.constants.SpotifyStreamResolveMethod
+import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
@@ -248,14 +258,26 @@ import moe.rukamori.archivetune.jiosaavn.SaavnService
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.qobuz.QobuzBackupProvider
 import moe.rukamori.archivetune.qobuz.QobuzToken
+import moe.rukamori.archivetune.audiosource.CurrentStreamInfo
 import moe.rukamori.archivetune.audiosource.AmazonInstances
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptDeadline
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimedOutException
 import moe.rukamori.archivetune.audiosource.AudioSourceConfig
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.PlaybackSourceChain
+import moe.rukamori.archivetune.audiosource.PlaybackSourceSnapshot
+import moe.rukamori.archivetune.audiosource.AmazonTrackPick
+import moe.rukamori.archivetune.audiosource.SongSourceAmazonPick
+import moe.rukamori.archivetune.audiosource.SongSourceAmazonPickKey
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzBackupVideoId
 import moe.rukamori.archivetune.audiosource.SongSourceQobuzTrackId
 import moe.rukamori.archivetune.audiosource.TitleMatch
-import moe.rukamori.archivetune.audiosource.pcmBitrateOrNull
+import moe.rukamori.archivetune.audiosource.enabledPlaybackSources
+import moe.rukamori.archivetune.audiosource.canUseCachedPlaybackSource
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.audiosource.AmazonAudioProvider
 import moe.rukamori.archivetune.applemusic.AppleMusicVirtualStream
@@ -270,6 +292,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
 import moe.rukamori.archivetune.constants.RepeatModeKey
@@ -292,7 +315,6 @@ import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongEntity
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
-import moe.rukamori.archivetune.echo.EchoStreamResolver
 import moe.rukamori.archivetune.extensions.SilentHandler
 import moe.rukamori.archivetune.extensions.collect
 import moe.rukamori.archivetune.extensions.collectLatest
@@ -304,16 +326,16 @@ import moe.rukamori.archivetune.extensions.mediaItems
 import moe.rukamori.archivetune.extensions.metadata
 import moe.rukamori.archivetune.extensions.move
 import moe.rukamori.archivetune.extensions.toEnum
-import moe.rukamori.archivetune.extensions.setOffloadEnabled
 import moe.rukamori.archivetune.extensions.toContinuationQueue
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.extensions.toPersistQueue
 import moe.rukamori.archivetune.extensions.toQueue
-import moe.rukamori.archivetune.innertube.PlaybackAuthState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.SongItem
 import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.playback.artwork.ArtworkProvider
+import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
+import moe.rukamori.archivetune.playback.dsp.UsbExclusiveAudioOutputProvider
 import moe.rukamori.archivetune.playback.artwork.ArtworkRequest
 import moe.rukamori.archivetune.playback.artwork.ArtworkResolver
 import moe.rukamori.archivetune.playback.artwork.ArtworkSettings
@@ -338,11 +360,17 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.PersistPlayerState
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
+import moe.rukamori.archivetune.spotify.SpotifyStreamDrm
+import moe.rukamori.archivetune.spotify.SpotifyStreamingAccount
+import moe.rukamori.archivetune.spotify.SpotifyWebStreamer
+import moe.rukamori.archivetune.spotify.echo.EchoDecryptingDataSource
+import moe.rukamori.archivetune.spotify.echo.SpotifyEchoResolver
 import moe.rukamori.archivetune.models.PersistQueue
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.queues.EmptyQueue
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
+import moe.rukamori.archivetune.playback.queues.appendableQueuePage
 import moe.rukamori.archivetune.sponsorblock.SponsorBlockPlaybackController
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.playback.queues.filterBlockedArtists
@@ -354,6 +382,7 @@ import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
 import moe.rukamori.archivetune.ui.screens.settings.DiscordPresenceManager
+import moe.rukamori.archivetune.discord.DiscordSocialPresenceClient
 import moe.rukamori.archivetune.ui.screens.settings.ListenBrainzManager
 import moe.rukamori.archivetune.utils.AuthScopedCacheValue
 import moe.rukamori.archivetune.utils.CoilBitmapLoader
@@ -361,6 +390,9 @@ import moe.rukamori.archivetune.utils.NetworkConnectivityObserver
 import moe.rukamori.archivetune.utils.StreamClientUtils
 import moe.rukamori.archivetune.utils.SyncUtils
 import moe.rukamori.archivetune.utils.YTPlayerUtils
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPlaybackContext
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityPcmProcessor
+import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityProcessorResult
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.enumPreference
 import moe.rukamori.archivetune.utils.preference
@@ -386,7 +418,6 @@ import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
 import java.io.Serializable
 import java.net.ConnectException
-import java.net.Proxy
 import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.time.LocalDateTime
@@ -394,19 +425,21 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.time.Duration.Companion.seconds
+import moe.rukamori.archivetune.utils.withAppStreamProxy
 
 // Hoisted file-level Regex: the JioSaavn candidate penalty loop below calls
 // "[^a-z0-9]".toRegex() 4 times per candidate (title, wanted title, artist,
 // wanted artist), and a JioSaavn search typically returns 5-20 candidates.
 // Compiling the Pattern once at class-load avoids ~20-80 Regex allocations
 // per stream resolution. Same pattern, same replacement semantics.
-private val JIO_SAAVN_NORMALIZE_REGEX = Regex("[^a-z0-9]")
+private val JIO_SAAVN_NORMALIZE_REGEX = Regex("[^\\p{L}\\p{N}]")
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class, UnstableApi::class)
 @AndroidEntryPoint
@@ -439,6 +472,12 @@ class MusicService :
 
     @Inject
     lateinit var sponsorBlockPlaybackController: SponsorBlockPlaybackController
+
+    @Inject
+    lateinit var audioEngineHost: moe.rukamori.archivetune.playback.dsp.AudioEngineHost
+
+    @Inject
+    lateinit var audioPipelineMonitor: tf.monochrome.android.audio.pipeline.AudioPipelineMonitor
 
     private lateinit var audioManager: AudioManager
 
@@ -520,7 +559,7 @@ class MusicService :
     private val mediaOkHttpClient: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
-            .proxy(YouTube.streamOkHttpProxy)
+            .withAppStreamProxy()
             .followRedirects(true)
             .followSslRedirects(true)
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -536,6 +575,18 @@ class MusicService :
                         host.endsWith("ytimg.com")
 
                 if (!isYouTubeMediaHost) {
+                    // Spotify's web-player CDN refuses audio fetches that do not look like they
+                    // come from open.spotify.com.
+                    if (host.endsWith("spotifycdn.com")) {
+                        val patched =
+                            request
+                                .newBuilder()
+                                .header("User-Agent", SpotifyWebStreamer.USER_AGENT)
+                                .header("Origin", "https://open.spotify.com")
+                                .header("Referer", "https://open.spotify.com/")
+                                .build()
+                        return@addInterceptor chain.proceed(patched)
+                    }
                     // Qobuz backup server (mlc-ytify.kouzu.in) — used as a separate audio source
                     // when the user explicitly enables QOBUZ_BACKUP. The endpoint takes a YouTube
                     // video id as a path segment and returns a lossless stream. The
@@ -622,6 +673,7 @@ class MusicService :
     private val discordSyncEpoch = AtomicLong(0L)
     private val discordSyncRequests = Channel<DiscordSyncRequest>(Channel.CONFLATED)
     private var discordSyncWorkerJob: Job? = null
+    private var discordTransportResyncJob: Job? = null
     private val pendingDiscordRefreshWaiters = mutableListOf<CompletableDeferred<Boolean>>()
     private val discordRefreshWaitersMutex = Mutex()
     private val toggleLikeMutex = Mutex()
@@ -638,6 +690,10 @@ class MusicService :
     // re-prepare so the resolver picks a fresh (possibly different-client) stream URL.
     private var initialBufferRecoveryJob: Job? = null
     private var initialBufferRecoveryAttemptedMediaId: String? = null
+
+    // Media ids whose playback resolution is still running. That is not a stalled stream: on a slow
+    // link Amazon and QQ are downloading the matched file, and re-preparing would restart it.
+    private val mediaIdsResolvingSource: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
     // Codec-state recovery counter, SEPARATE from PlaybackStreamRecoveryTracker.
     @Volatile
@@ -659,6 +715,9 @@ class MusicService :
     private val historyRecordingJobs = ConcurrentHashMap<Long, kotlinx.coroutines.Deferred<ImmediateHistoryResult>>()
 
     val currentMediaMetadata = MutableStateFlow<moe.rukamori.archivetune.models.MediaMetadata?>(null)
+    val decodedPcmFormat = MutableStateFlow<DecodedPcmFormat?>(null)
+    val reportedAudioFormat = MutableStateFlow<ReportedAudioFormat?>(null)
+    val androidAudioOutputFormat = MutableStateFlow<AndroidAudioOutputFormat?>(null)
     val queueRestoreCompleted = MutableStateFlow(false)
     val infiniteQueueLoading = MutableStateFlow(false)
     private val playerInitialized = MutableStateFlow(false)
@@ -677,6 +736,60 @@ class MusicService :
     private val normalizeFactor = MutableStateFlow(1f)
     private val audioNormalizationFactorCache = ConcurrentHashMap<String, Float>()
 
+    private val _currentStreamInfo = MutableStateFlow<CurrentStreamInfo?>(null)
+    val currentStreamInfo: StateFlow<CurrentStreamInfo?> get() = _currentStreamInfo
+
+    private val pendingStreamInfoById = object : LinkedHashMap<String, CurrentStreamInfo>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: Map.Entry<String, CurrentStreamInfo>?): Boolean = size > 12
+    }
+
+    private fun publishCurrentStreamInfo(mediaId: String, info: CurrentStreamInfo) {
+        synchronized(pendingStreamInfoById) {
+            pendingStreamInfoById[mediaId] = info
+            if (mediaId == currentMediaMetadata.value?.id) {
+                pendingStreamInfoById.remove(mediaId)
+                _currentStreamInfo.value = info
+            }
+        }
+    }
+
+    private fun publishDirectStreamInfo(mediaId: String, stream: DirectStream) {
+        publishCurrentStreamInfo(
+            mediaId,
+            CurrentStreamInfo(
+                mediaId = mediaId,
+                source = stream.source,
+                label = stream.label,
+                protocol = directStreamProtocol(stream),
+                sampleRate = stream.sampleRate,
+                bitDepth = stream.bitDepth,
+            ),
+        )
+    }
+
+    private fun directStreamProtocol(stream: DirectStream): String? {
+        val scheme = stream.uri.substringBefore(':', "").lowercase(Locale.ROOT)
+        val mime = stream.mimeType.lowercase(Locale.ROOT)
+        return when {
+            scheme == TidalAudioProvider.PROGRESSIVE_DASH_SCHEME -> "MPEG-DASH (progressive)"
+            mime.contains("dash") -> "MPEG-DASH"
+            mime.contains("mpegurl") -> "HLS"
+            scheme == DeezerCrypto.SCHEME -> "HTTPS (decrypted)"
+            scheme == "https" -> "HTTPS"
+            scheme == "http" -> "HTTP"
+            else -> null
+        }
+    }
+
+    private fun promotePendingStreamInfo(mediaId: String?) {
+        if (mediaId == null) return
+        synchronized(pendingStreamInfoById) {
+            pendingStreamInfoById.remove(mediaId)?.let { _currentStreamInfo.value = it }
+        }
+    }
+
+    val liveNormalizeFactor: StateFlow<Float> get() = normalizeFactor
+
     // Media ids currently served by a resolved Tidal stream. Audio normalization is skipped for
     // these because the loudness metadata we have describes the YouTube stream, not the Tidal one.
     private val tidalActiveMediaIds = ConcurrentHashMap.newKeySet<String>()
@@ -691,13 +804,54 @@ class MusicService :
     private var crossfadeJob: Job? = null
     private var secondaryCrossfadePlayer: ExoPlayer? = null
     private var secondaryCrossfadeTarget: CrossfadeTarget? = null
-    private var isCrossfading = false
+    // The crossfade flag doubles as the UI's mixing signal: the flow backs the plain
+    // `var` below, so every existing write site publishes without knowing it.
+    private val _crossfadeMixing = MutableStateFlow(false)
+
+    /** True while a plain crossfade is blending two tracks; read-only to the UI. */
+    val crossfadeMixing: StateFlow<Boolean> = _crossfadeMixing.asStateFlow()
+    private var isCrossfading: Boolean
+        get() = _crossfadeMixing.value
+        set(value) {
+            _crossfadeMixing.value = value
+        }
     private var crossfadeHandoffInProgress = false
     private var crossfadeBaseVolume = 1f
     private var crossfadeIncomingBaseVolume = 1f
     private var crossfadeProgress = 0f
     private var crossfadeHandoffProgress = 0f
     private var crossfadePlaybackRequested = false
+
+    // ---- Crossfade hand-off state (decisions live in CrossfadeHandoffPolicy) ----
+    // Cue point of the running blend: the incoming song enters here, so a position carry and
+    // the restore-after-failure seek both measure against it. Kept across cancelCrossfade —
+    // the failure recovery needs it AFTER the fade is torn down; the next start overwrites it.
+    private var crossfadeCueMs = 0L
+
+    // Last observed incoming-player position, tracked by the fade loop: an errored player can
+    // report 0, and the position carry must not lose the heard time to that.
+    private var crossfadeLastIncomingPositionMs = 0L
+
+    // Set when the user pressed Next mid-fade and the incoming song was committed as the skip
+    // (see commitCrossfadeForSkipNext); the fade loop answers it with the early-finish ramp.
+    @Volatile
+    private var crossfadeSkipNextCommitRequested = false
+
+    // True while a skip-next commit's promotion is queued or running, so a second Next press
+    // cannot launch a second finishCrossfade for the same player (double promotion).
+    @Volatile
+    private var crossfadeSkipCommitInFlight = false
+
+    // Last (action, reason) the hand-off dispatcher logged, so a stall that keeps deciding
+    // CONTINUE every 32ms tick logs once instead of spamming the diagnostics.
+    private var crossfadeLastHandoffLog: Pair<String, String>? = null
+
+    // Live SkipSilenceKey value, cached by the preference collector: the fade exit paths
+    // restore skip-silence from it without a suspend DataStore read.
+    private var skipSilencePreferenceEnabled = false
+    private val crossfadeFailureTracker = CrossfadeFailureTracker()
+    @Volatile
+    private var rejectSuspectedUpscaledAudioEnabled = false
 
     // Monotonic operation id for crossfades. A cancelled/superseded crossfade coroutine can
     // never complete an older handoff: finishCrossfade validates its captured generation
@@ -748,10 +902,27 @@ class MusicService :
     private val secondaryCrossfadeListener =
         object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
-                Timber.tag(TAG).w(error, "Secondary crossfade player failed")
+                Timber.tag("PlaybackDiagnostics").w(
+                    "Secondary player failed errorCode=%d outgoingPositionMs=%d gain=%.3f",
+                    error.errorCode,
+                    player.currentPosition,
+                    player.volume,
+                )
+                val outgoingMediaId = player.currentMediaItem?.mediaId
+                val incomingMediaId = secondaryCrossfadeTarget?.mediaId
                 scope.launch {
-                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                    scheduleCrossfade()
+                    // The hand-off policy decides: an errored incoming player that the listener
+                    // has already heard enough of is carried to the primary player at its
+                    // position; before the commit point the outgoing song is restored.
+                    val handled = handleCrossfadeHandoff(reason = "incoming_error")
+                    if (handled == null) {
+                        // No active fade to hand off (the error landed after a cancel): keep
+                        // the failure bookkeeping so repeated attempts stay throttled.
+                        val retryDecision = crossfadeFailureTracker.registerFailure(outgoingMediaId, incomingMediaId)
+                        if (retryDecision == CrossfadeRetryDecision.HARD_CUT) {
+                            Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                        }
+                    }
                 }
             }
         }
@@ -903,6 +1074,13 @@ class MusicService :
      */
     private var bitPerfectOutputActive: Boolean = false
     private var bitPerfectDeviceCallback: android.media.AudioDeviceCallback? = null
+
+    /**
+     * Whether the standard sinks carry [UsbExclusiveAudioOutputProvider]. Sampled once in
+     * [onCreate] like [bitPerfectOutputActive]; with the switch off at that point the sink is
+     * built exactly as without the feature.
+     */
+    private var usbExclusiveSinkInstalled: Boolean = false
     private val audioEffectPlayerListener =
         object : Player.Listener {
             override fun onEvents(
@@ -996,6 +1174,37 @@ class MusicService :
             state != Player.STATE_ENDED
     }
 
+    // Route string of the last session-activity PendingIntent ("album/<id>" or null), so the
+    // PendingIntent is only rebuilt when the target actually changes.
+    private var lastSessionActivityAlbumRoute: String? = null
+
+    // Tapping the playback notification opens the playing song's album when it has one; songs
+    // without an album keep the plain open-the-app intent. MainActivity consumes the extra.
+    private fun updateSessionActivityAlbumLink(metadata: moe.rukamori.archivetune.models.MediaMetadata?) {
+        if (!this::mediaSession.isInitialized) return
+        val albumId = metadata?.album?.id?.takeIf { it.isNotBlank() }
+        val route = albumId?.let { "album/$it" }
+        if (route == lastSessionActivityAlbumRoute) return
+        lastSessionActivityAlbumRoute = route
+        val intent =
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                if (route != null) {
+                    putExtra("navigate_to", route)
+                }
+            }
+        runCatching {
+            mediaSession.setSessionActivity(
+                PendingIntent.getActivity(
+                    this,
+                    SessionActivityAlbumLinkRequestCode,
+                    intent,
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+        }.onFailure { reportException(it) }
+    }
+
     private fun stopForegroundAndSelf() {
         cancelIdleStop()
         runCatching {
@@ -1054,6 +1263,9 @@ class MusicService :
         // Reacts to its own SharedPreferences, so nothing further has to be wired here.
         musicHapticsEngine = SpatialFlowHapticEngine(this)
 
+        val streamingContext = applicationContext
+        SpotifyWebStreamer.accessTokenProvider = { SpotifyStreamingAccount.accessToken(streamingContext) }
+
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 val nm = getSystemService(NotificationManager::class.java)
@@ -1071,10 +1283,8 @@ class MusicService :
 
         // The sink is fixed for the life of this player, so a default read before the first
         // settings snapshot lands would silently ignore the switch until the next restart.
-        // Bounded (1.5 s) and only where the feature exists.
-        if (BitPerfectUsbOutput.isPlatformSupported) {
-            moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
-        }
+        // Bounded (1.5 s), and on every API level because the USB exclusive switch exists on all.
+        moe.rukamori.archivetune.utils.PreferenceStore.blockUntilLoaded()
         bitPerfectOutputActive =
             BitPerfectUsbOutput.isPlatformSupported &&
             dataStore.get(BitPerfectUsbOutputKey, false) &&
@@ -1083,12 +1293,17 @@ class MusicService :
         BitPerfectUsbOutput.sinkActive = bitPerfectOutputActive
         BitPerfectUsbOutput.setEnabled(this, bitPerfectOutputActive)
         if (bitPerfectOutputActive) registerBitPerfectDeviceCallback()
+        // The bit-perfect sink owns the DAC when it is on; the exclusive route lives in the
+        // standard sink only.
+        usbExclusiveSinkInstalled =
+            !bitPerfectOutputActive && dataStore.get(UsbExclusiveAudioKey, false)
+        UsbExclusiveAudioOutputProvider.installed = usbExclusiveSinkInstalled
 
         localPlayer =
             ExoPlayer
                 .Builder(this)
                 .setMediaSourceFactory(createMediaSourceFactory())
-                .setRenderersFactory(createRenderersFactory(primaryTransitionFilter))
+                .setRenderersFactory(createRenderersFactory(primaryTransitionFilter, primaryAudioAuthenticityContext))
                 .setLoadControl(createPrimaryLoadControl())
                 .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
                 .setHandleAudioBecomingNoisy(true)
@@ -1103,8 +1318,9 @@ class MusicService :
                 .apply {
                     addAnalyticsListener(PlaybackStatsListener(false, this@MusicService))
                     addListener(audioEffectPlayerListener)
-                    setOffloadEnabled(false)
                 }
+        audioAuthenticityContextByPlayer[localPlayer] = primaryAudioAuthenticityContext
+        observeAudioTrackConfiguration(localPlayer)
         castPlaybackRepository = CastPlaybackRepositoryLocator.get(this)
         player =
             castPlaybackRepository
@@ -1119,6 +1335,12 @@ class MusicService :
                 }
         _playerFlow.value = player
         playerInitialized.value = true
+        scope.launch {
+            dataStore.data
+                .map { it[UsePoolAccountsKey] ?: true }
+                .distinctUntilChanged()
+                .collect { directStreamCache.clear() }
+        }
         // ioScope, not scope: the lookup is network plus a JSON parse, and the controller hops to
         // the main thread itself for every player read.
         sponsorBlockPlaybackController.attach(player, ioScope)
@@ -1226,6 +1448,12 @@ class MusicService :
         )
         addSession(mediaSession)
 
+        scope.launch {
+            currentMediaMetadata.collect { metadata ->
+                updateSessionActivityAlbumLink(metadata)
+            }
+        }
+
         updateNotification()
         player.repeatMode = REPEAT_MODE_OFF
 
@@ -1236,10 +1464,18 @@ class MusicService :
             val offload = prefs[AudioOffload] ?: false
             val crossfadePrefEnabled = prefs[CrossfadeEnabledKey] ?: false
             val automixPrefEnabled = prefs[AutomixEnabledKey] ?: false
+            val authenticityPrefEnabled = prefs[RejectSuspectedUpscaledAudioKey] ?: false
             withContext(Dispatchers.Main) {
                 player.repeatMode = repeatMode
                 playerVolume.value = volume
-                updateAudioOffload(offload && !crossfadePrefEnabled && !automixPrefEnabled)
+                updateAudioOffload(
+                    resolveAudioOffloadEnabled(
+                        requested = offload,
+                        crossfadeEnabled = crossfadePrefEnabled,
+                        automixEnabled = automixPrefEnabled,
+                        authenticityRejectionEnabled = authenticityPrefEnabled,
+                    ),
+                )
             }
         }
 
@@ -1357,9 +1593,15 @@ class MusicService :
         dataStore.data
             .map { it[SkipSilenceKey] ?: false }
             .distinctUntilChanged()
-            .collectLatest(scope) {
-                localPlayer.skipSilenceEnabled = it
-                secondaryCrossfadePlayer?.skipSilenceEnabled = it
+            .collectLatest(scope) { enabled ->
+                skipSilencePreferenceEnabled = enabled
+                // During a blend skip-silence is force-off on both players (it moves media
+                // time on its own and confuses the fade clock and the position carry); a
+                // change made mid-fade is recorded and honoured by the fade's exit path.
+                if (!isCrossfading) {
+                    localPlayer.skipSilenceEnabled = enabled
+                    secondaryCrossfadePlayer?.skipSilenceEnabled = enabled
+                }
             }
 
         dataStore.data
@@ -1398,14 +1640,21 @@ class MusicService :
             dataStore.data.map { it[AudioOffload] ?: false },
             dataStore.data.map { it[CrossfadeEnabledKey] ?: false },
             dataStore.data.map { it[AutomixEnabledKey] ?: false },
-        ) { offloadEnabled, crossfadeEnabled, automixEnabled ->
-            Triple(offloadEnabled, crossfadeEnabled, automixEnabled)
+            dataStore.data.map { it[RejectSuspectedUpscaledAudioKey] ?: false },
+        ) { offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled ->
+            listOf(offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled)
         }.distinctUntilChanged()
-            .collectLatest(scope) { (offloadEnabled, crossfadeEnabled, automixEnabled) ->
+            .collectLatest(scope) { (offloadEnabled, crossfadeEnabled, automixEnabled, authenticityRejectionEnabled) ->
                 // Offload is incompatible with both blending engines: automix
                 // exercises the same two-player + processor-chain path crossfade
                 // does, plus its own filter riding.
-                val effectiveOffload = offloadEnabled && !crossfadeEnabled && !automixEnabled
+                val effectiveOffload =
+                    resolveAudioOffloadEnabled(
+                        requested = offloadEnabled,
+                        crossfadeEnabled = crossfadeEnabled,
+                        automixEnabled = automixEnabled,
+                        authenticityRejectionEnabled = authenticityRejectionEnabled,
+                    )
                 updateAudioOffload(effectiveOffload)
                 if (effectiveOffload) {
                     val skipSilenceEnabled = dataStore.get(SkipSilenceKey, false)
@@ -1424,6 +1673,26 @@ class MusicService :
             .distinctUntilChanged()
             .collectLatest(scope) { mode ->
                 SmartFadeSettings.performanceMode.value = mode
+            }
+
+        dataStore.data
+            .map { it[RejectSuspectedUpscaledAudioKey] ?: false }
+            .distinctUntilChanged()
+            .collectLatest(scope) { enabled ->
+                rejectSuspectedUpscaledAudioEnabled = enabled
+                if (!enabled) authenticityRejectedSourcesByMediaId.clear()
+                if (resolveAudioAuthenticityProbeAvailability(enabled, pcmTapAvailable = !bitPerfectOutputActive) ==
+                    AudioAuthenticityProbeAvailability.UNKNOWN
+                ) {
+                    Timber.tag("PlaybackDiagnostics").w(
+                        "Audio authenticity verdict=UNKNOWN reason=bit_perfect_usb_pcm_bypass",
+                    )
+                }
+                audioAuthenticityContextByPlayer.values.forEach { contextRef ->
+                    contextRef.get()?.playbackKey?.let { mediaId ->
+                        contextRef.set(audioAuthenticityContextFor(mediaId))
+                    }
+                }
             }
 
         dataStore.data
@@ -1467,7 +1736,7 @@ class MusicService :
                 if ((crossfadeEnabled && crossfadeDurationMs > 0L) || smartFadeEnabled) {
                     scheduleCrossfade()
                 } else {
-                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "crossfade_disabled")
                 }
             }
 
@@ -1574,6 +1843,7 @@ class MusicService :
                             minSongDuration = minSongDuration,
                             scrobbleDelayPercent = delayPercent,
                             scrobbleDelaySeconds = delaySeconds,
+                            context = this@MusicService,
                         )
                     scrobbleManager?.useNowPlaying = dataStore.get(LastFMUseNowPlaying, false)
                 } else if (!shouldEnable && scrobbleManager != null) {
@@ -1701,6 +1971,7 @@ class MusicService :
         reason: String,
         force: Boolean = false,
     ) {
+        if (!DiscordSocialPresenceClient.isAvailable) return
         val request =
             DiscordSyncRequest(
                 epoch = discordSyncEpoch.incrementAndGet(),
@@ -1721,6 +1992,26 @@ class MusicService :
             reason = reason,
             force = true,
         )
+    }
+
+    // One pending resync at most: a newer invalidation replaces the older one, and the delay
+    // is the client's reconnect backoff so a gateway that closes right after READY is retried
+    // at a widening interval instead of immediately.
+    private fun scheduleDiscordTransportResync(
+        reason: String,
+        delayMs: Long,
+    ) {
+        scope.launch {
+            discordTransportResyncJob?.cancel()
+            discordTransportResyncJob =
+                scope.launch {
+                    if (delayMs > 0L) delay(delayMs)
+                    requestDiscordSync(
+                        reason = "transport_invalidated:$reason",
+                        force = true,
+                    )
+                }
+        }
     }
 
     private fun ensureDiscordSyncFresh(epoch: Long) {
@@ -1833,6 +2124,7 @@ class MusicService :
     }
 
     suspend fun refreshDiscordNow(): Boolean {
+        if (!DiscordSocialPresenceClient.isAvailable) return false
         val waiter = CompletableDeferred<Boolean>()
         addPendingDiscordRefreshWaiter(waiter)
         requestDiscordSync(
@@ -1850,6 +2142,10 @@ class MusicService :
 
     private suspend fun syncDiscordStateInternal(request: DiscordSyncRequest) {
         val refreshWaiters = takePendingDiscordRefreshWaiters()
+        if (!DiscordSocialPresenceClient.isAvailable) {
+            completeDiscordRefreshWaiters(refreshWaiters, false)
+            return
+        }
         try {
             ensureDiscordSyncFresh(request.epoch)
 
@@ -2289,6 +2585,7 @@ class MusicService :
     }
 
     private fun ensurePresenceManager() {
+        if (!DiscordSocialPresenceClient.isAvailable) return
         if (DiscordPresenceManager.isRunning() && lastPresenceToken != null) return
 
         // Launch in scope to avoid blocking
@@ -2330,14 +2627,13 @@ class MusicService :
                     token = key,
                 )
                 DiscordPresenceManager.setOnTransportInvalidated { reason ->
+                    val delayMs = DiscordSocialPresenceClient.reconnectBackoffRemainingMs()
                     Timber.tag(DISCORD_SYNC_TAG).w(
-                        "transport invalidated reason=%s; requesting forced sync",
+                        "transport invalidated reason=%s; forced sync in %dms",
                         reason,
+                        delayMs,
                     )
-                    requestDiscordSync(
-                        reason = "transport_invalidated:$reason",
-                        force = true,
-                    )
+                    scheduleDiscordTransportResync(reason, delayMs)
                 }
                 Timber.tag("MusicService").d("Presence manager started")
                 lastPresenceToken = key
@@ -2373,7 +2669,7 @@ class MusicService :
         if (outputSignature == lastAudioOutputDeviceSignature) return
         lastAudioOutputDeviceSignature = outputSignature
         audioOutputResolver.refresh()
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "audio_output_changed")
         player.setAudioAttributes(playbackAudioAttributes(), false)
         audioRouteRecoveryJob?.cancel()
         audioRouteRecoveryJob =
@@ -2580,11 +2876,12 @@ class MusicService :
         if (expectedVolume <= MIN_AUDIBLE_EFFECTIVE_VOLUME) return
         if (player.volume > STUCK_MUTED_VOLUME_EPSILON) return
 
-        Timber.tag(TAG).w(
-            "Restoring muted primary player volume during active playback: reason=%s expected=%s actual=%s",
+        Timber.tag("PlaybackDiagnostics").w(
+            "Restoring muted primary player volume reason=%s expectedGain=%.3f actualGain=%.3f focusHeld=%s",
             reason,
             expectedVolume,
             player.volume,
+            hasAudioFocus,
         )
         applyEffectiveVolumeImmediately(expectedVolume)
     }
@@ -2628,7 +2925,7 @@ class MusicService :
         sleepTimer.clear()
         crossfadeTriggerJob?.cancel()
         crossfadeTriggerJob = null
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "sleep_timer")
         releaseSecondaryCrossfadePlayer()
         player.pause()
         player.playWhenReady = false
@@ -2669,6 +2966,12 @@ class MusicService :
         }
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(currentMediaId, target.mediaId)) {
+            localPlayer.pauseAtEndOfMediaItems = false
+            releaseSecondaryCrossfadePlayer()
+            Timber.tag("PlaybackDiagnostics").w("Crossfade skipped after repeated transition failures")
+            return
+        }
         val currentIndex = player.currentMediaItemIndex
         val triggerAt = duration - effectiveDuration - CROSSFADE_END_GUARD_MS
 
@@ -2768,6 +3071,12 @@ class MusicService :
         }
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(currentMediaId, target.mediaId)) {
+            localPlayer.pauseAtEndOfMediaItems = false
+            releaseSecondaryCrossfadePlayer()
+            Timber.tag("PlaybackDiagnostics").w("Smart crossfade skipped after repeated transition failures")
+            return
+        }
         val currentIndex = player.currentMediaItemIndex
 
         crossfadeTriggerJob =
@@ -2892,7 +3201,7 @@ class MusicService :
                         // path simply forgot to.
                         val positionMs = player.currentPosition
                         val remainingFadeMs =
-                            (duration - positionMs - CROSSFADE_END_GUARD_MS)
+                            (duration - positionMs)
                                 .coerceAtMost(plan.fadeMs)
                         if (remainingFadeMs >= MIN_CROSSFADE_DURATION_MS) {
                             startCrossfade(target, remainingFadeMs, plan)
@@ -3183,11 +3492,10 @@ class MusicService :
 
         val currentItem = player.getMediaItemAt(currentIndex)
         val targetItem = player.getMediaItemAt(targetIndex)
+        if (!repeatCurrent && crossfadeGapless && isGaplessAlbumTransition(currentItem, targetItem)) return null
         // Episodes report duration -1 until resolved: fading against an
         // unknown-length track schedules against fiction. Skip both directions.
-        val currentMeta = currentItem.localConfiguration?.tag as? moe.rukamori.archivetune.models.MediaMetadata
-        val targetMeta = targetItem.localConfiguration?.tag as? moe.rukamori.archivetune.models.MediaMetadata
-        if (currentMeta?.isPodcast == true || targetMeta?.isPodcast == true) return null
+        if (currentItem.metadata?.isPodcast == true || targetItem.metadata?.isPodcast == true) return null
 
         return CrossfadeTarget(
             index = targetIndex,
@@ -3261,6 +3569,7 @@ class MusicService :
             createSecondaryCrossfadePlayer().also { secondaryPlayer ->
                 secondaryCrossfadePlayer = secondaryPlayer
                 secondaryCrossfadeTarget = target
+                setAudioAuthenticityContext(secondaryPlayer, target.mediaId)
                 // The incoming player must be promotion-capable: it receives the FULL queue
                 // (not just the target item) plus the repeat/shuffle/speed state, so it can
                 // become the active player at the end of the fade without any re-buffering.
@@ -3270,6 +3579,13 @@ class MusicService :
                 secondaryPlayer.setMediaItems(items, target.index, cueTimeMs.coerceAtLeast(0L))
                 secondaryPlayer.repeatMode = player.repeatMode
                 secondaryPlayer.shuffleModeEnabled = player.shuffleModeEnabled
+                // Copy the session player's shuffle order: a fresh DefaultShuffleOrder would
+                // re-roll it, so after promotion "next" would play a different song than the
+                // queue UI showed.
+                if (secondaryPlayer.mediaItemCount == player.mediaItemCount) {
+                    runCatching { secondaryPlayer.setShuffleOrder(localPlayer.shuffleOrder) }
+                        .onFailure { Timber.tag(TAG).w(it, "Failed to copy shuffle order to crossfade player") }
+                }
                 secondaryPlayer.playbackParameters = player.playbackParameters
                 secondaryPlayer.volume = 0f
                 secondaryPlayer.prepare()
@@ -3284,10 +3600,11 @@ class MusicService :
         // Each player owns its filter: an AudioProcessor may belong to one chain only.
         val secondaryTransition = TransitionFilterProcessor()
         secondaryTransitionFilter = secondaryTransition
-        return ExoPlayer
+        val authenticityContext = AtomicReference<AudioAuthenticityPlaybackContext?>(null)
+        val secondaryPlayer = ExoPlayer
             .Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
-            .setRenderersFactory(createRenderersFactory(secondaryTransition))
+            .setRenderersFactory(createRenderersFactory(secondaryTransition, authenticityContext))
             .setLoadControl(createCrossfadeLoadControl())
             .setTrackSelector(DefaultTrackSelector(this, SafeTrackSelectionFactory()))
             .setHandleAudioBecomingNoisy(true)
@@ -3299,9 +3616,11 @@ class MusicService :
             .build()
             .apply {
                 addListener(secondaryCrossfadeListener)
-                setOffloadEnabled(false)
                 skipSilenceEnabled = localPlayer.skipSilenceEnabled
             }
+        audioAuthenticityContextByPlayer[secondaryPlayer] = authenticityContext
+        observeAudioTrackConfiguration(secondaryPlayer)
+        return secondaryPlayer
     }
 
     private fun startCrossfade(
@@ -3313,9 +3632,17 @@ class MusicService :
 
         val smart = plan != null
         val cueTimeMs = if (smart) (plan!!.incomingCueTime * 1000).roundToLong().coerceAtLeast(0L) else 0L
-        val incomingPlayer = prepareSecondaryCrossfadePlayer(target, cueTimeMs) ?: return
         val outgoingMediaId = player.currentMediaItem?.mediaId ?: return
+        if (!crossfadeFailureTracker.canAttempt(outgoingMediaId, target.mediaId)) {
+            Timber.tag("PlaybackDiagnostics").w("Crossfade attempt suppressed after repeated transition failures")
+            return
+        }
+        val incomingPlayer = prepareSecondaryCrossfadePlayer(target, cueTimeMs) ?: return
         val generation = crossfadeGeneration.incrementAndGet()
+        crossfadeCueMs = cueTimeMs
+        crossfadeLastIncomingPositionMs = 0L
+        crossfadeSkipNextCommitRequested = false
+        crossfadeLastHandoffLog = null
 
         crossfadeTriggerJob?.cancel()
         crossfadeTriggerJob = null
@@ -3328,8 +3655,25 @@ class MusicService :
                 crossfadeIncomingBaseVolume = currentEffectivePlayerVolumeForMediaId(target.mediaId)
                 crossfadePlaybackRequested = player.playWhenReady
                 localPlayer.pauseAtEndOfMediaItems = true
+                // Skip-silence moves media time on its own and would confuse both the
+                // position-driven fade clock and the hand-off position carry. Suspend it for
+                // the blend on both players; every exit path restores the user's setting
+                // (user decision 2026-10-13).
+                localPlayer.skipSilenceEnabled = false
+                incomingPlayer.skipSilenceEnabled = false
                 crossfadeUserPlaybackParameters = player.playbackParameters
                 crossfadeSmartActive = smart
+                Timber.tag("PlaybackDiagnostics").i(
+                    "Crossfade start smart=%s durationMs=%d cueMs=%d positionMs=%d trackDurationMs=%d playWhenReady=%s gain=%.3f incomingGain=%.3f",
+                    smart,
+                    durationMs,
+                    cueTimeMs,
+                    player.currentPosition,
+                    player.duration,
+                    crossfadePlaybackRequested,
+                    crossfadeBaseVolume,
+                    crossfadeIncomingBaseVolume,
+                )
                 if (smart) {
                     SmartFadeRuntimeState.mixing.value = isRealMix(plan)
                 }
@@ -3362,8 +3706,10 @@ class MusicService :
                             .coerceAtMost(outgoingLeftMs.coerceAtLeast(0L))
                     if (!awaitCrossfadePlayerReady(incomingPlayer, CROSSFADE_READY_TIMEOUT_MS, requiredBufferedMs)) {
                         Timber.tag(TAG).d("crossfade[%d] incoming player not ready in time; aborting", generation)
-                        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                        scheduleCrossfade()
+                        // Nothing has been heard yet, so the policy restores the outgoing song;
+                        // RESTORE is forced because a CONTINUE here would leave the armed fade
+                        // with no loop running.
+                        handleCrossfadeHandoff(reason = "incoming_not_ready", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
                         return@launch
                     }
 
@@ -3373,7 +3719,8 @@ class MusicService :
                     player.duration
                         .takeIf { it != C.TIME_UNSET && it > 0L }
                         ?.let { fullDuration ->
-                            val leftAfterWaitMs = fullDuration - player.currentPosition - CROSSFADE_END_GUARD_MS
+                            val endGuardMs = if (smart) 0L else CROSSFADE_END_GUARD_MS
+                            val leftAfterWaitMs = fullDuration - player.currentPosition - endGuardMs
                             if (leftAfterWaitMs < fadeMs) {
                                 fadeMs = leftAfterWaitMs.coerceAtLeast(MIN_CROSSFADE_DURATION_MS)
                                 Timber.tag(TAG).d(
@@ -3406,14 +3753,26 @@ class MusicService :
                         // advancing through the audio output. Require the play position to move.
                         if (!awaitAudioPositionAdvancement(incomingPlayer, CROSSFADE_AUDIO_ADVANCE_TIMEOUT_MS)) {
                             Timber.tag(TAG).w("crossfade[%d] no audio advancement on incoming player; aborting", generation)
-                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
-                            scheduleCrossfade()
+                            handleCrossfadeHandoff(reason = "no_audio_advance", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
                             return@launch
                         }
                     }
 
+                    player.duration
+                        .takeIf { it != C.TIME_UNSET && it > 0L }
+                        ?.let { fullDuration ->
+                            val endGuardMs = if (smart) 0L else CROSSFADE_END_GUARD_MS
+                            val leftAtFadeStartMs = fullDuration - player.currentPosition - endGuardMs
+                            if (leftAtFadeStartMs < fadeMs) {
+                                fadeMs = leftAtFadeStartMs.coerceAtLeast(MIN_CROSSFADE_DURATION_MS)
+                            }
+                        }
+
                     var elapsedMs = 0L
                     var lastTickMs = android.os.SystemClock.elapsedRealtime()
+                    val blendStartOutgoingPositionMs = player.currentPosition
+                    var lastFadeOutgoingPositionMs = blendStartOutgoingPositionMs
+                    var incomingStallStartedAtMs = -1L
                     // Set once the outgoing song has run out underneath the blend (ported from
                     // 4nx3b 998edf62c). From then on there is nothing left to mix out of, so the
                     // rest of the ramp is compressed into CROSSFADE_EARLY_FINISH_MS instead of
@@ -3423,11 +3782,51 @@ class MusicService :
                     var earlyFinishFromProgress = 0f
                     while (isActive && elapsedMs < fadeMs) {
                         if (player.currentMediaItem?.mediaId != outgoingMediaId) {
-                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "outgoing_media_changed")
                             return@launch
                         }
 
                         val nowMs = android.os.SystemClock.elapsedRealtime()
+                        val incomingAdvancing =
+                            incomingPlayer.playbackState == Player.STATE_READY && incomingPlayer.isPlaying
+                        // Feed the position-carry tracker: an incoming player that errors out can
+                        // start reporting 0, and the carry must keep the last heard position.
+                        runCatching { incomingPlayer.currentPosition }
+                            .getOrDefault(0L)
+                            .takeIf { it > crossfadeLastIncomingPositionMs }
+                            ?.let { crossfadeLastIncomingPositionMs = it }
+                        if (!crossfadePlaybackRequested || incomingAdvancing) {
+                            incomingStallStartedAtMs = -1L
+                        } else if (incomingStallStartedAtMs < 0L) {
+                            incomingStallStartedAtMs = nowMs
+                        }
+                        if (CrossfadePolicy.shouldAbortForIncomingStall(
+                                playbackRequested = crossfadePlaybackRequested,
+                                incomingAdvancing = incomingAdvancing,
+                                stallElapsedMs =
+                                    if (incomingStallStartedAtMs >= 0L) {
+                                        nowMs - incomingStallStartedAtMs
+                                    } else {
+                                        0L
+                                    },
+                                maximumStallMs = CROSSFADE_BUFFER_STALL_GRACE_MS,
+                            )
+                        ) {
+                            // The 250ms trigger only asks the hand-off policy: it decides
+                            // freeze (CONTINUE), restore (uncommitted stall), promote or carry
+                            // once the blend is committed.
+                            val handoffAction =
+                                handleCrossfadeHandoff(
+                                    reason = "incoming_stall",
+                                    stallElapsedMs =
+                                        if (incomingStallStartedAtMs >= 0L) {
+                                            nowMs - incomingStallStartedAtMs
+                                        } else {
+                                            0L
+                                        },
+                                )
+                            if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                        }
                         if (earlyFinishElapsedMs < 0L && crossfadePlaybackRequested) {
                             // onPlayWhenReadyChanged keeps crossfadePlaybackRequested true across
                             // the outgoing player's own end-of-item pause, so a pause by the user
@@ -3441,18 +3840,44 @@ class MusicService :
                                             outgoingDuration != C.TIME_UNSET &&
                                             player.currentPosition >= outgoingDuration - CROSSFADE_END_GUARD_MS - 100L
                                         )
-                            if (outgoingRanOut) {
+                            if (crossfadeSkipNextCommitRequested) {
+                                // The user pressed Next mid-fade and the incoming song was
+                                // committed as the skip: compress the remaining ramp and
+                                // promote it — the song keeps its position, never restarts.
+                                crossfadeSkipNextCommitRequested = false
                                 earlyFinishElapsedMs = 0L
                                 earlyFinishFromProgress = crossfadeProgress
                                 Timber.tag(TAG).d(
-                                    "crossfade[%d] outgoing ended mid-blend at %.0f%%; finishing early",
+                                    "crossfade[%d] manual next committed the incoming song at %.0f%%; finishing early",
                                     generation,
                                     crossfadeProgress * 100f,
                                 )
+                            } else if (outgoingRanOut) {
+                                if (!incomingAdvancing) {
+                                    // The reported bug: the outgoing song ended while the
+                                    // incoming player was not advancing (paused or stalled).
+                                    // The policy promotes a non-terminal player (buffering
+                                    // included) and carries or restores a terminal one — it
+                                    // never restarts the incoming song from 0.
+                                    val handoffAction = handleCrossfadeHandoff(reason = "outgoing_ran_out")
+                                    if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                                } else {
+                                    earlyFinishElapsedMs = 0L
+                                    earlyFinishFromProgress = crossfadeProgress
+                                    Timber.tag(TAG).d(
+                                        "crossfade[%d] outgoing ended mid-blend at %.0f%%; finishing early",
+                                        generation,
+                                        crossfadeProgress * 100f,
+                                    )
+                                }
                             }
                         }
                         if (earlyFinishElapsedMs >= 0L) {
                             if (crossfadePlaybackRequested) {
+                                if (!incomingAdvancing) {
+                                    val handoffAction = handleCrossfadeHandoff(reason = "early_finish_stall")
+                                    if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                                }
                                 incomingPlayer.playWhenReady = true
                                 earlyFinishElapsedMs =
                                     (earlyFinishElapsedMs + (nowMs - lastTickMs)).coerceAtMost(CROSSFADE_EARLY_FINISH_MS)
@@ -3479,16 +3904,16 @@ class MusicService :
                         }
                         if (crossfadePlaybackRequested) {
                             incomingPlayer.playWhenReady = true
-                            if (smart) {
-                                // Driven off the incoming player's own position
-                                // relative to its cue, so the ramp tracks what
-                                // is actually audible regardless of buffering.
-                                elapsedMs =
-                                    (incomingPlayer.currentPosition - cueTimeMs)
-                                        .coerceIn(0L, fadeMs)
-                            } else {
-                                elapsedMs = (elapsedMs + (nowMs - lastTickMs)).coerceAtMost(fadeMs)
-                            }
+                            val outgoingPositionMs = player.currentPosition
+                            elapsedMs =
+                                CrossfadePolicy.advanceFadeElapsedMs(
+                                    elapsedMs = elapsedMs,
+                                    previousPositionMs = lastFadeOutgoingPositionMs,
+                                    currentPositionMs = outgoingPositionMs,
+                                    durationMs = fadeMs,
+                                    incomingAdvancing = incomingAdvancing,
+                                )
+                            lastFadeOutgoingPositionMs = outgoingPositionMs
                             crossfadeProgress = (elapsedMs.toFloat() / fadeMs.toFloat()).coerceIn(0f, 1f)
                             applyCrossfadeVolumes(
                                 crossfadeProgress,
@@ -3502,9 +3927,75 @@ class MusicService :
                             }
                         } else {
                             incomingPlayer.pause()
+                            lastFadeOutgoingPositionMs = player.currentPosition
                         }
                         lastTickMs = nowMs
                         delay(CROSSFADE_FRAME_MS)
+                    }
+
+                    if (smart) {
+                        var tailDeadlineMs =
+                            android.os.SystemClock.elapsedRealtime() + SMART_FADE_TAIL_WAIT_MS
+                        while (isActive && player.currentMediaItem?.mediaId == outgoingMediaId) {
+                            if (!crossfadePlaybackRequested) {
+                                // User pause at the tail: freeze the wait (policy CONTINUE)
+                                // instead of tearing the blend down — resuming must continue
+                                // into the promotion, not restart the next song. The deadline
+                                // is re-armed so the pause itself never times the wait out.
+                                tailDeadlineMs = android.os.SystemClock.elapsedRealtime() + SMART_FADE_TAIL_WAIT_MS
+                                delay(CROSSFADE_FRAME_MS)
+                                continue
+                            }
+                            val outgoingDuration = player.duration
+                            if (outgoingDuration == C.TIME_UNSET || outgoingDuration <= 0L) {
+                                Timber.tag("PlaybackDiagnostics").w("Smart fade tail wait canceled because duration became unknown")
+                                handleCrossfadeHandoff(reason = "tail_duration_unknown", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
+                                return@launch
+                            }
+                            if (incomingPlayer.playbackState != Player.STATE_READY || !incomingPlayer.isPlaying) {
+                                // At the tail the ramp is done and the incoming song is already
+                                // the audible voice: the policy promotes a non-terminal player
+                                // (4nx3b promotes on the tail timeout too), and carries or
+                                // restores a terminal one.
+                                val handoffAction =
+                                    handleCrossfadeHandoff(reason = "tail_incoming_not_playing", fallbackAction = CrossfadeHandoffAction.PROMOTE)
+                                if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                            }
+                            val outgoingPosition = player.currentPosition
+                            if (player.playbackState == Player.STATE_ENDED ||
+                                outgoingPosition >= outgoingDuration - SMART_FADE_TAIL_EPSILON_MS
+                            ) {
+                                break
+                            }
+                            if (!player.playWhenReady &&
+                                player.playbackState == Player.STATE_READY &&
+                                outgoingPosition >= outgoingDuration - 250L
+                            ) {
+                                break
+                            }
+                            if (android.os.SystemClock.elapsedRealtime() >= tailDeadlineMs) {
+                                Timber.tag("PlaybackDiagnostics").w(
+                                    "Smart fade tail wait timed out positionMs=%d durationMs=%d; handing off",
+                                    outgoingPosition,
+                                    outgoingDuration,
+                                )
+                                val handoffAction =
+                                    handleCrossfadeHandoff(reason = "tail_timeout", fallbackAction = CrossfadeHandoffAction.PROMOTE)
+                                if (handoffAction != CrossfadeHandoffAction.CONTINUE) return@launch
+                            }
+                            applyCrossfadeVolumes(
+                                1f,
+                                crossfadeBaseVolume,
+                                crossfadeIncomingBaseVolume,
+                                localPlayer,
+                                incomingPlayer,
+                            )
+                            delay(CROSSFADE_FRAME_MS)
+                        }
+                        if (player.currentMediaItem?.mediaId != outgoingMediaId) {
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "outgoing_media_changed")
+                            return@launch
+                        }
                     }
 
                     finishCrossfade(target, incomingPlayer, generation)
@@ -3522,11 +4013,21 @@ class MusicService :
                             Timber.tag(TAG).w("Crossfade failed with %s", error::class.java.simpleName)
                         }
                     }
-                    runCatching { cancelCrossfade(resetVolume = true, resetPauseAtEnd = true) }
-                        .onFailure {
-                            runCatching { isCrossfading = false }
-                            runCatching { localPlayer.pauseAtEndOfMediaItems = false }
-                        }
+                    cleanupCrossfadeLoopFailure(
+                        handoff = { incomingUnusable ->
+                            handleCrossfadeHandoff(
+                                reason = if (incomingUnusable) "fade_loop_error_cleanup_failed" else "fade_loop_error",
+                                fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING,
+                                incomingUnusable = incomingUnusable,
+                            )
+                        },
+                        cancel = {
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "fade_loop_error_cleanup_failed")
+                        },
+                        clearMixing = { isCrossfading = false },
+                        clearPauseAtEnd = { localPlayer.pauseAtEndOfMediaItems = false },
+                        restoreSkipSilence = { localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled },
+                    )
                 }
             }
     }
@@ -3606,22 +4107,32 @@ class MusicService :
             return
         }
         val targetIndex = resolveCrossfadeTargetIndex(target, incomingPlayer)
+        // The promotion point is by definition the committed end of the handoff: the ramp has
+        // run (or been compressed), so the incoming player is promoted even when it is only
+        // buffering — the position-carry rules of CrossfadeHandoffPolicy do not apply here.
         val incomingUsable =
             CrossfadePolicy.mayPromote(
                 CrossfadePolicy.PromotionSnapshot(
                     generationMatches = true,
                     targetIndex = targetIndex,
+                    incomingItemMatchesTarget = incomingPlayer.currentMediaItem?.mediaId == target.mediaId,
                     hasError = incomingPlayer.playerError != null,
                     isIdle = incomingPlayer.playbackState == Player.STATE_IDLE,
                     isEnded = incomingPlayer.playbackState == Player.STATE_ENDED,
+                    isReady = incomingPlayer.playbackState == Player.STATE_READY,
+                    isPlaying = incomingPlayer.isPlaying,
+                    playbackRequested = crossfadePlaybackRequested,
                     unsetIndex = C.INDEX_UNSET,
+                    outgoingRanOut = true,
                 ),
             )
         if (!incomingUsable) {
             // Never continue a destructive handoff when the incoming player is not valid:
-            // the outgoing player remains authoritative and keeps playing.
+            // the outgoing player remains authoritative and keeps playing. The hand-off
+            // policy carries the heard position (CARRY_TO_PRIMARY) or restores the outgoing
+            // song; CONTINUE cannot come out of a promotion-time snapshot.
             Timber.tag(TAG).w("crossfade[%d] incoming player unusable at promotion; keeping outgoing", generation)
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            handleCrossfadeHandoff(reason = "promotion_unusable")
             return
         }
 
@@ -3631,7 +4142,27 @@ class MusicService :
             player.currentMediaItem?.mediaId,
             target.mediaId,
         )
+        // An out-of-band promotion (manual Next, a listener) must retire the fade loop: on its
+        // next tick it would see the promoted song as a changed outgoing item and cancel the
+        // transition this promotion schedules.
+        val callerJob = kotlinx.coroutines.currentCoroutineContext()[Job]
+        crossfadeJob?.takeIf { it !== callerJob }?.let { fadeLoop ->
+            fadeLoop.cancel()
+            crossfadeJob = null
+        }
+        // Captured before the promotion rebuilds the session player: this is the outgoing
+        // song of the completed transition.
+        val outgoingMediaId = player.currentMediaItem?.mediaId
         val promoted = promoteIncomingCrossfadePlayer(target, incomingPlayer, targetIndex)
+        Timber.tag("PlaybackDiagnostics").i(
+            "Crossfade promotion success=%s playWhenReady=%s state=%d positionMs=%d gain=%.3f focusHeld=%s",
+            promoted,
+            player.playWhenReady,
+            player.playbackState,
+            player.currentPosition,
+            player.volume,
+            hasAudioFocus,
+        )
         if (!promoted) {
             // A promotion that failed after ownership moved leaves the incoming player audible;
             // its filter becomes the primary one so the cancel below opens the right filter.
@@ -3639,9 +4170,13 @@ class MusicService :
                 secondaryTransitionFilter?.let { primaryTransitionFilter = it }
                 secondaryTransitionFilter = null
             }
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "promotion_failed")
             return
         }
+        // Once-per-transition: this (outgoing, incoming) pair has handed off, so a re-armed
+        // scheduler can never fade the same pair again (the promotion's own replayed
+        // transition event ran before this, so the record survives it).
+        crossfadeFailureTracker.registerSuccess(outgoingMediaId, target.mediaId)
 
         // Smart-blend cleanup: the promoted player's filter must finish wide
         // open, the beat-match stretch must give way to the user's speed, and
@@ -3667,6 +4202,10 @@ class MusicService :
         crossfadeProgress = 0f
         crossfadeIncomingBaseVolume = 1f
         crossfadePlaybackRequested = false
+        crossfadeSkipNextCommitRequested = false
+        // The promoted player is the survivor of the blend: give it back the user's
+        // skip-silence setting (possibly changed during the fade).
+        localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled
         // Restore the configured final volume on the promoted player.
         applyEffectiveVolumeImmediately()
         updateAudiblePlaybackRecovery()
@@ -3711,17 +4250,51 @@ class MusicService :
             secondaryCrossfadePlayer = null
             secondaryCrossfadeTarget = null
 
-            // The incoming player's queue was snapshotted at prepare time; items appended to
-            // the live queue since then (e.g. auto-load-more) must follow the promoted player.
-            val incomingItemIds =
-                (0 until incomingPlayer.mediaItemCount)
-                    .mapTo(HashSet()) { incomingPlayer.getMediaItemAt(it).mediaId }
-            val missingItems =
-                (0 until oldSessionPlayer.mediaItemCount)
-                    .map { oldSessionPlayer.getMediaItemAt(it) }
-                    .filter { it.mediaId !in incomingItemIds }
-            if (missingItems.isNotEmpty()) {
-                incomingPlayer.addMediaItems(missingItems)
+            // The incoming player's queue was snapshotted at prepare time; removals,
+            // insertions and reorders made since then (queue edit, auto-load-more) must
+            // follow the promoted player. The sync never touches the playing item, so the
+            // promotion cannot interrupt it; the shuffle order is copied after the sync so
+            // the promoted player keeps playing the sequence the queue UI showed.
+            val liveTargetIndex = resolveCrossfadeTargetIndex(target, oldSessionPlayer)
+            val liveIds = (0 until oldSessionPlayer.mediaItemCount).map { oldSessionPlayer.getMediaItemAt(it).mediaId }
+            val incomingIds = (0 until incomingPlayer.mediaItemCount).map { incomingPlayer.getMediaItemAt(it).mediaId }
+            val syncPlan =
+                CrossfadeQueueSync.plan(
+                    liveIds = liveIds,
+                    liveTargetIndex = liveTargetIndex,
+                    incomingIds = incomingIds,
+                    incomingCurrentIndex = incomingPlayer.currentMediaItemIndex,
+                )
+            if (syncPlan != null) {
+                // A changed range whose live contents are empty is applied too (as a removal),
+                // or items removed from the live queue would reappear after the promotion.
+                if (syncPlan.afterIds != null) {
+                    val afterItems =
+                        (liveTargetIndex + 1 until oldSessionPlayer.mediaItemCount).map { oldSessionPlayer.getMediaItemAt(it) }
+                    // After-range first: the replacement does not shift indices before it.
+                    incomingPlayer.replaceMediaItems(syncPlan.incomingCurrentIndex + 1, incomingPlayer.mediaItemCount, afterItems)
+                }
+                if (syncPlan.beforeIds != null) {
+                    val beforeItems = (0 until liveTargetIndex).map { oldSessionPlayer.getMediaItemAt(it) }
+                    incomingPlayer.replaceMediaItems(0, syncPlan.incomingCurrentIndex, beforeItems)
+                }
+            } else {
+                // The target is gone from the live queue (or moved unclearably): keep the old
+                // best-effort append so auto-load-more items still follow the promotion.
+                val incomingItemIds =
+                    (0 until incomingPlayer.mediaItemCount)
+                        .mapTo(HashSet()) { incomingPlayer.getMediaItemAt(it).mediaId }
+                val missingItems =
+                    (0 until oldSessionPlayer.mediaItemCount)
+                        .map { oldSessionPlayer.getMediaItemAt(it) }
+                        .filter { it.mediaId !in incomingItemIds }
+                if (missingItems.isNotEmpty()) {
+                    incomingPlayer.addMediaItems(missingItems)
+                }
+            }
+            if (incomingPlayer.mediaItemCount == outgoingPlayer.mediaItemCount) {
+                runCatching { incomingPlayer.setShuffleOrder(outgoingPlayer.shuffleOrder) }
+                    .onFailure { Timber.tag(TAG).w(it, "Failed to copy shuffle order to promoted crossfade player") }
             }
 
             // 2. Session-facing player + Cast delegation. CastPlayer pins its local player at
@@ -3767,7 +4340,14 @@ class MusicService :
             // 6. Queue/metadata state. The incoming player's transition into the target item
             // happened before it was the service player, so the bookkeeping is replayed
             // manually now that ownership has moved.
-            val promotedItem = incomingPlayer.getMediaItemAt(targetIndex)
+            // The before-range sync shifts the playing item, so targetIndex (resolved before the
+            // sync) can be stale; the player's own current item is authoritative.
+            val promotedIndex =
+                incomingPlayer.currentMediaItemIndex
+                    .takeIf { it in 0 until incomingPlayer.mediaItemCount && incomingPlayer.getMediaItemAt(it).mediaId == target.mediaId }
+                    ?: resolveCrossfadeTargetIndex(target, incomingPlayer).takeIf { it != C.INDEX_UNSET }
+                    ?: targetIndex
+            val promotedItem = incomingPlayer.getMediaItemAt(promotedIndex)
             currentMediaMetadata.value = promotedItem.metadata
             onMediaItemTransition(promotedItem, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
 
@@ -3795,6 +4375,7 @@ class MusicService :
         runCatching { outgoingPlayer.volume = 0f }
         runCatching { outgoingPlayer.stop() }
         runCatching { outgoingPlayer.clearMediaItems() }
+        removeAudioAuthenticityContext(outgoingPlayer)
         runCatching { outgoingPlayer.release() }
     }
 
@@ -3856,13 +4437,76 @@ class MusicService :
     fun prepareForManualSkip() {
         if (!::player.isInitialized) return
         if (!isCrossfading && !crossfadeHandoffInProgress && secondaryCrossfadePlayer == null) return
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "manual_skip")
+    }
+
+    /**
+     * Commits the incoming song as the answer to a manual Next pressed mid-fade (user
+     * decision 2026-10-13): when the fade is healthy and the incoming item is the next queue
+     * item, the remaining ramp is compressed and the incoming song is promoted, keeping its
+     * position. The caller must then NOT call seekToNext — the promotion IS the skip.
+     *
+     * @return true when the skip was satisfied by the promotion.
+     */
+    fun commitCrossfadeForSkipNext(): Boolean {
+        if (!::player.isInitialized) return false
+        if (!isCrossfading || crossfadeHandoffInProgress) return false
+        if (crossfadeSkipCommitInFlight) return true
+        val incomingPlayer = secondaryCrossfadePlayer ?: return false
+        val target = secondaryCrossfadeTarget ?: return false
+        if (!CrossfadeHandoffPolicy.isPromotableIncoming(crossfadeIncomingStateOf(incomingPlayer))) return false
+        if (incomingPlayer.currentMediaItem?.mediaId != target.mediaId) return false
+        val targetIndex = resolveCrossfadeTargetIndex(target, player)
+        if (targetIndex == C.INDEX_UNSET || targetIndex != player.nextMediaItemIndex) return false
+        // Next resumes playback like a normal skip does. A paused fade cannot run its ramp out
+        // in the loop, so a paused Next promotes right away whatever the progress.
+        val resumeFromPause = !crossfadePlaybackRequested
+        if (resumeFromPause || crossfadeProgress >= CrossfadeHandoffPolicy.COMMIT_PROGRESS) {
+            // Past the commit point the incoming song is already the dominant voice: promote
+            // it right away instead of waiting for the loop to finish the ramp. The fade loop
+            // is retired first: left running, its next tick would see the promoted song as a
+            // changed outgoing item and cancel the transition the promotion schedules.
+            crossfadeJob?.cancel()
+            crossfadeJob = null
+            crossfadePlaybackRequested = true
+            crossfadeSkipCommitInFlight = true
+            scope.launch {
+                try {
+                    runCatching { incomingPlayer.playWhenReady = true }
+                    finishCrossfade(target, incomingPlayer, crossfadeGeneration.get())
+                    if (resumeFromPause && player.currentMediaItem?.mediaId == target.mediaId && !player.playWhenReady) {
+                        player.play()
+                    }
+                } finally {
+                    crossfadeSkipCommitInFlight = false
+                }
+            }
+        } else {
+            // Early in the fade the outgoing song is still clearly audible: let the loop
+            // compress the remaining ramp (CROSSFADE_EARLY_FINISH_MS) so no volume jumps.
+            crossfadeSkipNextCommitRequested = true
+        }
+        Timber
+            .tag("PlaybackDiagnostics")
+            .i("Crossfade manual next committed the incoming song progress=%.3f", crossfadeProgress)
+        return true
     }
 
     private fun cancelCrossfade(
         resetVolume: Boolean,
         resetPauseAtEnd: Boolean,
+        reason: String,
     ) {
+        if (isCrossfading || crossfadeHandoffInProgress || secondaryCrossfadePlayer != null) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Crossfade canceled reason=%s progress=%.3f handoffProgress=%.3f resetVolume=%s resetPauseAtEnd=%s",
+                reason,
+                crossfadeProgress,
+                crossfadeHandoffProgress,
+                resetVolume,
+                resetPauseAtEnd,
+            )
+        }
         // Invalidate any in-flight operation so a cancelled crossfade coroutine can never
         // complete an older handoff later.
         crossfadeGeneration.incrementAndGet()
@@ -3876,10 +4520,17 @@ class MusicService :
         crossfadeProgress = 0f
         crossfadeIncomingBaseVolume = 1f
         crossfadePlaybackRequested = false
+        crossfadeSkipNextCommitRequested = false
+        crossfadeLastHandoffLog = null
         if (::player.isInitialized && resetPauseAtEnd) {
             localPlayer.pauseAtEndOfMediaItems = false
         }
         releaseSecondaryCrossfadePlayer()
+        // The outgoing player is the survivor of a cancelled blend: give it back the user's
+        // skip-silence setting (possibly changed during the fade).
+        if (::player.isInitialized) {
+            localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled
+        }
         // A cancel mid-ride can leave the audible player's filter partway closed; open it or the
         // rest of the song plays muffled. A stretch the plan put on the incoming player died with
         // it, so the saved user parameters are simply dropped.
@@ -3893,6 +4544,208 @@ class MusicService :
         }
     }
 
+    private fun recoverCrossfadeFailure(
+        retryDecision: CrossfadeRetryDecision = CrossfadeRetryDecision.HARD_CUT,
+        reason: String = "unspecified",
+        target: CrossfadeTarget? = null,
+    ) {
+        val shouldResumeOutgoing =
+            CrossfadePolicy.shouldResumeAfterEnded(
+                playbackRequested = crossfadePlaybackRequested,
+                hasNextItem = player.hasNextMediaItem(),
+                repeatOne = player.repeatMode == REPEAT_MODE_ONE,
+                suppressAutoPlayback = suppressAutoPlayback,
+            )
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = reason)
+        if (shouldResumeOutgoing && !player.playWhenReady) {
+            if (outgoingSongHasRunOut()) {
+                // The parked outgoing player would auto-advance on play() and start the
+                // incoming song at 0 (the restart bug this whole hand-off exists for). Enter
+                // the target at the blend's cue instead — for a classic fade that is the
+                // song's start, which is correct there. The pure rule never rewinds the
+                // already-played song and never applies a stale cue to a different one; when
+                // nothing valid resolves this is a plain hard cut to the next item at 0.
+                val liveIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                val restoreSeek =
+                    target?.let {
+                        CrossfadeHandoffPolicy.restoreSeek(
+                            targetMediaId = it.mediaId,
+                            plannedTargetIndex = it.index,
+                            liveIds = liveIds,
+                            currentIndex = player.currentMediaItemIndex,
+                            repeatOne = player.repeatMode == REPEAT_MODE_ONE,
+                            cueMs = crossfadeCueMs.coerceAtLeast(0L),
+                            unsetIndex = C.INDEX_UNSET,
+                        )
+                    }
+                if (restoreSeek != null) {
+                    player.seekTo(restoreSeek.index, restoreSeek.positionMs)
+                } else {
+                    player.nextMediaItemIndex
+                        .takeIf { it != C.INDEX_UNSET }
+                        ?.let { player.seekTo(it, 0L) }
+                }
+            }
+            player.play()
+        } else if (retryDecision == CrossfadeRetryDecision.RETRY_FADE) {
+            scheduleCrossfade()
+        }
+    }
+
+    /** True when the outgoing song has ended, or is parked at its end-of-item pause. */
+    private fun outgoingSongHasRunOut(): Boolean {
+        val outgoingDuration = player.duration
+        return player.playbackState == Player.STATE_ENDED ||
+            (
+                !player.playWhenReady &&
+                    player.playbackState == Player.STATE_READY &&
+                    outgoingDuration != C.TIME_UNSET &&
+                    player.currentPosition >= outgoingDuration - CROSSFADE_END_GUARD_MS - 100L
+            )
+    }
+
+    private fun crossfadeIncomingStateOf(crossfadePlayer: ExoPlayer): CrossfadeIncomingState =
+        when {
+            crossfadePlayer.playerError != null -> CrossfadeIncomingState.ERROR
+            crossfadePlayer.playbackState == Player.STATE_IDLE -> CrossfadeIncomingState.IDLE
+            crossfadePlayer.playbackState == Player.STATE_ENDED -> CrossfadeIncomingState.ENDED
+            crossfadePlayer.playbackState == Player.STATE_BUFFERING -> CrossfadeIncomingState.BUFFERING
+            crossfadePlayer.isPlaying -> CrossfadeIncomingState.READY_PLAYING
+            else -> CrossfadeIncomingState.READY_PAUSED
+        }
+
+    /**
+     * Streamed and DRM sources re-buffer far slower than local playback, so their stall
+     * grace is wider. Everything ArchiveTune plays over the network (and any scheme this
+     * does not recognise) counts as streamed; only file-backed URIs keep the tight grace.
+     */
+    private fun crossfadeIncomingIsStreamedOrDrm(crossfadePlayer: ExoPlayer): Boolean {
+        val scheme = crossfadePlayer.currentMediaItem?.localConfiguration?.uri?.scheme?.lowercase()
+        return scheme != "file" && scheme != "content"
+    }
+
+    /**
+     * The ONE dispatcher for every crossfade failure or hand-over site: builds the
+     * [CrossfadeHandoffSnapshot] from live player state, asks the pure
+     * [CrossfadeHandoffPolicy], logs the decision with its reason, and executes it.
+     *
+     * @param fallbackAction used when the policy says CONTINUE but the call site cannot keep
+     *   looping (it has no fade loop to return to, or the wait it was guarding is over).
+     * @return the executed action, or null when no crossfade was active (nothing to hand off).
+     */
+    private suspend fun handleCrossfadeHandoff(
+        reason: String,
+        stallElapsedMs: Long = 0L,
+        fallbackAction: CrossfadeHandoffAction? = null,
+        incomingUnusable: Boolean = false,
+    ): CrossfadeHandoffAction? {
+        val incomingPlayer = secondaryCrossfadePlayer ?: return null
+        val target = secondaryCrossfadeTarget ?: return null
+        val generation = crossfadeGeneration.get()
+        val outgoingMediaId = player.currentMediaItem?.mediaId
+        val incomingPositionMs =
+            runCatching { incomingPlayer.currentPosition }
+                .getOrDefault(0L)
+                .coerceAtLeast(crossfadeLastIncomingPositionMs)
+        val snapshot =
+            CrossfadeHandoffSnapshot(
+                playbackRequested = crossfadePlaybackRequested,
+                outgoingRanOut = outgoingSongHasRunOut(),
+                progress = crossfadeProgress,
+                // A source rejected by the authenticity check leaves a healthy player whose
+                // audio must not continue: it is treated like a terminal one so the commit rule
+                // carries its heard position through the normal source chain.
+                incomingState =
+                    if (incomingUnusable) CrossfadeIncomingState.ERROR else crossfadeIncomingStateOf(incomingPlayer),
+                incomingItemMatchesTarget = incomingPlayer.currentMediaItem?.mediaId == target.mediaId,
+                incomingHeardMs = (incomingPositionMs - crossfadeCueMs.coerceAtLeast(0L)).coerceAtLeast(0L),
+                stallElapsedMs = stallElapsedMs,
+            )
+        val action =
+            CrossfadeHandoffPolicy.resolveFallback(
+                decided =
+                    CrossfadeHandoffPolicy.decide(
+                        snapshot,
+                        uncommittedStallGraceMs = CrossfadeHandoffPolicy.uncommittedStallGraceMs(
+                            crossfadeIncomingIsStreamedOrDrm(incomingPlayer),
+                        ),
+                    ),
+                fallback = fallbackAction,
+                snapshot = snapshot,
+            )
+        val logKey = action.name to reason
+        if (action != CrossfadeHandoffAction.CONTINUE || crossfadeLastHandoffLog != logKey) {
+            Timber.tag("PlaybackDiagnostics").i(
+                "Crossfade handoff action=%s reason=%s progress=%.3f incomingState=%s incomingPosMs=%d heardMs=%d outgoingRanOut=%s stallMs=%d",
+                action,
+                reason,
+                crossfadeProgress,
+                snapshot.incomingState,
+                incomingPositionMs,
+                snapshot.incomingHeardMs,
+                snapshot.outgoingRanOut,
+                stallElapsedMs,
+            )
+            crossfadeLastHandoffLog = logKey
+        }
+        when (action) {
+            CrossfadeHandoffAction.PROMOTE -> {
+                // Re-assert the live playback intent before the promotion rebuilds the
+                // session player: a paused incoming song must not come up silent.
+                runCatching { incomingPlayer.playWhenReady = crossfadePlaybackRequested }
+                finishCrossfade(target, incomingPlayer, generation)
+            }
+            CrossfadeHandoffAction.CARRY_TO_PRIMARY -> {
+                crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                carryIncomingPositionToPrimary(target, incomingPlayer)
+            }
+            CrossfadeHandoffAction.RESTORE_OUTGOING -> {
+                val retryDecision = crossfadeFailureTracker.registerFailure(outgoingMediaId, target.mediaId)
+                if (retryDecision == CrossfadeRetryDecision.HARD_CUT) {
+                    Timber.tag("PlaybackDiagnostics").w("Crossfade retry limit reached for current transition")
+                }
+                recoverCrossfadeFailure(retryDecision = retryDecision, reason = "restore:$reason", target = target)
+            }
+            CrossfadeHandoffAction.CONTINUE -> {}
+        }
+        return action
+    }
+
+    /**
+     * CARRY_TO_PRIMARY: the incoming player cannot be promoted, so the primary player takes
+     * the target song back at the position the listener had reached. The seek goes through
+     * the session player, i.e. through the normal source chain — expired URLs re-resolve and
+     * a rejected source keeps the position, per the audio-authenticity invariant.
+     */
+    private fun carryIncomingPositionToPrimary(
+        target: CrossfadeTarget,
+        incomingPlayer: ExoPlayer,
+    ) {
+        val incomingPositionMs =
+            runCatching { incomingPlayer.currentPosition }
+                .getOrDefault(0L)
+                .coerceAtLeast(crossfadeLastIncomingPositionMs)
+        val carriedMs =
+            CrossfadeHandoffPolicy.carriedPositionMs(
+                incomingPositionMs = incomingPositionMs,
+                cueMs = crossfadeCueMs,
+                targetDurationMs = runCatching { incomingPlayer.duration }.getOrDefault(C.TIME_UNSET),
+                unsetTime = C.TIME_UNSET,
+                endGuardMs = CROSSFADE_END_GUARD_MS,
+            )
+        val targetIndex = resolveCrossfadeTargetIndex(target, player)
+        val playbackRequested = crossfadePlaybackRequested
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "carry_to_primary")
+        if (targetIndex == C.INDEX_UNSET) {
+            // The target no longer exists in the live queue; nothing to seek to. The
+            // outgoing player continues (or advances) naturally.
+            if (playbackRequested) player.play()
+            return
+        }
+        player.seekTo(targetIndex, carriedMs ?: crossfadeCueMs.coerceAtLeast(0L))
+        if (playbackRequested) player.play()
+    }
+
     private fun releaseSecondaryCrossfadePlayer() {
         val playerToRelease = secondaryCrossfadePlayer ?: run {
             secondaryTransitionFilter = null
@@ -3900,6 +4753,7 @@ class MusicService :
         }
         secondaryCrossfadePlayer = null
         secondaryCrossfadeTarget = null
+        removeAudioAuthenticityContext(playerToRelease)
         secondaryTransitionFilter?.open()
         secondaryTransitionFilter = null
         runCatching { playerToRelease.removeListener(secondaryCrossfadeListener) }
@@ -4077,6 +4931,16 @@ class MusicService :
                 lastAudioFocusState = focusChange
             }
         }
+        Timber.tag("PlaybackDiagnostics").d(
+            "Audio focus event=%d held=%s playWhenReady=%s isPlaying=%s state=%d gain=%.3f expectedGain=%.3f",
+            focusChange,
+            hasAudioFocus,
+            player.playWhenReady,
+            player.isPlaying,
+            player.playbackState,
+            player.volume,
+            currentEffectivePlayerVolume(),
+        )
     }
 
     private fun requestAudioFocus(): Boolean {
@@ -4494,6 +5358,7 @@ class MusicService :
         initialBufferRecoveryJob =
             scope.launch {
                 delay(INITIAL_BUFFER_STALL_DELAY_MS)
+                while (mediaId in mediaIdsResolvingSource) delay(INITIAL_BUFFER_STALL_DELAY_MS)
                 if (player.playbackState != Player.STATE_BUFFERING ||
                     !player.playWhenReady ||
                     player.currentPosition >= INITIAL_BUFFER_STALL_POSITION_MS ||
@@ -4582,6 +5447,30 @@ class MusicService :
         onUpdateNotification(mediaSession, hasResumablePlaybackNotification())
     }
 
+    private suspend fun enrichFromAppleMusic(metadata: MediaMetadata): MediaMetadata {
+        val artistName = metadata.artists.firstOrNull()?.name
+        val query = listOfNotNull(metadata.title, artistName).joinToString(" ")
+        // The catalog call is a blocking OkHttp request on a non-interruptible IO block, so the
+        // caller's timeout can only fire if it waits on a separate Deferred.
+        val search = ioScope.async { AppleMusicCatalog.searchTrackSuggestions(query, limit = 5) }
+        val results =
+            try {
+                search.await()
+            } catch (e: CancellationException) {
+                search.cancel()
+                throw e
+            }
+        val match =
+            results
+                .filterIsInstance<AppleMusicSearchItem.Track>()
+                .firstOrNull { track ->
+                    track.title.equals(metadata.title, ignoreCase = true) &&
+                        (artistName == null || track.artist.contains(artistName, ignoreCase = true))
+                }
+                ?: return metadata
+        return metadata.copy(thumbnailUrl = match.artworkUrl ?: metadata.thumbnailUrl)
+    }
+
     private suspend fun recoverSong(
         mediaId: String,
         playbackData: YTPlayerUtils.PlaybackData? = null,
@@ -4596,12 +5485,16 @@ class MusicService :
                 .get(DefaultMetadataSourceKey, MetadataSource.YOUTUBE.name)
                 .toEnum(MetadataSource.YOUTUBE)
         val effectiveMetadata =
-            if (metadataSource == MetadataSource.SPOTIFY) {
-                withTimeoutOrNull(5_000L) {
-                    spotifyLibraryRepository.enrichMetadata(mediaMetadata)
-                } ?: mediaMetadata
-            } else {
-                mediaMetadata
+            when (metadataSource) {
+                MetadataSource.SPOTIFY ->
+                    withTimeoutOrNull(5_000L) {
+                        spotifyLibraryRepository.enrichMetadata(mediaMetadata)
+                    } ?: mediaMetadata
+                MetadataSource.APPLE_MUSIC ->
+                    withTimeoutOrNull(5_000L) {
+                        enrichFromAppleMusic(mediaMetadata)
+                    } ?: mediaMetadata
+                MetadataSource.YOUTUBE -> mediaMetadata
             }
         if (effectiveMetadata != mediaMetadata) {
             withContext(Dispatchers.Main) {
@@ -4655,7 +5548,7 @@ class MusicService :
         }
         cancelRestoredQueueHydration()
         ensureScopesActive()
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "service_created")
         cancelInfiniteQueueBootstrap()
         suppressAutoPlayback = false
         val initialLoadGeneration = ++initialQueueLoadGeneration
@@ -4831,35 +5724,35 @@ class MusicService :
         return DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis())
     }
 
-    private fun MediaItem.isUserQueued(): Boolean =
-        mediaMetadata.extras?.getBoolean(EXTRA_USER_QUEUED, false) == true
+    private fun MediaItem.userQueuedKind(): UserQueuedKind? =
+        mediaMetadata.extras
+            ?.getInt(EXTRA_USER_QUEUED_KIND, -1)
+            ?.let { UserQueuedKind.entries.getOrNull(it) }
 
     /** Marks an item as added by the user (Play next / Add to queue), so later adds line up behind it. */
-    private fun MediaItem.markUserQueued(): MediaItem {
-        if (isUserQueued()) return this
+    private fun MediaItem.markUserQueued(kind: UserQueuedKind): MediaItem {
         val extras = android.os.Bundle(mediaMetadata.extras ?: android.os.Bundle.EMPTY)
-        extras.putBoolean(EXTRA_USER_QUEUED, true)
+        extras.putInt(EXTRA_USER_QUEUED_KIND, kind.ordinal)
         return buildUpon()
             .setMediaMetadata(mediaMetadata.buildUpon().setExtras(extras).build())
             .build()
     }
 
     /**
-     * The number of songs straight after the current one (in play order) that the user added by
-     * hand. "Add to queue" goes after them and ahead of radio/autoplay songs (#172).
+     * The songs straight after the current one (in play order) that the user added by hand, up to
+     * the first radio or autoplay song. Ended there, so earlier plays of the same queue never count.
      */
-    private fun countUpcomingUserQueued(currentIndex: Int): Int {
+    private fun upcomingUserQueuedKinds(currentIndex: Int): List<UserQueuedKind> {
         val timeline = player.currentTimeline
-        if (timeline.isEmpty || currentIndex == C.INDEX_UNSET) return 0
-        var count = 0
+        if (timeline.isEmpty || currentIndex == C.INDEX_UNSET) return emptyList()
+        val kinds = mutableListOf<UserQueuedKind>()
         var index = currentIndex
         while (true) {
             index = timeline.getNextWindowIndex(index, REPEAT_MODE_OFF, player.shuffleModeEnabled)
             if (index == C.INDEX_UNSET || index >= player.mediaItemCount) break
-            if (!player.getMediaItemAt(index).isUserQueued()) break
-            count++
+            kinds += player.getMediaItemAt(index).userQueuedKind() ?: break
         }
-        return count
+        return kinds
     }
 
     fun startRadioSeamlessly() {
@@ -5028,7 +5921,7 @@ class MusicService :
         initialQueueLoadGeneration++
         initialQueueLoadInProgress = false
         suppressAutoPlayback = true
-        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "playback_cleared")
         clearAutomix()
         currentQueue = EmptyQueue
         queueTitle = null
@@ -5055,30 +5948,102 @@ class MusicService :
         }
     }
 
-    fun playNext(items: List<MediaItem>) {
+    /**
+     * Bounds the per-media-id resolution caches during a long session. Entries outside a window
+     * around the current item are only an optimisation (the next resolve repopulates them), so
+     * dropping them costs a re-resolve at worst. Source-prefixed keys ("qobuz:<id>") are matched by
+     * their media id suffix.
+     */
+    private fun trimResolutionCaches() {
+        if (
+            playbackUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            directStreamCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            contentLengthCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            remotePlaybackTrackingUrlCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            audioNormalizationFactorCache.size <= RESOLUTION_CACHE_TRIM_THRESHOLD &&
+            resolvedSourcesByMediaId.size <= RESOLUTION_CACHE_TRIM_THRESHOLD
+        ) {
+            return
+        }
+        val count = player.mediaItemCount
+        if (count == 0) return
+        val index = player.currentMediaItemIndex
+        val keep = HashSet<String>()
+        val from = (index - RESOLUTION_CACHE_KEEP_BEHIND).coerceAtLeast(0)
+        val to = (index + RESOLUTION_CACHE_KEEP_AHEAD).coerceAtMost(count - 1)
+        for (i in from..to) {
+            keep.add(player.getMediaItemAt(i).mediaId)
+        }
+        // Shuffle makes the next item independent of the timeline index.
+        for (neighbour in intArrayOf(player.nextMediaItemIndex, player.previousMediaItemIndex)) {
+            if (neighbour in 0 until count) keep.add(player.getMediaItemAt(neighbour).mediaId)
+        }
+        val isKept: (String) -> Boolean = { key -> keep.any { id -> key == id || key.endsWith(":$id") } }
+        playbackUrlCache.keys.retainAll(isKept)
+        directStreamCache.keys.retainAll(isKept)
+        contentLengthCache.keys.retainAll(isKept)
+        remotePlaybackTrackingUrlCache.keys.retainAll(isKept)
+        audioNormalizationFactorCache.keys.retainAll(isKept)
+        resolvedSourcesByMediaId.keys.retainAll(isKept)
+    }
+
+    fun playNext(items: List<MediaItem>) = insertUserQueued(items, UserQueuedKind.PLAY_NEXT)
+
+    fun addToQueue(items: List<MediaItem>) = insertUserQueued(items, UserQueuedKind.ADD_TO_QUEUE)
+
+    /**
+     * Places hand-queued songs behind earlier ones: Play next behind earlier Play next songs, Add to
+     * queue behind every hand-queued song, both ahead of radio and autoplay songs (#172). With the
+     * setting off, Play next goes straight after the current song and Add to queue to the very end.
+     */
+    private fun insertUserQueued(
+        items: List<MediaItem>,
+        kind: UserQueuedKind,
+    ) {
         val allowedItems =
             items
                 .filterBlockedArtists(blockedArtistIds)
                 .filterVideo(hideMusicVideos)
         if (allowedItems.isEmpty()) return
         suppressAutoPlayback = false
-        // Marked as user-added so a later "Add to queue" lines up behind them (#172).
-        val queuedItems =
-            if (dataStore.get(QueueAddAfterManualKey, true)) allowedItems.map { it.markUserQueued() } else allowedItems
-        val insertionIndex = if (player.mediaItemCount == 0) 0 else player.currentMediaItemIndex + 1
-        val playNextShuffleOrder =
-            if (player.shuffleModeEnabled && player.mediaItemCount > 0) {
+        val keepInOrder = dataStore.get(QueueAddAfterManualKey, true)
+        if (!keepInOrder && kind == UserQueuedKind.ADD_TO_QUEUE) {
+            player.addMediaItems(allowedItems)
+            player.prepare()
+            return
+        }
+        val queuedItems = if (keepInOrder) allowedItems.map { it.markUserQueued(kind) } else allowedItems
+        val currentIndex = player.currentMediaItemIndex
+        val hasQueue = player.mediaItemCount > 0 && currentIndex != C.INDEX_UNSET
+        val skip =
+            if (keepInOrder && hasQueue) {
+                userQueueSkipCount(upcomingUserQueuedKinds(currentIndex), kind)
+            } else {
+                0
+            }
+        val shuffled = player.shuffleModeEnabled && hasQueue
+        // In shuffle the play order is the shuffle order, so the physical slot only has to be free.
+        val insertionIndex =
+            when {
+                !hasQueue -> player.mediaItemCount
+                shuffled && kind == UserQueuedKind.ADD_TO_QUEUE -> player.mediaItemCount
+                shuffled -> currentIndex + 1
+                else -> (currentIndex + 1 + skip).coerceAtMost(player.mediaItemCount)
+            }
+        val shuffleOrder =
+            if (shuffled) {
                 buildPlayNextShuffleOrder(
-                    currentIndex = player.currentMediaItemIndex,
+                    currentIndex = currentIndex,
                     insertionIndex = insertionIndex,
                     insertionCount = queuedItems.size,
+                    skipUpcoming = skip,
                 )
             } else {
                 null
             }
 
         player.addMediaItems(insertionIndex, queuedItems)
-        playNextShuffleOrder?.let(localPlayer::setShuffleOrder)
+        shuffleOrder?.let(localPlayer::setShuffleOrder)
         player.prepare()
     }
 
@@ -5116,46 +6081,6 @@ class MusicService :
         if (mediaItemIndex != destinationIndex) {
             player.moveMediaItem(mediaItemIndex, destinationIndex)
         }
-    }
-
-    fun addToQueue(items: List<MediaItem>) {
-        val allowedItems =
-            items
-                .filterBlockedArtists(blockedArtistIds)
-                .filterVideo(hideMusicVideos)
-        if (allowedItems.isEmpty()) return
-        suppressAutoPlayback = false
-        val currentIndex = player.currentMediaItemIndex
-        if (
-            !dataStore.get(QueueAddAfterManualKey, true) ||
-            player.mediaItemCount == 0 ||
-            currentIndex == C.INDEX_UNSET
-        ) {
-            player.addMediaItems(allowedItems)
-            player.prepare()
-            return
-        }
-        // #172: after the current song and any songs the user already added, ahead of radio or
-        // autoplay songs — so A, then B, then C play in the order they were added.
-        val queuedItems = allowedItems.map { it.markUserQueued() }
-        val skip = countUpcomingUserQueued(currentIndex)
-        if (player.shuffleModeEnabled) {
-            // Physical position does not decide play order in shuffle; the shuffle order does.
-            val insertionIndex = player.mediaItemCount
-            val order =
-                buildPlayNextShuffleOrder(
-                    currentIndex = currentIndex,
-                    insertionIndex = insertionIndex,
-                    insertionCount = queuedItems.size,
-                    skipUpcoming = skip,
-                )
-            player.addMediaItems(insertionIndex, queuedItems)
-            order?.let(localPlayer::setShuffleOrder)
-        } else {
-            val insertionIndex = (currentIndex + 1 + skip).coerceAtMost(player.mediaItemCount)
-            player.addMediaItems(insertionIndex, queuedItems)
-        }
-        player.prepare()
     }
 
     fun playFromVoiceSearch(query: String) {
@@ -6035,12 +6960,33 @@ class MusicService :
         cacheQueuedMetadata()
     }
 
+    override fun onDeviceInfoChanged(deviceInfo: DeviceInfo) {
+        super.onDeviceInfoChanged(deviceInfo)
+        publishDecodedPcmFormat()
+    }
+
     override fun onMediaItemTransition(
         mediaItem: MediaItem?,
         reason: Int,
     ) {
         super.onMediaItemTransition(mediaItem, reason)
+        crossfadeFailureTracker.reset()
+        setAudioAuthenticityContext(localPlayer, mediaItem?.mediaId)
+        if (_currentStreamInfo.value?.mediaId != mediaItem?.mediaId) {
+            _currentStreamInfo.value = null
+        }
+        promotePendingStreamInfo(mediaItem?.mediaId)
+        Timber.tag("PlaybackDiagnostics").d(
+            "Media transition reason=%d state=%d playWhenReady=%s positionMs=%d gain=%.3f",
+            reason,
+            player.playbackState,
+            player.playWhenReady,
+            player.currentPosition,
+            player.volume,
+        )
         mediaItem?.metadata?.let { queuedMetadataByMediaId[mediaItem.mediaId] = it }
+        trimResolutionCaches()
+        updateSpotifyPlaybackReporting(mediaItem?.mediaId)
 
         // New item: reset the initial-buffer-stall watchdog for the next track.
         initialBufferRecoveryJob?.cancel()
@@ -6057,7 +7003,7 @@ class MusicService :
             isCrossfading &&
             !crossfadeHandoffInProgress
         ) {
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek_skip")
         }
 
         if (sleepTimer.pauseWhenSongEnd) {
@@ -6067,10 +7013,11 @@ class MusicService :
 
         beginHistorySession(mediaItem?.mediaId, forceNew = true)
 
-        val currentIndex = player.currentMediaItemIndex
-        val queue = player.mediaItems.map { it.metadata }
-        if (queue.any { it != null }) {
-            lyricsPreloadManager?.onSongChanged(currentIndex, queue)
+        lyricsPreloadManager?.let { preloadManager ->
+            val queue = player.mediaItems.map { it.metadata }
+            if (queue.any { it != null }) {
+                preloadManager.onSongChanged(player.currentMediaItemIndex, queue)
+            }
         }
 
         val timelineEmpty = player.currentTimeline.isEmpty || player.mediaItemCount == 0 || player.currentMediaItem == null
@@ -6091,16 +7038,19 @@ class MusicService :
             currentQueue.hasNextPage() &&
             player.repeatMode == REPEAT_MODE_OFF
         ) {
+            val pageQueue = currentQueue
+            val pageGeneration = initialQueueLoadGeneration
             scope.launch(SilentHandler) {
                 val mediaItems =
-                    currentQueue
+                    pageQueue
                         .nextPage()
                         .filterPlaybackContent(
                             hideExplicit = dataStore.get(HideExplicitKey, false),
                             hideVideo = dataStore.get(HideVideoKey, false),
                         )
+                if (currentQueue !== pageQueue || initialQueueLoadGeneration != pageGeneration) return@launch
                 if (player.playbackState != STATE_IDLE) {
-                    player.addMediaItems(mediaItems.drop(1))
+                    player.addMediaItems(appendableQueuePage(mediaItems, pageQueue.nextPageRepeatsCurrentItem))
                 } else {
                     requestDiscordSync(
                         reason = "player_idle_after_queue_extension",
@@ -6157,6 +7107,18 @@ class MusicService :
      * the user skips to it — turning a ~1-3 second Qobuz/Tidal resolution into a cache hit.
      */
     private val directStreamCache = ConcurrentHashMap<String, CachedDirectStream>()
+    private val selectedPlaybackSourceByMediaId = ConcurrentHashMap<String, AudioSourceType>()
+    private val authenticitySampleRateByMediaId = ConcurrentHashMap<String, Int>()
+    private val authenticityClaimedLosslessByMediaId = ConcurrentHashMap<String, Boolean>()
+    private val authenticityRejectedSourcesByMediaId = ConcurrentHashMap<String, MutableSet<AudioSourceType>>()
+    private val primaryAudioAuthenticityContext = AtomicReference<AudioAuthenticityPlaybackContext?>(null)
+    private val audioAuthenticityContextByPlayer =
+        ConcurrentHashMap<ExoPlayer, AtomicReference<AudioAuthenticityPlaybackContext?>>()
+    private val decodedPcmFormatsByContext =
+        ConcurrentHashMap<AtomicReference<AudioAuthenticityPlaybackContext?>, DecodedPcmFormat>()
+    private val reportedAudioFormatsByMediaId = android.util.LruCache<String, ReportedAudioFormat>(64)
+    private val audioTrackConfigurationsByPlayer =
+        ConcurrentHashMap<ExoPlayer, androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig>()
     private var nextMediaItemPrefetchJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -6171,6 +7133,35 @@ class MusicService :
         val stream: DirectStream,
         val expiresAtMs: Long,
     )
+
+    /**
+     * Observes an already-selected source only. The audit must never enter playback resolution,
+     * refresh an account, or select a different rendition just to obtain readable bytes.
+     * Called on the player application thread; the returned snapshot owns no playback resources.
+     */
+    internal fun acousticAuditSourceSnapshot(mediaId: String): moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot? {
+        if (!::player.isInitialized || player.currentMediaItem?.mediaId != mediaId) return null
+        val source = selectedPlaybackSourceByMediaId[mediaId] ?: AudioSourceType.YOUTUBE
+        val cached = directStreamCache[mediaId]?.takeIf { it.stream.source == source }
+        val stream = cached?.stream
+        val clearProvider = source in setOf(AudioSourceType.TIDAL, AudioSourceType.QOBUZ, AudioSourceType.QOBUZ_BACKUP)
+        val info = currentStreamInfo.value
+        val verified = clearProvider && player.deviceInfo.playbackType == DeviceInfo.PLAYBACK_TYPE_LOCAL &&
+            localPlayer.currentMediaItem?.mediaId == mediaId && info != null && info.mediaId == mediaId &&
+            info.source == source && stream != null && info.sampleRate == stream.sampleRate &&
+            info.bitDepth == stream.bitDepth && stream.uri.startsWith("https://") &&
+            stream.mimeType.substringBefore(';') in setOf("audio/flac", "audio/x-flac", "audio/mp4", "audio/mpeg")
+        return moe.rukamori.archivetune.acoustics.AcousticSourceSnapshot(
+            mediaId = mediaId,
+            source = source,
+            cacheKey = sourceCacheKey(source, mediaId),
+            uri = stream?.uri?.takeIf { verified },
+            expiresAtMs = cached?.expiresAtMs ?: 0L,
+            contentLength = stream?.contentLength ?: contentLengthCache[sourceCacheKey(source, mediaId)],
+            advertisedSampleRate = authenticitySampleRateByMediaId[mediaId],
+            claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true,
+        )
+    }
 
     /**
      * Prefetches the stream URL for the next-up media item in the queue so that when the user skips
@@ -6275,26 +7266,66 @@ class MusicService :
         @Player.State playbackState: Int,
     ) {
         super.onPlaybackStateChanged(playbackState)
+        if (playbackState == Player.STATE_READY) {
+            setAudioAuthenticityContext(localPlayer, player.currentMediaItem?.mediaId)
+        }
+        Timber.tag("PlaybackDiagnostics").d(
+            "Playback state=%d buffering=%s playWhenReady=%s isPlaying=%s positionMs=%d bufferedPositionMs=%d durationMs=%d gain=%.3f expectedGain=%.3f focusHeld=%s",
+            playbackState,
+            playbackState == Player.STATE_BUFFERING,
+            player.playWhenReady,
+            player.isPlaying,
+            player.currentPosition,
+            player.bufferedPosition,
+            player.duration,
+            player.volume,
+            currentEffectivePlayerVolume(),
+            hasAudioFocus,
+        )
 
         updateHistoryTrackingPlaybackState()
         updateInitialBufferRecovery(playbackState)
         if (playbackState == Player.STATE_ENDED || playbackState == Player.STATE_IDLE) {
             enqueueCurrentHistorySessionForFinalization()
+            // IDLE also follows a playback error that the source chain retries in place; resetting
+            // there would restart the listen count and could scrobble the same play twice.
+            if (playbackState == Player.STATE_ENDED || player.currentMediaItem == null) {
+                scrobbleManager?.onSongStop()
+            }
             val playbackWasRequested = player.playWhenReady || crossfadePlaybackRequested
+            val endedDuringCrossfade = isCrossfading
+            val endedCueMs = crossfadeCueMs
+            val endedTarget = secondaryCrossfadeTarget
+            var incomingPromotedOnEnded = false
             if (!isCrossfading || playbackState == Player.STATE_IDLE) {
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                cancelCrossfade(
+                    resetVolume = true,
+                    resetPauseAtEnd = true,
+                    reason = if (playbackState == Player.STATE_IDLE) "state_idle" else "not_crossfading",
+                )
             } else if (playbackState == Player.STATE_ENDED) {
-                // The crossfade was supposed to hand off to the next item before STATE_ENDED
-                // fired, but it didn't complete in time. A stale `isCrossfading = true` here
-                // means `pauseAtEndOfMediaItems` is still `true`, which prevents ExoPlayer's
-                // auto-advance — the player stops at the end of the current song and the user
-                // has to press Play to continue. Tear the crossfade down so the player can
-                // auto-advance normally. The crossfade's secondary player (if any) was either
-                // already promoting itself or never became ready — either way, releasing it
-                // here is safe and prevents a stuck `pauseAtEndOfMediaItems`.
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                val handoffPossible = secondaryCrossfadePlayer != null && secondaryCrossfadeTarget != null
+                if (handoffPossible) {
+                    // The crossfade was supposed to hand off to the next item before
+                    // STATE_ENDED fired. Tearing the blend down here (the old behaviour)
+                    // released the incoming player and let the parked outgoing player
+                    // auto-advance into the same song from 0. The hand-off policy instead
+                    // promotes a healthy incoming player (position kept) and carries or
+                    // restores a terminal one. CONTINUE — a real user pause — leaves the
+                    // still-running fade loop in charge, so resuming playback continues the
+                    // blend into the promotion instead of restarting the song.
+                    incomingPromotedOnEnded = true
+                    scope.launch {
+                        handleCrossfadeHandoff(reason = "state_ended")
+                    }
+                } else {
+                    // No incoming player to hand off: tear the stale blend down and let the
+                    // resume block below advance — at the blend's cue when one was armed.
+                    cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "state_ended_no_handoff")
+                }
             }
             if (playbackState == Player.STATE_ENDED &&
+                !incomingPromotedOnEnded &&
                 CrossfadePolicy.shouldResumeAfterEnded(
                     playbackRequested = playbackWasRequested,
                     hasNextItem = player.hasNextMediaItem(),
@@ -6302,7 +7333,32 @@ class MusicService :
                     suppressAutoPlayback = suppressAutoPlayback,
                 )
             ) {
-                player.seekToNextMediaItem()
+                if (endedDuringCrossfade) {
+                    // A smart blend was torn down mid-handoff: the natural advance must enter
+                    // the next song at its cue, not at 0 — through the pure no-rewind rule, so
+                    // a stale cue never repositions a different song and a finished song is
+                    // never rewound. An unresolved target is a plain hard cut to the next item.
+                    val liveIds = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).mediaId }
+                    val restoreSeek =
+                        endedTarget?.let {
+                            CrossfadeHandoffPolicy.restoreSeek(
+                                targetMediaId = it.mediaId,
+                                plannedTargetIndex = it.index,
+                                liveIds = liveIds,
+                                currentIndex = player.currentMediaItemIndex,
+                                repeatOne = player.repeatMode == REPEAT_MODE_ONE,
+                                cueMs = endedCueMs.coerceAtLeast(0L),
+                                unsetIndex = C.INDEX_UNSET,
+                            )
+                        }
+                    if (restoreSeek != null) {
+                        player.seekTo(restoreSeek.index, restoreSeek.positionMs)
+                    } else {
+                        player.seekToNextMediaItem()
+                    }
+                } else {
+                    player.seekToNextMediaItem()
+                }
                 player.play()
             }
             if (playbackState == Player.STATE_ENDED &&
@@ -6422,12 +7478,20 @@ class MusicService :
         super.onIsPlayingChanged(isPlaying)
         updateInitialBufferRecovery(player.playbackState)
         secondaryCrossfadePlayer?.let { secondaryPlayer ->
-            if (isCrossfading && !crossfadeHandoffInProgress) {
-                if (isPlaying) {
-                    secondaryPlayer.play()
-                } else {
-                    secondaryPlayer.pause()
-                }
+            // Ported from 4nx3b 26b407c39: the session player's isPlaying=false during a blend
+            // is the outgoing player's end-of-item pause or a transient buffering stall — never
+            // a reason to pause the incoming player (that froze the ramp and muted both sides,
+            // and the failure recovery then restarted the next song from 0). Real user pauses
+            // are mirrored by onPlayWhenReadyChanged via crossfadePlaybackRequested.
+            when (
+                CrossfadeListenerPolicy.onSessionIsPlayingChanged(
+                    isPlaying = isPlaying,
+                    crossfading = isCrossfading,
+                    handoffInProgress = crossfadeHandoffInProgress,
+                )
+            ) {
+                CrossfadeSecondaryCommand.PLAY -> secondaryPlayer.play()
+                CrossfadeSecondaryCommand.PAUSE, CrossfadeSecondaryCommand.NONE -> {}
             }
         }
         if (isPlaying && !isCrossfading) {
@@ -6679,8 +7743,21 @@ class MusicService :
         val isSeekDiscontinuity =
             reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT
         if (isSeekDiscontinuity) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Seek reason=%d fromMs=%d toMs=%d state=%d playWhenReady=%s isPlaying=%s gain=%.3f expectedGain=%.3f focusHeld=%s crossfadeProgress=%.3f",
+                reason,
+                oldPosition.positionMs,
+                newPosition.positionMs,
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                player.volume,
+                currentEffectivePlayerVolume(),
+                hasAudioFocus,
+                crossfadeProgress,
+            )
             if (!crossfadeHandoffInProgress) {
-                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+                cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "seek")
             }
             // A seek forces a re-buffer; the BUFFERING->READY transition re-fires the reactive
             // volume pipeline (playerVolume x normalize x focus), which can pin the primary
@@ -6749,6 +7826,18 @@ class MusicService :
 
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
+        Timber.tag("PlaybackDiagnostics").w(
+            "Playback error code=%d state=%d playWhenReady=%s isPlaying=%s positionMs=%d bufferedPositionMs=%d gain=%.3f expectedGain=%.3f focusHeld=%s",
+            error.errorCode,
+            player.playbackState,
+            player.playWhenReady,
+            player.isPlaying,
+            player.currentPosition,
+            player.bufferedPosition,
+            player.volume,
+            currentEffectivePlayerVolume(),
+            hasAudioFocus,
+        )
 
         val currentMediaId = player.currentMediaItem?.mediaId ?: return
         val isLocalMedia = currentMediaId.isLocalMediaId()
@@ -6851,13 +7940,33 @@ class MusicService :
             YTPlayerUtils.invalidateCachedStreamUrls(currentMediaId)
 
             scope.launch(Dispatchers.IO) {
-                // Always purge the streaming/player cache.
-                runCatching { playerCache.removeResource(currentMediaId) }
-                // Keep a complete offline download in place; deleting a user's saved download
-                // to recover from a read error is surprising. Only purge partial entries.
-                if (!isFullyDownloadedMedia) {
-                    runCatching { downloadCache.removeResource(currentMediaId) }
-                } else {
+                // Every key a download can use, not just the bare id: the bytes that broke the
+                // extractor are normally the source-prefixed ones ("qobuz:<id>", "tidal:<id>"),
+                // and purging only the bare key left them in place. The next prepare re-selected the
+                // same corrupt span, the track spent its whole retry budget and auto-skipped — which
+                // is what read as "songs keep skipping near the end".
+                val purgeKeys = DownloadSourceConfig.cacheKeysFor(currentMediaId)
+                purgeKeys.forEach { key -> runCatching { playerCache.removeResource(key) } }
+                // Keep a complete offline download in place; deleting a user's saved download to
+                // recover from a read error is surprising. Completeness is checked per key, because
+                // the complete download is often the source-prefixed one rather than the bare id.
+                var keptCompleteDownload = false
+                purgeKeys.forEach { key ->
+                    val complete =
+                        runCatching {
+                            val length =
+                                downloadCache
+                                    .getContentMetadata(key)
+                                    .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                            length > 0L && downloadCache.isCached(key, 0L, length)
+                        }.getOrDefault(false)
+                    if (complete) {
+                        keptCompleteDownload = true
+                    } else {
+                        runCatching { downloadCache.removeResource(key) }
+                    }
+                }
+                if (keptCompleteDownload) {
                     Timber.tag("MusicService").w(
                         "Keeping offline download for %s; corruption may require manual re-download",
                         currentMediaId,
@@ -7141,6 +8250,17 @@ class MusicService :
                 ).setCacheWriteDataSinkFactory(
                     CacheDataSink.Factory().setCache(playerCache).setFragmentSize(C.LENGTH_UNSET.toLong()),
                 ).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+        // Spotify's desktop ("Echo") method has the same shape as Deezer: a private scheme the
+        // YouTube resolver must not see, decrypted below the cache so replays skip the AES work.
+        val spotifyEchoFactory =
+            CacheDataSource
+                .Factory()
+                .setCache(playerCache)
+                .setUpstreamDataSourceFactory(
+                    EchoDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
+                ).setCacheWriteDataSinkFactory(
+                    CacheDataSink.Factory().setCache(playerCache).setFragmentSize(C.LENGTH_UNSET.toLong()),
+                ).setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
         return DataSource.Factory {
             SchemeRoutingDataSource(
@@ -7149,6 +8269,7 @@ class MusicService :
                 telegramFactory = telegramFactory,
                 deezerFactory = deezerFactory,
                 tidalProgressiveDashFactory = tidalProgressiveDashFactory,
+                spotifyEchoFactory = spotifyEchoFactory,
             )
         }
     }
@@ -7168,12 +8289,17 @@ class MusicService :
                     defaultFactory = youtubeMediaFactory,
                     deezerFactory = DeezerDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
                     tidalProgressiveDashFactory = TidalProgressiveDashDataSource.Factory(mediaOkHttpClient),
+                    spotifyEchoFactory = EchoDecryptingDataSource.Factory(OkHttpDataSource.Factory(mediaOkHttpClient)),
                 )
             }
 
         return ResolvingDataSource.Factory(routingFactory) { dataSpec ->
             val scheme = dataSpec.uri.scheme?.lowercase(Locale.US)
-            if (scheme == DeezerCrypto.SCHEME || scheme == TidalAudioProvider.PROGRESSIVE_DASH_SCHEME) {
+            if (
+                scheme == DeezerCrypto.SCHEME ||
+                scheme == TidalAudioProvider.PROGRESSIVE_DASH_SCHEME ||
+                scheme == SpotifyEchoResolver.SCHEME
+            ) {
                 dataSpec
             } else {
                 resolvePlaybackDataSpec(
@@ -7260,40 +8386,60 @@ class MusicService :
          * Keeping [mediaId] untouched is what makes the switch audio-only.
          */
         val directQobuzBackupVideoId: String? = null,
+        /**
+         * The Amazon row the user tapped in the "Play from" search popup. Amazon instances only
+         * resolve by metadata, so the Amazon resolver searches with this instead of the song's
+         * own title/artist and gates the result against it.
+         */
+        val amazonPick: AmazonTrackPick? = null,
+        /**
+         * The Spotify track id the queue item came from (catalogue imports only). The Spotify
+         * streaming source plays this exact track instead of searching for one.
+         */
+        val spotifyTrackId: String? = null,
     )
 
     /**
-     * The ordered list of enabled non-YouTube sources to try for [resolveMultiSourceDataSpec],
-     * with the user's primary/search source pinned first and YouTube (implicit fallback) excluded.
-     * YouTube's own enable state is still read here so the chain builder and the settings toggles
-     * agree on which sources exist; the resolver's terminal YouTube fallback is additionally
-     * gated in [resolvePlaybackDataSpec].
+     * One consistent read of every source preference the resolution paths consult: the stored
+     * order and the per-source enabled set (Spotify only when its streaming account is signed
+     * in). Built once per resolution and handed to [PlaybackSourceChain], so the UI's order
+     * picker and the resolver always act on the same values. The enabled defaults come from
+     * [AudioSourceConfig.DEFAULT_ENABLED], the same map the settings toggles use.
      */
-    private fun sourceResolutionChain(): List<AudioSourceType> {
-        val enabledDefaults =
-            mapOf(
-                // Defaults MUST match the toggle defaults in PlaybackSourceSections so the
-                // UI and the resolver agree on which sources are active out of the box.
-                AudioSourceType.TIDAL to dataStore.get(TidalEnabledKey, true),
-                AudioSourceType.QOBUZ to dataStore.get(QobuzEnabledKey, false),
-                AudioSourceType.QOBUZ_BACKUP to dataStore.get(QobuzBackupEnabledKey, false),
-                AudioSourceType.DEEZER to dataStore.get(DeezerEnabledKey, false),
-                AudioSourceType.JIOSAAVN to dataStore.get(JioSaavnEnabledKey, false),
-                AudioSourceType.APPLE to dataStore.get(AppleMusicSourceEnabledKey, false),
-                AudioSourceType.AMAZON to dataStore.get(AmazonEnabledKey, false),
-                AudioSourceType.QQ to dataStore.get(QqMusicEnabledKey, false),
-                AudioSourceType.YOUTUBE to dataStore.get(YouTubeSourceEnabledKey, true),
-            )
-        // The single stored order is authoritative (top = preferred). Only sources listed BEFORE
-        // YouTube act as lossless overrides; once YouTube is reached the user has chosen to use
-        // YouTube's own stream, so any sources after it are not attempted as overrides.
-        return AudioSourceConfig
-            .resolutionChain(
-                rawOrder = dataStore.get(AudioSourceOrderKey, "").ifBlank { null },
-                enabledSet = null,
-                defaults = enabledDefaults,
-            ).takeWhile { it != AudioSourceType.YOUTUBE }
-    }
+    private fun sourcePrefsSnapshot(): PlaybackSourceSnapshot =
+        PlaybackSourceSnapshot(
+            order =
+                AudioSourceConfig.parseOrder(
+                    dataStore.get(AudioSourceOrderKey, "").ifBlank { null },
+                ),
+            enabled =
+                PlaybackSourceChain.enabledSet(
+                    flags =
+                        mapOf(
+                            AudioSourceType.TIDAL to
+                                dataStore.get(TidalEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.TIDAL)),
+                            AudioSourceType.QOBUZ to
+                                dataStore.get(QobuzEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ)),
+                            AudioSourceType.QOBUZ_BACKUP to
+                                dataStore.get(QobuzBackupEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QOBUZ_BACKUP)),
+                            AudioSourceType.DEEZER to
+                                dataStore.get(DeezerEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.DEEZER)),
+                            AudioSourceType.APPLE to
+                                dataStore.get(AppleMusicSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.APPLE)),
+                            AudioSourceType.AMAZON to
+                                dataStore.get(AmazonEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.AMAZON)),
+                            AudioSourceType.QQ to
+                                dataStore.get(QqMusicEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.QQ)),
+                            AudioSourceType.SPOTIFY to
+                                dataStore.get(SpotifyStreamEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.SPOTIFY)),
+                            AudioSourceType.JIOSAAVN to
+                                dataStore.get(JioSaavnEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.JIOSAAVN)),
+                            AudioSourceType.YOUTUBE to
+                                dataStore.get(YouTubeSourceEnabledKey, AudioSourceConfig.DEFAULT_ENABLED.getValue(AudioSourceType.YOUTUBE)),
+                        ),
+                    spotifySignedIn = dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank(),
+                ),
+        )
 
     /**
      * Returns true if [source] is currently enabled in the user's preferences. YouTube is enabled
@@ -7302,19 +8448,12 @@ class MusicService :
      *   1. Decide whether to honor a per-song override whose source has since been disabled
      *      (fall through to the chain instead of trying only the disabled source).
      *   2. Guard the auto-pin write so we never pin to a source the user just turned off.
+     *
+     * The resolution path reads the same answer from a single [sourcePrefsSnapshot] instead —
+     * this wrapper exists for the callers outside a resolution in flight.
      */
     private fun isSourceEnabled(source: AudioSourceType): Boolean =
-        when (source) {
-            AudioSourceType.YOUTUBE -> dataStore.get(YouTubeSourceEnabledKey, true)
-            AudioSourceType.TIDAL -> dataStore.get(TidalEnabledKey, true)
-            AudioSourceType.QOBUZ -> dataStore.get(QobuzEnabledKey, false)
-            AudioSourceType.QOBUZ_BACKUP -> dataStore.get(QobuzBackupEnabledKey, false)
-            AudioSourceType.DEEZER -> dataStore.get(DeezerEnabledKey, false)
-            AudioSourceType.APPLE -> dataStore.get(AppleMusicSourceEnabledKey, false)
-            AudioSourceType.AMAZON -> dataStore.get(AmazonEnabledKey, false)
-            AudioSourceType.QQ -> dataStore.get(QqMusicEnabledKey, false)
-            AudioSourceType.JIOSAAVN -> dataStore.get(JioSaavnEnabledKey, false)
-        }
+        source in sourcePrefsSnapshot().enabled
 
     /** Builds the shared lookup metadata for [mediaId] from the database / queue metadata. */
     private fun buildSourceQuery(mediaId: String): SourceQuery? {
@@ -7367,6 +8506,10 @@ class MusicService :
             runBlocking { dataStore.data.first()[SongSourceQobuzBackupVideoIdKey] }
         }.getOrNull()
         val directQobuzBackupVideoId = SongSourceQobuzBackupVideoId.get(qobuzBackupVideoIdRaw, mediaId)
+        val amazonPickRaw = runCatching {
+            runBlocking { dataStore.data.first()[SongSourceAmazonPickKey] }
+        }.getOrNull()
+        val amazonPick = SongSourceAmazonPick.get(amazonPickRaw, mediaId)
         return SourceQuery(
             mediaId = mediaId,
             title = title,
@@ -7376,6 +8519,8 @@ class MusicService :
             isrc = isrc,
             directQobuzTrackId = directQobuzTrackId,
             directQobuzBackupVideoId = directQobuzBackupVideoId,
+            amazonPick = amazonPick,
+            spotifyTrackId = queuedMetadata?.spotifyTrackId?.takeIf { it.isNotBlank() },
         )
     }
 
@@ -7424,6 +8569,7 @@ class MusicService :
         mediaId: String,
         source: AudioSourceType,
     ) {
+        Timber.tag("PlaybackDiagnostics").i("Source selected provider=%s", source.name)
         val set = resolvedSourcesByMediaId.getOrPut(mediaId) { java.util.concurrent.ConcurrentHashMap.newKeySet() }
         if (set.add(source)) {
             _resolvedSourcesRevision.value = _resolvedSourcesRevision.value + 1L
@@ -7449,19 +8595,15 @@ class MusicService :
         //   - The source is GLOBALLY ENABLED — the user has explicitly turned the source
         //     on in Settings, so they should be able to pick it per-song even if the
         //     initial resolution hasn't completed (or failed transiently).
-        // Opt-in sources (AMAZON, QQ) join the chain only after the user enables them; they are
-        // appended above YouTube so the chooser can surface them once enabled, without changing
-        // the default resolution order for everyone else.
-        val chooserOrder =
-            (AudioSourceConfig.DEFAULT_ORDER.filterNot { it == AudioSourceType.YOUTUBE } +
-                listOf(AudioSourceType.AMAZON, AudioSourceType.QQ) +
-                AudioSourceType.YOUTUBE).distinct()
-        return chooserOrder.filter {
-            (it == AudioSourceType.YOUTUBE && isSourceEnabled(AudioSourceType.YOUTUBE)) ||
-                it in resolved ||
-                it == override ||
-                isSourceEnabled(it)
-        }
+        // Every source is a first-class entry in DEFAULT_ORDER now, so the chooser rows follow
+        // the user's own preference order rather than a fixed canon.
+        val chooserOrder = AudioSourceConfig.DEFAULT_ORDER
+        return enabledPlaybackSources(
+            candidates = chooserOrder.filter {
+                it in resolved || it == override || isSourceEnabled(it)
+            },
+            enabledSources = AudioSourceType.entries.filter(::isSourceEnabled).toSet(),
+        )
     }
 
     /**
@@ -7475,6 +8617,7 @@ class MusicService :
             // path in resolveMultiSourceDataSpec would short-circuit to the previously cached
             // (YouTube) stream and never re-try Qobuz/Tidal.
             directStreamCache.remove(mediaId)
+            spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
             // Re-resolve by calling the same slow-path logic the player uses. We pass a dummy
             // DataSpec because resolveMultiSourceDataSpec only uses it as a buildUpon base —
             // the URI and key are overwritten inside. The returned DataSpec is discarded; we
@@ -7507,6 +8650,7 @@ class MusicService :
         mediaId: String,
         source: AudioSourceType?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = null)
     }
 
@@ -7516,6 +8660,7 @@ class MusicService :
         source: AudioSourceType?,
         qobuzTrackId: String?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId, qobuzBackupVideoId = null)
     }
 
@@ -7529,7 +8674,92 @@ class MusicService :
         source: AudioSourceType?,
         qobuzBackupVideoId: String?,
     ) {
+        clearAudioAuthenticitySourceFailures(mediaId, source)
         setSongSourceOverrideInternal(mediaId, source, qobuzTrackId = null, qobuzBackupVideoId = qobuzBackupVideoId)
+    }
+
+    /**
+     * Pins [mediaId] to Amazon AND persists the row the user tapped, so the resolver searches the
+     * instance for that track instead of the song's own metadata.
+     */
+    fun setSongSourceOverrideWithAmazonPick(
+        mediaId: String,
+        amazonPick: AmazonTrackPick,
+    ) {
+        clearAudioAuthenticitySourceFailures(mediaId, AudioSourceType.AMAZON)
+        setSongSourceOverrideInternal(
+            mediaId,
+            AudioSourceType.AMAZON,
+            qobuzTrackId = null,
+            qobuzBackupVideoId = null,
+            amazonPick = amazonPick,
+        )
+    }
+
+    private fun clearAudioAuthenticitySourceFailures(
+        mediaId: String,
+        newSource: AudioSourceType? = null,
+    ) {
+        rememberSourceSwitchFallback(mediaId, newSource)
+        authenticityRejectedSourcesByMediaId.remove(mediaId)
+        selectedPlaybackSourceByMediaId.remove(mediaId)
+        authenticitySampleRateByMediaId.remove(mediaId)
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
+    }
+
+    /**
+     * What was actually playing [mediaId] before the user picked another source in "Play from",
+     * and the pin that was stored then. If the pick then fails to resolve, the resolver tries this
+     * source before the YouTube terminal fallback and the pin is put back, so a failed switch keeps
+     * the stream that was working instead of erroring out and skipping the track.
+     */
+    private data class SourceSwitchFallback(
+        val source: AudioSourceType,
+        val previousOverride: AudioSourceType?,
+    )
+
+    private val sourceSwitchFallbackByMediaId = ConcurrentHashMap<String, SourceSwitchFallback>()
+
+    private fun rememberSourceSwitchFallback(
+        mediaId: String,
+        newSource: AudioSourceType?,
+    ) {
+        val working = selectedPlaybackSourceByMediaId[mediaId]
+        if (working == null || working == newSource || working == AudioSourceType.YOUTUBE) {
+            sourceSwitchFallbackByMediaId.remove(mediaId)
+            return
+        }
+        val previousOverride =
+            SongSourceOverride.get(
+                runCatching { runBlocking { dataStore.data.first()[SongSourceOverrideKey] } }.getOrNull(),
+                mediaId,
+            )
+        sourceSwitchFallbackByMediaId[mediaId] = SourceSwitchFallback(working, previousOverride)
+    }
+
+    private fun restoreSourceAfterFailedSwitch(
+        mediaId: String,
+        fallback: SourceSwitchFallback,
+    ) {
+        sourceSwitchFallbackByMediaId.remove(mediaId)
+        runCatching {
+            runBlocking {
+                dataStore.edit { prefs ->
+                    prefs[SongSourceOverrideKey] =
+                        SongSourceOverride.withOverride(prefs[SongSourceOverrideKey], mediaId, fallback.previousOverride)
+                    prefs[SongSourceQobuzTrackIdKey] =
+                        SongSourceQobuzTrackId.withOverride(prefs[SongSourceQobuzTrackIdKey], mediaId, null)
+                    prefs[SongSourceQobuzBackupVideoIdKey] =
+                        SongSourceQobuzBackupVideoId.withOverride(prefs[SongSourceQobuzBackupVideoIdKey], mediaId, null)
+                    prefs[SongSourceAmazonPickKey] =
+                        SongSourceAmazonPick.withOverride(prefs[SongSourceAmazonPickKey], mediaId, null)
+                }
+            }
+        }
+        scope.launch(Dispatchers.Main) {
+            Toast.makeText(this@MusicService, R.string.play_from_failed_kept_previous, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setSongSourceOverrideInternal(
@@ -7537,13 +8767,24 @@ class MusicService :
         source: AudioSourceType?,
         qobuzTrackId: String?,
         qobuzBackupVideoId: String?,
+        authenticityRejectedSource: AudioSourceType? = null,
+        preservedPositionMs: Long? = null,
+        amazonPick: AmazonTrackPick? = null,
     ) {
+        Timber.tag("PlaybackDiagnostics").i(
+            "Source override changed provider=%s currentItem=%s state=%d positionMs=%d gain=%.3f",
+            source?.name ?: "automatic",
+            ::player.isInitialized && player.currentMediaItem?.mediaId == mediaId,
+            if (::player.isInitialized) player.playbackState else Player.STATE_IDLE,
+            if (::player.isInitialized) player.currentPosition else 0L,
+            if (::player.isInitialized) player.volume else 0f,
+        )
         // A direct Qobuz selection is an explicit user choice. A failed
         // background probe may have left the provider's negative cache or an
         // instance cooldown in place, causing this fresh selection to resolve
         // as YouTube instead. Clear only transient failures before recreating
         // the media source; successful stream/search caches remain intact.
-        if (source == AudioSourceType.QOBUZ && !qobuzTrackId.isNullOrBlank()) {
+        if (authenticityRejectedSource == null && source == AudioSourceType.QOBUZ && !qobuzTrackId.isNullOrBlank()) {
             QobuzAudioProvider.clearTransientCaches()
         }
         // Persist the exact-track ids (if any) BEFORE triggering re-resolution.
@@ -7565,6 +8806,15 @@ class MusicService :
                         mediaId,
                         qobuzBackupVideoId,
                     )
+                    // An authenticity retry re-applies the user's existing choice, so it keeps the
+                    // stored Amazon pick rather than clearing it.
+                    if (authenticityRejectedSource == null) {
+                        prefs[SongSourceAmazonPickKey] = SongSourceAmazonPick.withOverride(
+                            prefs[SongSourceAmazonPickKey],
+                            mediaId,
+                            amazonPick,
+                        )
+                    }
                 }
             }
         }
@@ -7594,28 +8844,27 @@ class MusicService :
             sourceSwitchPending = true
             sourceSwitchExpectedVolume = expectedVolume
 
-            playbackUrlCache.remove(mediaId)
-            YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
-            tidalActiveMediaIds.remove(mediaId)
-
-            // Evict the resolved DirectStream so the slow path re-resolves through the new
-            // override instead of serving the previous source's URL.
-            directStreamCache.remove(mediaId)
-            // Evict the bare-keyed content length so [resolveCachedDataSpec] can't conclude the
-            // request is fully cached based on the previous source's byte size.
-            contentLengthCache.remove(mediaId)
-            runCatching { playerCache.removeResource(mediaId) }
-            runCatching { downloadCache.removeResource(mediaId) }
-            AudioSourceType.entries.forEach { src ->
-                val key = sourceCacheKey(src, mediaId)
-                runCatching { playerCache.removeResource(key) }
-                runCatching { downloadCache.removeResource(key) }
-                // Source-prefixed content-length entries are also stale after a source switch.
-                contentLengthCache.remove(key)
+            if (authenticityRejectedSource != null) {
+                evictAudioAuthenticityRejectedSource(mediaId, authenticityRejectedSource)
+            } else {
+                playbackUrlCache.remove(mediaId)
+                YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
+                tidalActiveMediaIds.remove(mediaId)
+                directStreamCache.remove(mediaId)
+                spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
+                contentLengthCache.remove(mediaId)
+                runCatching { playerCache.removeResource(mediaId) }
+                runCatching { downloadCache.removeResource(mediaId) }
+                AudioSourceType.entries.forEach { src ->
+                    val key = sourceCacheKey(src, mediaId)
+                    runCatching { playerCache.removeResource(key) }
+                    runCatching { downloadCache.removeResource(key) }
+                    contentLengthCache.remove(key)
+                }
             }
             // Cancel any in-flight crossfade so its volume ramp / secondary player can't pin the
             // primary player's volume low while the new source is preparing.
-            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true)
+            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "source_resolve")
             // Re-claim audio focus BEFORE computing/applying the effective volume: applying the
             // volume first multiplies by a stale ducked audioFocusVolumeFactor when focus had been
             // transiently lost, which pins the player at the ducked volume until the reactive
@@ -7627,7 +8876,9 @@ class MusicService :
             // new source's MediaSource is built from scratch) while preserving the rest of the
             // queue.
             val currentIndex = player.currentMediaItemIndex
-            val capturedPositionMs = player.currentPosition.coerceAtLeast(0L)
+            val capturedPositionMs =
+                preservedPositionMs?.let(::resolveAudioAuthenticityRetryPositionMs)
+                    ?: player.currentPosition.coerceAtLeast(0L)
             val allItems = ArrayList(player.mediaItems)
             if (currentIndex in allItems.indices) {
                 allItems[currentIndex] = item
@@ -7708,6 +8959,24 @@ class MusicService :
         mediaId: String,
         lowDataModeActive: Boolean,
         isPrefetch: Boolean = false,
+        prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+    ): DataSpec? {
+        if (!isPrefetch) mediaIdsResolvingSource.add(mediaId)
+        return try {
+            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS) {
+                resolveMultiSourceDataSpecWithinDeadline(dataSpec, mediaId, lowDataModeActive, isPrefetch, prefs)
+            }
+        } finally {
+            if (!isPrefetch) mediaIdsResolvingSource.remove(mediaId)
+        }
+    }
+
+    private fun resolveMultiSourceDataSpecWithinDeadline(
+        dataSpec: DataSpec,
+        mediaId: String,
+        lowDataModeActive: Boolean,
+        isPrefetch: Boolean,
+        prefs: PlaybackSourceSnapshot,
     ): DataSpec? {
         if (mediaId.isLocalMediaId() || mediaId.isTelegramMediaId()) {
             Timber.tag("MusicService").d("Multi-source skip: %s is a local/telegram media id", mediaId)
@@ -7749,6 +9018,7 @@ class MusicService :
         // A song can only be pinned to one source at a time, so at most one of these is
         // set; `isDirectPick` is the shared "the user chose this exact track" signal.
         val isDirectPick = isDirectQobuzTrack || isDirectQobuzBackupTrack
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         // Read the source override FRESH from DataStore — not from the stale
         // PreferenceStore cache. The PreferenceStore collector is async and
         // may not have received the write from setSongSourceOverride yet.
@@ -7765,13 +9035,15 @@ class MusicService :
         // re-resolve through Qobuz even if a cached YouTube stream exists.
         val now = System.currentTimeMillis()
         val cached = directStreamCache[mediaId]
-        if (!isDirectPick && cached != null && cached.expiresAtMs > now) {
+        if (!isDirectPick && cached != null && cached.expiresAtMs > now &&
+            canUseCachedPlaybackSource(cached.stream.source, cached.stream.source in prefs.enabled, authenticityRejectedSources)
+        ) {
             val override = SongSourceOverride.get(sourceOverrideRaw, mediaId)
             val cacheHitsOverride =
                 if (override != null) {
                     override == cached.stream.source
                 } else {
-                    cached.stream.source == sourceResolutionChain().firstOrNull()
+                    cached.stream.source == PlaybackSourceChain.baseChain(prefs).firstOrNull()
                 }
             if (cacheHitsOverride && !lowDataModeActive) {
                 Timber.tag("MusicService").d(
@@ -7782,8 +9054,18 @@ class MusicService :
                 )
                 tidalActiveMediaIds.add(mediaId)
                 audioNormalizationFactorCache[mediaId] = 1f
+                publishDirectStreamInfo(mediaId, cached.stream)
+                selectedPlaybackSourceByMediaId[mediaId] = cached.stream.source
+                authenticityClaimedLosslessByMediaId[mediaId] =
+                    isClaimedLosslessFormat(cached.stream.mimeType, cached.stream.codecs, cached.stream.label)
+                resolveAudioAuthenticitySampleRateHz(cached.stream.sampleRate)
+                    ?.let { authenticitySampleRateByMediaId[mediaId] = it }
+                    ?: authenticitySampleRateByMediaId.remove(mediaId)
+                refreshAudioAuthenticityContexts(mediaId)
                 recordResolvedSource(mediaId, cached.stream.source)
                 val cacheKey = sourceCacheKey(cached.stream.source, mediaId)
+                retainReportedAudioFormat(mediaId, CachedAudioMetadata.from(cached.stream))
+                recordCachedAudioMetadata(cacheKey, cached.stream)
                 cached.stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
                 return dataSpec
                     .buildUpon()
@@ -7807,38 +9089,48 @@ class MusicService :
                 isDirectQobuzBackupTrack -> AudioSourceType.QOBUZ_BACKUP
                 else -> SongSourceOverride.get(sourceOverrideRaw, mediaId)
             }
-        val overrideStillEnabled =
-            override == null ||
-                isSourceEnabled(override)
-        val chain =
-            if (isDirectPick) {
-                // `override` was pinned to the picked source above.
-                listOfNotNull(override)
-            } else when (override) {
-                null -> sourceResolutionChain()
-                AudioSourceType.YOUTUBE -> {
-                    if (overrideStillEnabled) {
-                        Timber.tag("MusicService").d("Per-song override: %s pinned to YouTube; skipping lossless", mediaId)
-                        emptyList()
-                    } else {
-                        // Stale pin: the user turned YouTube off after pinning this song to it.
-                        // Drop the pin and use the normal chain instead of honouring it.
-                        Timber.tag("MusicService").d("Per-song override: %s pinned to YouTube but the YouTube source is disabled; using normal chain", mediaId)
-                        sourceResolutionChain()
-                    }
-                }
-                else -> if (overrideStillEnabled) {
-                    Timber.tag("MusicService").d("Per-song override: %s pinned to %s", mediaId, override.name)
-                    listOf(override)
-                } else {
-                    Timber.tag("MusicService").w(
-                        "Per-song override: %s pinned to %s but that source is now disabled; falling through to chain",
-                        mediaId,
-                        override.name,
-                    )
-                    sourceResolutionChain()
-                }
+        val configuredChain =
+            PlaybackSourceChain.configuredChain(
+                snapshot = prefs,
+                override = override,
+                rejected = authenticityRejectedSources,
+            )
+        when {
+            override == null -> {}
+            // An enabled YouTube pin resolves outside this chain — the terminal fallback serves
+            // the song. A rejected one falls back to the chain.
+            override == AudioSourceType.YOUTUBE && configuredChain.isEmpty() ->
+                Timber.tag("MusicService").d("Per-song override: %s pinned to YouTube; skipping lossless", mediaId)
+            override != AudioSourceType.YOUTUBE && configuredChain.firstOrNull() == override ->
+                Timber.tag("MusicService").d("Per-song override: %s pinned to %s", mediaId, override.name)
+            // Covers a stale pin, a rejected YouTube pin, and an exact Qobuz/Qobuz-backup pick
+            // whose source the user has since turned off: the exact id is only resolvable
+            // through that source, so the pick is dropped like a stale pin.
+            else ->
+                Timber.tag("MusicService").w(
+                    "Per-song override: %s pinned to %s but that source is disabled or rejected; falling through to chain",
+                    mediaId,
+                    override.name,
+                )
+        }
+        val switchFallback =
+            sourceSwitchFallbackByMediaId[mediaId]?.takeIf { fallback ->
+                fallback.source in prefs.enabled && fallback.source !in authenticityRejectedSources
             }
+        val baseChain =
+            AudioAuthenticitySourceRetryPolicy.nextChain(
+                configuredChain = configuredChain,
+                fallbackChain = PlaybackSourceChain.baseChain(prefs),
+                rejectedSources = authenticityRejectedSources,
+            )
+        // Only a pin to a non-YouTube source gets the fallback: a YouTube pin resolves outside this
+        // chain, so appending the old source would win before YouTube was even tried.
+        val switchFallbackAppended =
+            switchFallback != null &&
+                override != null &&
+                override != AudioSourceType.YOUTUBE &&
+                switchFallback.source !in baseChain
+        val chain = if (switchFallbackAppended) baseChain + switchFallback!!.source else baseChain
         Timber.tag("MusicService").d("Multi-source resolve for %s | chain=%s", mediaId, chain.joinToString(",") { it.name })
         if (chain.isEmpty()) {
             Timber.tag("MusicService").d("Multi-source skip: no sources to try (chain empty)")
@@ -7876,39 +9168,78 @@ class MusicService :
         var best: DirectStream? = null
         var bestSource: AudioSourceType? = null
         var bestScore = 0.0
-        for (source in chain) {
+        val chainDeadline =
+            AudioSourceAttemptScope.current()
+                ?: AudioSourceAttemptDeadline.start(AudioSourceAttemptTimeouts.FALLBACK_CHAIN_MS)
+        for ((sourceIndex, source) in chain.withIndex()) {
+            if (chainDeadline.isExpired()) {
+                Timber.tag("PlaybackDiagnostics").w(
+                    "Source fallback chain timed out remainingProviders=%d",
+                    chain.size - sourceIndex,
+                )
+                break
+            }
             Timber.tag("MusicService").d("Trying source: %s for \"%s\"", source.name, query.title)
-            val stream: DirectStream? =
-                when (source) {
-                    AudioSourceType.TIDAL -> resolveTidalStream(query)
-                    AudioSourceType.QOBUZ -> resolveQobuzStream(query)
-                    AudioSourceType.QOBUZ_BACKUP -> resolveQobuzBackupStream(query)
-                    AudioSourceType.DEEZER -> resolveDeezerStream(query)
-                    AudioSourceType.APPLE ->
-                        resolveAppleStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.APPLE,
-                        )
-                    AudioSourceType.AMAZON ->
-                        resolveAmazonStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.AMAZON,
-                        )
-                    AudioSourceType.JIOSAAVN -> resolveJioSaavnStream(query)
-                    AudioSourceType.QQ ->
-                        resolveQqStream(
-                            query,
-                            trusted = overrideIsSourceOverride && override == AudioSourceType.QQ,
-                        )
-                    AudioSourceType.YOUTUBE -> null
+            val sourceAttemptStartedAtMs = android.os.SystemClock.elapsedRealtime()
+            val attemptDeadline = chainDeadline.child(resolveAudioSourceAttemptTimeoutMs(source))
+            val attemptResult =
+                try {
+                    AudioSourceAttemptScope.withDeadline(attemptDeadline) {
+                        when (source) {
+                            AudioSourceType.TIDAL -> resolveTidalStream(query)
+                            AudioSourceType.QOBUZ -> resolveQobuzStream(query)
+                            AudioSourceType.QOBUZ_BACKUP -> resolveQobuzBackupStream(query)
+                            AudioSourceType.DEEZER -> resolveDeezerStream(query)
+                            AudioSourceType.APPLE ->
+                                resolveAppleStream(
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.APPLE,
+                                )
+                            AudioSourceType.AMAZON ->
+                                resolveAmazonStream(
+                                    query,
+                                    pick = query.amazonPick.takeIf { override == AudioSourceType.AMAZON },
+                                )
+                            AudioSourceType.JIOSAAVN -> resolveJioSaavnStream(query)
+                            AudioSourceType.QQ ->
+                                resolveQqStream(
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.QQ,
+                                )
+                            AudioSourceType.SPOTIFY ->
+                                resolveSpotifyStream(
+                                    mediaId,
+                                    query,
+                                    trusted = overrideIsSourceOverride && override == AudioSourceType.SPOTIFY,
+                                )
+                            AudioSourceType.YOUTUBE -> null
+                        }
+                    }
+                } catch (_: AudioSourceAttemptTimedOutException) {
+                    null
                 }
+            val attemptTimedOut = attemptDeadline.isExpired()
+            // A stream that arrives after the deadline is kept: Amazon and QQ download a matched
+            // file on their own transfer deadline, and on a slow link that ends after the search
+            // budget. Discarding it would fall back to a worse source after the wait was paid.
+            val stream = attemptResult
+            Timber.tag("PlaybackDiagnostics").d(
+                "Source attempt provider=%s resolved=%s timedOut=%s elapsedMs=%d",
+                source.name,
+                stream != null,
+                attemptTimedOut,
+                android.os.SystemClock.elapsedRealtime() - sourceAttemptStartedAtMs,
+            )
             if (stream == null) {
                 Timber.tag("MusicService").d("Source %s did not resolve \"%s\"", source.name, query.title)
                 continue
             }
             val match =
                 if (overrideIsSourceOverride && source == override) {
-                    // Explicit per-song override: trust the user's choice. Still record the source
+                    // Explicit per-song override: trust the user's choice. Amazon is the exception
+                    // handled inside resolveAmazonStream: its result comes from a metadata search, so
+                    // it has already been gated there against the metadata it searched with (the
+                    // tapped row's, when there is one). Still record the source
                     // as resolved so the Source chooser remembers it for next time.
                     Timber.tag("MusicService").i(
                         "Source %s ACCEPTED for \"%s\" via per-song override (skipping metadata gate) [%s]",
@@ -7962,6 +9293,18 @@ class MusicService :
                 "Source WIN: %s resolved \"%s\" [%s] metadata match %.1f%% (%s)",
                 winningSource.name, query.title, winningStream.label, bestScore * 100, winningStream.uri.take(80),
             )
+            if (switchFallback != null && !isPrefetch) {
+                if (switchFallbackAppended && winningSource == switchFallback.source) {
+                    Timber.tag("PlaybackDiagnostics").w(
+                        "Source switch to %s failed; kept %s",
+                        override?.name ?: "automatic",
+                        winningSource.name,
+                    )
+                    restoreSourceAfterFailedSwitch(mediaId, switchFallback)
+                } else {
+                    sourceSwitchFallbackByMediaId.remove(mediaId)
+                }
+            }
             // Persist the winning source's track id as a future health-probe track.
             if (winningSource == AudioSourceType.TIDAL) {
                 TidalAudioProvider.lastResolvedTrackId?.takeIf { it.isNotBlank() }?.let { probe ->
@@ -8020,7 +9363,11 @@ class MusicService :
             }
             Timber.tag("MusicService").d("Tidal access token expired; refreshing via stored refresh token (flow=%s)", flow)
             val refreshed =
-                runCatching { runBlocking(Dispatchers.IO) { TidalAccountManager.refreshAccessToken(refresh, flow) } }
+                runCatching {
+                    runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                        TidalAccountManager.refreshAccessToken(refresh, flow)
+                    }
+                }
                     .onFailure { Timber.tag("MusicService").w(it, "Tidal token refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
@@ -8102,7 +9449,11 @@ class MusicService :
             }
             Timber.tag("MusicService").d("Force-refreshing Tidal token after 401 (flow=%s)", flow)
             val refreshed =
-                runCatching { runBlocking(Dispatchers.IO) { TidalAccountManager.refreshAccessToken(refresh, flow) } }
+                runCatching {
+                    runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                        TidalAccountManager.refreshAccessToken(refresh, flow)
+                    }
+                }
                     .onFailure { Timber.tag("MusicService").w(it, "Force refresh threw") }
                     .getOrNull()
             if (refreshed == null) {
@@ -8127,7 +9478,7 @@ class MusicService :
         }
         val appleQuality = parseAppleMusicQuality()
         val candidates =
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 AppleMusicAudioProvider.resolveCandidates(
                     title = query.title,
                     artists = query.artists,
@@ -8190,7 +9541,7 @@ class MusicService :
             // contentLength backfill pattern; the YouTube resolver rewrites the row whenever
             // the song is played from YouTube again).
             runCatching {
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     val row = database.getFormatsByIds(listOf(query.mediaId)).firstOrNull()
                     if (row != null) {
                         val bitrate = measuredBitrate(file.length(), candidate.matchedDurationMs)
@@ -8228,10 +9579,15 @@ class MusicService :
      * to a local file, and hands back a [DirectStream] with the matched *instance* metadata (never
      * the query's) so the match gate below sees what actually came back. The provider was restored
      * from this repo's own earlier instance-based source (see AmazonAudioProvider's header).
+     *
+     * [pick] is the row the user tapped in the "Play from" search. Instances have no track-id
+     * route, so the pick is searched by its own metadata and the result is gated against that
+     * same metadata. The gate is never skipped, not even for a per-song override: a metadata
+     * search can return a different recording, and an override only states which source to use.
      */
     private fun resolveAmazonStream(
         query: SourceQuery,
-        trusted: Boolean,
+        pick: AmazonTrackPick?,
     ): DirectStream? {
         // One reading of the clock for both expiry decisions below.
         val nowMs = System.currentTimeMillis()
@@ -8270,14 +9626,19 @@ class MusicService :
                 )
             }.getOrDefault(AmazonAudioQuality.Default)
 
+        val wantedTitle = pick?.title ?: query.title
+        val wantedArtists = pick?.let { listOf(it.artist) } ?: query.artists
+        val wantedAlbum = if (pick != null) pick.album else query.album
+        val wantedDurationMs = if (pick != null) pick.durationMs else query.durationMs
+
         for (instance in instances) {
             val stream =
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     AmazonAudioProvider.resolveByMetadata(
-                        title = query.title,
-                        artists = query.artists,
-                        album = query.album,
-                        durationMs = query.durationMs,
+                        title = wantedTitle,
+                        artists = wantedArtists,
+                        album = wantedAlbum,
+                        durationMs = wantedDurationMs,
                         cacheDir = cacheDir,
                         instanceBaseUrl = instance.baseUrl,
                         bypassToken = instance.bypassToken,
@@ -8286,21 +9647,22 @@ class MusicService :
                     )
                 } ?: continue
             val match =
-                if (trusted) {
-                    TitleMatch.Result(true, 1.0, 1.0, 1.0, 1.0, "per-song override bypass")
-                } else {
-                    TitleMatch.evaluate(
-                        wantedTitle = query.title,
-                        wantedArtists = query.artists,
-                        wantedAlbum = query.album,
-                        wantedDurationMs = query.durationMs,
-                        stream = stream,
-                    )
-                }
-            if (!match.accepted) continue
+                TitleMatch.evaluate(
+                    wantedTitle = wantedTitle,
+                    wantedArtists = wantedArtists,
+                    wantedAlbum = wantedAlbum,
+                    wantedDurationMs = wantedDurationMs,
+                    stream = stream,
+                )
+            if (!match.accepted) {
+                Timber
+                    .tag("MusicService")
+                    .i("Amazon Music result for \"%s\" rejected: %s", wantedTitle, match.reason)
+                continue
+            }
             Timber
                 .tag("MusicService")
-                .i("Amazon Music resolved \"%s\" via %s", query.title, instance.baseUrl)
+                .i("Amazon Music resolved \"%s\" via %s (picked=%s)", wantedTitle, instance.baseUrl, pick != null)
             return stream
         }
         return null
@@ -8322,7 +9684,11 @@ class MusicService :
         trusted: Boolean,
     ): DirectStream? {
         val session =
-            runCatching { runBlocking(Dispatchers.IO) { QqMusicSession.read(dataStore) } }.getOrNull()
+            runCatching {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                    QqMusicSession.read(dataStore)
+                }
+            }.getOrNull()
         if (session == null) {
             Timber.tag("MusicService").d("QQ Music: no account connected; skipping")
             return null
@@ -8336,7 +9702,7 @@ class MusicService :
             }.getOrDefault(QqAudioQuality.Default)
 
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 QqMusicAudioProvider.resolveByMetadata(
                     title = query.title,
                     artists = query.artists,
@@ -8352,6 +9718,207 @@ class MusicService :
             Timber.tag("MusicService").w(error, "QQ Music resolution failed")
             null
         }
+    }
+
+    /** True when the experimental Spotify streaming source is switched on and has an account. */
+    private fun isSpotifyStreamingConfigured(): Boolean =
+        dataStore.get(SpotifyStreamEnabledKey, false) && dataStore.get(SpotifyStreamSpDcKey, "").isNotBlank()
+
+    /** Which Spotify track a media id resolved to, and through which method, for play reporting. */
+    private class SpotifyStreamTrack(
+        val trackUri: String,
+        val method: SpotifyStreamResolveMethod,
+    )
+
+    private val spotifyStreamTrackByMediaId = ConcurrentHashMap<String, SpotifyStreamTrack>()
+
+    private var spotifyReportJob: Job? = null
+
+    /**
+     * Resolves a track through the Spotify streaming account. The streaming account, never the
+     * catalog one, is used for the search, the Connect device, the license and the reports.
+     *
+     * [trusted] is the per-song override; a catalogue item that already carries its Spotify id is
+     * trusted as well, because the id names the exact recording the queue asked for.
+     */
+    private fun resolveSpotifyStream(
+        mediaId: String,
+        query: SourceQuery,
+        trusted: Boolean,
+    ): DirectStream? {
+        val context = applicationContext
+        return runCatching {
+            runBlocking<DirectStream?>(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
+                // Also the separation check: no token comes back for a signed-out account or one
+                // that has turned out to be the catalog account.
+                if (SpotifyStreamingAccount.accessToken(context) == null) {
+                    Timber.tag("MusicService").d("Spotify streaming: no usable streaming account; skipping")
+                    return@runBlocking null
+                }
+                val directTrackId = query.spotifyTrackId
+                val match =
+                    if (directTrackId != null) {
+                        SpotifyStreamingAccount.TrackMatch(
+                            trackId = directTrackId,
+                            title = query.title,
+                            artist = query.artists.joinToString(", ").ifBlank { null },
+                            durationMs = query.durationMs,
+                        )
+                    } else {
+                        SpotifyStreamingAccount.searchTrack(context, query.title, query.artists, query.durationMs)
+                    }
+                if (match == null) {
+                    Timber.tag("MusicService").d("Spotify streaming: no track match for \"%s\"", query.title)
+                    return@runBlocking null
+                }
+                val trackUri = "spotify:track:${match.trackId}"
+                val trustedId = directTrackId != null || trusted
+                if (SpotifyStreamingAccount.resolveMethod(context) == SpotifyStreamResolveMethod.ECHO) {
+                    val echo =
+                        runCatching {
+                            SpotifyEchoResolver.resolve(SpotifyStreamingAccount.spDc(context), match.trackId, match.durationMs)
+                        }.onFailure { error ->
+                            Timber.tag("MusicService").w(error, "Spotify Echo resolution failed for \"%s\"", query.title)
+                        }.getOrNull()
+                    if (echo != null) {
+                        spotifyStreamTrackByMediaId[mediaId] = SpotifyStreamTrack(trackUri, SpotifyStreamResolveMethod.ECHO)
+                        alignSpotifyCacheWithMethod(mediaId, SpotifyStreamResolveMethod.ECHO)
+                        val isFlac = SpotifyEchoResolver.isFlac(echo.chosenFile.format)
+                        return@runBlocking DirectStream(
+                            uri = SpotifyEchoResolver.streamUriFor(echo).toString(),
+                            mimeType = if (isFlac) "audio/flac" else "audio/ogg",
+                            codecs = if (isFlac) "flac" else "vorbis",
+                            contentLength = null,
+                            label = "Spotify Echo ${SpotifyEchoResolver.formatLabel(echo.chosenFile.format)}",
+                            source = AudioSourceType.SPOTIFY,
+                            matchedTitle = match.title,
+                            matchedArtist = match.artist,
+                            matchedAlbum = query.album,
+                            matchedDurationMs = match.durationMs,
+                            trustedDirectId = trustedId,
+                            sampleRate = 44_100,
+                            bitDepth = null,
+                        )
+                    }
+                    Timber.tag("MusicService").w("Spotify Echo: falling back to the web-player method for \"%s\"", query.title)
+                }
+                val cdnUrl =
+                    SpotifyWebStreamer.resolveStreamUrl(
+                        trackUri = trackUri,
+                        deviceId = SpotifyStreamingAccount.deviceId(context),
+                    ) ?: return@runBlocking null
+                spotifyStreamTrackByMediaId[mediaId] = SpotifyStreamTrack(trackUri, SpotifyStreamResolveMethod.STOPIFY)
+                alignSpotifyCacheWithMethod(mediaId, SpotifyStreamResolveMethod.STOPIFY)
+                DirectStream(
+                    uri = cdnUrl,
+                    mimeType = "audio/mp4",
+                    codecs = "mp4a.40.2",
+                    contentLength = null,
+                    label = "Spotify Direct AAC 128",
+                    source = AudioSourceType.SPOTIFY,
+                    matchedTitle = match.title,
+                    matchedArtist = match.artist,
+                    matchedAlbum = query.album,
+                    matchedDurationMs = match.durationMs,
+                    trustedDirectId = trustedId,
+                    sampleRate = 44_100,
+                    bitDepth = null,
+                )
+            }
+        }.getOrElse { error ->
+            Timber.tag("MusicService").w(error, "Spotify streaming resolution failed for \"%s\"", query.title)
+            null
+        }
+    }
+
+    /**
+     * Both Spotify methods cache under the one `spotify:` key, but one writes Widevine-encrypted
+     * MP4 and the other plain Ogg/FLAC. Bytes from one method must never be read back as the
+     * other's, so the cache entry is tagged with its method and dropped when the method changes.
+     */
+    private fun alignSpotifyCacheWithMethod(
+        mediaId: String,
+        method: SpotifyStreamResolveMethod,
+    ) {
+        val key = sourceCacheKey(AudioSourceType.SPOTIFY, mediaId)
+        runCatching {
+            val stored = playerCache.getContentMetadata(key).get(SPOTIFY_CACHE_METHOD_METADATA, null as String?)
+            if (stored == method.name) return
+            if (stored != null || playerCache.getCachedSpans(key).isNotEmpty()) {
+                playerCache.removeResource(key)
+                contentLengthCache.remove(key)
+            }
+            playerCache.applyContentMetadataMutations(
+                key,
+                ContentMetadataMutations().set(SPOTIFY_CACHE_METHOD_METADATA, method.name),
+            )
+        }.onFailure { error ->
+            Timber.tag("MusicService").w(error, "Could not tag the Spotify cache entry for %s", mediaId)
+        }
+    }
+
+    /**
+     * Reports plays of web-player resolved items back to the streaming account, the way the web
+     * player does: a start, a progress mark at 30 s, and a finish when the track ran to its end.
+     * The Echo method has no Connect device and reports nothing.
+     */
+    private fun updateSpotifyPlaybackReporting(mediaId: String?) {
+        spotifyReportJob?.cancel()
+        spotifyReportJob = null
+        if (spotifyStreamTrackByMediaId.size > 64) {
+            val queued = player.mediaItems.mapTo(HashSet()) { it.mediaId }
+            spotifyStreamTrackByMediaId.keys.retainAll(queued)
+        }
+        if (mediaId == null || !isSpotifyStreamingConfigured()) return
+        val context = applicationContext
+        spotifyReportJob =
+            scope.launch(SilentHandler) {
+                var track: SpotifyStreamTrack? = null
+                var deviceId: String? = null
+                var startReported = false
+                var progressReported = false
+                var lastPosition = 0L
+                var lastDuration = 0L
+                try {
+                    while (player.currentMediaItem?.mediaId == mediaId) {
+                        // The item usually resolves after this transition fires, so the track is
+                        // picked up once the player is actually playing it.
+                        if (player.isPlaying) {
+                            if (track == null) {
+                                if (selectedPlaybackSourceByMediaId[mediaId] != AudioSourceType.SPOTIFY) return@launch
+                                track =
+                                    spotifyStreamTrackByMediaId[mediaId]
+                                        ?.takeIf { it.method == SpotifyStreamResolveMethod.STOPIFY }
+                                        ?: return@launch
+                                deviceId = SpotifyStreamingAccount.deviceId(context)
+                            }
+                            val active = track
+                            val device = deviceId
+                            if (active != null && device != null) {
+                                val position = player.currentPosition.coerceAtLeast(0L)
+                                player.duration.takeIf { it > 0 }?.let { lastDuration = it }
+                                lastPosition = position
+                                if (!startReported) {
+                                    startReported = true
+                                    runCatching { SpotifyWebStreamer.reportPlayback(active.trackUri, device, 0L, lastDuration, false) }
+                                } else if (!progressReported && position >= 30_000L) {
+                                    progressReported = true
+                                    runCatching { SpotifyWebStreamer.reportPlayback(active.trackUri, device, position, lastDuration, false) }
+                                }
+                            }
+                        }
+                        delay(500)
+                    }
+                } finally {
+                    val active = track
+                    val device = deviceId
+                    if (active != null && device != null && startReported && lastDuration > 0 && lastPosition >= lastDuration - 2_000L) {
+                        withContext(NonCancellable) {
+                            runCatching { SpotifyWebStreamer.reportPlayback(active.trackUri, device, lastPosition, lastDuration, true) }
+                        }
+                    }
+                }
+            }
     }
 
     @Volatile
@@ -8402,7 +9969,7 @@ class MusicService :
                     TidalAudioQuality.AAC_320 -> "HIGH"
                 }
             fun attempt(accessToken: String, countryCode: String): DirectStream? =
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     TidalAccountManager.resolveDirectStream(
                         accessToken = accessToken,
                         title = query.title,
@@ -8576,7 +10143,7 @@ class MusicService :
         QobuzAudioProvider.setTokens(configuredTokens)
         QobuzAudioProvider.setInstances(configuredInstances)
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 QobuzAudioProvider.resolve(
                     query =
                         QobuzAudioProvider.Query(
@@ -8606,7 +10173,7 @@ class MusicService :
         val ytId = (query.directQobuzBackupVideoId ?: query.mediaId).trim()
         val resolved =
             runCatching {
-                runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                     QobuzBackupProvider.resolveStream(ytId, mediaOkHttpClient)
                 }
             }.onFailure { error ->
@@ -8665,7 +10232,7 @@ class MusicService :
         val quality = parseDeezerAudioQuality()
         Timber.tag("MusicService").d("Deezer resolve start | quality=%s", quality.name)
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 DeezerAudioProvider
                     .resolve(
                         query =
@@ -8715,10 +10282,10 @@ class MusicService :
      * stream URL matching the user's quality preference. Falls back to YouTube on any failure.
      */
     private fun resolveJioSaavnStream(query: SourceQuery): DirectStream? {
-        // No global JioSaavnEnabledKey gate here on purpose: the chain (sourceResolutionChain /
-        // the override list) already filters by enabled-ness, and a gate would block the per-song
-        // override — a song pinned to JioSaavn via the Source chooser must resolve even when
-        // JioSaavn is globally off.
+        // No global JioSaavnEnabledKey gate here on purpose: the shared chain (built by
+        // PlaybackSourceChain from the user's order and toggles) already filters disabled
+        // sources out before an attempt is made, and a per-song pin to a disabled source falls
+        // back to that chain the same way — the resolver itself never re-checks the flag.
         val quality = SaavnAudioQuality.fromStoredName(dataStore.get(SaavnAudioQualityKey, SaavnAudioQuality.QUALITY_320.name))
         val qualityApiValue = quality.toApiValue()
         Timber.tag("MusicService").d("JioSaavn resolve start | quality=%s", qualityApiValue)
@@ -8734,7 +10301,7 @@ class MusicService :
             }.trim()
 
         return runCatching {
-            runBlocking(Dispatchers.IO) {
+            runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
                 val searchResult = SaavnService.searchSongs(searchQuery).getOrNull() ?: return@runBlocking null
                 if (searchResult.isEmpty()) return@runBlocking null
 
@@ -8802,7 +10369,15 @@ class MusicService :
         stream: DirectStream,
     ): DataSpec {
         Timber.tag("MusicService").i("Using %s stream for %s: %s", stream.source, mediaId, stream.label)
+        selectedPlaybackSourceByMediaId[mediaId] = stream.source
+        authenticityClaimedLosslessByMediaId[mediaId] = isClaimedLosslessFormat(stream.mimeType, stream.codecs, stream.label)
+        resolveAudioAuthenticitySampleRateHz(stream.sampleRate)
+            ?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
         val cacheKey = sourceCacheKey(stream.source, mediaId)
+        retainReportedAudioFormat(mediaId, CachedAudioMetadata.from(stream))
+        recordCachedAudioMetadata(cacheKey, stream)
         stream.contentLength?.takeIf { it > 0L }?.let { contentLengthCache[cacheKey] = it }
         tidalActiveMediaIds.add(mediaId)
         audioNormalizationFactorCache[mediaId] = 1f
@@ -8811,6 +10386,7 @@ class MusicService :
         // for Tidal (and any non-YouTube source), because only the YouTube resolver wrote a format.
         // itag = 0 is a sentinel for "not a YouTube itag" and is hidden in the UI.
         persistDirectStreamFormat(mediaId, stream)
+        publishDirectStreamInfo(mediaId, stream)
         // Cache the resolved DirectStream so the next playback / prefetch for
         // this media id skips the slow Qobuz/Tidal resolution. The TTL matches
         // the typical signed-URL lifetime on those providers (~5 min).
@@ -8833,39 +10409,16 @@ class MusicService :
         mediaId: String,
         stream: DirectStream,
     ) {
-        val label = stream.label.uppercase()
-        val mime = stream.mimeType.substringBefore(";").ifBlank { "audio/flac" }
+        val mime = stream.mimeType.substringBefore(";").ifBlank { "application/octet-stream" }
         val codecs =
             stream.codecs.ifBlank {
-                stream.mimeType.substringAfter("codecs=", "").removeSurrounding("\"").ifBlank { "flac" }
-            }
-        // Use the ACTUAL sample rate and bit depth from the DirectStream when
-        // the provider reported them. Fall back to label-based heuristics only
-        // when the provider didn't report the actual values (some providers
-        // don't expose sampleRate/bitDepth — e.g. JioSaavn always returns null).
-        //
-        // BUG FIXED: the previous implementation always used hardcoded guesses
-        // (44100 Hz / 1411 kbps for "LOSSLESS", 96000 Hz / 2304 kbps for "HI_RES")
-        // regardless of the actual stream's properties. This meant ALL lossless
-        // songs showed the same bitrate/sample rate in the player's Details tab
-        // even when they were different (e.g. a 48kHz/24-bit track showed as
-        // 44.1kHz/16-bit).
-        val sampleRate = stream.sampleRate?.takeIf { it > 0 }
-            ?: when {
-                label.contains("HI_RES") || label.contains("MASTER") || label.contains("MQA") -> 96_000
-                label.contains("LOSSLESS") || codecs.contains("flac", true) || codecs.contains("alac", true) -> 44_100
-                else -> null
-            }
-        val knownContentLength = stream.contentLength?.takeIf { it > 0L }
-        val bitrate =
-            measuredBitrate(knownContentLength, stream.matchedDurationMs)
-                ?: stream.pcmBitrateOrNull()
-                ?: when {
-                    label.contains("HI_RES") || label.contains("MASTER") || label.contains("MQA") -> 2_304_000
-                    label.contains("LOSSLESS") || codecs.contains("flac", true) || codecs.contains("alac", true) -> 1_411_000
-                    label.contains("HIGH") -> 320_000
-                    else -> 0
+                stream.mimeType.substringAfter("codecs=", "").removeSurrounding("\"").ifBlank {
+                    if (mime.equals("audio/flac", ignoreCase = true)) "flac" else ""
                 }
+            }
+        val sampleRate = resolveAudioAuthenticitySampleRateHz(stream.sampleRate)
+        val knownContentLength = stream.contentLength?.takeIf { it > 0L }
+        val bitrate = measuredBitrate(knownContentLength, stream.matchedDurationMs) ?: 0
         val formatEntity =
             FormatEntity(
                 id = mediaId,
@@ -8973,24 +10526,41 @@ class MusicService :
             else -> "${source.name.lowercase()}:$mediaId"
         }
 
+    private fun evictAudioAuthenticityRejectedSource(mediaId: String, source: AudioSourceType) {
+        directStreamCache.computeIfPresent(mediaId) { _, cached ->
+            cached.takeUnless { it.stream.source == source }
+        }
+        if (source == AudioSourceType.YOUTUBE) {
+            playbackUrlCache.remove(mediaId)
+            YTPlayerUtils.invalidateCachedStreamUrls(mediaId)
+            contentLengthCache.remove(mediaId)
+            runCatching { playerCache.removeResource(mediaId) }
+        }
+        val sourceKey = sourceCacheKey(source, mediaId)
+        contentLengthCache.remove(sourceKey)
+        runCatching { playerCache.removeResource(sourceKey) }
+        if (source == AudioSourceType.TIDAL) tidalActiveMediaIds.remove(mediaId)
+    }
+
+    private fun sourceForCacheKey(key: String, mediaId: String): AudioSourceType? {
+        if (key == mediaId) return AudioSourceType.YOUTUBE
+        return AudioSourceType.values().firstOrNull { sourceCacheKey(it, mediaId) == key }
+    }
+
     /**
-     * Cheap check (no network) for whether an external lossless source (Tidal) should be preferred
-     * for [mediaId]. Gates the ephemeral YouTube player-cache short-circuit so enabling a
-     * source takes effect immediately instead of replaying previously cached YouTube bytes.
+     * Cheap check (no network) for whether an external source should be preferred for [mediaId].
+     * Gates the ephemeral YouTube player-cache short-circuit so enabling a source takes effect
+     * immediately instead of replaying previously cached YouTube bytes.
      */
-    private fun tidalSourceApplies(mediaId: String): Boolean {
+    private fun tidalSourceApplies(
+        mediaId: String,
+        prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
+    ): Boolean {
         if (mediaId.isLocalMediaId()) return false
-        // Defaults MUST match PlaybackSourceSections + sourceResolutionChain(). Any enabled
-        // external lossless source (Tidal, Qobuz, Qobuz backup, Deezer, Apple Music) must bypass
-        // the ephemeral YouTube player cache so toggling a source on takes effect immediately
-        // instead of replaying cached YT bytes.
-        return dataStore.get(TidalEnabledKey, true) ||
-            dataStore.get(QobuzEnabledKey, false) ||
-            dataStore.get(QobuzBackupEnabledKey, false) ||
-            dataStore.get(DeezerEnabledKey, false) ||
-            dataStore.get(AppleMusicSourceEnabledKey, false) ||
-            dataStore.get(AmazonEnabledKey, false) ||
-            dataStore.get(QqMusicEnabledKey, false)
+        // Any enabled source above YouTube — JioSaavn included; it resolves real streams the
+        // same as the rest — must bypass the ephemeral YouTube player cache so toggling a source
+        // on takes effect immediately instead of replaying cached YT bytes.
+        return PlaybackSourceChain.baseChain(prefs).isNotEmpty()
     }
 
     private fun resolvePlaybackDataSpec(
@@ -9002,6 +10572,11 @@ class MusicService :
         }
         val mediaId = dataSpec.key ?: return dataSpec
         val lowDataModeActive = isLowDataModeActive()
+        // One settings snapshot for this whole resolution: the cache gates, the multi-source
+        // chain, the pins and the terminal YouTube gate below all read the same order and
+        // toggles, so they cannot disagree with each other or with the settings UI.
+        val prefs = sourcePrefsSnapshot()
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val storedFormat =
             runBlocking(Dispatchers.IO) {
                 database.format(mediaId).first()
@@ -9022,20 +10597,27 @@ class MusicService :
 
         knownContentLength?.takeIf { it > 0L }?.let { contentLengthCache[mediaId] = it }
 
-        // When the Tidal source is enabled for this track, the ephemeral YouTube player cache
-        // must not short-circuit playback (otherwise toggling Tidal on would keep replaying the
-        // previously cached YouTube bytes). Persistent downloads still win so offline playback
-        // and explicit downloads are unaffected.
-        val tidalApplies = !lowDataModeActive && tidalSourceApplies(mediaId)
+        // When any external source is enabled for this track, the ephemeral YouTube player cache
+        // must not short-circuit playback (otherwise toggling a source on would keep replaying
+        // the previously cached YouTube bytes). Persistent downloads of enabled sources still
+        // win so offline playback and explicit downloads are unaffected.
+        val tidalApplies = !lowDataModeActive && tidalSourceApplies(mediaId, prefs)
         val allowPlayerCacheShortCircuit = !tidalApplies
 
         if (allowCacheShortCircuit) {
             resolveCachedDataSpec(
                 dataSpec = dataSpec,
                 mediaId = mediaId,
-                knownContentLength = knownContentLength,
                 includePlayerCache = allowPlayerCacheShortCircuit,
+                youtubeSampleRateHz = storedFormat?.sampleRate,
+                prefs = prefs,
             )?.let { cachedDataSpec ->
+                Timber.tag("PlaybackDiagnostics").d(
+                    "Cached source selected position=%d length=%d playerCacheAllowed=%s",
+                    cachedDataSpec.position,
+                    cachedDataSpec.length,
+                    allowPlayerCacheShortCircuit,
+                )
                 scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
                 return cachedDataSpec
             }
@@ -9050,7 +10632,11 @@ class MusicService :
                 }
             }
 
-        if (allowCacheShortCircuit && requiredCachedLength != null) {
+        if (allowCacheShortCircuit &&
+            AudioSourceType.YOUTUBE in prefs.enabled &&
+            AudioSourceType.YOUTUBE !in authenticityRejectedSources &&
+            requiredCachedLength != null
+        ) {
             val isFullyCached =
                 downloadCache.isCached(mediaId, dataSpec.position, requiredCachedLength) ||
                     (
@@ -9064,7 +10650,7 @@ class MusicService :
         }
 
         // Multi-source: attempt to resolve a lossless stream (Tidal) before YouTube.
-        resolveMultiSourceDataSpec(dataSpec, mediaId, lowDataModeActive)?.let { sourceDataSpec ->
+        resolveMultiSourceDataSpec(dataSpec, mediaId, lowDataModeActive, prefs = prefs)?.let { sourceDataSpec ->
             scope.launch(Dispatchers.IO) { recoverSong(mediaId) }
             return sourceDataSpec
         }
@@ -9073,13 +10659,24 @@ class MusicService :
         // source like the others, so a user who turned it off gets the standard no-stream failure
         // here rather than a YouTube stream they explicitly declined. Everything below this gate
         // is YouTube resolution (cached URL short-circuit or a fresh player response).
-        if (!isSourceEnabled(AudioSourceType.YOUTUBE)) {
+        if (AudioSourceType.YOUTUBE !in prefs.enabled || AudioSourceType.YOUTUBE in authenticityRejectedSources) {
+            Timber.tag("PlaybackDiagnostics").w(
+                "Terminal source unavailable provider=youtube enabled=%s previouslyRejected=%s",
+                AudioSourceType.YOUTUBE in prefs.enabled,
+                AudioSourceType.YOUTUBE in authenticityRejectedSources,
+            )
             throw PlaybackException(
                 getString(R.string.error_no_stream),
                 null,
                 PlaybackException.ERROR_CODE_REMOTE_ERROR,
             )
         }
+        selectedPlaybackSourceByMediaId[mediaId] = AudioSourceType.YOUTUBE
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        storedFormat?.sampleRate?.takeIf { it > 0 }?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
+        Timber.tag("PlaybackDiagnostics").i("Source selected provider=youtube route=terminal_fallback")
 
 
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
@@ -9106,6 +10703,7 @@ class MusicService :
                 } ?: resolvedDataSpec
             }
 
+        val youtubeResolveStartedAt = android.os.SystemClock.elapsedRealtime()
         val playbackData =
             runBlocking(Dispatchers.IO) {
                 retryWithoutPlaybackLoginContext {
@@ -9126,35 +10724,22 @@ class MusicService :
                     )
                     throw youtubeFailure
                 }.recoverCatching { primaryFailure ->
-                    // Last resort: the echo resolver. It parses the player script with a real
-                    // JavaScript parser and regenerates the n-parameter transform, so it can still
-                    // produce a URL after a player change the shipped path was not written for.
-                    //
-                    // Only reached once the shipped path has already failed, so the worst case is
-                    // the same failure a moment later. A login or confirmation failure is skipped
-                    // outright: those are actionable, echo cannot fix them, and it would only
-                    // replace a message the reader can act on with one they cannot.
-                    if (primaryFailure is YTPlayerUtils.InvalidPlaybackLoginContextException ||
-                        primaryFailure is YTPlayerUtils.LoginRequiredForPlaybackException
-                    ) {
-                        throw primaryFailure
-                    }
-                    Timber.tag("MusicService").w(
-                        primaryFailure,
-                        "Shipped resolver produced no stream for %s; trying the echo resolver",
-                        mediaId,
+                    // Shipped resolver produced no stream: InnerTubeX, then NewPipe, then the echo
+                    // resolver as the last resort, each bounded. Only reached once the shipped path
+                    // has failed, so the worst case is the same failure a few seconds later. Login
+                    // and confirmation failures skip the chain: they are actionable and no other
+                    // extractor can fix them. On total failure the original throwable comes back,
+                    // since it carries the message worth showing.
+                    moe.rukamori.archivetune.playback.stream.YouTubeFailsafeChain.recover(
+                        context = this@MusicService,
+                        mediaId = mediaId,
+                        primaryFailure = primaryFailure,
+                        shippedStartedAtMs = youtubeResolveStartedAt,
+                        audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
+                        networkMetered = lowDataModeActive,
+                        purpose = moe.rukamori.archivetune.playback.stream.StreamPurpose.PLAYBACK,
+                        connectivityManager = connectivityManager,
                     )
-                    runCatching {
-                        EchoStreamResolver.playerResponseForPlayback(
-                            videoId = mediaId,
-                            audioQuality = if (lowDataModeActive) AudioQuality.LOW else audioQuality,
-                            connectivityManager = connectivityManager,
-                        )
-                    }.getOrElse { echoFailure ->
-                        Timber.tag("MusicService").w(echoFailure, "Echo resolver also failed for %s", mediaId)
-                        // The original failure carries the message worth showing.
-                        throw primaryFailure
-                    }
                 }
             }.getOrElse { throwable ->
                 when {
@@ -9229,6 +10814,11 @@ class MusicService :
             ?.remotePlaybackTrackingUrl()
             ?.let { remotePlaybackTrackingUrlCache[mediaId] = it }
         val format = nonNullPlayback.format
+        selectedPlaybackSourceByMediaId[mediaId] = AudioSourceType.YOUTUBE
+        authenticityClaimedLosslessByMediaId.remove(mediaId)
+        format.audioSampleRate?.takeIf { it > 0 }?.let { authenticitySampleRateByMediaId[mediaId] = it }
+            ?: authenticitySampleRateByMediaId.remove(mediaId)
+        refreshAudioAuthenticityContexts(mediaId)
         val loudnessDb = nonNullPlayback.audioConfig?.loudnessDb
         val perceptualLoudnessDb = nonNullPlayback.audioConfig?.perceptualLoudnessDb
         val resolvedContentLength = format.contentLength ?: 0L
@@ -9304,89 +10894,94 @@ class MusicService :
     private fun resolveCachedDataSpec(
         dataSpec: DataSpec,
         mediaId: String,
-        knownContentLength: Long?,
         includePlayerCache: Boolean = true,
+        youtubeSampleRateHz: Int? = null,
+        prefs: PlaybackSourceSnapshot = sourcePrefsSnapshot(),
     ): DataSpec? {
-        val requestedLength =
-            when {
-                dataSpec.length > 0L -> {
-                    dataSpec.length
+        // Find the first key (enabled sources in the user's own preference order, YouTube's bare
+        // key last and only while YouTube is enabled — PlaybackSourceChain.cacheKeyOrder) that
+        // has the requested byte range fully cached. Returning the DataSpec with the matching
+        // key is critical — without it the CacheDataSource would look up the bytes under the
+        // bare mediaId and miss the lossless FLAC bytes cached under "qobuz:$mediaId" /
+        // "tidal:$mediaId", then fall through to the YouTube resolver and serve a lossy MP3
+        // stream — producing Code 3003 when the Media3 extractors then tried to read MP3 bytes
+        // under a FLAC FormatEntity.
+        //
+        // A disabled source's key is left out entirely: neither its player cache nor its
+        // persistent downloads are served while the source is switched off, matching the
+        // download chain, which skips disabled playback sources too. Re-enabling the source
+        // plays those bytes again.
+        val candidateKeys = PlaybackSourceChain.cacheKeyOrder(prefs, mediaId)
+        val authenticityRejectedSources = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
+        val (matchingKey, matchingWindow) =
+            candidateKeys.firstNotNullOfOrNull { key ->
+                val cacheSource = sourceForCacheKey(key, mediaId)
+                if (cacheSource != null && cacheSource in authenticityRejectedSources) {
+                    return@firstNotNullOfOrNull null
                 }
+                val recordedLength = recordedContentLength(key, includePlayerCache)
+                val keyWindow =
+                    resolveCachedReadWindow(
+                        position = dataSpec.position,
+                        requestedLength = dataSpec.length,
+                        knownContentLength = if (dataSpec.length >= 0L) null else recordedLength,
+                    ) ?: return@firstNotNullOfOrNull null
+                val cachedLength =
+                    getContinuousCachedLengthForKey(
+                        key = key,
+                        position = keyWindow.position,
+                        requestedLength = keyWindow.length,
+                        includePlayerCache = includePlayerCache,
+                    )
+                if (cachedLength >= keyWindow.length) key to keyWindow else null
+            } ?: return null
 
-                knownContentLength != null && knownContentLength > dataSpec.position -> {
-                    knownContentLength - dataSpec.position
-                }
-
-                else -> {
-                    // No known content length and no explicit request length.
-                    // For offline playback of fully-downloaded songs whose
-                    // cache metadata never had the content length persisted,
-                    // compute the total cached byte range across all candidate
-                    // keys and use that as the requested length. Without it, the
-                    // resolver returns null here, falls through to the YouTube
-                    // resolver, and fails offline.
-                    val candidateKeys = DownloadSourceConfig.cacheKeysFor(mediaId)
-                    val maxCachedLength =
-                        candidateKeys.maxOfOrNull { key ->
-                            runCatching {
-                                val spans = downloadCache.getCachedSpans(key).toList() +
-                                    (if (includePlayerCache) playerCache.getCachedSpans(key).toList() else emptyList())
-                                if (spans.isEmpty()) {
-                                    0L
-                                } else {
-                                    // Sum up the total cached bytes starting from
-                                    // dataSpec.position. For a fully-downloaded
-                                    // song, this equals the content length.
-                                    val sortedSpans = spans.sortedBy { it.position }
-                                    var total = 0L
-                                    var cursor = dataSpec.position
-                                    for (span in sortedSpans) {
-                                        if (span.position > cursor) break
-                                        val spanEnd = span.position + span.length
-                                        if (spanEnd > cursor) {
-                                            total += (spanEnd - cursor)
-                                            cursor = spanEnd
-                                        }
-                                    }
-                                    total
-                                }
-                            }.getOrDefault(0L)
-                        }
-                    if (maxCachedLength == null || maxCachedLength <= 0L) {
-                        return null
-                    }
-                    maxCachedLength
-                }
+        sourceForCacheKey(matchingKey, mediaId)?.let { source ->
+            selectedPlaybackSourceByMediaId[mediaId] = source
+            val caches = if (includePlayerCache) listOf(downloadCache, playerCache) else listOf(downloadCache)
+            val metadata = caches.firstNotNullOfOrNull { cache ->
+                CachedAudioMetadata.read(cache.getContentMetadata(matchingKey), source)
             }
+            if (metadata != null) retainReportedAudioFormat(mediaId, metadata) else reportedAudioFormatsByMediaId.remove(mediaId)
+            authenticityClaimedLosslessByMediaId[mediaId] = source != AudioSourceType.YOUTUBE && metadata?.claimedLossless == true
+            val reportedRate = if (source == AudioSourceType.YOUTUBE) youtubeSampleRateHz else metadata?.sampleRateHz
+            resolveAudioAuthenticitySampleRateHz(reportedRate)?.let { authenticitySampleRateByMediaId[mediaId] = it }
+                ?: authenticitySampleRateByMediaId.remove(mediaId)
+            refreshAudioAuthenticityContexts(mediaId)
+        }
 
-        // Find the first key (every download source's prefix, then the bare mediaId, as
-        // DownloadSourceConfig.cacheKeysFor orders them) that has the requested byte range fully
-        // cached. Returning the DataSpec with the matching key is critical — without it the
-        // CacheDataSource would look up the bytes under the bare mediaId and miss the lossless
-        // FLAC bytes cached under "qobuz:$mediaId" / "tidal:$mediaId", then fall through to the
-        // YouTube resolver and serve a lossy MP3 stream — producing Code 3003 when the Media3
-        // extractors then tried to read MP3 bytes under a FLAC FormatEntity. The hardcoded list
-        // this replaces skipped qobuz_backup: and jiosaavn:, so those downloads never played
-        // offline.
-        val candidateKeys = DownloadSourceConfig.cacheKeysFor(mediaId)
-        val matchingKey = candidateKeys.firstOrNull { key ->
-            getContinuousCachedLengthForKey(
-                key = key,
-                position = dataSpec.position,
-                requestedLength = requestedLength,
-                includePlayerCache = includePlayerCache,
-            ) >= requestedLength
-        } ?: return null
-
-        // DataSpec.Builder has no subrange() method (subrange() is defined
-        // on the DataSpec data class, not on its Builder). Use the Builder
-        // equivalents setPosition() / setLength() to scope the cached
-        // request to the bytes that are actually present.
         return dataSpec.buildUpon()
             .setKey(matchingKey)
-            .setPosition(0L)
-            .setLength(requestedLength)
+            .setPosition(matchingWindow.position)
+            .setLength(matchingWindow.length)
             .build()
+    }
+
+    private fun recordCachedAudioMetadata(cacheKey: String, stream: DirectStream) {
+        val mutations = CachedAudioMetadata.from(stream).toMutations()
+        runCatching {
+            listOf(downloadCache, playerCache).forEach { cache ->
+                if (cache.getCachedSpans(cacheKey).isEmpty()) {
+                    cache.applyContentMetadataMutations(cacheKey, mutations)
+                }
+            }
+        }.onFailure { error ->
+            error.rethrowIfAudioSourceCancelled()
+            Timber.tag("MusicService").w("Audio cache metadata could not be retained: %s", error.javaClass.simpleName)
+        }
+    }
+
+    private fun recordedContentLength(
+        key: String,
+        includePlayerCache: Boolean,
+    ): Long? {
+        val caches = if (includePlayerCache) listOf(downloadCache, playerCache) else listOf(downloadCache)
+        return caches
+            .mapNotNull { cache ->
+                runCatching { cache.getContentMetadata(key).get(ContentMetadata.KEY_CONTENT_LENGTH, -1L) }
+                    .getOrNull()
+                    ?.takeIf { it > 0L }
+            }.maxOrNull()
     }
 
     /**
@@ -9400,87 +10995,32 @@ class MusicService :
         requestedLength: Long,
         includePlayerCache: Boolean = true,
     ): Long {
-        val targetEnd = position.saturatingAdd(requestedLength)
-        var cursor = position
         val playerCacheSpans =
-            if (includePlayerCache) {
-                runCatching { playerCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-            } else {
-                emptyList()
-            }
-        val spans =
-            (
-                runCatching { downloadCache.getCachedSpans(key).toList() }.getOrNull().orEmpty() +
-                    playerCacheSpans
-            ).asSequence()
-                .filter { span -> span.position.saturatingAdd(span.length) > position }
-                .sortedBy { span -> span.position }
-                .toList()
-
-        for (span in spans) {
-            if (span.position > cursor) break
-            val spanEnd = span.position.saturatingAdd(span.length)
-            if (spanEnd > cursor) {
-                cursor = minOf(spanEnd, targetEnd)
-                if (cursor >= targetEnd) break
-            }
-        }
-
-        return (cursor - position).coerceAtLeast(0L)
+            if (includePlayerCache) cachedSpansOf(playerCache, key) else emptyList()
+        return continuousCachedLength(
+            spans = cachedSpansOf(downloadCache, key) + playerCacheSpans,
+            position = position,
+            requestedLength = requestedLength,
+        )
     }
 
-    private fun getContinuousCachedLength(
-        mediaId: String,
-        position: Long,
-        requestedLength: Long,
-        includePlayerCache: Boolean = true,
-    ): Long {
-        val targetEnd = position.saturatingAdd(requestedLength)
-        var cursor = position
-        // Include every source-prefixed cache key a download can use so
-        // that a song downloaded from a lossless source plays back as the
-        // lossless bytes — not as a re-fetched YouTube Music stream. Without
-        // this, playing a downloaded FLAC song would bypass the cached FLAC
-        // bytes (keyed as "qobuz:abc") and fall through to the YouTube
-        // resolver, which serves a different (lossy MP3/AAC) stream —
-        // causing the "Code 3003 UnrecognizedInputFormatException" when the
-        // Media3 extractors received an MP3 stream under a FLAC cache key.
-        val candidateKeys = DownloadSourceConfig.cacheKeysFor(mediaId)
-        val playerCacheSpans =
-            if (includePlayerCache) {
-                candidateKeys.flatMap { key ->
-                    runCatching { playerCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-                }
-            } else {
-                emptyList()
+    /**
+     * [Cache.getCachedSpans] as coverage windows. Holes ride along with `isCached = false` so
+     * [continuousCachedLength] can drop them: a range the index knows is missing must never be
+     * offered to ExoPlayer as cached bytes.
+     */
+    private fun cachedSpansOf(cache: Cache, key: String): List<CachedSpan> =
+        runCatching { cache.getCachedSpans(key).toList() }
+            .getOrNull()
+            .orEmpty()
+            .map { span ->
+                CachedSpan(
+                    position = span.position,
+                    length = span.length,
+                    isCached = span.isCached,
+                )
             }
-        val spans =
-            (
-                candidateKeys.flatMap { key ->
-                    runCatching { downloadCache.getCachedSpans(key).toList() }.getOrNull().orEmpty()
-                } + playerCacheSpans
-            ).asSequence()
-                .filter { span -> span.position.saturatingAdd(span.length) > position }
-                .sortedBy { span -> span.position }
-                .toList()
 
-        for (span in spans) {
-            if (span.position > cursor) break
-            val spanEnd = span.position.saturatingAdd(span.length)
-            if (spanEnd > cursor) {
-                cursor = minOf(spanEnd, targetEnd)
-                if (cursor >= targetEnd) break
-            }
-        }
-
-        return (cursor - position).coerceAtLeast(0L)
-    }
-
-    private fun Long.saturatingAdd(value: Long): Long {
-        if (value <= 0L) return this
-        val result = this + value
-        return if (result < this) Long.MAX_VALUE else result
-    }
 
     private fun Uri.shouldBypassYouTubeResolver(): Boolean {
         val normalizedScheme = scheme?.lowercase(Locale.US)
@@ -9490,6 +11030,7 @@ class MusicService :
             normalizedScheme == "telegram" ||
             normalizedScheme == DeezerCrypto.SCHEME ||
             normalizedScheme == TidalAudioProvider.PROGRESSIVE_DASH_SCHEME ||
+            normalizedScheme == SpotifyEchoResolver.SCHEME ||
             normalizedScheme == "http" ||
             normalizedScheme == "https"
     }
@@ -9502,8 +11043,11 @@ class MusicService :
             normalizedScheme == "telegram"
     }
 
-    private fun createMediaSourceFactory() =
-        DefaultMediaSourceFactory(
+    private fun createMediaSourceFactory(): DefaultMediaSourceFactory {
+        // One Spotify manager per factory, built on first need: a manager binds to the looper of
+        // the first player that prepares it, and the crossfade player has its own factory.
+        var spotifyDrmManager: DrmSessionManager? = null
+        return DefaultMediaSourceFactory(
             createDataSourceFactory(),
             DefaultExtractorsFactory()
                 // Enable constant-bitrate seeking for CBR streams (most MP3/AAC files) so
@@ -9516,13 +11060,24 @@ class MusicService :
             // session (license exchanged against Apple's acquireWebPlaybackLicense) is
             // attached only for media ids resolved through the Apple source — everything
             // else stays DRM-free with the default behavior.
+            //
+            // Spotify's web-player method is also CENC fMP4, but the source is only known once
+            // the item's data source resolves, after this provider has run. The Spotify session
+            // is therefore attached to every item while that source is switched on and signed
+            // in; an unencrypted stream never asks it for a key.
             .setDrmSessionManagerProvider { mediaItem ->
                 val appleTrack = mediaItem.mediaId?.let { appleDrmTrackInfo[it] }
                 when {
                     appleTrack != null -> buildAppleDrmSessionManager(appleTrack) ?: DrmSessionManager.DRM_UNSUPPORTED
+                    isSpotifyStreamingConfigured() ->
+                        (
+                            spotifyDrmManager
+                                ?: SpotifyStreamDrm.buildSessionManager(this, mediaOkHttpClient)?.also { spotifyDrmManager = it }
+                        ) ?: DrmSessionManager.DRM_UNSUPPORTED
                     else -> DrmSessionManager.DRM_UNSUPPORTED
                 }
             }
+    }
 
     /**
      * Media ids resolved through the Apple Music source, with the per-track values Apple's
@@ -9648,6 +11203,7 @@ class MusicService :
         private val telegramFactory: DataSource.Factory,
         private val deezerFactory: DataSource.Factory,
         private val tidalProgressiveDashFactory: DataSource.Factory,
+        private val spotifyEchoFactory: DataSource.Factory,
     ) : DataSource {
         private val transferListeners = mutableListOf<TransferListener>()
         private var delegate: DataSource? = null
@@ -9671,6 +11227,8 @@ class MusicService :
                     // Streams through its own progressive-DASH source; the YouTube resolver
                     // would rewrite the URI.
                     tidalProgressiveDashFactory
+                } else if (normalizedScheme == SpotifyEchoResolver.SCHEME) {
+                    spotifyEchoFactory
                 } else if (
                     normalizedScheme == "content" ||
                     normalizedScheme == "file" ||
@@ -9707,6 +11265,7 @@ class MusicService :
         private val defaultFactory: DataSource.Factory,
         private val deezerFactory: DataSource.Factory,
         private val tidalProgressiveDashFactory: DataSource.Factory,
+        private val spotifyEchoFactory: DataSource.Factory,
     ) : DataSource {
         private val transferListeners = mutableListOf<TransferListener>()
         private var delegate: DataSource? = null
@@ -9722,6 +11281,7 @@ class MusicService :
                 when (scheme) {
                     DeezerCrypto.SCHEME -> deezerFactory
                     TidalAudioProvider.PROGRESSIVE_DASH_SCHEME -> tidalProgressiveDashFactory
+                    SpotifyEchoResolver.SCHEME -> spotifyEchoFactory
                     else -> defaultFactory
                 }
             val selected = factory.createDataSource()
@@ -9748,36 +11308,48 @@ class MusicService :
 
     private fun updateAudioOffload(enabled: Boolean) {
         val effectiveEnabled = enabled && !crossfadeEnabled
-        runCatching {
-            val builder = localPlayer.trackSelectionParameters.buildUpon()
-            val audioOffloadPrefsClass = Class.forName("androidx.media3.common.AudioOffloadPreferences")
-            val audioOffloadPrefsBuilderClass = Class.forName("androidx.media3.common.AudioOffloadPreferences\$Builder")
-
-            val modeFieldName = if (effectiveEnabled) "AUDIO_OFFLOAD_MODE_ENABLED" else "AUDIO_OFFLOAD_MODE_DISABLED"
-            val mode = audioOffloadPrefsClass.getField(modeFieldName).getInt(null)
-
-            val prefsBuilder = audioOffloadPrefsBuilderClass.getDeclaredConstructor().newInstance()
-            audioOffloadPrefsBuilderClass.getMethod("setAudioOffloadMode", Int::class.javaPrimitiveType).invoke(prefsBuilder, mode)
-            val prefs = audioOffloadPrefsBuilderClass.getMethod("build").invoke(prefsBuilder)
-
-            val setMethod =
-                builder.javaClass.methods.firstOrNull { method ->
-                    method.name == "setAudioOffloadPreferences" && method.parameterTypes.size == 1
-                }
-            if (setMethod != null) {
-                setMethod.invoke(builder, prefs)
-                localPlayer.trackSelectionParameters = builder.build()
+        // TrackSelectionParameters.AudioOffloadPreferences is the only offload switch left in
+        // media3 1.10: the stand-alone class and ExoPlayer.setOffloadSchedulingEnabled are gone,
+        // and setting the parameters both picks offload-compatible tracks and schedules offload.
+        val offloadMode =
+            if (effectiveEnabled) {
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_ENABLED
+            } else {
+                TrackSelectionParameters.AudioOffloadPreferences.AUDIO_OFFLOAD_MODE_DISABLED
             }
-        }
-        localPlayer.setOffloadEnabled(effectiveEnabled)
+        localPlayer.trackSelectionParameters =
+            localPlayer.trackSelectionParameters
+                .buildUpon()
+                .setAudioOffloadPreferences(
+                    TrackSelectionParameters.AudioOffloadPreferences
+                        .Builder()
+                        .setAudioOffloadMode(offloadMode)
+                        .build(),
+                ).build()
     }
 
     private fun updateWakeLock() {
         val wl = wakeLock ?: return
         val shouldHold = wakelockEnabled && player.isPlaying
         if (shouldHold && !wl.isHeld) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Playback wake lock acquired state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                hasAudioFocus,
+                player.volume,
+            )
             wl.acquire()
         } else if (!shouldHold && wl.isHeld) {
+            Timber.tag("PlaybackDiagnostics").d(
+                "Playback wake lock released state=%d playWhenReady=%s isPlaying=%s focusHeld=%s gain=%.3f",
+                player.playbackState,
+                player.playWhenReady,
+                player.isPlaying,
+                hasAudioFocus,
+                player.volume,
+            )
             wl.release()
         }
     }
@@ -9822,7 +11394,251 @@ class MusicService :
         return activityManager?.isLowRamDevice == true || powerManager?.isPowerSaveMode == true
     }
 
-    private fun createRenderersFactory(transitionFilter: TransitionFilterProcessor) =
+    private fun audioAuthenticityContextFor(mediaId: String): AudioAuthenticityPlaybackContext =
+        AudioAuthenticityPlaybackContext(
+            playbackKey = mediaId,
+            sourceId = selectedPlaybackSourceByMediaId[mediaId]?.name.orEmpty(),
+            rejectSuspectedUpscaled =
+                resolveAudioAuthenticityProbeAvailability(
+                    rejectionEnabled = rejectSuspectedUpscaledAudioEnabled,
+                    pcmTapAvailable = !bitPerfectOutputActive,
+                ) == AudioAuthenticityProbeAvailability.AVAILABLE,
+            advertisedSampleRateHz = authenticitySampleRateByMediaId[mediaId],
+            claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true,
+        )
+
+    private fun refreshAudioAuthenticityContexts(mediaId: String) {
+        val updatedContext = audioAuthenticityContextFor(mediaId)
+        audioAuthenticityContextByPlayer.values.forEach { contextRef ->
+            if (contextRef.get()?.playbackKey == mediaId) contextRef.set(updatedContext)
+        }
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun setAudioAuthenticityContext(player: ExoPlayer, mediaId: String?) {
+        val contextRef = audioAuthenticityContextByPlayer[player] ?: return
+        contextRef.set(mediaId?.let(::audioAuthenticityContextFor))
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun publishDecodedPcmFormat() {
+        if (!::player.isInitialized) {
+            decodedPcmFormat.value = null
+            reportedAudioFormat.value = null
+            androidAudioOutputFormat.value = null
+            return
+        }
+        val mediaId =
+            localAudioObservationMediaId(
+                sessionMediaId = player.currentMediaItem?.mediaId,
+                localMediaId = localPlayer.currentMediaItem?.mediaId,
+                playbackType = player.deviceInfo.playbackType,
+            )
+        val activePlayer = localPlayer.takeIf { mediaId != null }
+        val context = activePlayer?.let(audioAuthenticityContextByPlayer::get)
+        decodedPcmFormat.value =
+            if (bitPerfectOutputActive) null else context?.let(decodedPcmFormatsByContext::get)?.takeIf { it.mediaId == mediaId }
+        reportedAudioFormat.value =
+            reportedAudioFormatForPlayback(
+                mediaId = mediaId,
+                source = mediaId?.let(selectedPlaybackSourceByMediaId::get),
+                format = mediaId?.let(reportedAudioFormatsByMediaId::get),
+            )
+        androidAudioOutputFormat.value =
+            androidAudioOutputFormatForPlayback(
+                mediaId = mediaId,
+                configuration = activePlayer?.let(audioTrackConfigurationsByPlayer::get),
+                bitPerfectOutputActive = bitPerfectOutputActive,
+            )
+    }
+
+    private fun removeAudioAuthenticityContext(releasedPlayer: ExoPlayer) {
+        audioAuthenticityContextByPlayer.remove(releasedPlayer)?.let(decodedPcmFormatsByContext::remove)
+        audioTrackConfigurationsByPlayer.remove(releasedPlayer)
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun retainReportedAudioFormat(mediaId: String, metadata: CachedAudioMetadata) {
+        reportedAudioFormatsByMediaId.put(
+            mediaId,
+            ReportedAudioFormat(mediaId, metadata.source, metadata.sampleRateHz, metadata.bitDepth, metadata.channelCount),
+        )
+        scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+    }
+
+    private fun observeAudioTrackConfiguration(observedPlayer: ExoPlayer) {
+        observedPlayer.addAnalyticsListener(
+            object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+                override fun onAudioInputFormatChanged(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    format: androidx.media3.common.Format,
+                    decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+                ) {
+                    val periodId = eventTime.mediaPeriodId
+                    if (periodId != null && observedPlayer.currentTimeline.getIndexOfPeriod(periodId.periodUid) == C.INDEX_UNSET) return
+                    val mediaId =
+                        if (eventTime.windowIndex in 0 until eventTime.timeline.windowCount) {
+                            eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem.mediaId
+                        } else {
+                            observedPlayer.currentMediaItem?.mediaId ?: return
+                        }
+                    val source = selectedPlaybackSourceByMediaId[mediaId]
+                    val rate = format.sampleRate.takeIf { it > 0 }
+                    val lossless = isClaimedLosslessFormat(format.sampleMimeType.orEmpty(), format.codecs.orEmpty(), "")
+                    val depth =
+                        if (lossless) DecodedPcmFormat(mediaId, format.sampleRate, format.channelCount, format.pcmEncoding).bitsPerSample else null
+                    val previous = reportedAudioFormatsByMediaId[mediaId]?.takeIf { it.source == source }
+                    reportedAudioFormatsByMediaId.put(
+                        mediaId,
+                        ReportedAudioFormat(mediaId, source, rate ?: previous?.sampleRateHz, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 }),
+                    )
+                    audioPipelineMonitorPlayer = observedPlayer
+                    audioPipelineMonitor.onStreamFormat(
+                        tf.monochrome.android.audio.pipeline.DecodedStream(
+                            mimeType = format.sampleMimeType,
+                            sampleRate = rate,
+                            channelCount = format.channelCount.takeIf { it > 0 },
+                            bitrate = format.bitrate.takeIf { it > 0 } ?: format.averageBitrate.takeIf { it > 0 },
+                            pcmBits = depth?.takeIf { it > 0 },
+                            pcmIsFloat = format.pcmEncoding == C.ENCODING_PCM_FLOAT,
+                        ),
+                    )
+                    if (source != null && source != AudioSourceType.YOUTUBE && rate != null) {
+                        authenticitySampleRateByMediaId[mediaId] = rate
+                        val claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true || lossless
+                        authenticityClaimedLosslessByMediaId[mediaId] = claimedLossless
+                        refreshAudioAuthenticityContexts(mediaId)
+                        val metadata = CachedAudioMetadata(source, rate, claimedLossless, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 })
+                        scope.launch(Dispatchers.IO) {
+                            val key = sourceCacheKey(source, mediaId)
+                            runCatching {
+                                listOf(downloadCache, playerCache).forEach { cache ->
+                                    cache.applyContentMetadataMutations(key, metadata.toMutations())
+                                }
+                            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+                        }
+                    }
+                    publishDecodedPcmFormat()
+                }
+
+                override fun onAudioTrackInitialized(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+                ) {
+                    audioTrackConfigurationsByPlayer[observedPlayer] = audioTrackConfig
+                    publishDecodedPcmFormat()
+                }
+
+                override fun onAudioTrackReleased(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    audioTrackConfig: androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig,
+                ) {
+                    audioTrackConfigurationsByPlayer.remove(observedPlayer, audioTrackConfig)
+                    publishDecodedPcmFormat()
+                }
+
+                override fun onAudioDecoderInitialized(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    decoderName: String,
+                    initializedTimestampMs: Long,
+                    initializationDurationMs: Long,
+                ) {
+                    audioPipelineMonitorPlayer = observedPlayer
+                    audioPipelineMonitor.onDecoderInitialized(decoderName)
+                }
+
+                override fun onAudioDecoderReleased(
+                    eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                    decoderName: String,
+                ) {
+                    // A crossfade's outgoing player releases its decoder after the incoming one
+                    // has already reported; only the player that last reported may clear it.
+                    if (audioPipelineMonitorPlayer === observedPlayer) audioPipelineMonitor.onDecoderReleased()
+                }
+            },
+        )
+    }
+
+    private var audioPipelineMonitorPlayer: ExoPlayer? = null
+
+    private fun handleAudioAuthenticityResult(
+        contextRef: AtomicReference<AudioAuthenticityPlaybackContext?>,
+        result: AudioAuthenticityProcessorResult,
+    ) {
+        scope.launch {
+            val owner =
+                audioAuthenticityContextByPlayer.entries
+                    .firstOrNull { it.value === contextRef }
+                    ?.key ?: return@launch
+            val activeContext = contextRef.get()
+            if (activeContext?.playbackKey != result.playbackKey || activeContext.sourceId != result.sourceId) return@launch
+            if (result.shouldReject && !activeContext.rejectSuspectedUpscaled) return@launch
+            if (owner.currentMediaItem?.mediaId != result.playbackKey) return@launch
+            val source = runCatching { AudioSourceType.valueOf(result.sourceId) }.getOrNull() ?: return@launch
+            if (selectedPlaybackSourceByMediaId[result.playbackKey] != source) return@launch
+            Timber.tag("PlaybackDiagnostics").i(
+                "Audio authenticity verdict=%s provider=%s confidence=%.3f cutoffHz=%s activeWindows=%d rejected=%s",
+                result.assessment.verdict.name,
+                source.name,
+                result.assessment.confidence,
+                result.assessment.cutoffFrequencyHz,
+                result.assessment.activeWindows,
+                result.shouldReject,
+            )
+            if (!result.shouldReject) return@launch
+
+            val isSecondaryPlayer = owner === secondaryCrossfadePlayer
+            if (isSecondaryPlayer && secondaryCrossfadeTarget?.mediaId != result.playbackKey) return@launch
+            if (!isSecondaryPlayer && (owner !== localPlayer || player.currentMediaItem?.mediaId != result.playbackKey)) {
+                return@launch
+            }
+            val rejectedSources =
+                authenticityRejectedSourcesByMediaId.getOrPut(result.playbackKey) {
+                    ConcurrentHashMap.newKeySet()
+                }
+            if (!rejectedSources.add(source)) return@launch
+
+            selectedPlaybackSourceByMediaId.remove(result.playbackKey, source)
+            authenticitySampleRateByMediaId.remove(result.playbackKey)
+            authenticityClaimedLosslessByMediaId.remove(result.playbackKey)
+            refreshAudioAuthenticityContexts(result.playbackKey)
+            Timber.tag("PlaybackDiagnostics").w(
+                "Rejected suspected upscaled audio provider=%s confidence=%.3f; retrying another source",
+                source.name,
+                result.assessment.confidence,
+            )
+
+            if (isSecondaryPlayer) {
+                evictAudioAuthenticityRejectedSource(result.playbackKey, source)
+                // Through the hand-off policy, not a bare cancel: past the commit point the
+                // heard position is carried to the primary player, which re-resolves the song
+                // through the source chain without the rejected source; before it the outgoing
+                // song is restored and the transition is retried.
+                handleCrossfadeHandoff(reason = "authenticity_rejected", incomingUnusable = true)
+                return@launch
+            }
+
+            val sourceOverride =
+                SongSourceOverride.get(dataStore.get(SongSourceOverrideKey, ""), result.playbackKey)
+            val qobuzTrackId =
+                SongSourceQobuzTrackId.get(dataStore.get(SongSourceQobuzTrackIdKey, ""), result.playbackKey)
+            val qobuzBackupVideoId =
+                SongSourceQobuzBackupVideoId.get(dataStore.get(SongSourceQobuzBackupVideoIdKey, ""), result.playbackKey)
+            setSongSourceOverrideInternal(
+                mediaId = result.playbackKey,
+                source = sourceOverride,
+                qobuzTrackId = qobuzTrackId,
+                qobuzBackupVideoId = qobuzBackupVideoId,
+                authenticityRejectedSource = source,
+                preservedPositionMs = resolveAudioAuthenticityRetryPositionMs(player.currentPosition),
+            )
+        }
+    }
+
+    private fun createRenderersFactory(
+        transitionFilter: TransitionFilterProcessor,
+        authenticityContext: AtomicReference<AudioAuthenticityPlaybackContext?>,
+    ) =
         object : DefaultRenderersFactory(this) {
             init {
                 // Enable decoder fallback so that when a primary (typically hardware) decoder fails
@@ -9874,12 +11690,72 @@ class MusicService :
                         // untouched. A fresh instance per sink — an AudioProcessor may belong to
                         // only one chain.
                         HapticsPcmProcessor(engineProvider = { musicHapticsEngine }),
+                        AudioAuthenticityPcmProcessor(
+                            playbackContextProvider = { authenticityContext.get() },
+                                resultListener = { result -> handleAudioAuthenticityResult(authenticityContext, result) },
+                            ),
+                            DecodedPcmObserver(
+                                onFormatObserved = { format ->
+                                    val mediaId = authenticityContext.get()?.playbackKey
+                                    if (format == null || mediaId == null || format.sampleRate <= 0 || format.channelCount <= 0) {
+                                        decodedPcmFormatsByContext.remove(authenticityContext)
+                                    } else {
+                                        decodedPcmFormatsByContext[authenticityContext] =
+                                            DecodedPcmFormat(mediaId, format.sampleRate, format.channelCount, format.encoding)
+                                    }
+                                    scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
+                                },
+                                playbackKeyProvider = { authenticityContext.get()?.playbackKey },
+                            ),
+                        // After the authenticity analysis and the decoded-format observer, so both
+                        // keep seeing the decoder's own PCM. Inactive (skipped by Media3) unless an
+                        // engine or the float DSP is switched on.
+                        audioEngineHost.newRouter(),
                         // Automix's transition filters ride last in the chain, as in 4nx3b and
                         // BitChord. Wide open (a pass-through) whenever no smart blend runs.
                         transitionFilter,
                     ),
-                ).build()
+                ).apply {
+                    if (usbExclusiveSinkInstalled) {
+                        setAudioOutputProvider(newUsbExclusiveOutputProvider(context, authenticityContext))
+                    }
+                }.build()
         }
+
+    /**
+     * The exclusive route around the stock output. The inner provider is built the way
+     * DefaultAudioSink builds its own default, so everything that is not routed exclusively
+     * plays exactly as without the feature.
+     */
+    private fun newUsbExclusiveOutputProvider(
+        context: Context,
+        authenticityContext: AtomicReference<AudioAuthenticityPlaybackContext?>,
+    ) = UsbExclusiveAudioOutputProvider(
+        context = context,
+        inner =
+            AudioTrackAudioOutputProvider
+                .Builder(context)
+                .setAudioOffloadSupportProvider(DefaultAudioOffloadSupportProvider(context))
+                .setAudioTrackBufferSizeProvider(DefaultAudioSink.AudioTrackBufferSizeProvider.DEFAULT)
+                .build(),
+        exclusiveWanted = ::usbExclusiveRouteAllowed,
+        chainProcessing = {
+            audioEngineHost.wantedEngine() != AudioEngineRouterProcessor.Engine.NONE ||
+                audioEngineHost.floatDspWanted()
+        },
+        decodedFormat = { decodedPcmFormatsByContext[authenticityContext] },
+    )
+
+    // Live, from the in-memory snapshot (read on the playback thread). A second player, an
+    // offloaded track or the bit-perfect sink would each contend for the DAC or bypass the
+    // output, so any of them keeps playback on the standard route.
+    private fun usbExclusiveRouteAllowed(): Boolean =
+        usbExclusiveSinkInstalled &&
+            PreferenceStore.get(UsbExclusiveAudioKey) == true &&
+            PreferenceStore.get(AudioOffload) != true &&
+            PreferenceStore.get(CrossfadeEnabledKey) != true &&
+            PreferenceStore.get(AutomixEnabledKey) != true &&
+            PreferenceStore.get(BitPerfectUsbOutputKey) != true
 
     override fun onPlaybackStatsReady(
         eventTime: AnalyticsListener.EventTime,
@@ -10100,8 +11976,14 @@ class MusicService :
     }
 
     private fun clearPersistedQueueFiles() {
-        persistentSaveGeneration.incrementAndGet()
+        // Generation bump, cache reset and deletion happen under the same lock the savers hold
+        // for their check-write-record step, so no save can record a snapshot as persisted
+        // whose file this is about to delete, nor skip as "unchanged" against a cache that
+        // describes files already gone.
         synchronized(persistentStateLock) {
+            persistentSaveGeneration.incrementAndGet()
+            lastPersistedQueue = null
+            lastPersistedPlayerState = null
             listOf(
                 PERSISTENT_QUEUE_FILE,
                 PERSISTENT_PLAYER_STATE_FILE,
@@ -10126,11 +12008,11 @@ class MusicService :
     private fun writePersistentObject(
         fileName: String,
         payload: Serializable,
-    ) {
+    ): Boolean {
         val persistentFile = filesDir.resolve(fileName)
         val tempFile = filesDir.resolve("$fileName.tmp")
 
-        synchronized(persistentStateLock) {
+        return synchronized(persistentStateLock) {
             runCatching {
                 FileOutputStream(tempFile).use { fos ->
                     ObjectOutputStream(fos).use { output ->
@@ -10150,7 +12032,7 @@ class MusicService :
             }.onFailure {
                 runCatching { tempFile.delete() }
                 reportException(it)
-            }
+            }.isSuccess
         }
     }
 
@@ -10228,6 +12110,9 @@ class MusicService :
     @Volatile
     private var lastPersistedPlayerState: PersistPlayerState? = null
 
+    @Volatile
+    private var lastPersistedQueue: PersistQueue? = null
+
     /**
      * Writes just the resume position and transport flags, skipping the queue snapshot.
      *
@@ -10259,13 +12144,21 @@ class MusicService :
                 )
             } ?: return
 
+        withContext(Dispatchers.IO) {
+            synchronized(persistentStateLock) {
+                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
+                persistPlayerStateIfChangedLocked(state)
+            }
+        }
+    }
+
+    // Caller holds persistentStateLock. The cache only advances after a write that succeeded,
+    // so a failed write is retried by the next identical snapshot instead of being skipped.
+    private fun persistPlayerStateIfChangedLocked(state: PersistPlayerState) {
         // timestamp defaults to now, so it always differs — compare everything else.
         val previous = lastPersistedPlayerState
         if (previous != null && previous.copy(timestamp = 0L) == state.copy(timestamp = 0L)) return
-
-        withContext(Dispatchers.IO) {
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)
+        if (writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, state)) {
             lastPersistedPlayerState = state
         }
     }
@@ -10309,10 +12202,17 @@ class MusicService :
             } ?: return
 
         withContext(Dispatchers.IO) {
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
-            if (saveGeneration != persistentSaveGeneration.get()) return@withContext
-            writePersistentObject(PERSISTENT_PLAYER_STATE_FILE, snapshot.second)
+            synchronized(persistentStateLock) {
+                if (saveGeneration != persistentSaveGeneration.get()) return@synchronized
+                // Transition, play/pause and state-change callbacks fire in bursts for one user action,
+                // each snapshotting the same queue; only the first needs to hit the disk.
+                if (snapshot.first != lastPersistedQueue &&
+                    writePersistentObject(PERSISTENT_QUEUE_FILE, snapshot.first)
+                ) {
+                    lastPersistedQueue = snapshot.first
+                }
+                persistPlayerStateIfChangedLocked(snapshot.second)
+            }
         }
     }
 
@@ -10325,6 +12225,11 @@ class MusicService :
         sponsorBlockPlaybackController.detach()
         musicHapticsEngine?.release()
         musicHapticsEngine = null
+        spotifyReportJob?.cancel()
+        spotifyReportJob = null
+        // The web-player method keeps a Dealer socket open for manifest pushes; it has no reason
+        // to outlive playback.
+        SpotifyWebStreamer.resetSession()
         discordServiceStopping = true
         requestDiscordSync(
             reason = "service_destroy",
@@ -10333,7 +12238,7 @@ class MusicService :
         super.onDestroy()
         effectiveVolumeRampJob?.cancel()
         effectiveVolumeRampJob = null
-        cancelCrossfade(resetVolume = false, resetPauseAtEnd = true)
+        cancelCrossfade(resetVolume = false, resetPauseAtEnd = true, reason = "service_destroy")
         audioRouteRecoveryJob?.cancel()
         if (audioDeviceCallbackRegistered) {
             audioManager.unregisterAudioDeviceCallback(audioDeviceCallback)
@@ -10346,6 +12251,7 @@ class MusicService :
         // Hands the DAC back to the shared mixer; the preference would otherwise outlive the app.
         BitPerfectUsbOutput.clear(this)
         BitPerfectUsbOutput.sinkActive = false
+        UsbExclusiveAudioOutputProvider.installed = false
         unregisterBluetoothReceiver()
         unregisterMuteRecoveryObserver()
         try {
@@ -10498,10 +12404,15 @@ class MusicService :
 
             "moe.rukamori.archivetune.WIDGET_SKIP_NEXT" -> {
                 if (player.hasNextMediaItem()) {
-                    prepareForManualSkip()
-                    player.seekToNext()
-                    player.prepare()
-                    player.play()
+                    // Next during a fade commits the song that is fading in (user decision
+                    // 2026-10-13): the promotion IS the skip, so no seekToNext may follow —
+                    // it would restart that song from 0.
+                    if (!commitCrossfadeForSkipNext()) {
+                        prepareForManualSkip()
+                        player.seekToNext()
+                        player.prepare()
+                        player.play()
+                    }
                 }
             }
 
@@ -10561,9 +12472,6 @@ class MusicService :
     }
 
     companion object {
-        /** MediaMetadata extra: the item was added by Play next / Add to queue (#172). */
-        private const val EXTRA_USER_QUEUED = "archivetune.userQueued"
-
         internal fun shouldShowPlaybackNotification(
             startInForegroundRequired: Boolean,
             hasResumablePlayback: Boolean,
@@ -10576,6 +12484,7 @@ class MusicService :
         // Prefix for the dedicated player-cache key used by Tidal streams so their bytes never
         // collide with the YouTube stream cached under the bare media id.
         private const val TIDAL_CACHE_KEY_PREFIX = "tidal:"
+        private const val SPOTIFY_CACHE_METHOD_METADATA = "archivetune-spotify-method"
 
         /** Apple Music license endpoint (Widevine L3 key exchange, verified live). */
         private const val APPLE_LICENSE_URL =
@@ -10597,6 +12506,7 @@ class MusicService :
         const val ONLINE_PLAYLIST = "online_playlist"
 
         private const val TAG = "MusicService"
+        private const val SessionActivityAlbumLinkRequestCode = 889
         private const val AUDIO_EFFECT_INITIALIZATION_MAX_ATTEMPTS = 4
         private const val AUDIO_EFFECT_INITIALIZATION_RETRY_DELAY_MS = 250L
         private const val INFINITE_QUEUE_MAX_BOOTSTRAP_PAGES = 3
@@ -10613,6 +12523,9 @@ class MusicService :
         val RETRYABLE_STREAM_RESPONSE_CODES = setOf(403, 404, 410, 416)
         private const val INITIAL_BUFFER_STALL_DELAY_MS = 15_000L
         private const val INITIAL_BUFFER_STALL_POSITION_MS = 5_000L
+        private const val RESOLUTION_CACHE_TRIM_THRESHOLD = 64
+        private const val RESOLUTION_CACHE_KEEP_BEHIND = 8
+        private const val RESOLUTION_CACHE_KEEP_AHEAD = 16
         const val PERSISTENT_QUEUE_FILE = "persistent_queue.data"
         const val PERSISTENT_AUTOMIX_FILE = "persistent_automix.data"
         const val PERSISTENT_PLAYER_STATE_FILE = "persistent_player_state.data"
@@ -10650,6 +12563,9 @@ class MusicService :
         const val MIN_CROSSFADE_DURATION_MS = 500L
         const val CROSSFADE_END_GUARD_MS = 150L
         const val CROSSFADE_EARLY_FINISH_MS = 350L
+        const val CROSSFADE_BUFFER_STALL_GRACE_MS = 250L
+        const val SMART_FADE_TAIL_WAIT_MS = 2_000L
+        const val SMART_FADE_TAIL_EPSILON_MS = 8L
         const val CROSSFADE_PREPARE_AHEAD_MS = 30_000L
         const val CROSSFADE_READY_TIMEOUT_MS = 5_000L
         const val CROSSFADE_HANDOFF_BUFFER_MS = 5_000L

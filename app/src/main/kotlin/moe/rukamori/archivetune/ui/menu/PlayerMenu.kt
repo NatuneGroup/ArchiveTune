@@ -42,7 +42,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularWavyProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -97,6 +96,8 @@ import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualityMenuAction
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
@@ -135,8 +136,12 @@ import moe.rukamori.archivetune.utils.SpeedDialPin
 import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.parseSpeedDialPins
+import moe.rukamori.archivetune.audiosource.AmazonTrackPick
 import moe.rukamori.archivetune.audiosource.SongSourceOverride
+import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.AudioSourceType
+import moe.rukamori.archivetune.applemusic.AppleMusicCatalog
+import moe.rukamori.archivetune.applemusic.AppleMusicSearchItem
 import moe.rukamori.archivetune.constants.SongSourceOverrideKey
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
@@ -191,6 +196,7 @@ fun PlayerMenu(
     val (externalDownloaderEnabled) = rememberPreference(ExternalDownloaderEnabledKey, defaultValue = false)
     val (externalDownloaderPackage) = rememberPreference(ExternalDownloaderPackageKey, defaultValue = "")
     val (archiveTuneCanvasEnabled) = rememberPreference(ArchiveTuneCanvasKey, defaultValue = false)
+    val (amazonSourceEnabled) = rememberPreference(AmazonEnabledKey, defaultValue = false)
     val playerDesignStyle by rememberEnumPreference(PlayerDesignStyleKey, defaultValue = PlayerDesignStyle.Default)
     val lowDataModeActive = rememberLowDataModeActive()
     val isCanvasArtworkRefetching by playerConnection.isCanvasArtworkRefetching.collectAsStateWithLifecycle()
@@ -363,6 +369,7 @@ fun PlayerMenu(
         SongSourceDialog(
             sources = availableSources,
             selected = currentSongSource,
+            amazonSourceEnabled = amazonSourceEnabled,
             onDismiss = { showSourceDialog = false },
             onSelect = { source ->
                 onSongSourceChange(SongSourceOverride.withOverride(songSourceRaw, mediaMetadata.id, source))
@@ -389,9 +396,23 @@ fun PlayerMenu(
                     // resolver fetches exactly the row the user tapped:
                     //   - Qobuz     → catalogue trackId
                     //   - Qobuz Backup → the mirror's YouTube video id (its primary key)
+                    //   - Amazon    → the row's title/artist/album/duration; its rows come from
+                    //                 the Apple catalogue and instances only resolve by metadata
                     // For the rest (Tidal / JioSaavn / Deezer) the resolver still searches
                     // by title + artist, which is all their APIs expose here.
                     when (source) {
+                        AudioSourceType.AMAZON ->
+                            playerConnection.service.setSongSourceOverrideWithAmazonPick(
+                                mediaId = mediaMetadata.id,
+                                amazonPick =
+                                    AmazonTrackPick(
+                                        title = result.title,
+                                        artist = result.artist,
+                                        album = result.album,
+                                        durationMs = result.durationMs,
+                                    ),
+                            )
+
                         AudioSourceType.QOBUZ ->
                             playerConnection.service.setSongSourceOverrideWithQobuzTrackId(
                                 mediaId = mediaMetadata.id,
@@ -1210,6 +1231,15 @@ fun PlayerMenu(
                         )
                     }
 
+                    AcousticQualityMenuAction(
+                        target = AcousticAuditTarget(
+                            mediaId = mediaMetadata.id,
+                            title = mediaMetadata.title,
+                            artists = mediaMetadata.artists.joinToString { it.name },
+                        ),
+                        onDismiss = onDismiss,
+                    )
+
                     ListItem(
                         headlineContent = { Text(text = stringResource(R.string.details)) },
                         leadingContent = {
@@ -1304,126 +1334,6 @@ fun PlayerMenu(
         }
         } // end else (menu body)
     }
-}
-
-@Composable
-private fun PlayerVolumeCard(
-    volume: Float,
-    onVolumeChange: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val safeVolume = volume.coerceIn(0f, 1f)
-
-    MenuHeaderCard(
-        modifier = modifier,
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(
-                    text = stringResource(R.string.volume),
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.weight(1f),
-                )
-
-                Text(
-                    text = "${(safeVolume * 100).roundToInt()}%",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier =
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.volume_off),
-                        contentDescription = stringResource(R.string.minimum_volume),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-
-                    VolumeSliderL(
-                        value = safeVolume,
-                        onValueChange = onVolumeChange,
-                        modifier = Modifier.weight(1f),
-                    )
-
-                    Icon(
-                        painter = painterResource(R.drawable.volume_up),
-                        contentDescription = stringResource(R.string.maximum_volume),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-@OptIn(ExperimentalMaterial3Api::class)
-private fun VolumeSliderL(
-    value: Float,
-    onValueChange: (Float) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val safeValue = value.coerceIn(0f, 1f)
-    var sliderValue by remember { mutableFloatStateOf(safeValue) }
-    var isDragging by remember { mutableStateOf(false) }
-
-    LaunchedEffect(safeValue) {
-        if (!isDragging) sliderValue = safeValue
-    }
-
-    // Do NOT constrain the Slider's height. The Material3 Slider's internal touch
-    // target is 48dp tall; forcing a smaller height clips the touch area and makes the
-    // thumb impossible to drag — the value updates in state but the thumb never visibly
-    // moves.
-    Slider(
-        value = sliderValue,
-        onValueChange = { updated ->
-            isDragging = true
-            val coerced = updated.coerceIn(0f, 1f)
-            sliderValue = coerced
-            onValueChange(coerced)
-        },
-        onValueChangeFinished = { isDragging = false },
-        valueRange = 0f..1f,
-        modifier = modifier,
-        thumb = {
-            Box(
-                modifier =
-                    Modifier
-                        .size(14.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary),
-            )
-        },
-        colors =
-            SliderDefaults.colors(
-                thumbColor = MaterialTheme.colorScheme.primary,
-                activeTrackColor = MaterialTheme.colorScheme.primary,
-                inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant,
-                activeTickColor = Color.Transparent,
-                inactiveTickColor = Color.Transparent,
-            ),
-    )
 }
 
 @Composable
@@ -1832,6 +1742,7 @@ private fun AudioSourceType.sourceLabelRes(): Int =
         AudioSourceType.APPLE -> R.string.source_apple_music
         AudioSourceType.AMAZON -> R.string.source_amazon
         AudioSourceType.QQ -> R.string.source_qq_music
+        AudioSourceType.SPOTIFY -> R.string.source_spotify_stream
         AudioSourceType.JIOSAAVN -> R.string.source_jiosaavn
         AudioSourceType.YOUTUBE -> R.string.source_youtube
     }
@@ -1847,6 +1758,7 @@ private fun AudioSourceType.sourceIconRes(): Int =
         // stand-in APPLE uses above for the same reason.
         AudioSourceType.AMAZON -> R.drawable.ic_music
         AudioSourceType.QQ -> R.drawable.ic_music
+        AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn
         AudioSourceType.YOUTUBE -> R.drawable.play
     }
@@ -1865,12 +1777,14 @@ private data class SourceSearchResult(
     val durationMs: Long?,
     val qualityLabel: String?,
     val songItem: SongItem?,
+    val album: String? = null,
 )
 
 @Composable
 private fun SongSourceDialog(
     sources: List<AudioSourceType>,
     selected: AudioSourceType?,
+    amazonSourceEnabled: Boolean,
     onDismiss: () -> Unit,
     onSelect: (AudioSourceType?) -> Unit,
     onPlaySong: (SongItem) -> Unit,
@@ -1908,6 +1822,7 @@ private fun SongSourceDialog(
             AudioSourceType.QOBUZ_BACKUP,
             AudioSourceType.DEEZER,
             AudioSourceType.JIOSAAVN,
+            AudioSourceType.AMAZON,
         )
     val backendMissing = sourceFilter != null && sourceFilter !in searchableSources
 
@@ -1930,6 +1845,7 @@ private fun SongSourceDialog(
         val searchQobuzBackup = sourceFilter == null || sourceFilter == AudioSourceType.QOBUZ_BACKUP
         val searchDeezer = sourceFilter == null || sourceFilter == AudioSourceType.DEEZER
         val searchSaavn = sourceFilter == null || sourceFilter == AudioSourceType.JIOSAAVN
+        val searchAmazon = (sourceFilter == null || sourceFilter == AudioSourceType.AMAZON) && amazonSourceEnabled
 
         if (searchYtm) {
             withContext(Dispatchers.IO) {
@@ -1987,6 +1903,28 @@ private fun SongSourceDialog(
                         ),
                     )
                 }
+            }
+        }
+        if (searchAmazon) {
+            withContext(Dispatchers.IO) {
+                runCatching { AppleMusicCatalog.searchTrackSuggestions(searchQuery, limit = 8) }
+                    .getOrNull()
+                    ?.filterIsInstance<AppleMusicSearchItem.Track>()
+                    ?.forEach { track ->
+                        out.add(
+                            SourceSearchResult(
+                                source = AudioSourceType.AMAZON,
+                                trackId = track.id,
+                                title = track.title,
+                                artist = track.artist,
+                                thumbnailUrl = track.artworkUrl,
+                                durationMs = track.durationMs,
+                                qualityLabel = null,
+                                songItem = null,
+                                album = track.album,
+                            ),
+                        )
+                    }
             }
         }
         if (searchQobuz) {
@@ -2154,6 +2092,7 @@ private fun SongSourceDialog(
                             AudioSourceType.APPLE to stringResource(R.string.source_apple_music),
                             AudioSourceType.AMAZON to stringResource(R.string.source_amazon),
                             AudioSourceType.QQ to stringResource(R.string.source_qq_music),
+                            AudioSourceType.SPOTIFY to stringResource(R.string.source_spotify_stream),
                             AudioSourceType.JIOSAAVN to stringResource(R.string.source_jiosaavn),
                             AudioSourceType.YOUTUBE to stringResource(R.string.source_youtube),
                         ),
@@ -2169,6 +2108,7 @@ private fun SongSourceDialog(
                             AudioSourceType.APPLE to R.drawable.ic_music,
                             AudioSourceType.AMAZON to R.drawable.ic_music,
                             AudioSourceType.QQ to R.drawable.ic_music,
+                            AudioSourceType.SPOTIFY to R.drawable.spotify_icon,
                             AudioSourceType.JIOSAAVN to R.drawable.provider_jiosaavn,
                             AudioSourceType.YOUTUBE to R.drawable.play,
                         ),

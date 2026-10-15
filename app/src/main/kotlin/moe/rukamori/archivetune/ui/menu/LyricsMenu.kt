@@ -8,6 +8,11 @@
 
 package moe.rukamori.archivetune.ui.menu
 
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.LocalMenuState
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.foundation.border
+import androidx.activity.compose.BackHandler
 import android.app.SearchManager
 import android.content.Intent
 import android.content.res.Configuration
@@ -109,9 +114,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.vibrancy
+import androidx.datastore.preferences.core.edit
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.roundToInt
@@ -134,6 +137,7 @@ import moe.rukamori.archivetune.constants.AiProviderKey
 import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.MediaMetadataListItem
@@ -141,10 +145,10 @@ import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.MenuSurfaceSection
 import moe.rukamori.archivetune.ui.component.NewAction
 import moe.rukamori.archivetune.ui.component.NewActionGrid
-import moe.rukamori.archivetune.ui.component.PlatformBackdrop
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
+import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
@@ -658,12 +662,20 @@ fun LyricsMenu(
 
                                 when (selectedSource) {
                                     LyricsTranslationSource.AI_TRANSLATION -> {
-                                        isDialogAiTranslationRunning = true
-                                        viewModel.translateLyricsWithAi(
-                                            mediaMetadata = mediaMetadataProvider(),
-                                            lyrics = inputText,
-                                            targetLanguage = languageCode,
-                                        )
+                                        val requestMediaMetadata = mediaMetadataProvider()
+                                        val sourceSnapshot = lyricsProvider()
+                                        translationJob = coroutineScope.launch {
+                                            // The request's freshness guard must see the committed picker target.
+                                            context.dataStore.edit { it[TranslatorTargetLangKey] = languageCode }
+                                            if (mediaMetadataProvider().id != requestMediaMetadata.id ||
+                                                lyricsProvider() != sourceSnapshot) return@launch
+                                            isDialogAiTranslationRunning = true
+                                            viewModel.translateLyricsWithAi(
+                                                mediaMetadata = requestMediaMetadata,
+                                                lyrics = inputText,
+                                                targetLanguage = languageCode,
+                                            )
+                                        }
                                     }
 
                                     LyricsTranslationSource.TRANSLATION -> {
@@ -757,14 +769,17 @@ fun LyricsMenu(
                 enabled = isAiRomanizationEnabled,
                 onClick = {
                     val lyricsText = lyricsProvider()?.lyrics.orEmpty()
+                    val sourceLanguageHints = LyricsUtils.sourceLanguageHints(lyricsText)
                     AiLyricsRomanization.request(
                         sessionKey =
                             AiLyricsRomanization.sessionKey(
                                 mediaId = mediaMetadataProvider().id,
                                 lyrics = lyricsText,
+                                sourceLanguageHints = sourceLanguageHints,
                             ),
                         lines = AiLyricsRomanization.linesOf(lyricsText, mediaMetadataProvider().duration),
                         settings = aiRomanizationSettings,
+                        sourceLanguageHints = sourceLanguageHints,
                     )
                     Toast
                         .makeText(context, context.getString(R.string.ai_romanize_started), Toast.LENGTH_SHORT)
@@ -1734,6 +1749,11 @@ private fun LyricsSearchInputActions(
     }
 }
 
+/**
+ * The lyrics three-dot menu. Outside the Apple Music Experience it is the ordinary menu sheet every
+ * other three-dot opens; inside it, it is Apple Music's anchored action list growing out of the
+ * button that was tapped.
+ */
 @Composable
 fun AnchoredLyricsOverflowMenu(
     iconBoundsInRoot: Rect,
@@ -1743,11 +1763,31 @@ fun AnchoredLyricsOverflowMenu(
     onLyricsSyncOffsetChange: (Int) -> Unit,
     onDismiss: () -> Unit,
     viewModel: LyricsMenuViewModel = hiltViewModel(),
-    backdrop: PlatformBackdrop? = null,
-
 ) {
+    if (!rememberAppleMusicExperience()) {
+        val menuState = LocalMenuState.current
+        LaunchedEffect(Unit) {
+            menuState.show {
+                LyricsMenu(
+                    lyricsProvider = lyricsProvider,
+                    mediaMetadataProvider = mediaMetadataProvider,
+                    lyricsSyncOffset = lyricsSyncOffset,
+                    onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
+                    onDismiss = menuState::dismiss,
+                    viewModel = viewModel,
+                )
+            }
+            // The sheet owns itself from here; the caller's flag only meant "open it".
+            onDismiss()
+        }
+        return
+    }
 
     var dismissed by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = !dismissed) {
+        dismissed = true
+    }
 
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -1756,9 +1796,6 @@ fun AnchoredLyricsOverflowMenu(
     val alphaAnim = remember { Animatable(0f) }
 
     LaunchedEffect(Unit) {
-
-        if (dismissed) return@LaunchedEffect
-
         val scaleJob = scope.launch {
             scaleAnim.animateTo(
                 targetValue = 1f,
@@ -1803,15 +1840,10 @@ fun AnchoredLyricsOverflowMenu(
         onDismiss()
     }
 
-    val scale = scaleAnim.value
-    val alpha = alphaAnim.value
-
     var anchorSpaceHeightPx by remember { mutableIntStateOf(0) }
     var popupHeightPx by remember { mutableIntStateOf(0) }
-    // Hoisted out of the offset/opensAboveAnchor layout-phase calls below, which otherwise redo
-    // these dp-to-px conversions on every layout pass of the enter/exit animation.
     val verticalOffsetPx = remember(density) { with(density) { 4.dp.toPx() }.toInt() }
-    val popupWidthPx = remember(density) { with(density) { 220.dp.toPx() }.toInt() }
+    val popupWidthPx = remember(density) { with(density) { 240.dp.toPx() }.toInt() }
     val horizontalMarginPx = remember(density) { with(density) { 16.dp.toPx() }.toInt() }
     val fallbackPopupHeightPx = remember(density) { with(density) { 360.dp.toPx() }.toInt() }
 
@@ -1821,31 +1853,14 @@ fun AnchoredLyricsOverflowMenu(
             iconBoundsInRoot.bottom + verticalOffsetPx + neededHeightPx > anchorSpaceHeightPx
     }
 
-    val frostedBlurModifier = remember(backdrop) {
-        if (backdrop != null) {
-            Modifier.drawBackdrop(
-                backdrop = backdrop,
-                effects = {
-                    vibrancy()
-
-                    blur(32f.dp.toPx())
-                },
-                onDrawBackdrop = { drawBackdrop ->
-                    drawBackdrop()
-                },
-                shape = { RoundedCornerShape(16.dp) },
-            )
-        } else {
-            null
-        }
-    }
+    val popupShape = remember { RoundedCornerShape(14.dp) }
 
     Box(
         modifier =
             Modifier
                 .fillMaxSize()
                 .onSizeChanged { anchorSpaceHeightPx = it.height }
-                .background(Color.Black.copy(alpha = 0.45f * alpha))
+                .drawBehind { drawRect(Color.Black, alpha = 0.3f * alphaAnim.value) }
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -1853,35 +1868,31 @@ fun AnchoredLyricsOverflowMenu(
                     if (!dismissed) dismissed = true
                 },
     ) {
-
         Box(
             modifier =
                 Modifier
                     .offset {
-                        val iconRight = iconBoundsInRoot.right.toInt()
-                        val iconBottom = iconBoundsInRoot.bottom.toInt()
                         val x =
-                            (iconRight - popupWidthPx)
+                            (iconBoundsInRoot.right.toInt() - popupWidthPx)
                                 .coerceAtLeast(horizontalMarginPx)
                         val y =
                             if (opensAboveAnchor()) {
-
                                 (iconBoundsInRoot.top - verticalOffsetPx -
                                     (if (popupHeightPx > 0) popupHeightPx else fallbackPopupHeightPx))
                                     .coerceAtLeast(0f)
                                     .toInt()
                             } else {
-                                iconBottom + verticalOffsetPx
+                                iconBoundsInRoot.bottom.toInt() + verticalOffsetPx
                             }
                         IntOffset(x = x, y = y)
                     }
-                    .widthIn(max = 220.dp)
+                    .width(240.dp)
                     .heightIn(max = 520.dp)
                     .onSizeChanged { popupHeightPx = it.height }
                     .graphicsLayer {
-                        this.alpha = alpha
-                        this.scaleX = scale
-                        this.scaleY = scale
+                        alpha = alphaAnim.value
+                        scaleX = scaleAnim.value
+                        scaleY = scaleAnim.value
 
                         // Grow out of the three-dot itself rather than the popup's corner, so the
                         // menu reads as coming from the button that opened it.
@@ -1891,36 +1902,28 @@ fun AnchoredLyricsOverflowMenu(
                         val pivotX =
                             ((iconCenterX - popupLeftPx) / popupWidthPx.coerceAtLeast(1).toFloat())
                                 .coerceIn(0.02f, 0.98f)
-                        this.transformOrigin =
-                            TransformOrigin(pivotX, if (opensAboveAnchor()) 1f else 0f)
+                        transformOrigin = TransformOrigin(pivotX, if (opensAboveAnchor()) 1f else 0f)
 
-                        this.shadowElevation = with(density) { 16.dp.toPx() }
-                        this.shape = RoundedCornerShape(16.dp)
-                        this.clip = false
+                        shadowElevation = 24.dp.toPx()
+                        shape = popupShape
+                        clip = true
                     }
-
-                    .then(
-                        frostedBlurModifier
-                            ?: Modifier.background(Color.Black.copy(alpha = 0.65f * alpha)),
-                    )
-
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .clip(RoundedCornerShape(16.dp))
+                    // Apple Music's context menu is a frosted dark sheet. A live blur of the player
+                    // costs a full-screen layer every frame, so this is the flat version of it: the
+                    // same near-opaque charcoal with a hairline rim, legible over any artwork.
+                    .background(AppleMusicLyricsMenuSurface, popupShape)
+                    .border(0.5.dp, Color.White.copy(alpha = 0.1f), popupShape)
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
-                    ) {
-
-                    },
+                    ) {},
         ) {
-
             LyricsMenu(
                 lyricsProvider = lyricsProvider,
                 mediaMetadataProvider = mediaMetadataProvider,
                 lyricsSyncOffset = lyricsSyncOffset,
                 onLyricsSyncOffsetChange = onLyricsSyncOffsetChange,
                 onDismiss = {
-
                     if (!dismissed) dismissed = true
                 },
                 viewModel = viewModel,
@@ -1929,3 +1932,5 @@ fun AnchoredLyricsOverflowMenu(
         }
     }
 }
+
+private val AppleMusicLyricsMenuSurface = Color(0xF2252528)

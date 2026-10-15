@@ -1,55 +1,46 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Compact external yt-dlp bridge — YTDLnis-style plugin model.
- *
  * Why this exists:
- *   ArchiveTune's YouTube path is native-only (InnerTube + BotGuard/QuickJS PO tokens via
- *   YTPlayerUtils, backed by MetrolistExtractor for signature/n handling). That keeps the
- *   base APK ~30 MB and needs no Python at build time (see `b20104e` which removed Chaquopy).
- *
- *   yt-dlp is still useful as an *optional* fallback for age-restricted / 403 / cipher-edge
- *   cases, but bundling Chaquopy+Python+yt-dlp (like the Aug 23 `939c4ab` innertubex port did)
- *   inflates the universal APK by 40-80 MB and breaks CI (needs Python 3.11, disables
- *   configuration cache). YTDLnis solved the same problem by externalising runtimes:
- *   Python/FFmpeg/Node/Deno/QuickJS/Aria2c are shipped as separate APKs (empty apps whose
- *   `jniLibs` carry `libxxx.so` + `libxxx.zip.so`; YTDLnis extracts `*.zip.so` to
- *   `filesDir/ytdlnis` and keeps `*.so` visible system-wide). Base APK stays small, plugins
- *   can be updated independently.
- *
+ * ArchiveTune's YouTube path is native-only (InnerTube + BotGuard/QuickJS PO tokens via
+ * YTPlayerUtils, backed by MetrolistExtractor for signature/n handling). That keeps the
+ * base APK ~30 MB and needs no Python at build time (see `b20104e` which removed Chaquopy).
+ * yt-dlp is still useful as an *optional* fallback for age-restricted / 403 / cipher-edge
+ * cases, but bundling Chaquopy+Python+yt-dlp (like the Aug 23 `939c4ab` innertubex port did)
+ * inflates the universal APK by 40-80 MB and breaks CI (needs Python 3.11, disables
+ * configuration cache). YTDLnis solved the same problem by externalising runtimes:
+ * Python/FFmpeg/Node/Deno/QuickJS/Aria2c are shipped as separate APKs (empty apps whose
+ * `jniLibs` carry `libxxx.so` + `libxxx.zip.so`; YTDLnis extracts `*.zip.so` to
+ * `filesDir/ytdlnis` and keeps `*.so` visible system-wide). Base APK stays small, plugins
+ * can be updated independently.
  * What this file does:
- *   Mirrors YTDLnis's `RuntimeManager` plugin discovery without bundling anything:
- *   - Probes for an already-installed YTDLnis plugin package
- *     (`com.deniscerri.ytdl`, `com.deniscerri.ytdl.python`, `com.yausername.youtubedl-android`).
- *   - If found, resolves `nativeLibraryDir` + `lib/python` layout and exposes the python
- *     executable path and the `ytdlp` binary under `noBackupFilesDir/ytdlnis/yt-dlp`.
- *   - If not found, reports unavailable so the caller falls back to the native resolver.
- *   This is the "compact like ytdlnis" approach requested: zero bundled Python, optional
- *   external runtime, same fallback semantics as YTDLnis's NewPipe ↔ yt-dlp switch.
- *
+ * Mirrors YTDLnis's `RuntimeManager` plugin discovery without bundling anything:
+ * - Probes for an already-installed YTDLnis plugin package
+ * (`com.deniscerri.ytdl`, `com.deniscerri.ytdl.python`, `com.yausername.youtubedl-android`).
+ * - If found, resolves `nativeLibraryDir` + `lib/python` layout and exposes the python
+ * executable path and the `ytdlp` binary under `noBackupFilesDir/ytdlnis/yt-dlp`.
+ * - If not found, reports unavailable so the caller falls back to the native resolver.
+ * This is the "compact like ytdlnis" approach requested: zero bundled Python, optional
+ * external runtime, same fallback semantics as YTDLnis's NewPipe ↔ yt-dlp switch.
  * Wiring:
- *   `ResolveAudioStreamUseCase` stays native-only by default. When it catches a
- *   retriable native failure and `CompactYtDlp.isAvailable(context)` is true, it may
- *   delegate to `ExternalYtDlpRepository` (thin `ProcessBuilder` wrapper around
- *   `python + yt-dlp --dump-json`). No Hilt binding is added here to keep the graph
- *   untouched until the feature is explicitly enabled in settings.
- *
+ * `ResolveAudioStreamUseCase` stays native-only by default. When it catches a
+ * retriable native failure and `CompactYtDlp.isAvailable(context)` is true, it may
+ * delegate to `ExternalYtDlpRepository` (thin `ProcessBuilder` wrapper around
+ * `python + yt-dlp --dump-json`). No Hilt binding is added here to keep the graph
+ * untouched until the feature is explicitly enabled in settings.
  * Security / invariants:
- *   - No network call to Rukamori/Koiverse is added.
- *   - No embedded Python is restored; this is detection-only.
- *   - `AutoChoosePlaybackClientKey` / `YTPlayerUtils` client selection remains authoritative;
- *     yt-dlp is a *fallback*, never a replacement.
+ * - No network call to Rukamori/Koiverse is added.
+ * - No embedded Python is restored; this is detection-only.
+ * - `AutoChoosePlaybackClientKey` / `YTPlayerUtils` client selection remains authoritative;
+ * yt-dlp is a *fallback*, never a replacement.
  */
+
+
 
 package moe.rukamori.archivetune.ytdlp
 

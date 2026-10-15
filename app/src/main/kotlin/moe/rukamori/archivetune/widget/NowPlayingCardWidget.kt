@@ -103,8 +103,6 @@ private fun NowPlayingCardContent(context: Context) {
     }
 }
 
-// ─── Compact bar layout (single row) ─────────────────────────────────────────
-
 @Composable
 private fun NowPlayingCardBar(
     state: WidgetPlaybackState,
@@ -170,8 +168,6 @@ private fun NowPlayingCardBar(
         }
     }
 }
-
-// ─── Full card layout (artwork column + info/controls column) ─────────────────
 
 @Composable
 private fun NowPlayingCardPanel(

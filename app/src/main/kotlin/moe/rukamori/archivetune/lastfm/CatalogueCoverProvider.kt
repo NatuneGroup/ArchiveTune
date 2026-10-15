@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.lastfm
 
@@ -27,6 +23,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Resolves album/track cover URLs from third-party catalogues that the Last.fm API doesn't always
@@ -39,6 +36,7 @@ object CatalogueCoverProvider {
     private val client: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .callTimeout(8, TimeUnit.SECONDS)
@@ -331,7 +329,9 @@ object CatalogueCoverProvider {
                     "<meta[^>]+property=\"og:image\"[^>]+content=\"([^\"]+)\"",
                     RegexOption.IGNORE_CASE,
                 ).find(body)
-                ogImageMatch?.groupValues?.getOrNull(1)?.takeIf(String::isNotBlank)
+                // Only a CDN cover is artwork for this track; any other og:image is site chrome
+                // that would land on every row the earlier providers missed.
+                ogImageMatch?.groupValues?.getOrNull(1)?.takeIf { it.startsWith("https://i.scdn.co/image/") }
             }
         }
 

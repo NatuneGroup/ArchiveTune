@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * Bitchord player style — scrubber.
@@ -18,28 +14,24 @@
  * Ported verbatim from BitChord (https://github.com/kushagrasinghx/BitChord),
  * app/src/main/java/com/music/bitchord/ui/player/ThinSlider.kt (package renamed).
  * The `mixing` / `transitionWindow` parameters (BitChord's Automix planner
- * markers) are retained with their exact drawing code; ArchiveTune has no
- * equivalent planner, so callers pass the defaults and the extra drawing paths
- * stay dormant.
- *
- * Belongs exclusively to the Bitchord player style; not shared with any other
+ * markers) drive the crossfade/automix morph: players wire `mixing` to
+ * PlayerConnection.isMixing and automix passes its planned transition window.
+ * The sheen half of the morph is shared with Flamingo's track
+ * (ui/player/MixTrackSheen.kt); the rest belongs exclusively to the Bitchord
  * player style, per the self-containment rule for player styles.
  */
 
 package moe.rukamori.archivetune.ui.player.bitchord
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.snap
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -57,12 +49,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import moe.rukamori.archivetune.ui.player.MixTrackSheen
+import moe.rukamori.archivetune.ui.player.rememberMixFillFactor
 
 /**
  * Apple Music's scrubber: a hairline capsule with no thumb knob, which
@@ -81,15 +74,16 @@ fun ThinSlider(
     modifier: Modifier = Modifier,
     onValueChangeFinished: (() -> Unit)? = null,
     /**
-     * Sends a sheen travelling along the played portion for as long as it is
-     * true. Reserved for a transition that genuinely mixed — see BitChord's
-     * smartMixInProgress. Dormant in ArchiveTune (no Automix planner).
+     * Sends a sheen travelling along the played portion, and collapses the played
+     * fill, for as long as it is true — a transition that genuinely mixed. Players
+     * pass PlayerConnection.isMixing: the plain crossfade flag, or the automix
+     * SmartFade's.
      */
     mixing: Boolean = false,
     /**
      * Span of the track, as fractions of its duration, that the next Automix
      * transition is planned to occupy. Drawn as a brighter stretch of the
-     * unplayed bar so the mix is visible before it arrives. Dormant here.
+     * unplayed bar so the mix is visible before it arrives.
      */
     transitionWindow: ClosedFloatingPointRange<Float>? = null,
     idleHeight: Dp = 7.dp,
@@ -98,6 +92,8 @@ fun ThinSlider(
     inactiveColor: Color = Color.White.copy(alpha = 0.26f),
     /** Halfway between the two track colours: visible against unplayed, invisible under played. */
     markerColor: Color = Color.White.copy(alpha = 0.5f),
+    onValueChangeStarted: () -> Unit = {},
+    onValueChangeCancelled: (() -> Unit)? = onValueChangeFinished,
 ) {
     // The gesture block runs under a Unit-keyed pointerInput, so it keeps the
     // FIRST composition's lambdas. Re-read the latest here or a drag-seek
@@ -105,45 +101,66 @@ fun ThinSlider(
     // (automix/crossfade promotion): the bar moves, nothing seeks.
     val currentOnValueChange by rememberUpdatedState(onValueChange)
     val currentOnValueChangeFinished by rememberUpdatedState(onValueChangeFinished)
+    val currentOnStart by rememberUpdatedState(onValueChangeStarted)
+    val currentOnCancel by rememberUpdatedState(onValueChangeCancelled)
+    val animationsDisabled = LocalAnimationsDisabled.current
     var dragging by remember { mutableStateOf(false) }
     val height by animateDpAsState(
         targetValue = if (dragging) activeHeight else idleHeight,
-        animationSpec = spring(
+        animationSpec = if (animationsDisabled) snap() else spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMediumLow,
         ),
         label = "sliderHeight",
     )
+    // While a mix blends, the played fill collapses to nothing (and grows back when the
+    // mix hands over) — the sheen below takes over as the position signal, since the
+    // outgoing and incoming playheads can't both be the played width.
+    val fillFactor = rememberMixFillFactor(mixing, "sliderFillFactor")
 
     Box(
         modifier = modifier
             .fillMaxWidth()
             // Generous invisible touch target — the visible bar is only ~7dp.
             .height(activeHeight + 22.dp)
+            .semantics {
+                progressBarRangeInfo = ProgressBarRangeInfo(valueProvider().coerceIn(0f, 1f), 0f..1f)
+                setProgress { value ->
+                    currentOnStart()
+                    currentOnValueChange(value.coerceIn(0f, 1f))
+                    currentOnValueChangeFinished?.invoke()
+                    true
+                }
+            }
             // One gesture loop for both taps and drags. Two separate detectors
             // — a drag one plus a tap one — meant taps never landed: the drag
             // detector took the pointer and a tap has no drag to report.
             .pointerInput(Unit) {
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
+                    currentOnStart()
                     dragging = true
-                    currentOnValueChange((down.position.x / size.width).coerceIn(0f, 1f))
+                    var released = false
+                    try {
+                        currentOnValueChange((down.position.x / size.width).coerceIn(0f, 1f))
 
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!pointer.pressed) {
-                            pointer.consume()
-                            break
+                        while (true) {
+                            val event = awaitPointerEvent()
+                            val pointer = event.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!pointer.pressed) {
+                                pointer.consume()
+                                released = true
+                                break
+                            }
+                            if (pointer.positionChanged()) {
+                                currentOnValueChange((pointer.position.x / size.width).coerceIn(0f, 1f))
+                                pointer.consume()
+                            }
                         }
-                        if (pointer.positionChanged()) {
-                            currentOnValueChange((pointer.position.x / size.width).coerceIn(0f, 1f))
-                            pointer.consume()
-                        }
+                    } finally {
+                        dragging = false
+                        if (released) currentOnValueChangeFinished?.invoke() else currentOnCancel?.invoke()
                     }
-
-                    dragging = false
-                    currentOnValueChangeFinished?.invoke()
                 }
             },
         contentAlignment = Alignment.Center,
@@ -151,7 +168,7 @@ fun ThinSlider(
         Canvas(
             Modifier
                 .fillMaxWidth()
-                .height(height),
+                .height(if (animationsDisabled) { if (dragging) activeHeight else idleHeight } else height),
         ) {
             val radius = CornerRadius(size.height / 2f)
             drawRoundRect(color = inactiveColor, cornerRadius = radius)
@@ -171,72 +188,20 @@ fun ThinSlider(
                     )
                 }
             }
-            val filled = size.width * valueProvider().coerceIn(0f, 1f)
-            if (filled > 0f && !mixing) {
+            val filled = size.width * valueProvider().coerceIn(0f, 1f) * fillFactor
+            if (filled > 0f) {
                 drawRoundRect(
                     color = activeColor,
-                    size = Size(filled.coerceAtLeast(size.height), size.height),
+                    // The minimum fill shrinks with fillFactor so the collapse can reach
+                    // zero instead of parking a nub at the left edge.
+                    size = Size(
+                        filled.coerceAtLeast(size.height * fillFactor).coerceAtMost(size.width),
+                        size.height,
+                    ),
                     cornerRadius = radius,
                 )
             }
         }
-        // Composed only while mixing, rather than drawn conditionally inside the
-        // Canvas above: an infinite transition keeps requesting frames for as
-        // long as it exists, so the cheap way to stop it costing anything is for
-        // it not to exist. AnimatedVisibility keeps it alive through the exit
-        // fade, so the sheen dies away with the transition instead of vanishing
-        // on the frame the mix ends.
-        AnimatedVisibility(
-            visible = mixing,
-            enter = fadeIn(tween(durationMillis = 420)),
-            exit = fadeOut(tween(durationMillis = 520)),
-        ) {
-            MixSheen(height = height)
-        }
+        MixTrackSheen(visible = mixing, color = activeColor, height = if (animationsDisabled) { if (dragging) activeHeight else idleHeight } else height)
     }
 }
-
-/**
- * A single soft highlight travelling the length of the bar, over and over, while two tracks are
- * being mixed.
- */
-@Composable
-private fun MixSheen(height: Dp) {
-    val transition = rememberInfiniteTransition(label = "mixSheen")
-    val phase by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            // Long enough to read as a sweep rather than a flicker, and slow
-            // enough not to compete with the music for attention.
-            animation = tween(durationMillis = 500, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "mixSheenPhase",
-    )
-    Canvas(
-        Modifier
-            .fillMaxWidth()
-            .height(height),
-    ) {
-        val band = size.width * BAND_FRACTION
-        // Travels from fully off the left edge to fully off the right, so the
-        // highlight enters and leaves rather than materialising mid-bar.
-        val centre = -band + (size.width + band * 2f) * phase
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colorStops = arrayOf(
-                    0f to Color.Transparent,
-                    0.5f to Color.White.copy(alpha = 0.95f),
-                    1f to Color.Transparent,
-                ),
-                start = Offset(centre - band / 2f, 0f),
-                end = Offset(centre + band / 2f, 0f),
-            ),
-            cornerRadius = CornerRadius(size.height / 2f),
-        )
-    }
-}
-
-/** Width of the travelling highlight, as a fraction of the whole bar. */
-private const val BAND_FRACTION = 0.7f

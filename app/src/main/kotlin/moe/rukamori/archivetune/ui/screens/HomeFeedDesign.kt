@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -14,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.screens
 
+import android.os.Build
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.EaseOutCubic
@@ -52,7 +47,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -68,16 +62,14 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.db.entities.Album
 import moe.rukamori.archivetune.db.entities.Artist
 import moe.rukamori.archivetune.db.entities.LocalItem
@@ -103,12 +95,7 @@ import moe.rukamori.archivetune.ui.menu.YouTubeArtistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import moe.rukamori.archivetune.ui.utils.preferredThumbnailRatio
-import moe.rukamori.archivetune.utils.rememberPreference
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeProgressive
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
-import dev.chrisbanes.haze.materials.HazeMaterials
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 // ============================================================================
 // BitChord home-feed design system (ported from kushagrasinghx/BitChord).
@@ -172,16 +159,6 @@ fun Modifier.homeFeedThumbnailBorder(shape: Shape): Modifier =
             ),
         )
     }
-
-/**
- * Shared HazeState for the home page's top progressive blur (BitChord
- * TopFadeBlur). MainActivity provides the instance and renders the blurred
- * strip inside the top bar for the Home route; HomeScreen tags its own root
- * Box as the blur's source. A CompositionLocal is used because the bar and the
- * feed live in different parts of the tree (Scaffold.topBar vs NavHost
- * content) and must share the exact same state object.
- */
-val LocalHomeHazeState = compositionLocalOf<HazeState?> { null }
 
 // ============================================================================
 // Shimmer skeletons (ported from BitChord Skeletons.kt). Grey stand-ins for
@@ -494,94 +471,6 @@ fun HomeFeedShelfCard(
     }
 }
 
-/**
- * The big card the lead shelf pages sideways (BitChord HeroCard): artwork with
- * the caption laid over a scrim, as on Listen Now. The whole card toggles
- * play/pause when the track is the active one, matching the fork's hero
- * behaviour.
- */
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun HomeFeedHeroCard(
-    thumbnailUrl: String?,
-    title: String,
-    subtitle: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    onLongClick: (() -> Unit)? = null,
-    isActive: Boolean = false,
-    isPlaying: Boolean = false,
-) {
-    Box(
-        modifier =
-            modifier
-                .aspectRatio(HomeHeroCardRatio)
-                .clip(RoundedCornerShape(HomeHeroCardCorner))
-                .homeFeedThumbnailBorder(RoundedCornerShape(HomeHeroCardCorner))
-                .background(MaterialTheme.colorScheme.surfaceVariant)
-                .let { m ->
-                    if (onLongClick != null) {
-                        m.combinedClickable(onClick = onClick, onLongClick = onLongClick)
-                    } else {
-                        m.combinedClickable(onClick = onClick)
-                    }
-                },
-    ) {
-        AsyncImage(
-            model = thumbnailUrl,
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Column(
-            modifier =
-                Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.BottomStart)
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)),
-                        ),
-                    )
-                    .padding(start = 16.dp, end = 16.dp, top = 34.dp, bottom = 14.dp),
-        ) {
-            Text(
-                text = title,
-                fontSize = 20.sp,
-                fontWeight = FontWeight.W700,
-                letterSpacing = (-0.3).sp,
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            if (subtitle.isNotBlank()) {
-                Text(
-                    text = subtitle,
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.72f),
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        // Active / playing indicator — small dot at top-right (kept from the
-        // fork's hero so the current track stays findable at a glance).
-        if (isActive) {
-            Box(
-                modifier =
-                    Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(10.dp)
-                        .size(10.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isPlaying) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                        ),
-            )
-        }
-    }
-}
-
 // ============================================================================
 // Typed cards — map the fork's data types onto the generic cards above while
 // preserving every existing interaction (section queue playback, navigation,
@@ -655,7 +544,7 @@ fun HomeFeedYTItemCard(
             is EpisodeItem -> listOfNotNull(item.podcast?.name, item.dateText, item.durationText).joinToString(" • ")
         }
 
-    val (cropThumbnailToSquare, _) = rememberPreference(CropThumbnailToSquareKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
     val resolvedThumbnailRatio = item.preferredThumbnailRatio(cropThumbnailToSquare)
     // A sheet for either would come up empty, so neither card has a hold.
     val hasMenu = item !is PodcastItem && item !is EpisodeItem
@@ -865,9 +754,6 @@ fun HomePullRefreshLine(
  */
 private val HomeTopFadeRun = 88.dp
 
-/** How much blur the fade reaches at its outer edge — short of all of it. */
-private const val HomeTopFadePeak = 0.75f
-
 /**
  * How dark the readability scrim starts, at the very top of the strip.
  * Modest on purpose: it is there to give the glyphs a floor on a pale sleeve,
@@ -879,47 +765,19 @@ private const val HomeTopScrimPeak = 0.42f
 private const val HomeTopScrimStops = 12
 
 /**
- * The progressive top-fade blur behind the home top bar. Keyed to the colour
- * of the page underneath rather than the theme's background: both halves of
- * the material are flat colour, and wherever the blur has least to say, that
- * flat colour is most of what is left. The scrim is laid *over* the blur
- * (the only order that works: haze samples the content tagged as its source,
- * so a scrim underneath would be painted over by the blurred content).
+ * The top-fade scrim behind the home top bar, keyed to the colour of the page
+ * underneath rather than the theme's background so it dissolves into whatever
+ * the page actually is. It is a plain gradient, not a blur, so nothing has to
+ * tag the list as a haze source (a source records its content into a layer
+ * every frame whether or not anything samples it).
  */
-@OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun HomeTopFadeBlur(
-    hazeState: HazeState,
     pageColor: Color,
     barHeight: Dp,
     modifier: Modifier = Modifier,
 ) {
     val height = barHeight + HomeTopFadeRun
-    Box(
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .height(height)
-                .hazeEffect(
-                    state = hazeState,
-                    // Keyed to the colour of the page underneath, not the theme's.
-                    style = HazeMaterials.ultraThin(pageColor),
-                ) {
-                    // Cubic rather than haze's quadratic, and eased out rather than
-                    // in: the ramp falls away quickly under the bar and then spends
-                    // the rest of its run near nothing, which is what hides where
-                    // the layer ends.
-                    progressive =
-                        HazeProgressive.verticalGradient(
-                            easing = EaseOutCubic,
-                            startIntensity = HomeTopFadePeak,
-                            endIntensity = 0f,
-                        )
-                    // Uniform across the layer, so it would show as texture over
-                    // the untouched foot of the ramp — the edge being hidden.
-                    noiseFactor = 0f
-                },
-    )
     val scrim =
         remember(pageColor) {
             Brush.verticalGradient(
@@ -1019,5 +877,32 @@ fun HomeAtmosphereBackground(modifier: Modifier = Modifier) {
                         drawRect(topWash)
                     }
                 },
+    )
+}
+
+// ============================================================================
+// Shared glass screen-header scrim (used by GlassScreenHeader.kt). Delegates to
+// HomeTopFadeBlur: the page-coloured top fade. Early-returns unless liquid
+// glass is on and the RuntimeShader stack exists (Android 12+), so with glass
+// OFF nothing is composed and rendering is unchanged.
+// ============================================================================
+
+/** Header bar height the scrim fades below (status-bar inset sits above it). */
+val ScreenHeaderHazeBarZone = 64.dp
+
+@Composable
+fun ScreenHeaderHaze(
+    systemBarsTopPadding: Dp,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    if (!enabled) return
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return
+    val liquidGlassEnabled = rememberLiquidGlassEnabled()
+    if (!liquidGlassEnabled) return
+    HomeTopFadeBlur(
+        pageColor = MaterialTheme.colorScheme.surface,
+        barHeight = systemBarsTopPadding + ScreenHeaderHazeBarZone,
+        modifier = modifier,
     )
 }

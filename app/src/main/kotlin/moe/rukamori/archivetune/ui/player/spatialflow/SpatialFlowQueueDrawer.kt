@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * SpatialFlow player style — the embedded sliding queue drawer.
@@ -36,7 +32,6 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
@@ -816,25 +811,5 @@ fun rememberDragDropState(
             DragDropState(lazyListState, scope, onMove)
         }
     return state
-}
-
-fun Modifier.dragContainer(
-    dragDropState: DragDropState,
-    enabled: Boolean,
-): Modifier {
-    if (!enabled) return this
-    return this.then(
-        Modifier.pointerInput(dragDropState) {
-            detectDragGesturesAfterLongPress(
-                onDragStart = { offset -> dragDropState.onDragStart(offset) },
-                onDragEnd = { dragDropState.onDragInterrupted() },
-                onDragCancel = { dragDropState.onDragInterrupted() },
-                onDrag = { change, dragAmount ->
-                    change.consume()
-                    dragDropState.onDrag(dragAmount)
-                },
-            )
-        },
-    )
 }
 

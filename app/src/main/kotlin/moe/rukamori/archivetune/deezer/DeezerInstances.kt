@@ -7,6 +7,9 @@
 
 package moe.rukamori.archivetune.deezer
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import okhttp3.OkHttpClient
@@ -17,6 +20,7 @@ import timber.log.Timber
 import java.net.URLEncoder
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * The Deezer "API / Instance" tier: self-hosted servers that hold their own Deezer accounts and
@@ -42,6 +46,7 @@ object DeezerInstances {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
@@ -84,10 +89,10 @@ object DeezerInstances {
         userInstances = parse(raw)
     }
 
-    fun userInstanceCount(): Int = userInstances.size
-
-    /** Instances the pool served on its last fetch (empty until discovery ran). */
-    fun discoveredInstanceCount(): Int = discovered.size
+    fun invalidatePoolInstancesCache() {
+        discovered = emptyList()
+        discoveredAt = 0L
+    }
 
     /**
      * True when a resolve could reach at least one instance. Cheap, no network: counts user entries,
@@ -118,6 +123,7 @@ object DeezerInstances {
     ): Stream? {
         if (isrc.isNullOrBlank() && trackId.isNullOrBlank()) return null
         for (base in instances()) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
             val shapes =
                 buildList {
                     workingShape[base]?.let(::add)
@@ -136,8 +142,11 @@ object DeezerInstances {
                     cooldownUntil.remove(base)
                     return probed
                 }
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) return null
             }
-            cooldownUntil[base] = System.currentTimeMillis() + FAILURE_COOLDOWN_MS
+            if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                cooldownUntil[base] = System.currentTimeMillis() + FAILURE_COOLDOWN_MS
+            }
         }
         return null
     }
@@ -157,7 +166,7 @@ object DeezerInstances {
         val base = instances().firstOrNull() ?: return null
         return runCatching {
             val request = Request.Builder().url("$base/health").header("User-Agent", USER_AGENT).get().build()
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 val body = response.body?.string().orEmpty().take(20_000)
                 val json = runCatching { JSONObject(body) }.getOrNull()
                 when {
@@ -192,7 +201,7 @@ object DeezerInstances {
                     .header("Range", "bytes=0-15")
                     .get()
                     .build()
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (response.code != 200 && response.code != 206) {
                     Timber.tag(TAG).d("instance %s answered HTTP %d", base, response.code)
                     return@use null
@@ -223,7 +232,10 @@ object DeezerInstances {
                         ?: response.body?.contentLength()?.takeIf { response.code == 200 && it > 0L }
                 Stream(url = url, flac = flac, contentLength = total, instance = base)
             }
-        }.onFailure { Timber.tag(TAG).d(it, "probe failed for %s", base) }
+        }.onFailure {
+            it.rethrowIfAudioSourceCancelled()
+            Timber.tag(TAG).d(it, "probe failed for %s", base)
+        }
             .getOrNull()
 
     private fun poolFeedUrl(): String? =
@@ -235,10 +247,18 @@ object DeezerInstances {
 
     /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
     private fun discoverIfStale(): List<String> {
+        if (!PoolAccountManager.isPoolEnabled()) {
+            invalidatePoolInstancesCache()
+            return emptyList()
+        }
         val now = System.currentTimeMillis()
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
         val url = poolFeedUrl() ?: return emptyList()
         synchronized(this) {
+            if (!PoolAccountManager.isPoolEnabled()) {
+                invalidatePoolInstancesCache()
+                return emptyList()
+            }
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {
@@ -246,15 +266,23 @@ object DeezerInstances {
                     if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
                         builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                     }
-                    client.newCall(builder.get().build()).execute().use { response ->
+                    client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
+                        if (!PoolAccountManager.isPoolEnabled()) return@use null
                         if (!response.isSuccessful) {
                             Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
                             return@use null
                         }
                         parseFeed(response.body?.string().orEmpty())
                     }
-                }.onFailure { Timber.tag(TAG).w(it, "pool instance feed failed") }
+                }.onFailure {
+                    it.rethrowIfAudioSourceCancelled()
+                    Timber.tag(TAG).w(it, "pool instance feed failed")
+                }
                     .getOrNull()
+            if (!PoolAccountManager.isPoolEnabled()) {
+                invalidatePoolInstancesCache()
+                return emptyList()
+            }
             // A failed fetch keeps the previous list: a transient error should not drop instances
             // that were working a moment ago.
             if (result != null) discovered = result

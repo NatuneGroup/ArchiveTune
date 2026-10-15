@@ -16,6 +16,7 @@ import android.service.dreams.DreamService
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.OnBackPressedDispatcherOwner
 import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -42,6 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.extensions.togglePlayPause
@@ -50,6 +52,9 @@ import moe.rukamori.archivetune.playback.MusicService
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.player.AodPlayerScreen
 import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
+import moe.rukamori.archivetune.ui.utils.ItemPreferences
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
+import moe.rukamori.archivetune.utils.rememberPreference
 
 @AndroidEntryPoint
 class AodDreamService :
@@ -153,29 +158,38 @@ class AodDreamService :
                                         duration = 0,
                                     )
 
-                            AodPlayerScreen(
-                                mediaMetadata = metadata,
-                                isPlaying = isPlaying,
-                                position = currentPos,
-                                duration = songDuration,
-                                sliderPosition = sliderPos,
-                                canSkipPrevious = canSkipPrev,
-                                canSkipNext = canSkipNxt,
-                                thumbnailCornerRadius = 16f,
-                                onPlayPause = { conn?.player?.togglePlayPause() },
-                                onSkipPrevious = { conn?.seekToPrevious() },
-                                onSkipNext = { conn?.seekToNext() },
-                                onSeek = { sliderPos = it },
-                                onSeekFinished = {
-                                    sliderPos?.let { pos ->
-                                        conn?.player?.seekTo(pos)
-                                        currentPos = pos
-                                        sliderPos = null
-                                    }
-                                },
-                                onExit = { finish() },
-                                lyricsText = currentLyricsEntity?.lyrics,
-                            )
+                            // The dream composes outside MainActivity's provider, so the root
+                            // haptics preference is read and provided here.
+                            val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+                            val itemPreferences =
+                                remember(enableHapticFeedback) {
+                                    ItemPreferences(hapticFeedbackEnabled = enableHapticFeedback)
+                                }
+                            CompositionLocalProvider(LocalItemPreferences provides itemPreferences) {
+                                AodPlayerScreen(
+                                    mediaMetadata = metadata,
+                                    isPlaying = isPlaying,
+                                    position = currentPos,
+                                    duration = songDuration,
+                                    sliderPosition = sliderPos,
+                                    canSkipPrevious = canSkipPrev,
+                                    canSkipNext = canSkipNxt,
+                                    thumbnailCornerRadius = 16f,
+                                    onPlayPause = { conn?.player?.togglePlayPause() },
+                                    onSkipPrevious = { conn?.seekToPrevious() },
+                                    onSkipNext = { conn?.seekToNext() },
+                                    onSeek = { sliderPos = it },
+                                    onSeekFinished = {
+                                        sliderPos?.let { pos ->
+                                            conn?.player?.seekTo(pos)
+                                            currentPos = pos
+                                            sliderPos = null
+                                        }
+                                    },
+                                    onExit = { finish() },
+                                    lyricsText = currentLyricsEntity?.lyrics,
+                                )
+                            }
                         }
                     }
                 }

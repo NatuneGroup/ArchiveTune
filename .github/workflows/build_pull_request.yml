@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
@@ -48,7 +48,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ./gradlew --console=plain assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -c "import re,sys;p=re.compile(r'^(WARNING: )?\[CXX5202\] This app only has 32-bit \[(armeabi-v7a|x86)\] native libraries\. Beginning August 1, 2019 Google Play store requires that all apps that include native libraries must provide 64-bit versions\. For more information, visit https://g\.co/64-bit-requirement\$');[sys.stdout.write(l) for l in sys.stdin if not p.match(l.rstrip())]"
+          ./gradlew --console=plain --stacktrace --profile assembleGmsMobileUniversalDebug :app:lintGmsMobileUniversalDebug --warning-mode summary 2>&1 | python3 -u -c '
+          import re
+          import sys
+          warning = re.compile(r"^(WARNING: )?\[CXX5202\] This app only has 32-bit \[(armeabi-v7a|x86)\] native libraries\. Beginning August 1, 2019 Google Play store requires that all apps that include native libraries must provide 64-bit versions\. For more information, visit https://g\.co/64-bit-requirement$")
+          for line in sys.stdin:
+              if not warning.match(line.rstrip()):
+                  sys.stdout.write(line)
+          '
         env:
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           PULL_REQUEST: "true"
@@ -74,4 +81,15 @@ jobs:
             app/build/outputs/apk/gmsMobileUniversal/debug/*.apk
             app/build/outputs/apk/mobile/universal/debug/*.apk
             app/build/outputs/apk/mobileUniversal/debug/*.apk
+          retention-days: 7
+
+      - name: Upload local build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pr-build-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            build/reports/profile/
+            app/build/reports/lint-results*
+          if-no-files-found: warn
           retention-days: 7

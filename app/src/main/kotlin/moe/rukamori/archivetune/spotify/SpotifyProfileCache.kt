@@ -12,6 +12,7 @@
 package moe.rukamori.archivetune.spotify
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
@@ -124,15 +125,17 @@ class SpotifyProfileCache
         }
 
         suspend fun clearCache() {
-            context.dataStore.edit { prefs ->
+            context.dataStore.edit { prefs -> clearSnapshot(prefs) }
+        }
+
+        companion object {
+            internal fun clearSnapshot(prefs: MutablePreferences) {
                 prefs.remove(SpotifyProfileRecentItemsKey)
                 prefs.remove(SpotifyProfileTopTracksKey)
                 prefs.remove(SpotifyProfileArtistsKey)
                 prefs.remove(SpotifyProfileCacheTsKey)
             }
-        }
 
-        companion object {
             private val SpotifyProfileRecentItemsKey =
                 stringPreferencesKey("spotify_profile_recent_items")
             private val SpotifyProfileTopTracksKey =

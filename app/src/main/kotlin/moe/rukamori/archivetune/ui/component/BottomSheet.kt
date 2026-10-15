@@ -8,7 +8,6 @@
 
 package moe.rukamori.archivetune.ui.component
 
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.AnimationVector1D
@@ -55,6 +54,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.constants.BackAnimationStyle
 import moe.rukamori.archivetune.constants.BottomSheetAnimationSpec
 import moe.rukamori.archivetune.constants.BottomSheetSoftAnimationSpec
 
@@ -105,14 +105,33 @@ fun BottomSheet(
      * An open sheet stays draggable either way, so it can still be swiped closed.
      */
     collapsedDragEnabled: Boolean = true,
+    /**
+     * Shared predictive back progress for this sheet. The player sheet is handed the state owned
+     * by MainActivity so the gesture scrubs the sheet from wherever the handler lives; callers
+     * without one get their own state and the sheet's internal back handler drives it.
+     */
+    predictiveBackState: PredictiveSheetBackState? = null,
     collapsedContent: @Composable BoxScope.() -> Unit,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val dragEnabled = collapsedDragEnabled || !state.isCollapsed
+    val predictiveBack = predictiveBackState ?: rememberPredictiveSheetBackState()
+    val predictiveBackStyle = LocalBackAnimationStyle.current == BackAnimationStyle.PREDICTIVE
     Box(
         modifier =
             modifier
                 .fillMaxSize()
+                .graphicsLayer {
+                    if (predictiveBackStyle) {
+                        val p = predictiveBack.progress.value
+                        if (p > 0f) {
+                            val scale = 1f - 0.08f * p
+                            scaleX = scale
+                            scaleY = scale
+                            alpha = 1f - 0.25f * p
+                        }
+                    }
+                }
                 .offset {
                     val y =
                         (state.expandedBound - state.value)
@@ -142,7 +161,11 @@ fun BottomSheet(
                 ),
     ) {
         if (state.isExpandedOrExpanding && backHandlerEnabled) {
-            BackHandler(onBack = state::collapseSoft)
+            PredictiveStyleBackHandler(
+                backState = predictiveBack,
+                enabled = true,
+                onBack = state::collapseSoft,
+            )
         }
 
         if (keepContentAlive) {

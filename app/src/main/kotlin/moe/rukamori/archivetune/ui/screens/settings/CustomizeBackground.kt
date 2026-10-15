@@ -10,6 +10,9 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableFloatStateOf
+import moe.rukamori.archivetune.ui.utils.rememberOpeningTransitionFinished
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -61,7 +64,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
@@ -78,6 +80,7 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.PlayerCustomBlurKey
@@ -107,10 +110,23 @@ fun CustomizeBackground(navController: NavController) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
 
     val (imageUri, onImageUriChange) = rememberPreference(PlayerCustomImageUriKey, "")
-    val (blur, onBlurChange) = rememberPreference(PlayerCustomBlurKey, DEFAULT_BLUR)
-    val (contrast, onContrastChange) = rememberPreference(PlayerCustomContrastKey, DEFAULT_CONTRAST)
-    val (brightness, onBrightnessChange) =
+    val (storedBlur, onStoredBlurChange) = rememberPreference(PlayerCustomBlurKey, DEFAULT_BLUR)
+    val (storedContrast, onStoredContrastChange) = rememberPreference(PlayerCustomContrastKey, DEFAULT_CONTRAST)
+    val (storedBrightness, onStoredBrightnessChange) =
         rememberPreference(PlayerCustomBrightnessKey, DEFAULT_BRIGHTNESS)
+    // The sliders drag these drafts and the previews follow them; DataStore is written once per
+    // gesture, on release, instead of on every step.
+    var blur by remember(storedBlur) { mutableFloatStateOf(storedBlur) }
+    var contrast by remember(storedContrast) { mutableFloatStateOf(storedContrast) }
+    var brightness by remember(storedBrightness) { mutableFloatStateOf(storedBrightness) }
+    val onBlurChange: (Float) -> Unit = { blur = it }
+    val onContrastChange: (Float) -> Unit = { contrast = it }
+    val onBrightnessChange: (Float) -> Unit = { brightness = it }
+    val commitAdjustments: () -> Unit = {
+        onStoredBlurChange(blur.coerceIn(BLUR_RANGE))
+        onStoredContrastChange(contrast.coerceIn(TONE_RANGE))
+        onStoredBrightnessChange(brightness.coerceIn(TONE_RANGE))
+    }
 
     val permissionErrorMessage = stringResource(R.string.custom_background_permission_error)
     val permissionCleanupErrorMessage =
@@ -217,15 +233,14 @@ fun CustomizeBackground(navController: NavController) {
                 onBlurChange = onBlurChange,
                 onContrastChange = onContrastChange,
                 onBrightnessChange = onBrightnessChange,
+                onAdjustmentFinished = commitAdjustments,
                 onResetAdjustments = {
-                    onBlurChange(DEFAULT_BLUR)
-                    onContrastChange(DEFAULT_CONTRAST)
-                    onBrightnessChange(DEFAULT_BRIGHTNESS)
+                    onStoredBlurChange(DEFAULT_BLUR)
+                    onStoredContrastChange(DEFAULT_CONTRAST)
+                    onStoredBrightnessChange(DEFAULT_BRIGHTNESS)
                 },
                 onSave = {
-                    onBlurChange(blur.coerceIn(BLUR_RANGE))
-                    onContrastChange(contrast.coerceIn(TONE_RANGE))
-                    onBrightnessChange(brightness.coerceIn(TONE_RANGE))
+                    commitAdjustments()
                     navController.navigateUp()
                 },
                 modifier =
@@ -248,6 +263,7 @@ private fun CustomizeBackgroundContent(
     onBlurChange: (Float) -> Unit,
     onContrastChange: (Float) -> Unit,
     onBrightnessChange: (Float) -> Unit,
+    onAdjustmentFinished: () -> Unit,
     onResetAdjustments: () -> Unit,
     onSave: () -> Unit,
     modifier: Modifier = Modifier,
@@ -291,6 +307,7 @@ private fun CustomizeBackgroundContent(
                         onBlurChange = onBlurChange,
                         onContrastChange = onContrastChange,
                         onBrightnessChange = onBrightnessChange,
+                        onAdjustmentFinished = onAdjustmentFinished,
                         onReset = onResetAdjustments,
                     )
                     SaveBackgroundButton(onClick = onSave)
@@ -317,6 +334,7 @@ private fun CustomizeBackgroundContent(
                     onBlurChange = onBlurChange,
                     onContrastChange = onContrastChange,
                     onBrightnessChange = onBrightnessChange,
+                    onAdjustmentFinished = onAdjustmentFinished,
                     onReset = onResetAdjustments,
                 )
                 SaveBackgroundButton(onClick = onSave)
@@ -401,6 +419,7 @@ private fun BackgroundPreviewPane(
     colorFilter: ColorFilter,
     modifier: Modifier = Modifier,
 ) {
+    val openingTransitionFinished = rememberOpeningTransitionFinished()
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -419,7 +438,9 @@ private fun BackgroundPreviewPane(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
         ) {
-            if (imageUri == null) {
+            if (!openingTransitionFinished) {
+                // Blurred decode and preview art wait until the page has finished sliding in.
+            } else if (imageUri == null) {
                 Icon(
                     painter = painterResource(R.drawable.image),
                     contentDescription = null,
@@ -433,7 +454,7 @@ private fun BackgroundPreviewPane(
                     modifier =
                         Modifier
                             .matchParentSize()
-                            .blur(blur.dp),
+                            .optionalBlur(blur.dp),
                     contentScale = ContentScale.Crop,
                     colorFilter = colorFilter,
                 )
@@ -510,6 +531,7 @@ private fun BackgroundAdjustmentSection(
     onBlurChange: (Float) -> Unit,
     onContrastChange: (Float) -> Unit,
     onBrightnessChange: (Float) -> Unit,
+    onAdjustmentFinished: () -> Unit,
     onReset: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -547,6 +569,7 @@ private fun BackgroundAdjustmentSection(
                 value = blur,
                 valueRange = BLUR_RANGE,
                 onValueChange = onBlurChange,
+                onValueChangeFinished = onAdjustmentFinished,
             )
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -562,6 +585,7 @@ private fun BackgroundAdjustmentSection(
                 value = contrast,
                 valueRange = TONE_RANGE,
                 onValueChange = onContrastChange,
+                onValueChangeFinished = onAdjustmentFinished,
             )
             HorizontalDivider(
                 modifier = Modifier.padding(horizontal = 16.dp),
@@ -577,6 +601,7 @@ private fun BackgroundAdjustmentSection(
                 value = brightness,
                 valueRange = TONE_RANGE,
                 onValueChange = onBrightnessChange,
+                onValueChangeFinished = onAdjustmentFinished,
             )
         }
         OutlinedButton(
@@ -597,6 +622,7 @@ private fun BackgroundAdjustmentSlider(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     onValueChange: (Float) -> Unit,
+    onValueChangeFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -626,6 +652,7 @@ private fun BackgroundAdjustmentSlider(
         Slider(
             value = value,
             onValueChange = onValueChange,
+            onValueChangeFinished = onValueChangeFinished,
             valueRange = valueRange,
             modifier =
                 Modifier

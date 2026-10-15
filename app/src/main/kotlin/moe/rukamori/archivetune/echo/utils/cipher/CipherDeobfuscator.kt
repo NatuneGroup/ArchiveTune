@@ -23,6 +23,24 @@ object CipherDeobfuscator {
     lateinit var appContext: Context
         private set
 
+    @Volatile
+    private var initialized = false
+
+    /**
+     * The echo resolver is a last resort, so its config stores are loaded on first use rather than
+     * at app start. Until this ran, its PoToken path died on the unset [appContext] and echo fell
+     * back to clients without a token.
+     */
+    fun ensureInitialized(context: Context) {
+        if (initialized) return
+        synchronized(this) {
+            if (initialized) return
+            runCatching { initialize(context) }
+                .onFailure { Timber.tag(TAG).w(it, "CipherDeobfuscator init failed") }
+            initialized = ::appContext.isInitialized
+        }
+    }
+
     fun initialize(context: Context) {
         Timber.tag(TAG).d("CipherDeobfuscator initializing...")
         appContext = context.applicationContext

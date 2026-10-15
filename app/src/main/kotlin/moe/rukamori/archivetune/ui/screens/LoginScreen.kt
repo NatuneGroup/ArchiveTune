@@ -31,6 +31,8 @@ import moe.rukamori.archivetune.utils.releaseAuthWebView
 import moe.rukamori.archivetune.utils.resetAuthWebViewSession
 import moe.rukamori.archivetune.viewmodels.LoginScreenState
 import moe.rukamori.archivetune.viewmodels.LoginViewModel
+import android.webkit.HttpAuthHandler
+import moe.rukamori.archivetune.utils.AppProxy
 
 const val LOGIN_ROUTE = "login"
 const val LOGIN_URL_ARGUMENT = "url"
@@ -145,6 +147,16 @@ private class YouTubeLoginWebViewClient(
     private val cookieManager: CookieManager,
     private val onCookiesCaptured: (String) -> Unit,
 ) : WebViewClient() {
+    override fun onReceivedHttpAuthRequest(
+        view: WebView?,
+        handler: HttpAuthHandler?,
+        host: String?,
+        realm: String?,
+    ) {
+        if (handler != null && AppProxy.handleWebViewProxyAuth(handler, host)) return
+        super.onReceivedHttpAuthRequest(view, handler, host, realm)
+    }
+
     private var extractionRunnable: Runnable? = null
     private var lastCapturedCookie: String? = null
 

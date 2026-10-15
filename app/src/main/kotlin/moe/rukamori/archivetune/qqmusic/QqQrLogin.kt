@@ -1,38 +1,30 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Signing in to QQ Music with the account's own QR code, the way the official web client does it.
- *
  * The user scans the code with the QQ app they already have. What follows is Tencent's own login
  * chain: the QR is issued by `ptlogin2`, the scan is confirmed against the same endpoint, and the
  * resulting `p_skey` is exchanged for a QQ Music ticket through the account server. Nothing is
  * scraped and no credential is invented — the ticket this produces is the one Tencent issued for
  * this account, and it is used only for that account's own playback.
- *
  * The chain is four hops and each one is needed:
- *
- *   1. `ptqrshow` returns the image plus a `qrsig` cookie, which *is* the login session id. It is
- *      never sent back as a parameter, only hashed into the poll token.
- *   2. `ptqrlogin` is polled while the user scans. Its reply is the `ptuiCB(...)` script below,
- *      whose first argument is the state and whose third carries a signed `uin`/`ptsigx` pair.
- *   3. `check_sig` exchanges that pair for the `p_skey` cookie. This hop cannot be skipped: the
- *      `p_skey` is both the CSRF basis for the next call and the account proof it needs.
- *   4. `oauth2.0/authorize` turns the `p_skey` into a one-shot authorisation code, which
- *      `QQConnectLogin.LoginServer` trades for the ticket the playback calls use.
- *
+ * 1. `ptqrshow` returns the image plus a `qrsig` cookie, which *is* the login session id. It is
+ * never sent back as a parameter, only hashed into the poll token.
+ * 2. `ptqrlogin` is polled while the user scans. Its reply is the `ptuiCB(...)` script below,
+ * whose first argument is the state and whose third carries a signed `uin`/`ptsigx` pair.
+ * 3. `check_sig` exchanges that pair for the `p_skey` cookie. This hop cannot be skipped: the
+ * `p_skey` is both the CSRF basis for the next call and the account proof it needs.
+ * 4. `oauth2.0/authorize` turns the `p_skey` into a one-shot authorisation code, which
+ * `QQConnectLogin.LoginServer` trades for the ticket the playback calls use.
  * Every hop fails closed: a null at any point means "ask for a new code", never a half-signed-in
  * state.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 
@@ -59,6 +51,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Where a scanned QR code has got to. */
 internal enum class QqQrStatus {
@@ -231,6 +224,7 @@ internal object QqQrLogin {
     private val client by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(12, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)
@@ -435,9 +429,24 @@ internal object QqQrLogin {
         code: String,
         nickname: String?,
     ): QqMusicSession? {
+        // The web profile of the comm block, as an anonymous caller sends it, plus the QQ login type.
         val body =
             buildJsonObject {
-                putJsonObject("comm") { put("tmeLoginType", 2) }
+                putJsonObject("comm") {
+                    put("ct", "24")
+                    put("cv", "4747474")
+                    put("platform", "yqq.json")
+                    put("chid", "0")
+                    put("uin", "0")
+                    put("g_tk", "5381")
+                    put("g_tk_new_20200303", "5381")
+                    put("format", "json")
+                    put("inCharset", "utf-8")
+                    put("outCharset", "utf-8")
+                    put("notice", "0")
+                    put("need_new_code", "1")
+                    put("tmeLoginType", "2")
+                }
                 putJsonObject("req_0") {
                     put("module", "QQConnectLogin.LoginServer")
                     put("method", "QQLogin")
@@ -460,18 +469,27 @@ internal object QqQrLogin {
                     Timber.tag(TAG).w(error, "the login exchange body was not a JSON object")
                     return null
                 }
+        val code = parsed["req_0"]?.jsonObjectOrNull()?.textOrNull("code")
+        if (code != null && code != "0") {
+            // 20279 is the account's device limit, 20277/20278/20450 a restricted account, 104604
+            // rate limiting; the reply is logged as-is so the reason is visible.
+            Timber.tag(TAG).w("the login exchange was refused with code %s", code)
+            return null
+        }
         val credential = credentialOf(parsed) ?: run {
             Timber.tag(TAG).w("the login exchange returned no credential")
             return null
         }
-        val uin = credential.textOrNull("musicid") ?: credential.textOrNull("str_musicid")
-        val musicKey = credential.textOrNull("musickey")
-        if (uin.isNullOrBlank() || musicKey.isNullOrBlank()) {
-            Timber.tag(TAG).w("the login exchange credential held no account id or ticket")
-            return null
+        val session =
+            QqMusicSession.fromCredential(credential, nickname) ?: run {
+                Timber.tag(TAG).w("the login exchange credential held no account id or ticket")
+                return null
+            }
+        if (session.refresh?.refreshKey.isNullOrBlank()) {
+            Timber.tag(TAG).w("the login reply carried no refresh_key; the ticket cannot be renewed")
         }
-        Timber.tag(TAG).i("QQ Music signed in as %s", nickname ?: uin)
-        return QqMusicSession(uin = uin, musicKey = musicKey, nickname = nickname)
+        Timber.tag(TAG).i("QQ Music signed in as %s", nickname ?: session.uin)
+        return session
     }
 
     /** The credential object, wherever the envelope put it. */

@@ -51,6 +51,11 @@ object Musixmatch {
 
     private val client by lazy {
         HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) { json(jsonFormat) }
             install(HttpTimeout) {
                 requestTimeoutMillis = 20000

@@ -29,6 +29,7 @@ import org.json.JSONArray
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @Immutable
 data class AboutContributor(
@@ -74,6 +75,7 @@ class AboutContributorsRepository
             HttpClient(OkHttp) {
                 engine {
                     config {
+                        withAppProxy()
                         connectTimeout(15, TimeUnit.SECONDS)
                         readTimeout(15, TimeUnit.SECONDS)
                         writeTimeout(15, TimeUnit.SECONDS)

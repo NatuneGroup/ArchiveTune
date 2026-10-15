@@ -54,6 +54,13 @@ data class DiscordAuthSession(
     val account: DiscordAccount?,
 )
 
+class DiscordOAuthHttpException(
+    val statusCode: Int,
+) : IOException("Discord OAuth request failed with HTTP $statusCode") {
+    val isAuthorizationRejected: Boolean
+        get() = statusCode == HttpURLConnection.HTTP_UNAUTHORIZED || statusCode == HttpURLConnection.HTTP_FORBIDDEN
+}
+
 object DiscordAuthCoordinator {
     val redirects =
         MutableSharedFlow<Uri>(
@@ -163,13 +170,12 @@ object DiscordOAuthRepository {
 
             val refreshToken = prefs[DiscordRefreshTokenKey]?.trim().orEmpty()
             if (refreshToken.isBlank()) {
-                return@withContext currentToken
+                return@withContext null
             }
 
             refreshAccessToken(context, refreshToken)
                 .getOrNull()
                 ?.accessToken
-                ?: currentToken
         }
 
     suspend fun fetchAccount(accessToken: String): DiscordAccount =
@@ -267,14 +273,20 @@ object DiscordOAuthRepository {
     ) {
         context.dataStore.edit { prefs ->
             prefs[DiscordTokenKey] = session.accessToken
-            session.refreshToken?.takeIf { it.isNotBlank() }?.let {
-                prefs[DiscordRefreshTokenKey] = it
+            session.refreshToken?.takeIf { it.isNotBlank() }?.let { refreshToken ->
+                prefs[DiscordRefreshTokenKey] = refreshToken
+            } ?: run {
+                prefs.remove(DiscordRefreshTokenKey)
             }
             prefs[DiscordTokenExpiresAtKey] = session.expiresAtMillis
             session.account?.let { account ->
                 prefs[DiscordUsernameKey] = account.username
                 prefs[DiscordNameKey] = account.displayName
                 prefs[DiscordAvatarUrlKey] = account.avatarUrl.orEmpty()
+            } ?: run {
+                prefs.remove(DiscordUsernameKey)
+                prefs.remove(DiscordNameKey)
+                prefs.remove(DiscordAvatarUrlKey)
             }
         }
     }
@@ -372,7 +384,7 @@ object DiscordOAuthRepository {
         disconnect()
 
         if (status !in 200..299) {
-            throw IOException("Discord OAuth request failed with HTTP $status: $body")
+            throw DiscordOAuthHttpException(status)
         }
 
         return body

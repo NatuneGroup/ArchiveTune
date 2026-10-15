@@ -17,23 +17,25 @@ import com.google.common.collect.ImmutableList
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.supervisorScope
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.aicontentfilter.FilterAiContentUseCase
 import moe.rukamori.archivetune.aicontentfilter.LoadAiContentFilterPolicyUseCase
 import moe.rukamori.archivetune.aicontentfilter.ObserveAiContentFilterUseCase
-import moe.rukamori.archivetune.auth.SwitchSavedYouTubeAccountUseCase
-import moe.rukamori.archivetune.constants.AccountChannelHandleKey
-import moe.rukamori.archivetune.constants.AccountEmailKey
 import moe.rukamori.archivetune.constants.AccountImageUrlKey
 import moe.rukamori.archivetune.constants.AccountNameKey
 import moe.rukamori.archivetune.constants.ContentCountryKey
 import moe.rukamori.archivetune.constants.ContentLanguageKey
-import moe.rukamori.archivetune.constants.DataSyncIdKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
 import moe.rukamori.archivetune.constants.HiddenHomeItemsKey
@@ -64,15 +66,15 @@ import moe.rukamori.archivetune.innertube.pages.HomePage
 import moe.rukamori.archivetune.innertube.utils.completed
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.models.SimilarRecommendation
-import moe.rukamori.archivetune.utils.SavedAccount
 import moe.rukamori.archivetune.utils.SpeedDialPinType
 import moe.rukamori.archivetune.utils.SyncUtils
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.parseSpeedDialPins
 import moe.rukamori.archivetune.utils.reportException
-import moe.rukamori.archivetune.utils.toPlaybackAuthState
 import timber.log.Timber
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 sealed interface AccountChannelsState {
@@ -103,6 +105,45 @@ data class AccountChannelUiModel(
     val dataSyncId: String,
     val isSelected: Boolean,
 )
+
+/**
+ * Serializes remote home loads and gates their responses by generation. Each reload or chip
+ * interaction claims the next generation; a reload queued behind an active load waits rather
+ * than being dropped, stale queued work is skipped, and a late chip/loadMore response is
+ * discarded because its commit no longer matches the current generation.
+ */
+internal class HomeRequestGate {
+    private val lock = Any()
+    private val loadMutex = Mutex()
+    private var generation = 0L
+
+    fun current(): Long = synchronized(lock) { generation }
+    fun next(): Long = synchronized(lock) { ++generation }
+
+    suspend fun runCurrentLoad(
+        request: Long,
+        load: suspend () -> Unit,
+    ): Boolean {
+        loadMutex.lock()
+        try {
+            if (request != current()) return false
+            load()
+            return true
+        } finally {
+            loadMutex.unlock()
+        }
+    }
+
+    fun commit(
+        request: Long,
+        publish: () -> Unit,
+    ): Boolean =
+        synchronized(lock) {
+            if (request != generation) return@synchronized false
+            publish()
+            true
+        }
+}
 
 private data class HomeLocalContent(
     val quickPicks: List<Song>,
@@ -218,12 +259,16 @@ class HomeViewModel
         @ApplicationContext private val context: Context,
         private val database: MusicDatabase,
         private val syncUtils: SyncUtils,
-        private val switchSavedYouTubeAccount: SwitchSavedYouTubeAccountUseCase,
         observeHomePresentationPreferences: ObserveHomePresentationPreferencesUseCase,
         observeAiContentFilter: ObserveAiContentFilterUseCase,
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
         private val filterAiContent: FilterAiContentUseCase,
     ) : ViewModel() {
+        private companion object {
+            private const val HOME_LOAD_TIMEOUT_MS = 90_000L
+            private const val REFRESH_STUCK_WATCHDOG_MS = 120_000L
+        }
+
         private val isRefreshing = MutableStateFlow(false)
         private val isLoading = MutableStateFlow(false)
         private val isInitialLoadComplete = MutableStateFlow(false)
@@ -384,6 +429,13 @@ class HomeViewModel
 
         private var wasLoggedIn = false
         private var chipLoadJob: Job? = null
+        private var loadMoreJob: Job? = null
+        private val remoteRequests = HomeRequestGate()
+
+        @Volatile private var activeLoadJob: Job? = null
+
+        @Volatile private var refreshJob: Job? = null
+        private val refreshStartedAtMs = AtomicLong(0L)
 
         private fun filterHomeChips(chips: List<HomePage.Chip>?): List<HomePage.Chip>? =
             chips?.filterNot {
@@ -564,11 +616,52 @@ class HomeViewModel
                     }
         }
 
-        private suspend fun load() {
-            if (isLoading.value) return
+        // Default claims a fresh generation per implicit call (side-effecting on purpose): the
+        // claimed generation is what lets runCurrentLoad skip this load if a newer request
+        // supersedes it while it waits on the mutex.
+        private suspend fun load(generation: Long = remoteRequests.next()) {
+            // The load in flight answers an older generation, so its result would be dropped at
+            // commit anyway; cancelling it stops this one waiting up to a full load timeout.
+            activeLoadJob?.cancel()
+            val ran =
+                remoteRequests.runCurrentLoad(generation) {
+                    coroutineScope {
+                        val job = launch { performLoad(generation) }
+                        activeLoadJob = job
+                        job.join()
+                        if (activeLoadJob === job) activeLoadJob = null
+                    }
+                }
+            if (!ran) {
+                Timber.d("Skipping superseded home load for generation $generation")
+            }
+        }
+
+        private suspend fun performLoad(generation: Long) {
             isLoading.value = true
             loadError.value = null
 
+            try {
+                val loaded =
+                    withTimeoutOrNull(HOME_LOAD_TIMEOUT_MS) {
+                        loadInternal(generation)
+                    }
+                if (loaded == null) {
+                    reportException(TimeoutException("home load timed out after ${HOME_LOAD_TIMEOUT_MS / 1000}s"))
+                    loadError.value = R.string.error_unknown
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                reportException(e)
+                loadError.value = R.string.error_unknown
+            } finally {
+                isInitialLoadComplete.value = true
+                isLoading.value = false
+            }
+        }
+
+        private suspend fun loadInternal(generation: Long) {
             try {
                 val aiContentFilterPolicy = loadAiContentFilterPolicy()
                 supervisorScope {
@@ -677,11 +770,19 @@ class HomeViewModel
                                                 .filter { it.items.isNotEmpty() },
                                     )
                                 val (pageWithoutQuickPicks, quickPicksSection) = filteredPage.extractQuickPicks()
-                                remoteQuickPicks.value = quickPicksSection
-                                homePage.value = pageWithoutQuickPicks
+                                currentCoroutineContext().ensureActive()
+                                if (!remoteRequests.commit(generation) {
+                                        remoteQuickPicks.value = quickPicksSection
+                                        homePage.value = pageWithoutQuickPicks
+                                    }
+                                ) {
+                                    Timber.w("Dropping stale home response for generation $generation")
+                                }
                             }.onFailure {
+                                currentCoroutineContext().ensureActive()
+                                if (it is CancellationException) throw it
                                 reportException(it)
-                                loadError.value = R.string.error_unknown
+                                remoteRequests.commit(generation) { loadError.value = R.string.error_unknown }
                             }
                     }
                 }
@@ -901,13 +1002,14 @@ class HomeViewModel
         }
 
         private fun loadMoreYouTubeItems(continuation: String?) {
-            if (continuation == null || isLoadingMore.value) return
+            if (continuation == null || !isLoadingMore.compareAndSet(false, true)) return
+            val generation = remoteRequests.current()
             val hideExplicit = context.dataStore.get(HideExplicitKey, false)
             val hideVideo = context.dataStore.get(HideVideoKey, false)
 
-            viewModelScope.launch(Dispatchers.IO) {
-                isLoadingMore.value = true
-                try {
+            loadMoreJob =
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
                     val blockedArtistIds = database.getBlockedArtistIds().toSet()
                     val blockedSongIds = database.getBlockedSongIds().toSet()
                     val aiContentFilterPolicy = loadAiContentFilterPolicy()
@@ -934,15 +1036,30 @@ class HomeViewModel
                                     .filter { it.items.isNotEmpty() },
                         )
                     val (pageWithoutQuickPicks, quickPicksSection) = mergedPage.extractQuickPicks()
-                    quickPicksSection?.let { remoteQuickPicks.value = it }
-                    homePage.value = pageWithoutQuickPicks
-                } finally {
-                    isLoadingMore.value = false
+                    currentCoroutineContext().ensureActive()
+                    if (!remoteRequests.commit(generation) {
+                            if (homePage.value?.continuation == continuation) {
+                                quickPicksSection?.let { remoteQuickPicks.value = it }
+                                homePage.value = pageWithoutQuickPicks
+                            }
+                        }
+                    ) {
+                        Timber.w("Dropping stale loadMore response for generation $generation")
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    reportException(e)
                 }
             }
+            // Not a finally block: a job cancelled before it starts never runs its body, which
+            // left load-more disabled for good when a refresh or chip tap landed in that window.
+            loadMoreJob?.invokeOnCompletion { isLoadingMore.value = false }
         }
 
         private fun toggleChip(chip: HomePage.Chip?) {
+            val generation = remoteRequests.next()
+            loadMoreJob?.cancel()
             chipLoadJob?.cancel()
             if (chip == null || chip == selectedChip.value && previousHomePage.value != null) {
                 homePage.value = previousHomePage.value
@@ -987,9 +1104,15 @@ class HomeViewModel
                                     .filter { it.items.isNotEmpty() },
                         )
                     val (pageWithoutQuickPicks, quickPicksSection) = filteredPage.extractQuickPicks()
-                    remoteQuickPicks.value = quickPicksSection
-                    homePage.value = pageWithoutQuickPicks
-                    selectedChip.value = chip
+                    currentCoroutineContext().ensureActive()
+                    if (!remoteRequests.commit(generation) {
+                            remoteQuickPicks.value = quickPicksSection
+                            homePage.value = pageWithoutQuickPicks
+                            selectedChip.value = chip
+                        }
+                    ) {
+                        Timber.w("Dropping stale chip response for generation $generation")
+                    }
                 }
         }
 
@@ -1002,12 +1125,28 @@ class HomeViewModel
         }
 
         private fun refresh() {
-            if (isRefreshing.value) return
-            viewModelScope.launch(Dispatchers.IO) {
-                isRefreshing.value = true
+            if (!isRefreshing.compareAndSet(false, true)) {
+                val startedAt = refreshStartedAtMs.get()
+                val stuck = startedAt != 0L && System.currentTimeMillis() - startedAt > REFRESH_STUCK_WATCHDOG_MS
+                if (!stuck) return
+                // Detached before cancelling, so its finally cannot match and clear our flag.
+                refreshJob?.let { stale ->
+                    refreshJob = null
+                    stale.cancel()
+                }
+                isRefreshing.value = false
+                if (!isRefreshing.compareAndSet(false, true)) return
+            }
+            refreshStartedAtMs.set(System.currentTimeMillis())
+            val generation = remoteRequests.next()
+            // A reload supersedes any in-flight chip/loadMore response: cancel them so
+            // their late commits cannot interleave with the fresh page below.
+            loadMoreJob?.cancel()
+            chipLoadJob?.cancel()
+            val job = viewModelScope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 try {
                     supervisorScope {
-                        launch { load() }
+                        launch { load(generation) }
                         launch { refreshQuickPicks() }
                         // Re-shuffle hero picks on every manual pull-to-refresh so the
                         // "Jump back in" hero at the top of the home page surfaces fresh
@@ -1034,72 +1173,15 @@ class HomeViewModel
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {
-                    isRefreshing.value = false
+                    // A watchdog-replaced refresh must not clear the flag its successor now owns.
+                    if (refreshJob === currentCoroutineContext()[Job]) {
+                        refreshStartedAtMs.set(0L)
+                        isRefreshing.value = false
+                    }
                 }
             }
-        }
-
-        fun switchToAccount(
-            account: SavedAccount,
-            forceSyncOnSwitch: Boolean,
-        ) {
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    val authState = switchSavedYouTubeAccount(account).getOrThrow()
-
-                    if (forceSyncOnSwitch && account.ytmSync && authState.hasLoginCookie) {
-                        syncUtils.performFullSync(authoritative = true)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.e(e, "Error switching account")
-                    reportException(e)
-                }
-            }
-        }
-
-        fun switchToAccountChannel(
-            channel: AccountChannelUiModel,
-            forceSyncOnSwitch: Boolean,
-        ) {
-            if (channel.dataSyncId.isBlank()) return
-
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    _accountChannelsState.value = AccountChannelsState.Loading
-
-                    context.dataStore.edit { preferences ->
-                        preferences[DataSyncIdKey] = channel.dataSyncId
-                        preferences[AccountNameKey] = channel.name
-                        preferences[AccountChannelHandleKey] = channel.channelHandle
-                        if (channel.byline.contains("@")) {
-                            preferences[AccountEmailKey] = channel.byline
-                        }
-                    }
-
-                    val authState =
-                        context.dataStore.data
-                            .first()
-                            .toPlaybackAuthState()
-                    YouTube.authState = authState
-
-                    supervisorScope {
-                        launch { refreshAccountIdentity() }
-                        launch { refreshAccountPlaylistsInternal() }
-                    }
-
-                    if (forceSyncOnSwitch && context.dataStore.get(YtmSyncKey, true) && authState.hasLoginCookie) {
-                        syncUtils.performFullSync(authoritative = true)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    Timber.e(e, "Error switching account channel")
-                    reportException(e)
-                    _accountChannelsState.value = AccountChannelsState.Error(e.message.orEmpty())
-                }
-            }
+            refreshJob = job
+            job.start()
         }
 
         init {

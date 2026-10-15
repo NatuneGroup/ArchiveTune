@@ -6,13 +6,6 @@
  */
 
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
  * Bitchord player style — the player itself.
  *
  * Ported from BitChord (https://github.com/kushagrasinghx/BitChord),
@@ -47,21 +40,16 @@
 
 package moe.rukamori.archivetune.ui.player.bitchord
 
-import android.media.AudioManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.provider.Settings
 import android.view.View
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
-import androidx.activity.compose.BackHandler
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -117,11 +105,11 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
@@ -147,9 +135,11 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.playback.smart.TrackAnalysisState
 import moe.rukamori.archivetune.playback.smart.SmartFadeRuntimeState
 import moe.rukamori.archivetune.R
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
@@ -163,7 +153,6 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import coil3.request.ImageRequest
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
@@ -191,13 +180,9 @@ import moe.rukamori.archivetune.viewmodels.LyricsMenuViewModel
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.ui.player.MeshBackdrop
 import moe.rukamori.archivetune.ui.player.rememberMeshPalette
-import moe.rukamori.archivetune.constants.LyricsMode
-import moe.rukamori.archivetune.constants.LyricsModeKey
-import moe.rukamori.archivetune.ui.player.simpmusic.SimpMusicLyrics
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
-import moe.rukamori.archivetune.ui.component.LyricsV2
-import moe.rukamori.archivetune.utils.rememberEnumPreference
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
 import moe.rukamori.archivetune.ui.player.LosslessOrStats
+import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.runtime.MutableFloatState
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -284,20 +269,8 @@ internal const val LYRIC_FADE_FRACTION = 0.28f
 internal const val LYRIC_FADE_MIN_MS = 160f
 internal const val LYRIC_FADE_MAX_MS = 700f
 
-/**
- * How far back the part of the playing line that hasn't been sung yet is held.
- * The strip above the scrubber gets less of a gap than the full panel.
- */
-internal const val UNSUNG_ALPHA = 0.45f
 internal const val UNSUNG_ALPHA_STRIP = 0.55f
 
-/**
- * The bloom behind the line being sung, at its very strongest. Kept well under
- * half strength: the halo is drawn from the same white as the text, so at full
- * alpha it stops reading as light and starts reading as a second, badly
- * printed copy of the words.
- */
-internal const val GLOW_ALPHA = 0.62f
 internal val GLOW_RADIUS = 9.dp
 
 /**
@@ -306,29 +279,6 @@ internal val GLOW_RADIUS = 9.dp
  */
 internal val GLOW_TRAIL = 62.dp
 internal const val GLOW_TRAIL_FLOOR = 0.55f
-
-/**
- * Room reserved inside each copy of a line for the halo to spread into. Every
- * copy carries the same inset so they still lay out identically.
- */
-internal val GLOW_ROOM = 10.dp
-
-/**
- * How the answering vocal is drawn: smaller than the lead and a shade behind
- * it, the way Apple Music hangs a backing line under the one it answers.
- */
-internal val BACKING_FONT_SIZE = 19.sp
-internal val BACKING_LINE_HEIGHT = 24.sp
-internal const val BACKING_ALPHA = 0.72f
-
-/**
- * How the romanisation and translation voices are drawn (ArchiveTune
- * addition): a step below the answering vocal — smaller and dimmer still — so
- * the three tiers of a row read as lead, echo, gloss.
- */
-internal val AUX_FONT_SIZE = 16.sp
-internal val AUX_LINE_HEIGHT = 20.sp
-internal const val AUX_ALPHA = 0.6f
 
 /** Stands in for an instrumental stretch on the strip. */
 internal const val INSTRUMENTAL_MARK = "Instrumental"
@@ -495,6 +445,12 @@ fun BitChordPlayerContent(
     // Automix: the engine's published state, straight from the service (4nx3b 875062efc).
     val automixOn by SmartFadeRuntimeState.enabled.collectAsStateWithLifecycle()
     val automixAnalysis by SmartFadeRuntimeState.analysis.collectAsStateWithLifecycle()
+    // A mix is audibly blending right now — the plain crossfade, or an automix one — and
+    // the seek bar morphs (fill collapse + sheen) until it hands over.
+    val isMixing by playerConnection.isMixing.collectAsStateWithLifecycle()
+    // Where the next automix transition will land, drawn as the brighter stretch of the
+    // unplayed bar.
+    val automixTransitionWindow by SmartFadeRuntimeState.transitionWindow.collectAsStateWithLifecycle()
 
     val reduceAnimations = LocalAnimationsDisabled.current
 
@@ -528,6 +484,9 @@ fun BitChordPlayerContent(
     // manual Translate action in the lyrics options menu shares the ViewModel,
     // so an undo here suppresses auto-translate exactly as it does there.
     val lyricsMenuViewModel: LyricsMenuViewModel = hiltViewModel()
+    LaunchedEffect(mediaMetadata.id, lyricsEntity?.lyrics) {
+        lyricsMenuViewModel.onLyricsTargetChanged(mediaMetadata.id, lyricsEntity?.lyrics)
+    }
     val (autoTranslateLyrics) = rememberPreference(AutoTranslateLyricsKey, defaultValue = false)
     val (translatorTargetLang) = rememberPreference(TranslatorTargetLangKey, defaultValue = "")
     val (swipeUpToOpenQueue) =
@@ -613,15 +572,29 @@ fun BitChordPlayerContent(
     // still loading and nothing is audible.
     val audioAdvancing by playerConnection.isAudioAdvancing.collectAsStateWithLifecycle()
 
-    // Back out of the lyrics panel to the player, and only from the player
-    // itself out to the mini player. The sheet the player is drawn in keeps
-    // its own back handling while no panel is open (predictive-back shrink).
-    BackHandler(enabled = lyricsOpen) { lyricsOpen = false }
+    // Back out of the lyrics or queue panel to the player, and only from the
+    // player itself out to the mini player. The sheet the player is drawn in
+    // keeps its own back handling while no panel is open (predictive-back shrink).
+    val panelOpen = lyricsOpen || queueOpen
+    val closePanel = {
+        lyricsOpen = false
+        queueOpen = false
+    }
+    // Mirrors the condition under which Player.kt publishes a non-NONE back target. The
+    // PRIORITY_OVERLAY callback below bypasses that controller, so without this gate a panel
+    // left open by a drag-collapse (or hidden under AOD) would swallow the next Back.
+    val aodActive by playerConnection.aodModeEnabled.collectAsStateWithLifecycle()
+    val playerOwnsBack = state.isExpandedOrExpanding && !aodActive
+    LaunchedEffect(state.isExpandedOrExpanding) {
+        if (!state.isExpandedOrExpanding) closePanel()
+    }
+    val panelOwnsBack = panelOpen && playerOwnsBack
+    PlayerInlinePageBackHandler(enabled = panelOwnsBack, onBack = closePanel)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val view = LocalView.current
-        DisposableEffect(view, lyricsOpen) {
-            val callback = if (lyricsOpen) {
-                OverlayBack.register(view) { lyricsOpen = false }
+        DisposableEffect(view, panelOwnsBack) {
+            val callback = if (panelOwnsBack) {
+                OverlayBack.register(view, closePanel)
             } else {
                 null
             }
@@ -700,60 +673,21 @@ fun BitChordPlayerContent(
     // Signature Apple Music touch: the sleeve shrinks back while paused.
     val artScale by animateFloatAsState(
         targetValue = if (isPlaying) 1f else 0.86f,
-        animationSpec = spring(
+        animationSpec = if (reduceAnimations) snap() else spring(
             dampingRatio = Spring.DampingRatioLowBouncy,
             stiffness = Spring.StiffnessLow,
         ),
         label = "artScale",
     )
 
-    // ── Volume, exactly BitChord's own AudioManager approach ──
-    val audioManager = remember(context) {
-        context.getSystemService(AudioManager::class.java)
-    }
-    val maxVolume = remember(audioManager) {
-        audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC)?.coerceAtLeast(1) ?: 15
-    }
-    val scope = rememberCoroutineScope()
-    // Animatable rather than plain state: a hardware volume step is a jump of
-    // 1/15th of the bar, which reads as a stutter unless it's tweened.
-    val volume = remember {
-        Animatable(
-            (audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0).toFloat() / maxVolume,
-        )
-    }
-    var volumeDragging by remember { mutableStateOf(false) }
-    var systemVolume by remember { mutableFloatStateOf(volume.value) }
-
-    // Glide to the level the system reports, but never fight the finger — a
-    // drag writes the stream, which calls straight back through here.
-    LaunchedEffect(systemVolume) {
-        if (!volumeDragging) {
-            volume.animateTo(systemVolume, tween(durationMillis = 220, easing = FastOutSlowInEasing))
-        }
-    }
-
-    // Hardware volume keys and the system panel change the stream behind our
-    // back — watch Settings for changes so the bar tracks them live.
-    DisposableEffect(audioManager) {
-        val observer = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
-            override fun onChange(selfChange: Boolean) {
-                val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: return
-                systemVolume = current.toFloat() / maxVolume
-            }
-        }
-        context.contentResolver.registerContentObserver(
-            Settings.System.CONTENT_URI,
-            true,
-            observer,
-        )
-        onDispose { context.contentResolver.unregisterContentObserver(observer) }
-    }
+    val presentation = moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current
+    val volumeController = moe.rukamori.archivetune.ui.player.rememberDeviceMusicVolumeController()
+    val volume = moe.rukamori.archivetune.ui.player.volumeDisplayFraction(volumeController)
 
     // 0 = the ordinary square sleeve, 1 = the artwork as a full-bleed banner.
     val p by animateFloatAsState(
         targetValue = if (lyricsOpen || queueOpen) 1f else 0f,
-        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (reduceAnimations) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "sleeveCollapse",
     )
     // BitChord's fullBleedArtwork defaults to true; a phone-width player is
@@ -774,7 +708,7 @@ fun BitChordPlayerContent(
     }
     val heroT by animateFloatAsState(
         targetValue = if (heroMode && (artLoaded || heroSettled)) 1f else 0f,
-        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (reduceAnimations) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "heroCanvas",
     )
 
@@ -824,7 +758,7 @@ fun BitChordPlayerContent(
     Box(modifier = modifier.fillMaxSize()) {
         // Keyed on the track: the backdrop drifts when the player opens and on
         // every skip, then rests.
-        MeshBackdrop(
+        if (!presentation.sharedBackground) MeshBackdrop(
             palette = meshColors,
             trackKey = mediaMetadata.id,
             reduceAnimation = reduceAnimations,
@@ -836,7 +770,7 @@ fun BitChordPlayerContent(
         // is the only way to escape the player's side gutter and its
         // status-bar inset — a banner that stops short of either reads as a
         // misplaced card rather than as the artwork the screen is made of.
-        if (heroHeight > 0.dp) {
+        if (heroHeight > 0.dp && !presentation.hideSleeve) {
             if (heroMode && (p < 0.5f || heroVisible > 0.001f)) {
                 AsyncImage(
                     model = ImageRequest.Builder(context)
@@ -1146,6 +1080,7 @@ fun BitChordPlayerContent(
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .ordinarySleeve(presentation.hideSleeve)
                             .graphicsLayer { alpha = if (artLoaded) 1f - heroVisible else 1f }
                             // A drop shadow grounds a photo; on the flat
                             // placeholder tile it has nothing to sit behind, so
@@ -1153,10 +1088,11 @@ fun BitChordPlayerContent(
                             // the first. Only cast it once there's actually art.
                             .shadow(
                                 if (artLoaded) lerp(14.dp, 6.dp, p) else 0.dp,
-                                RoundedCornerShape(lerp(10.dp, 7.dp, p)),
+                                RoundedCornerShape(lerp(presentation.radius(10.dp), 7.dp, p)),
                             )
-                            .clip(RoundedCornerShape(lerp(10.dp, 7.dp, p)))
-                            .background(Color.Black.copy(alpha = 0.18f)),
+                            .clip(RoundedCornerShape(lerp(presentation.radius(10.dp), 7.dp, p)))
+                            .background(Color.Black.copy(alpha = 0.18f))
+                            .playerSeekDoubleTap(enabled = !queueOpen && !lyricsOpen),
                         contentAlignment = Alignment.Center,
                     ) {
                         if (!artLoaded) {
@@ -1237,7 +1173,6 @@ fun BitChordPlayerContent(
                     )
                 }
 
-                // ---- Title + menu ----
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1318,8 +1253,7 @@ fun BitChordPlayerContent(
 
                 if (lyricsOpen) {
                     // The app's own lyrics view, in whichever style the Lyrics settings select —
-                    // the same component every other player style opens.
-                    val lyricsMode by rememberEnumPreference(LyricsModeKey, LyricsMode.ENHANCED)
+                    // the same component the shared lyrics page draws.
                     val panelModifier = Modifier
                         .fillMaxSize()
                         .padding(top = HEADER_HEIGHT + 10.dp)
@@ -1334,40 +1268,12 @@ fun BitChordPlayerContent(
                     // Null unless the user is scrubbing, matching LyricsScreen: the renderers run
                     // their own frame clock off the player, and a polled position would step.
                     val lyricsPositionProvider = remember { { null as Long? } }
-                    when (lyricsMode) {
-                        LyricsMode.ENHANCED ->
-                            LyricsEnhanced(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-
-                        LyricsMode.SPOTIFY ->
-                            LyricsEnhanced(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                                spotifyStyle = true,
-                            )
-
-                        LyricsMode.SIMPMUSIC ->
-                            SimpMusicLyrics(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-
-                        LyricsMode.V2 ->
-                            LyricsV2(
-                                sliderPositionProvider = lyricsPositionProvider,
-                                lyricsSyncOffset = lyricsSyncOffset,
-                                modifier = panelModifier,
-                                textColorOverride = Color.White,
-                            )
-                    }
+                    SelectedLyrics(
+                        sliderPositionProvider = lyricsPositionProvider,
+                        lyricsSyncOffset = lyricsSyncOffset,
+                        modifier = panelModifier,
+                        textColorOverride = Color.White,
+                    )
                 }
 
                 // Toggles and the queue arrive after the sleeve has finished
@@ -1404,7 +1310,6 @@ fun BitChordPlayerContent(
                 }
             }
 
-            // ---- Bottom: lyric strip, scrubber, transport, volume, toggles ----
             // One block, measured at its natural height and pinned to the foot
             // of the player. Whatever is left over above it is the artwork's,
             // which is what keeps this row of controls in the same place on
@@ -1478,26 +1383,17 @@ fun BitChordPlayerContent(
                     onSeekFraction(scrubValue)
                     scrubbing = false
                 },
+                mixing = isMixing,
+                transitionWindow = automixTransitionWindow?.let { it.start..it.end },
             )
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    // The slider's touch target extends well past the drawn
-                    // bar, so pull the labels back up under it.
-                    .offset(y = (-9).dp),
-            ) {
-                BitChordScrubTimes(shownFraction = shownFraction, duration = duration)
-                // Pinned to the box's own center rather than squeezed into the
-                // gap between the two timestamps: that gap's width changes by a
-                // digit's worth every time a minute rolls over.
-                LosslessOrStats(
-                    isLoading = isLoading,
-                    format = currentFormat,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .padding(horizontal = 8.dp),
-                )
-            }
+            BitChordScrubTimes(
+                shownFraction = shownFraction,
+                duration = duration,
+                format = currentFormat,
+                // The slider's touch target extends well past the drawn
+                // bar, so pull the labels back up under it.
+                modifier = Modifier.offset(y = (-9).dp),
+            )
 
             if (lyricsOpen) {
                 Spacer(Modifier.height(16.dp))
@@ -1598,7 +1494,6 @@ fun BitChordPlayerContent(
             // which sit close enough together to read as one.
             Spacer(Modifier.height(10.dp + controlSpread / 3))
 
-            // ---- Transport ----
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
@@ -1642,8 +1537,7 @@ fun BitChordPlayerContent(
 
             Spacer(Modifier.height(12.dp + controlSpread / 3))
 
-            // ---- Volume ----
-            Row(
+            if (presentation.showVolume) Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -1655,18 +1549,11 @@ fun BitChordPlayerContent(
                 )
                 Spacer(Modifier.width(10.dp))
                 ThinSlider(
-                    valueProvider = { volume.value },
-                    onValueChange = {
-                        volumeDragging = true
-                        // Follow the finger exactly; only external changes tween.
-                        scope.launch { volume.snapTo(it) }
-                        audioManager?.setStreamVolume(
-                            AudioManager.STREAM_MUSIC,
-                            (it * maxVolume).roundToInt(),
-                            0,
-                        )
-                    },
-                    onValueChangeFinished = { volumeDragging = false },
+                    valueProvider = { volume },
+                    onValueChange = volumeController::setVolumeFraction,
+                    onValueChangeStarted = volumeController::startInteraction,
+                    onValueChangeFinished = volumeController::finishInteraction,
+                    onValueChangeCancelled = volumeController::cancelInteraction,
                     idleHeight = 6.dp,
                     activeHeight = 10.dp,
                     modifier = Modifier.weight(1f),
@@ -1685,7 +1572,6 @@ fun BitChordPlayerContent(
             // the reference stacks seekbar -> transport -> volume -> pills.
             Spacer(Modifier.height(6.dp))
 
-            // ---- Lyrics · Shuffle/Repeat capsule · Queue ----
             // Shuffle and repeat live INSIDE the pill so their state reads
             // without opening anything; the flanking glyphs open the lyrics
             // panel and the queue.
@@ -1703,10 +1589,11 @@ fun BitChordPlayerContent(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     BottomGlyph(
-                        icon = BitChordIcons.LyricsQuote,
+                        icon = null,
                         // This row only exists while the panel is closed, so
                         // the glyph only ever opens it — no lit state of its own.
-                        contentDescription = "Open lyrics",
+                        contentDescription = stringResource(R.string.lyrics),
+                        iconRes = R.drawable.player_lyrics,
                         // One sleeve: opening the queue closes lyrics and vice
                         // versa, so the two glyphs can never be lit at once.
                         onClick = {
@@ -1750,7 +1637,7 @@ fun BitChordPlayerContent(
                     }
                     BottomGlyph(
                         icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                        contentDescription = "Up next",
+                        contentDescription = stringResource(R.string.queue),
                         onClick = {
                             lyricsOpen = false
                             queueOpen = !queueOpen
@@ -1918,6 +1805,7 @@ private fun BottomGlyph(
     icon: ImageVector?,
     contentDescription: String,
     onClick: () -> Unit,
+    iconRes: Int? = null,
     highlighted: Boolean = false,
     haptic: Haptic = Haptic.Tap,
     label: String? = null,
@@ -1941,12 +1829,19 @@ private fun BottomGlyph(
         contentAlignment = Alignment.Center,
     ) {
         val tint = Color.White.copy(alpha = if (highlighted) 1f else 0.75f)
-        if (icon != null) {
+        if (iconRes != null) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(24.dp),
+            )
+        } else if (icon != null) {
             Icon(
                 imageVector = icon,
                 contentDescription = null,
                 tint = tint,
-                modifier = Modifier.size(26.dp),
+                modifier = Modifier.size(24.dp),
             )
         } else if (label != null) {
             Text(
@@ -1959,13 +1854,8 @@ private fun BottomGlyph(
     }
 }
 
-// ---------------------------------------------------------------------------
-// The segmented capsule at the centre of the bottom row (reference style):
-// squared-off segments joined by hairline dividers, one highlight fill.
-// ---------------------------------------------------------------------------
-
 /** Diameter of the glyphs flanking the capsule, which the row is sized around. */
-private val BOTTOM_GLYPH_DIAMETER = 44.dp
+private val BOTTOM_GLYPH_DIAMETER = 48.dp
 
 /**
  * Height of the capsule. The reference draws it as tall as the glyphs; each
@@ -2108,34 +1998,41 @@ private object OverlayBack {
     }
 }
 
-/**
- * The elapsed/remaining pair under the scrubber.
- *
- * Its own composable purely so the position read is scoped here: these two labels change once a
- * second, and reading the position for them in the player's body invalidated the entire player ten
- * times a second instead.
- */
 @Composable
 private fun BitChordScrubTimes(
     shownFraction: () -> Float,
     duration: Long,
+    format: FormatEntity?,
+    modifier: Modifier = Modifier,
 ) {
-    val shown = shownFraction()
     Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text = formatTime((shown * duration).toLong()),
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.55f),
+        Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            ScrubTime { formatTime((shownFraction() * duration).toLong()) }
+        }
+        if (moe.rukamori.archivetune.ui.player.LocalPlayerPresentation.current.showCodec) LosslessOrStats(
+            format = format,
+            modifier = Modifier.padding(horizontal = 8.dp),
         )
-        Text(
-            text = "-" + formatTime(duration - (shown * duration).toLong()),
-            style = MaterialTheme.typography.labelMedium,
-            color = Color.White.copy(alpha = 0.55f),
-        )
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ScrubTime { "-" + formatTime(duration - (shownFraction() * duration).toLong()) }
+        }
     }
+}
+
+@Composable
+private fun ScrubTime(label: () -> String) {
+    Text(
+        text = label(),
+        style = MaterialTheme.typography.labelMedium,
+        color = Color.White.copy(alpha = 0.55f),
+    )
 }
 
 /**

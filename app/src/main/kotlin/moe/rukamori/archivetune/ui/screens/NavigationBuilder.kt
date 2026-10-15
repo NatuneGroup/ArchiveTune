@@ -9,6 +9,8 @@
 package moe.rukamori.archivetune.ui.screens
 
 import android.net.Uri
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -25,11 +27,14 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import moe.rukamori.archivetune.constants.BackAnimationStyle
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.HomeScreenStyle
 import moe.rukamori.archivetune.constants.HomeScreenStyleKey
 import moe.rukamori.archivetune.constants.HomeSource
 import moe.rukamori.archivetune.constants.LibraryStyle
+import moe.rukamori.archivetune.constants.UpdateChannelKey
+import moe.rukamori.archivetune.effectiveUpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.defaultUpdateChannel
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionRoute
@@ -87,6 +92,7 @@ import moe.rukamori.archivetune.ui.screens.settings.TidalSettings
 import moe.rukamori.archivetune.ui.screens.settings.QobuzSettings
 import moe.rukamori.archivetune.ui.screens.settings.AmazonSettings
 import moe.rukamori.archivetune.ui.screens.settings.QqMusicSettings
+import moe.rukamori.archivetune.ui.screens.settings.SpotifyStreamingSettings
 import moe.rukamori.archivetune.ui.screens.settings.DeezerSettings
 import moe.rukamori.archivetune.ui.screens.settings.JioSettings
 import moe.rukamori.archivetune.ui.screens.settings.TidalLoginScreen
@@ -143,7 +149,11 @@ fun NavGraphBuilder.navigationBuilder(
     searchListState: LazyListState? = null,
     homeScrollConnection: NestedScrollConnection? = null,
     searchScrollConnection: NestedScrollConnection? = null,
-    onlineSearchSort: OnlineSearchSort = OnlineSearchSort.DEFAULT,
+    // A provider, not a value: the NavHost graph is built once (the builder lambda stays stable),
+    // so a by-value sort would be frozen at graph-build time. Reading the provider inside the
+    // destination content keeps the sort live.
+    onlineSearchSort: () -> OnlineSearchSort = { OnlineSearchSort.DEFAULT },
+    backAnimationStyle: () -> BackAnimationStyle = { BackAnimationStyle.PREDICTIVE },
 ) {
     composable(Screens.Home.route) {
         // Three separate home pages behind one tab, picked by HomeSourceKey and switched from the
@@ -299,9 +309,16 @@ fun NavGraphBuilder.navigationBuilder(
                     defaultValue = moe.rukamori.archivetune.constants.SearchProvider.YOUTUBE.name
                 },
             ),
+        // PREDICTIVE uses the NavHost's pushed-screen slides (scrubbed by the back gesture);
+        // ORIGINAL keeps this route's fades.
         enterTransition = {
             if (disableAnimations) {
                 fadeIn(tween(0))
+            } else if (backAnimationStyle() == BackAnimationStyle.PREDICTIVE) {
+                slideInHorizontally(
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    initialOffsetX = { it },
+                ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
             } else {
                 fadeIn(tween(250))
             }
@@ -327,6 +344,11 @@ fun NavGraphBuilder.navigationBuilder(
         popExitTransition = {
             if (disableAnimations) {
                 fadeOut(tween(0))
+            } else if (backAnimationStyle() == BackAnimationStyle.PREDICTIVE) {
+                slideOutHorizontally(
+                    animationSpec = tween(360, easing = FastOutSlowInEasing),
+                    targetOffsetX = { it },
+                ) + fadeOut(tween(280, easing = LinearOutSlowInEasing))
             } else {
                 fadeOut(tween(200))
             }
@@ -334,7 +356,7 @@ fun NavGraphBuilder.navigationBuilder(
     ) {
         OnlineSearchResult(
             navController = navController,
-            searchSort = onlineSearchSort,
+            searchSort = onlineSearchSort(),
         )
     }
     composable(
@@ -692,6 +714,12 @@ fun NavGraphBuilder.navigationBuilder(
     ) {
         QqMusicSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
+    composable(
+        route = "settings/spotify_streaming?scrollTo={scrollTo}",
+        arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) {
+        SpotifyStreamingSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
+    }
     composable(TIDAL_LOGIN_ROUTE) {
         TidalLoginScreen(navController)
     }
@@ -761,8 +789,11 @@ fun NavGraphBuilder.navigationBuilder(
         moe.rukamori.archivetune.ui.screens.settings
             .DiscordExperimental(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
-    composable("settings/misc") {
-        DebugSettings(navController)
+    composable(
+        route = "settings/misc?scrollTo={scrollTo}",
+        arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) {
+        DebugSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
     composable("settings/logcat") {
         LogcatScreen(navController)
@@ -784,7 +815,12 @@ fun NavGraphBuilder.navigationBuilder(
             ),
     ) { backStackEntry ->
         val channelName = backStackEntry.arguments?.getString("channel")
-        val channel = UpdateChannel.fromStoredName(channelName, defaultUpdateChannel)
+        val storedChannel by rememberEnumPreference(UpdateChannelKey, defaultUpdateChannel)
+        val channel = if (channelName == null) {
+            effectiveUpdateChannel(storedChannel)
+        } else {
+            UpdateChannel.fromStoredName(channelName, effectiveUpdateChannel(storedChannel))
+        }
         ChangelogScreen(navController, channel = channel)
     }
     composable("settings/about") {

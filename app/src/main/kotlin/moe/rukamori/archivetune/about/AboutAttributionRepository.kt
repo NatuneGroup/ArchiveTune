@@ -34,6 +34,7 @@ import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
+import moe.rukamori.archivetune.utils.withAppProxy
 
 @Immutable
 data class AboutTranslationContributor(
@@ -121,6 +122,7 @@ class AboutAttributionRepository
             HttpClient(OkHttp) {
                 engine {
                     config {
+                        withAppProxy()
                         connectTimeout(15, TimeUnit.SECONDS)
                         readTimeout(15, TimeUnit.SECONDS)
                         writeTimeout(15, TimeUnit.SECONDS)

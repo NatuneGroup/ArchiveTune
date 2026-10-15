@@ -3,7 +3,7 @@ on: workflow_dispatch
 
 jobs:
   kotlin-header:
-    runs-on: blacksmith-2vcpu-ubuntu-2404
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:

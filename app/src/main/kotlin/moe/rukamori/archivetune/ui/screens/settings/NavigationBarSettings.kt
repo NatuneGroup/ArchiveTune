@@ -10,6 +10,13 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
+import moe.rukamori.archivetune.utils.StartupSettings
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyColumn
 import android.os.Build
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -25,9 +32,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -60,7 +65,12 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.constants.AppleMusicExperienceKey
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
+import moe.rukamori.archivetune.constants.CompactBottomPillsKey
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
+import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_LABEL_SPACING_DEFAULT
@@ -78,75 +88,92 @@ import moe.rukamori.archivetune.constants.NavigationBarLabelSpacingKey
 import moe.rukamori.archivetune.constants.NavigationBarOpacityKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
+import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
+import moe.rukamori.archivetune.ui.component.setNavigationTreatment
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
-import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
+import moe.rukamori.archivetune.ui.component.navigationBarCompactBehavior
+import moe.rukamori.archivetune.ui.component.NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowIntensityKey
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowKey
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.asPaddingValues
 
 @Composable
 fun NavigationBarSettings(navController: NavController, scrollTo: String? = null) {
+    val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
     val (navigationBarStyle, onNavigationBarStyleChange) =
-        rememberEnumPreference(
+        prefs.enumState(
             NavigationBarStyleKey,
             defaultValue = NavigationBarStyle.DEFAULT,
         )
-    val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
-        rememberPreference(NavigationBarFrostedBlurKey, defaultValue = false)
-    val (navigationBarTintFrostedBlur, onNavigationBarTintFrostedBlurChange) =
-        rememberPreference(NavigationBarTintFrostedBlurKey, defaultValue = false)
+    val (compactBottomPills, onCompactBottomPillsChange) =
+        prefs.state(CompactBottomPillsKey, defaultValue = false)
+    val (compactControlsStockColor, onCompactControlsStockColorChange) =
+        prefs.state(CompactControlsStockColorKey, defaultValue = false)
+    val (navigationBarCompactBehavior, onNavigationBarCompactBehaviorChange) =
+        prefs.navigationBarCompactBehavior()
+    val appleMusicExperience = prefs[AppleMusicExperienceKey, false]
+    val (navigationBarFrostedBlur) =
+        prefs.state(NavigationBarFrostedBlurKey, defaultValue = false)
+    val (navigationBarTintFrostedBlur) =
+        prefs.state(NavigationBarTintFrostedBlurKey, defaultValue = false)
     // Liquid Glass master toggle (Appearance) + nav-bar sub-toggle. The sub-toggle
     // is only effective when the master is on AND on Android 12+; otherwise the
     // FloatingNavigationToolbar falls back to its non-glass style.
     val (liquidGlassEnabled) =
-        rememberPreference(LiquidGlassEnabledKey, defaultValue = false)
-    val (liquidGlassNavBarEnabled, onLiquidGlassNavBarEnabledChange) =
-        rememberPreference(LiquidGlassNavBarEnabledKey, defaultValue = false)
-    // Mutual-exclusivity wrappers: turning one frosted variant on turns the other off.
-    val onFrostedBlurChange: (Boolean) -> Unit = { checked ->
-        onNavigationBarFrostedBlurChange(checked)
-        if (checked && navigationBarTintFrostedBlur) {
-            onNavigationBarTintFrostedBlurChange(false)
-        }
+        prefs.state(LiquidGlassEnabledKey, defaultValue = false)
+    val (liquidGlassNavBarEnabled) =
+        prefs.state(LiquidGlassNavBarEnabledKey, defaultValue = false)
+    val blurDisabled = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
+    val pendingRestart = StartupSettings.pending(prefs.current)
+    val onFrostedBlurChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, NavigationBarFrostedBlurKey, it)
     }
-    val onTintFrostedBlurChange: (Boolean) -> Unit = { checked ->
-        onNavigationBarTintFrostedBlurChange(checked)
-        if (checked && navigationBarFrostedBlur) {
-            onNavigationBarFrostedBlurChange(false)
-        }
+    val onTintFrostedBlurChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, NavigationBarTintFrostedBlurKey, it)
     }
+    val onLiquidGlassNavBarChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, LiquidGlassNavBarEnabledKey, it)
+    }
+    val (navigationBarGlassGlow, onNavigationBarGlassGlowChange) =
+        prefs.state(NavigationBarGlassGlowKey, defaultValue = true)
+    val (navigationBarGlassGlowIntensity, onNavigationBarGlassGlowIntensityChange) =
+        prefs.state(NavigationBarGlassGlowIntensityKey, defaultValue = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT)
     val (hideNavigationBarLabels, onHideNavigationBarLabelsChange) =
-        rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
+        prefs.state(HideNavigationBarLabelsKey, defaultValue = false)
+    val (hideOnScroll, onHideOnScrollChange) =
+        prefs.state(NavigationBarHideOnScrollKey, defaultValue = false)
 
     // Customization sliders. Defaults are the constants defined alongside
     // their preference keys so the pre-existing look is preserved.
     val (navigationBarWidth, onNavigationBarWidthChange) =
-        rememberPreference(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
+        prefs.state(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
     val (navigationBarHeight, onNavigationBarHeightChange) =
-        rememberPreference(NavigationBarHeightKey, defaultValue = NAVIGATION_BAR_HEIGHT_DEFAULT)
+        prefs.state(NavigationBarHeightKey, defaultValue = NAVIGATION_BAR_HEIGHT_DEFAULT)
     val (navigationBarOpacity, onNavigationBarOpacityChange) =
-        rememberPreference(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
+        prefs.state(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
     val (navigationBarTransparency, onNavigationBarTransparencyChange) =
-        rememberPreference(
+        prefs.state(
             NavigationBarTransparencyKey,
             defaultValue = NAVIGATION_BAR_TRANSPARENCY_DEFAULT,
         )
     val (navigationBarLabelSpacing, onNavigationBarLabelSpacingChange) =
-        rememberPreference(
+        prefs.state(
             NavigationBarLabelSpacingKey,
             defaultValue = NAVIGATION_BAR_LABEL_SPACING_DEFAULT,
         )
     val (navigationBarCornerRadius, onNavigationBarCornerRadiusChange) =
-        rememberPreference(
+        prefs.state(
             NavigationBarCornerRadiusKey,
             defaultValue = NAVIGATION_BAR_CORNER_RADIUS_DEFAULT,
         )
@@ -176,40 +203,47 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                 .asPaddingValues()
                 .calculateBottomPadding()
         val topPadding = innerPadding.calculateTopPadding()
-        val scrollState = rememberScrollState()
+        val listState = rememberLazyListState()
         val positions = rememberPreferencePositions()
 
-        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
+        LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
 
-        Column(
-            Modifier
-                .padding(top = topPadding)
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(
-                        WindowInsetsSides.Horizontal,
-                    ),
-                )
-                // Chained before verticalScroll so it measures the viewport, not the scrolling content.
-                .then(positions.containerModifier())
-                .verticalScroll(scrollState)
-                .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+        // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+        // opening transition.
+        val generalTitle = stringResource(R.string.general)
+        val navigationBarDimensionsTitle = stringResource(R.string.navigation_bar_dimensions)
+        LazyColumn(
+            state = listState,
+            contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+            modifier =
+                Modifier
+                    .padding(top = topPadding)
+                    .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                    .then(positions.containerModifier()),
         ) {
-            PreferenceGroup(title = stringResource(R.string.general)) {
+            preferenceGroup(title = generalTitle) {
                 item {
                     Column(modifier = positions.modifierFor("navigation_bar_style")) {
                         EnumListPreference(
                             title = { Text(stringResource(R.string.navigation_bar_style)) },
                             icon = { Icon(painterResource(R.drawable.nav_bar), null) },
-                            selectedValue = navigationBarStyle,
+                            // The Apple Music Experience owns the tab bar while it is on; show the bar it
+                            // applies and leave the stored choice untouched for when it is turned off.
+                            selectedValue = if (appleMusicExperience) NavigationBarStyle.APPLE_MUSIC else navigationBarStyle,
                             onValueSelected = onNavigationBarStyleChange,
+                            isEnabled = !appleMusicExperience,
                             valueText = {
                                 when (it) {
                                     NavigationBarStyle.DEFAULT ->
                                         stringResource(R.string.navigation_bar_style_default)
                                     NavigationBarStyle.FLOATING ->
                                         stringResource(R.string.navigation_bar_style_floating)
+                                    NavigationBarStyle.YUMA_PLAYER ->
+                                        stringResource(R.string.navigation_bar_style_yuma_player)
                                     NavigationBarStyle.APPLE_MUSIC ->
                                         stringResource(R.string.navigation_bar_style_apple_music)
+                                    NavigationBarStyle.SUKISU ->
+                                        stringResource(R.string.navigation_bar_style_sukisu)
                                 }
                             },
                         )
@@ -217,14 +251,64 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                 }
 
                 item {
+                    EnumListPreference(
+                        modifier = positions.modifierFor("compact_bottom_pills"),
+                        title = { Text(stringResource(R.string.navigation_bar_layout)) },
+                        description = stringResource(R.string.navigation_bar_layout_desc),
+                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
+                        selectedValue = if (compactBottomPills) CompactLayoutChoice.COMPACT else CompactLayoutChoice.DEFAULT,
+                        onValueSelected = { onCompactBottomPillsChange(it == CompactLayoutChoice.COMPACT) },
+                        valueText = {
+                            when (it) {
+                                CompactLayoutChoice.DEFAULT -> stringResource(R.string.default_style)
+                                CompactLayoutChoice.COMPACT -> stringResource(R.string.compact_layout)
+                            }
+                        },
+                        isEnabled =
+                            !appleMusicExperience &&
+                                navigationBarStyle != NavigationBarStyle.YUMA_PLAYER &&
+                                navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
+                    )
+                }
+
+                item {
+                    EnumListPreference(
+                        modifier = positions.modifierFor("navigation_bar_compact_behavior"),
+                        title = { Text(stringResource(R.string.navigation_bar_compact_behavior)) },
+                        description = stringResource(R.string.navigation_bar_compact_behavior_desc),
+                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
+                        selectedValue = navigationBarCompactBehavior,
+                        onValueSelected = onNavigationBarCompactBehaviorChange,
+                        // The Apple Music bar is always the one-row layout; the stored choice is kept for other styles.
+                        isEnabled = !appleMusicExperience && navigationBarStyle != NavigationBarStyle.APPLE_MUSIC,
+                        valueText = {
+                            when (it) {
+                                NavigationBarCompactBehavior.ADAPTIVE ->
+                                    stringResource(R.string.navigation_bar_compact_adaptive)
+                                NavigationBarCompactBehavior.ALWAYS_EXPANDED ->
+                                    stringResource(R.string.navigation_bar_compact_always_expanded)
+                                NavigationBarCompactBehavior.ALWAYS_COMPACT ->
+                                    stringResource(R.string.navigation_bar_compact_always_compact)
+                            }
+                        },
+                    )
+                }
+
+                item {
                     Column {
                         SwitchPreference(
                             modifier = positions.modifierFor("navigation_bar_frosted_blur"),
                             title = { Text(stringResource(R.string.navigation_bar_frosted_blur)) },
-                            description = stringResource(R.string.navigation_bar_frosted_blur_desc),
+                            description =
+                                if (blurDisabled) {
+                                    stringResource(R.string.blur_setting_overridden)
+                                } else {
+                                    stringResource(R.string.navigation_bar_frosted_blur_desc)
+                                },
                             icon = { Icon(painterResource(R.drawable.blur_on), null) },
                             checked = navigationBarFrostedBlur,
                             onCheckedChange = onFrostedBlurChange,
+                            isEnabled = !blurDisabled,
                         )
                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && navigationBarFrostedBlur) {
                             Text(
@@ -242,10 +326,16 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         SwitchPreference(
                             modifier = positions.modifierFor("navigation_bar_tint_frosted_blur"),
                             title = { Text(stringResource(R.string.navigation_bar_tint_frosted_blur)) },
-                            description = stringResource(R.string.navigation_bar_tint_frosted_blur_desc),
+                            description =
+                                if (blurDisabled) {
+                                    stringResource(R.string.blur_setting_overridden)
+                                } else {
+                                    stringResource(R.string.navigation_bar_tint_frosted_blur_desc)
+                                },
                             icon = { Icon(painterResource(R.drawable.blur_on), null) },
                             checked = navigationBarTintFrostedBlur,
                             onCheckedChange = onTintFrostedBlurChange,
+                            isEnabled = !blurDisabled,
                         )
                         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && navigationBarTintFrostedBlur) {
                             Text(
@@ -268,6 +358,7 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         title = { Text(stringResource(R.string.liquid_glass_nav_bar)) },
                         description =
                             when {
+                                blurDisabled -> stringResource(R.string.blur_setting_overridden)
                                 !supported -> stringResource(R.string.liquid_glass_effects_unsupported)
                                 !liquidGlassEnabled -> stringResource(R.string.liquid_glass_nav_bar_disabled)
                                 else -> stringResource(R.string.liquid_glass_nav_bar_desc)
@@ -277,10 +368,54 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         // Disabled when the master Liquid Glass switch is off (Appearance →
                         // Liquid Glass effects) or on pre-Android 12: the kyant RuntimeShader
                         // stack requires API 31+.
-                        isEnabled = liquidGlassEnabled && supported,
-                        onCheckedChange = onLiquidGlassNavBarEnabledChange,
+                        isEnabled = liquidGlassEnabled && supported && !blurDisabled,
+                        onCheckedChange = onLiquidGlassNavBarChange,
                     )
                 }
+
+                // One notice for the three bar treatments above: they are mutually exclusive and
+                // all applied at process start.
+                item(visible = pendingRestart.navigationBarGlass) {
+                    RestartToApplyNotice(visible = true)
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("compact_controls_stock_color"),
+                        title = { Text(stringResource(R.string.compact_controls_stock_color)) },
+                        description = stringResource(R.string.compact_controls_stock_color_desc),
+                        icon = { Icon(painterResource(R.drawable.palette), null) },
+                        checked = compactControlsStockColor,
+                        onCheckedChange = onCompactControlsStockColorChange,
+                    )
+                }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("navigation_bar_glass_glow"),
+                        title = { Text(stringResource(R.string.navigation_bar_glass_glow)) },
+                        description = stringResource(R.string.navigation_bar_glass_glow_desc),
+                        icon = { Icon(painterResource(R.drawable.solar_brightness_high_linear), null) },
+                        checked = navigationBarGlassGlow,
+                        onCheckedChange = onNavigationBarGlassGlowChange,
+                        isEnabled = !compactControlsStockColor,
+                    )
+                }
+
+                item {
+                    SliderPreferenceRow(
+                        title = stringResource(R.string.navigation_bar_glass_glow_intensity),
+                        description = stringResource(R.string.navigation_bar_glass_glow_intensity_desc),
+                        iconRes = R.drawable.tune,
+                        value = navigationBarGlassGlowIntensity,
+                        onValueChange = onNavigationBarGlassGlowIntensityChange,
+                        range = 0.2f..2f,
+                        valueLabel = { "${(it * 100).roundToInt()}%" },
+                        default = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT,
+                        enabled = navigationBarGlassGlow && !compactControlsStockColor,
+                    )
+                }
+
 
                 item {
                     SwitchPreference(
@@ -292,6 +427,17 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                         onCheckedChange = onHideNavigationBarLabelsChange,
                     )
                 }
+
+                item {
+                    SwitchPreference(
+                        modifier = positions.modifierFor("navigation_bar_hide_on_scroll"),
+                        title = { Text(stringResource(R.string.navigation_bar_hide_on_scroll)) },
+                        description = stringResource(R.string.navigation_bar_hide_on_scroll_desc),
+                        icon = { Icon(painterResource(R.drawable.nav_bar), null) },
+                        checked = hideOnScroll,
+                        onCheckedChange = onHideOnScrollChange,
+                    )
+                }
             }
 
             // Customization sliders: only meaningfully affect the FLOATING style (and the
@@ -300,9 +446,9 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
             // dialog with a live preview that reflects the in-progress value (and the
             // committed values of the other dimensions) so the user can see exactly how
             // the bar will look before committing.
-            PreferenceGroup(
+            preferenceGroup(
                 modifier = positions.modifierFor("navigation_bar_dimensions"),
-                title = stringResource(R.string.navigation_bar_dimensions),
+                title = navigationBarDimensionsTitle,
             ) {
                 item {
                     SliderPreferenceRow(
@@ -325,7 +471,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -350,7 +497,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -375,7 +523,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -400,7 +549,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -425,7 +575,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -450,7 +601,8 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                                 style = navigationBarStyle,
                             )
                         },
-                        enabled = !liquidGlassNavBarEnabled,
+                        // Greyed out while a style that fixes its own dimensions is active.
+                        enabled = !liquidGlassNavBarEnabled && navigationBarStyle != NavigationBarStyle.SUKISU,
                     )
                 }
 
@@ -478,7 +630,9 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
                             onNavigationBarLabelSpacingChange(NAVIGATION_BAR_LABEL_SPACING_DEFAULT)
                             onNavigationBarCornerRadiusChange(NAVIGATION_BAR_CORNER_RADIUS_DEFAULT)
                         },
-                        enabled = !allDefaults && !liquidGlassNavBarEnabled,
+                        enabled =
+                            !allDefaults && !liquidGlassNavBarEnabled &&
+                                navigationBarStyle != NavigationBarStyle.SUKISU,
                         shapes = ButtonDefaults.shapes(),
                         modifier = Modifier
                             .fillMaxWidth()

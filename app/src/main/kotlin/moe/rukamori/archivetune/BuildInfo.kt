@@ -13,16 +13,16 @@ import moe.rukamori.archivetune.constants.UpdateChannel
 internal val isNightlyBuild: Boolean
     get() = BuildConfig.IS_NIGHTLY
 
-internal val isCanaryBuild: Boolean
-    get() = BuildConfig.IS_CANARY
-
 internal val defaultUpdateChannel: UpdateChannel
-    get() =
-        when {
-            isCanaryBuild -> UpdateChannel.CANARY
-            isNightlyBuild -> UpdateChannel.NIGHTLY
-            else -> UpdateChannel.STABLE
-        }
+    get() = if (isNightlyBuild) UpdateChannel.NIGHTLY else UpdateChannel.STABLE
+
+/** Build identity supplies only the default; install eligibility is checked separately. */
+internal fun effectiveUpdateChannel(
+    stored: UpdateChannel?,
+    isNightlyBuild: Boolean,
+): UpdateChannel = stored ?: if (isNightlyBuild) UpdateChannel.NIGHTLY else UpdateChannel.STABLE
+
+internal fun effectiveUpdateChannel(stored: UpdateChannel?): UpdateChannel = effectiveUpdateChannel(stored, isNightlyBuild)
 
 internal val currentBuildHash: String?
     get() = BuildConfig.NIGHTLY_BUILD_HASH.takeIf { it.isNotBlank() }

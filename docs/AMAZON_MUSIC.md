@@ -5,19 +5,34 @@ adds in Integration → Amazon Music. No instance is shipped: the list starts em
 Tidal instance list, because the ecosystem has no working public default. An unconfigured source
 resolves nothing and playback falls through to the next source.
 
+The protocol follows the monochrome.tf web player, which removed its Amazon support on 2026-09-11
+(commit `0ee81a6` "Comply with C&D" in `monochrome-music/monochrome`). Its gateway
+(`music-api.geeked.wtf`, also answering as `amz.geeked.wtf`) still runs, but its gen-2 health lists
+only `mono` and `tidal` sources, and its gen-1.5 routes proxy an upstream that no longer answers.
+
 ## How a track plays
 
 1. `AmazonAudioProvider.resolveByMetadata` asks the instance for the track by metadata
-   (title / artist / album / duration). Two route generations are supported because hosts vary:
-   - gen-2 `GET {base}/api/v2/track/?…&intent=stream&quality=…` (the `playback[]` envelope), and
-   - gen-1.5 `GET {base}/api/track/?track=&artist=&…` (the `stream_url` shape),
-   with a `404` on gen-2 falling back to gen-1.5.
-2. The response carries a stream URL plus a raw CENC content key. The provider downloads the
-   bytes and decrypts them on-device with `AmazonCencDecryptor` (the web player offloads this to
-   the browser's ClearKey/EME stack; we have no EME, so we do it ourselves), then hands the
-   playback layer a local file through the ordinary `DirectStream` path.
-3. The result is matched against the query by the same `TitleMatch` gate every other source uses,
-   and falls through to the next source on a miss.
+   (title / every credited artist / album / duration). Two route generations are supported because
+   hosts vary:
+   - gen-2 `GET {base}/api/v2/track/?…&intent=stream&quality=…` (the `playback[]` envelope), which
+     only accepts the operator API key as `Authorization: Bearer`, and
+   - gen-1.5 `GET {base}/api/track/?track=&artist=&…` (the `stream_url` shape), which takes the
+     operator token as `bypass_token` or a Turnstile JWT alone.
+   Gen-2 is asked first when an API key is set. A `404` without the gen-2 envelope (route absent)
+   or an authorization refusal falls back to gen-1.5; a `404` that carries the envelope means the
+   track was not found. A `429` backs the host off for its `Retry-After`. Only `direct` audio
+   entries whose `source` is `amazon` are used: the unified API also serves other catalogues.
+2. The returned metadata is gated with `TitleMatch` before anything is downloaded. Missing fields
+   stay missing; the query's values are never substituted for them.
+3. The response carries a stream URL plus a raw CENC content key. The provider streams the bytes to
+   a file and decrypts them on-device through a memory mapping with `AmazonCencDecryptor` (the web
+   player offloads this to the browser's ClearKey/EME stack; we have no EME, so we do it
+   ourselves). Only the `cenc` (AES-CTR) scheme is accepted. The protection boxes (`sinf`, `pssh`,
+   `senc`/`saiz`/`saio`, `seig` sample groups) are renamed to `free`, so Media3 sees a clear
+   fragmented MP4. The playback layer gets the local file through the ordinary `DirectStream` path.
+   Decrypted files live in `cache/amazon/`, pruned oldest-first past 300 MB.
+4. The playback layer gates the result again, and falls through to the next source on a miss.
 
 ## Authorization
 
@@ -26,8 +41,11 @@ Amazon settings screen:
 
 - **Authorize with Turnstile** — opens `AmazonTurnstileActivity`, which renders the widget on the
   web player's own origin in a WebView, exchanges the solved token for the instance's JWT, and
-  stores the JWT with its expiry (~1 h). Re-run it when the status row says it expired.
-- **Bypass token** — the instance operator's `bypass_token`, sent as a query parameter.
+  stores the JWT with the expiry its `exp` claim states (~1 h). Re-run it when the status row says
+  it expired. The widget uses the web player's sitekey, so the token only verifies on hosts that
+  share the web player's Turnstile secret.
+- **Bypass token** — the instance operator's API key / `bypass_token`: a Bearer API key on gen-2,
+  a query parameter on gen-1.5. This is the way into a self-hosted instance.
 
 Without either, the resolver declines every track (that is the "Never authorized" state in
 settings).

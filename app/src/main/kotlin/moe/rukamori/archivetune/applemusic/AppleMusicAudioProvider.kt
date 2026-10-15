@@ -1,19 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 package moe.rukamori.archivetune.applemusic
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -35,6 +35,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /** Apple Music full-track playback source. */
 object AppleMusicAudioProvider {
@@ -52,6 +53,7 @@ object AppleMusicAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(10, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(25, TimeUnit.SECONDS)
@@ -102,7 +104,7 @@ object AppleMusicAudioProvider {
                         .header("User-Agent", UA)
                         .get()
                         .build()
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!response.isSuccessful) {
                         Log.w(TAG, "storefront fetch failed: %d".format(response.code))
                         return@use null
@@ -111,7 +113,7 @@ object AppleMusicAudioProvider {
                     root["data"]?.jsonArray?.firstOrNull()
                         ?.jsonObject?.get("id")?.jsonPrimitive?.contentOrNull
                 }
-            }.getOrNull()
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrNull()
         }
 
     fun devToken(): String? = AppleMusicProvider.devTokenProvider?.invoke()?.trim()?.takeIf { it.isNotBlank() }
@@ -142,8 +144,11 @@ object AppleMusicAudioProvider {
     /** Thrown by [searchSongIds]/[webPlayback] on 401/403 — the media-user-token is dead. */
     private class AuthException : Exception("apple media-user-token rejected (401/403)")
 
-    /** One entry of the account ring: a media-user-token plus its pool id (null = personal). */
-    private data class RingEntry(val token: String, val poolId: Long?)
+    private data class RingEntry(
+        val token: String,
+        val poolId: Long?,
+        val pooled: Boolean,
+    )
 
     @Volatile
     private var ring: List<RingEntry> = emptyList()
@@ -151,9 +156,20 @@ object AppleMusicAudioProvider {
     @Volatile
     private var ringBuiltAt = 0L
 
+    @Volatile
+    private var ringPoolEnabled: Boolean? = null
+
     /** Sticky index of the last account that resolved successfully; rotation starts here. */
     @Volatile
     private var ringIndex = 0
+
+    fun invalidatePoolAccountCache() {
+        ring = ring.filterNot { it.pooled }
+        ringBuiltAt = 0L
+        ringPoolEnabled = false
+        ringIndex = 0
+        AppleMusicProvider.clearStorefrontCache()
+    }
 
     /**
      * The account ring: the personal media-user-token first (when signed in), then the shared
@@ -163,13 +179,20 @@ object AppleMusicAudioProvider {
     private fun accountRing(): List<RingEntry> {
         val now = System.currentTimeMillis()
         val cached = ring
-        if (cached.isNotEmpty() && now - ringBuiltAt < 60_000L) return cached
+        val poolEnabled = PoolAccountManager.isPoolEnabled()
+        if (cached.isNotEmpty() && ringPoolEnabled == poolEnabled && now - ringBuiltAt < 60_000L) return cached
         val personal = mediaUserToken()
-        val pool = PoolAccountManager.appleMusicAccounts().map { RingEntry(it.mediaUserToken, it.id) }
-        val built = ((personal?.let { listOf(RingEntry(it, null)) } ?: emptyList()) + pool)
+        val pool =
+            if (poolEnabled) {
+                PoolAccountManager.appleMusicAccounts().map { RingEntry(it.mediaUserToken, it.id, pooled = true) }
+            } else {
+                emptyList()
+            }
+        val built = ((personal?.let { listOf(RingEntry(it, null, pooled = false)) } ?: emptyList()) + pool)
             .distinctBy { it.token }
         ring = built
         ringBuiltAt = now
+        ringPoolEnabled = poolEnabled
         if (ringIndex >= built.size) ringIndex = 0
         return built
     }
@@ -206,7 +229,8 @@ object AppleMusicAudioProvider {
         durationMs: Long?,
         quality: AppleMusicQuality = AppleMusicQuality.LOSSLESS,
     ): List<AppleMusicStream> =
-        withContext(Dispatchers.IO) {
+        AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            withContext(Dispatchers.IO) {
             // ensureTokenFresh first: it returns an unexpired user token as-is and otherwise the
             // held or a re-scraped web token. usableDevToken() alone would hand back an expired
             // user token whenever nothing had been scraped yet, and every call would 401.
@@ -220,10 +244,12 @@ object AppleMusicAudioProvider {
             for (attempt in ringEntries.indices) {
                 val index = (ringIndex + attempt) % ringEntries.size
                 val entry = ringEntries[index]
+                if (entry.pooled && !PoolAccountManager.isPoolEnabled()) continue
                 val streams =
                     runCatching {
                         resolveWithToken(entry.token, devToken, title, artists, quality)
                     }.getOrElse { error ->
+                        error.rethrowIfAudioSourceCancelled()
                         if (error !is AuthException) {
                             Log.w(TAG, "resolve failed: ${error.message}")
                             return@withContext emptyList()
@@ -245,7 +271,8 @@ object AppleMusicAudioProvider {
                 }
             }
             emptyList()
-        }
+            }
+        } ?: emptyList()
 
     /** One resolve pass with a specific media-user-token. Throws [AuthException] on 401/403. */
     private suspend fun resolveWithToken(
@@ -275,7 +302,7 @@ object AppleMusicAudioProvider {
                     webPlayback(id, devToken, mediaToken, storefront, quality)?.let { out += it }
                 }
                 out
-            }.getOrElse { error ->
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrElse { error ->
                 // Auth failures must propagate to the rotation loop — swallowing them here
                 // would pin the ring to a dead account.
                 if (error is AuthException) throw error
@@ -308,7 +335,7 @@ object AppleMusicAudioProvider {
                 .header("User-Agent", UA)
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 if (response.code == 401 || response.code == 403) throw AuthException()
                 Log.w(TAG, "search failed: %d".format(response.code))
@@ -341,7 +368,7 @@ object AppleMusicAudioProvider {
                 .header("Referer", "https://music.apple.com/")
                 .header("User-Agent", UA)
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 if (response.code == 401 || response.code == 403) throw AuthException()
                 Log.w(TAG, "webPlayback failed for %s: %d".format(songId, response.code))
@@ -366,13 +393,13 @@ object AppleMusicAudioProvider {
                     val kbps = Regex("(\\d+)$").find(flavor)?.groupValues?.last()?.toIntOrNull() ?: 0
                     Asset(flavor, url, kbps)
                 }.sortedByDescending { it.kbps }
-            // `candidates` is sorted best-first, so a missing tier must fall back to the BEST asset
-            // Apple offered, never the worst: `lastOrNull()`/`minByOrNull` picked the lowest
-            // bitrate, so a lossless request against a lossy-only account silently played 64 kbps
-            // when 256 kbps was sitting right there.
+            // `candidates` is sorted best-first. A lossless request with no lossless tier must fall
+            // back to the BEST asset Apple offered, never the worst: it silently played 64 kbps
+            // when 256 kbps was sitting right there. An AAC request with only lossless tiers goes the
+            // other way, to the smallest, so it never pulls hi-res for a user who asked for AAC.
             val asset = when (quality) {
                 AppleMusicQuality.AAC ->
-                    candidates.firstOrNull { it.kbps <= 320 } ?: candidates.firstOrNull()
+                    candidates.firstOrNull { it.kbps <= 320 } ?: candidates.lastOrNull()
                 AppleMusicQuality.LOSSLESS ->
                     candidates.firstOrNull { it.kbps in 321..1411 } ?: candidates.firstOrNull()
                 AppleMusicQuality.HI_RES_LOSSLESS -> candidates.firstOrNull()
@@ -424,7 +451,7 @@ object AppleMusicAudioProvider {
      */
     private fun parsePlaylist(playlistUrl: String): ParsedPlaylist? {
         val request = Request.Builder().url(playlistUrl).header("User-Agent", UA).get().build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) {
                 Log.w(TAG, "playlist fetch failed: %d".format(response.code))
                 return null

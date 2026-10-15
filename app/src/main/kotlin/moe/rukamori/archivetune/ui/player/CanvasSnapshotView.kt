@@ -20,27 +20,44 @@ import androidx.media3.common.VideoSize
 import timber.log.Timber
 import kotlin.math.roundToInt
 
+private const val MaxFrameCaptureAttempts = 5
+private const val FrameCaptureRetryDelayMs = 100L
+
 internal class CanvasSnapshotView(context: Context) : TextureView(context), TextureView.SurfaceTextureListener {
     private var player: Player? = null
     private var output: Surface? = null
     private var captured = false
+    private var captureAttempts = 0
     private var onFrame: ((Bitmap?) -> Unit)? = null
     private val videoListener = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) = updateTransform()
     }
-    private val capture = Runnable {
+
+    // getBitmap can return null (or throw) while the surface texture is still initializing, so a
+    // failed capture retries briefly before reporting the failure — one missed read must not
+    // strand a snapshot consumer without a still for the whole song.
+    private val capture: Runnable = Runnable {
         if (isAvailable && output != null) {
-            try {
-                val scale = 256f / maxOf(width, height, 1)
-                val bitmap = getBitmap(
-                    (width * scale).roundToInt().coerceAtLeast(1),
-                    (height * scale).roundToInt().coerceAtLeast(1),
-                )
-                if (bitmap == null) Timber.w("Canvas frame capture returned no image")
+            val bitmap: Bitmap? =
+                try {
+                    val scale = 256f / maxOf(width, height, 1)
+                    getBitmap(
+                        (width * scale).roundToInt().coerceAtLeast(1),
+                        (height * scale).roundToInt().coerceAtLeast(1),
+                    )
+                } catch (error: RuntimeException) {
+                    Timber.w(error, "Canvas frame capture failed")
+                    null
+                }
+            if (bitmap != null) {
                 onFrame?.invoke(bitmap)
-            } catch (error: RuntimeException) {
-                Timber.w(error, "Canvas frame capture failed")
-                onFrame?.invoke(null)
+            } else {
+                Timber.w("Canvas frame capture returned no image")
+                if (++captureAttempts <= MaxFrameCaptureAttempts) {
+                    postDelayed(capture, FrameCaptureRetryDelayMs)
+                } else {
+                    onFrame?.invoke(null)
+                }
             }
         }
     }

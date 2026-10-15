@@ -31,6 +31,7 @@ import okhttp3.Request
 import okio.Buffer
 import okio.Path.Companion.toPath
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 private const val TELEGRAM_ART_SCHEME = "tgart"
 
@@ -134,6 +135,7 @@ class TelegramThumbnailFetcher(
         val httpClient: OkHttpClient by lazy {
             OkHttpClient
                 .Builder()
+                .withAppProxy()
                 .connectTimeout(8, TimeUnit.SECONDS)
                 .readTimeout(8, TimeUnit.SECONDS)
                 .build()

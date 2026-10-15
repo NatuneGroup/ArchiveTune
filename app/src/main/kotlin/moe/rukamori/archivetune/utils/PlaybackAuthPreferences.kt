@@ -12,7 +12,6 @@ import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
-import kotlinx.coroutines.flow.first
 import moe.rukamori.archivetune.constants.AccountChannelHandleKey
 import moe.rukamori.archivetune.constants.AccountEmailKey
 import moe.rukamori.archivetune.constants.AccountImageUrlKey
@@ -71,10 +70,6 @@ fun MutablePreferences.clearPlaybackAuthSession(clearAccountIdentity: Boolean = 
     }
 }
 
-fun MutablePreferences.clearPlaybackLoginContext() {
-    remove(DataSyncIdKey)
-}
-
 fun PlaybackAuthState.withoutPlaybackLoginContext(): PlaybackAuthState = copy(dataSyncId = null).normalized()
 
 fun MutablePreferences.putLegacyPoToken(value: String?) {
@@ -86,16 +81,6 @@ fun MutablePreferences.putLegacyPoToken(value: String?) {
     }
     remove(PoTokenGvsKey)
     remove(PoTokenPlayerKey)
-}
-
-suspend fun Context.resetPlaybackLoginContext(): PlaybackAuthState {
-    dataStore.edit { preferences ->
-        preferences.clearPlaybackLoginContext()
-    }
-    val authState = dataStore.data.first().toPlaybackAuthState()
-    YouTube.authState = authState
-    YTPlayerUtils.clearPlaybackAuthCaches()
-    return authState
 }
 
 suspend fun <T> Context.retryWithoutPlaybackLoginContext(block: suspend () -> Result<T>): Result<T> {

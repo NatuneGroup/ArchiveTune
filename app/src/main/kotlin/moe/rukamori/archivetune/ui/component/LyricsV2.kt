@@ -10,6 +10,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
+import android.os.SystemClock
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -116,6 +117,7 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
 import moe.rukamori.archivetune.constants.LyricsClickKey
 import moe.rukamori.archivetune.constants.LyricsLineBlurKey
@@ -128,14 +130,20 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsScrollKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.constants.LyricsV2BounceFactorKey
+import moe.rukamori.archivetune.constants.LyricsV2EmphasizeLastWordKey
+import moe.rukamori.archivetune.constants.LyricsV2SoftWordRevealKey
+import moe.rukamori.archivetune.constants.LyricsV2InterludeDotsKey
+import moe.rukamori.archivetune.constants.LyricsV2AdaptiveScrollSpringKey
 import moe.rukamori.archivetune.constants.LyricsV2FillTransitionWidthKey
 import moe.rukamori.archivetune.constants.LyricsV2GlowFactorKey
 import moe.rukamori.archivetune.constants.LyricsV2LrcBounceEnabledKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.findCurrentLineIndex
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.insertInstrumentalBreaks
@@ -144,10 +152,8 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -181,6 +187,16 @@ private const val MIN_SWEEP_MS = 180L
  * playback jitter or an ExoPlayer position correction.
  */
 private const val V2_POSITION_RESET_BACKWARD_THRESHOLD_MS = 1_000L
+
+/**
+ * How far the player's clock may stray from where steady playback would have
+ * put it before the move counts as a seek. Media3 position corrections and
+ * poll jitter stay well under this.
+ */
+private const val V2_SEEK_JUMP_THRESHOLD_MS = 1_000L
+
+/** How long after a seek (or while scrubbing) auto-scroll uses the seek spring. */
+private const val V2_SEEK_SPRING_WINDOW_MS = 1_000L
 
 /** Seconds to wait before auto-scroll resumes after manual scroll. */
 private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
@@ -238,43 +254,35 @@ fun LyricsV2(
     val (glowFactorPreference) = rememberPreference(LyricsV2GlowFactorKey, defaultValue = 1f)
     val (fillTransitionWidth) = rememberPreference(LyricsV2FillTransitionWidthKey, defaultValue = 8f)
     val (lrcBounceEnabledPreference) = rememberPreference(LyricsV2LrcBounceEnabledKey, defaultValue = true)
+    val (softWordReveal) = rememberPreference(LyricsV2SoftWordRevealKey, defaultValue = true)
+    val (emphasizeLastWordPreference) = rememberPreference(LyricsV2EmphasizeLastWordKey, defaultValue = false)
+    val (interludeDotsPreference) = rememberPreference(LyricsV2InterludeDotsKey, defaultValue = true)
+    val (adaptiveScrollSpring) = rememberPreference(LyricsV2AdaptiveScrollSpringKey, defaultValue = true)
     // The V2 renderer never honored the reduce-animations setting: on low-RAM devices (where it
     // defaults on) the per-word glow shadows, bounce springs and line blur are the difference
     // between smooth and stuttering karaoke, so gate them all here.
     val v2AnimationsDisabled = LocalAnimationsDisabled.current
     val bounceFactor = if (v2AnimationsDisabled) 0f else bounceFactorPreference
     val glowFactor = if (v2AnimationsDisabled) 0f else glowFactorPreference
+    val interludeDotsEnabled = interludeDotsPreference && !v2AnimationsDisabled
+    val emphasizeLastWord = emphasizeLastWordPreference && !v2AnimationsDisabled
     val lrcBounceEnabled = lrcBounceEnabledPreference && !v2AnimationsDisabled
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
-    val romanizationPreferences =
-        remember(
-            romanizeJapanese,
-            romanizeKorean,
-            romanizeChinese,
-            romanizeHindi,
-            romanizeOtherLanguages,
-            aiRomanizationSettings.active,
-        ) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOtherLanguages,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
+
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 
     // Apple Music style and all lyrics backgrounds always use white text so that
     // lyrics remain readable on the dark blurred backdrop regardless of system theme.
     val textColor = textColorOverride ?: Color.White
-    val lyricsLineBlur = (lyricsLineBlurOverride ?: lyricsLineBlurPreference) && !v2AnimationsDisabled
+    val lyricsLineBlur =
+        (lyricsLineBlurOverride ?: lyricsLineBlurPreference) && !v2AnimationsDisabled && moe.rukamori.archivetune.LocalBlurPolicy.current.any
 
     val inactiveAlpha = 0.35f
 
@@ -330,6 +338,30 @@ fun LyricsV2(
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
 
     val entriesWithWords: List<LyricsEntry> = lyricsEntries
+    val sourceLanguageHints = remember(lyrics, entriesWithWords) {
+        LyricsUtils.sourceLanguageHints(lyrics, entriesWithWords)
+    }
+    val aiHandlesLyrics = remember(aiRomanizationSettings, entriesWithWords, sourceLanguageHints) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, entriesWithWords.map { it.text }, sourceLanguageHints)
+    }
+    val romanizationPreferences =
+        remember(
+            romanizeJapanese,
+            romanizeKorean,
+            romanizeChinese,
+            romanizeHindi,
+            romanizeOtherLanguages,
+            aiHandlesLyrics,
+        ) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOtherLanguages,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
 
     // Per-entry cache for hasTrueWordSync() — avoids re-running the (allocating) word-sync
     // detection on every 16 ms position tick for every visible line.
@@ -339,30 +371,27 @@ fun LyricsV2(
     // below. Results are pushed into the same `romanizedTextFlow` the built-in engines write to, so
     // the render path and the fade-in behaviour are identical whichever engine produced them.
     val aiRomanizationSessionKey =
-        remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+        remember(mediaMetadata?.id, lyrics, sourceLanguageHints) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics, sourceLanguageHints) }
     val aiRomanizationResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     // Resolved by line text, not by index — this renderer's entry list carries a head entry and
     // instrumental breaks that LyricsEnhanced's does not, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
-        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings.active, entriesWithWords) {
-            if (!aiRomanizationSettings.active) {
-                emptyList()
-            } else {
-                AiLyricsRomanization.linesFor(aiRomanizationSessionKey, entriesWithWords.map { it.text })
-            }
+        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, entriesWithWords) {
+            AiLyricsRomanization.linesFor(aiRomanizationSessionKey, entriesWithWords.map { it.text }, sourceLanguageHints)
         }
     LaunchedEffect(aiRomanizationSessionKey, entriesWithWords, aiRomanizationSettings) {
-        if (!aiRomanizationSettings.active || !aiRomanizationSettings.auto) return@LaunchedEffect
+        if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
         if (entriesWithWords.isEmpty()) return@LaunchedEffect
         AiLyricsRomanization.request(
             sessionKey = aiRomanizationSessionKey,
             lines = entriesWithWords.map { it.text },
             settings = aiRomanizationSettings,
+            sourceLanguageHints = sourceLanguageHints,
         )
     }
-    LaunchedEffect(entriesWithWords, aiRomanizedLines, aiRomanizationSettings.active) {
-        if (!aiRomanizationSettings.active) return@LaunchedEffect
+    LaunchedEffect(entriesWithWords, aiRomanizedLines, aiHandlesLyrics) {
+        if (!aiHandlesLyrics) return@LaunchedEffect
         entriesWithWords.forEachIndexed { index, entry ->
             val romanized = aiRomanizedLines.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() }
             if (entry.romanizedTextFlow.value != romanized) {
@@ -371,12 +400,14 @@ fun LyricsV2(
         }
     }
 
-    LaunchedEffect(entriesWithWords, romanizationPreferences) {
+    val romanizationContext = remember(entriesWithWords) { entriesWithWords.joinToString("\n") { it.text } }
+
+    LaunchedEffect(entriesWithWords, romanizationPreferences, japanesePackReady) {
         if (!romanizationPreferences.isEnabled) {
             // Guard against clobbering AI results: when the AI engine owns romanisation the effect
             // above is the writer, and blanking the flows here would erase it on every recomposition
             // that changed `entriesWithWords`.
-            if (aiRomanizationSettings.active) return@LaunchedEffect
+            if (aiHandlesLyrics) return@LaunchedEffect
             entriesWithWords.forEach { entry ->
                 if (entry.romanizedTextFlow.value != null) {
                     entry.romanizedTextFlow.value = null
@@ -386,27 +417,12 @@ fun LyricsV2(
         }
 
         entriesWithWords.forEach { entry ->
-            val providerRomanized = providedRomanizedTextForEntry(entry, romanizationPreferences)
-            if (providerRomanized != null) {
-                if (entry.romanizedTextFlow.value != providerRomanized) {
-                    entry.romanizedTextFlow.value = providerRomanized
-                }
-                return@forEach
-            }
-
-            if (!shouldRomanizeLyricsLine(entry.text, romanizationPreferences)) {
-                if (entry.romanizedTextFlow.value != null) {
-                    entry.romanizedTextFlow.value = null
-                }
-                return@forEach
-            }
-
             // Off the UI thread: one romanization per line on Main would queue dozens of
             // dispatcher hops right as the karaoke animation starts.
             launch(Dispatchers.Default) {
                 val romanized =
                     try {
-                        romanizeLyricsLine(entry.text, romanizationPreferences)
+                        phoneticsForEntry(entry, romanizationPreferences, romanizationContext).line
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {
@@ -432,7 +448,7 @@ fun LyricsV2(
     var currentLineIndex by remember { mutableIntStateOf(0) }
 
     val currentPositionProvider: () -> Long =
-        remember { { currentPositionMsState.longValue } }
+        remember(currentPositionMsState) { { currentPositionMsState.longValue } }
 
     // rememberUpdatedState so the playback loop always sees the latest
     // sliderPositionProvider lambda. Without this, if the caller's lambda
@@ -445,6 +461,8 @@ fun LyricsV2(
 
     var lastRawPositionMs by remember(lyrics) { mutableLongStateOf(0L) }
     var playbackResetTick by remember(lyrics) { mutableIntStateOf(0) }
+    // Read only from the auto-scroll coroutine, never in composition.
+    var lastSeekUptimeMs by remember { mutableLongStateOf(Long.MIN_VALUE / 2) }
 
     LaunchedEffect(entriesWithWords, isSynced, leadMs, lyricsSyncOffset) {
         if (!isSynced || entriesWithWords.isEmpty()) return@LaunchedEffect
@@ -464,6 +482,8 @@ fun LyricsV2(
         // fill animation lag visibly behind the audio. `withFrameNanos` ties the poll cadence to
         // the actual frame rate so the two stay in lock-step.
         val useFrameClock = !v2AnimationsDisabled && isTtmlFormat
+        var seekCheckPositionMs = -1L
+        var seekCheckUptimeMs = 0L
         while (isActive) {
             val sliderPos = latestSliderPositionProvider.value()
             val pos = sliderPos ?: player.currentPosition
@@ -475,6 +495,26 @@ fun LyricsV2(
                 playbackResetTick++
             }
             lastRawPositionMs = rawPlayerPositionMs
+
+            // The player exposes no seek event to the UI, so a seek is inferred from the clock
+            // landing somewhere steady playback could not have taken it since the last poll.
+            val nowUptimeMs = SystemClock.uptimeMillis()
+            if (sliderPos != null) {
+                lastSeekUptimeMs = nowUptimeMs
+            } else if (seekCheckPositionMs >= 0L) {
+                val expectedAdvanceMs =
+                    if (player.isPlaying) {
+                        ((nowUptimeMs - seekCheckUptimeMs) * player.playbackParameters.speed).toLong()
+                    } else {
+                        0L
+                    }
+                val driftMs = rawPlayerPositionMs - seekCheckPositionMs - expectedAdvanceMs
+                if (abs(driftMs) > V2_SEEK_JUMP_THRESHOLD_MS) {
+                    lastSeekUptimeMs = nowUptimeMs
+                }
+            }
+            seekCheckPositionMs = rawPlayerPositionMs
+            seekCheckUptimeMs = nowUptimeMs
 
             playbackPositionMs = (pos + lyricsSyncOffset.toLong()).coerceAtLeast(0L)
             currentPositionMs = (playbackPositionMs + leadMs + LYRIC_VISUAL_TUNING_OFFSET_MS).coerceAtLeast(0L)
@@ -602,10 +642,20 @@ fun LyricsV2(
                 0,
             )
         }
-        listState.animateScrollToItem(
-            index = currentLineIndex,
-            scrollOffset = -targetOffset,
-        )
+        if (adaptiveScrollSpring) {
+            listState.intervalAdaptiveScrollTo(
+                index = currentLineIndex,
+                scrollOffset = -targetOffset,
+                intervalMs = lineIntervalMs(entriesWithWords, currentLineIndex),
+                isSeeking = SystemClock.uptimeMillis() - lastSeekUptimeMs < V2_SEEK_SPRING_WINDOW_MS,
+                isInterludeActive = entriesWithWords.getOrNull(currentLineIndex)?.isInstrumental == true,
+            )
+        } else {
+            listState.animateScrollToItem(
+                index = currentLineIndex,
+                scrollOffset = -targetOffset,
+            )
+        }
     }
 
     BackHandler(enabled = isSelectionModeActive) {
@@ -736,6 +786,7 @@ fun LyricsV2(
                         inactiveAlpha = inactiveAlpha,
                         playbackPositionProvider = { playbackPositionMs },
                         onSeek = { time -> player.seekTo(time) },
+                        interludeDots = interludeDotsEnabled,
                     )
                     return@itemsIndexed
                 }
@@ -1012,6 +1063,7 @@ fun LyricsV2(
                                     textAlign = textAlign,
                                     lyricsFontFamily = lyricsFontFamily,
                                     isRtl = lineIsRtl,
+                                    softReveal = softWordReveal,
                                 )
                             } else {
                                 LyricsLineV2(
@@ -1030,6 +1082,8 @@ fun LyricsV2(
                                     bounceFactor = bounceFactor,
                                     glowFactor = glowFactor,
                                     fillTransitionWidth = fillTransitionWidth,
+                                    softReveal = softWordReveal,
+                                    emphasizeEnabled = emphasizeLastWord,
                                 )
                             }
                         } else if (isSynced) {
@@ -1321,6 +1375,8 @@ private fun LyricsLineV2(
     bounceFactor: Float,
     glowFactor: Float,
     fillTransitionWidth: Float,
+    softReveal: Boolean = true,
+    emphasizeEnabled: Boolean = false,
 ) {
     val arrangement =
         when (textAlign) {
@@ -1382,6 +1438,8 @@ private fun LyricsLineV2(
                     bounceFactor = bounceFactor,
                     glowFactor = glowFactor,
                     fillTransitionWidth = fillTransitionWidth,
+                    softReveal = softReveal,
+                    emphasizeLastWord = emphasizeEnabled && isActive && wordIndex == mainWords.lastIndex && mainWords.size > 1,
                 )
             }
         }
@@ -1425,6 +1483,7 @@ private fun LyricsLineV2(
                     bounceFactor = bounceFactor,
                     glowFactor = glowFactor,
                     fillTransitionWidth = fillTransitionWidth,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1447,6 +1506,8 @@ private fun AnimatedWordV2(
     bounceFactor: Float,
     glowFactor: Float,
     fillTransitionWidth: Float,
+    softReveal: Boolean = true,
+    emphasizeLastWord: Boolean = false,
 ) {
     val wordStartMs = (word.startTime * 1000).toLong()
     val wordEndMs = (word.endTime * 1000).toLong()
@@ -1600,6 +1661,53 @@ private fun AnimatedWordV2(
                 } else {
                     baseTextStyle
                 }
+            val canEmphasize =
+                remember(word.text, emphasizeLastWord) {
+                    emphasizeLastWord && supportsGraphemeEmphasis(word.text)
+                }
+            if (canEmphasize && (isWordActive || isWordComplete) && !isLinePast) {
+                // Per-grapheme emphasize overlay (see LyricsEmphasize.kt): same
+                // dim base + lit overlay structure and the same reveal mask, but
+                // the sung overlay bumps grapheme by grapheme. RTL and
+                // complex-shaping words take the whole-word overlay below.
+                EmphasizedWordOverlay(
+                    word = word,
+                    baseTextStyle = baseTextStyle,
+                    textColor = textColor,
+                    litAlpha = if (isBackground) 0.75f else 1f,
+                    fontSizeSp = actualFontSize,
+                    isBackground = isBackground,
+                    isWordActive = isWordActive,
+                    isWordComplete = isWordComplete,
+                    bounceFactor = bounceFactor,
+                    glowFactor = glowFactor,
+                    modifier =
+                        Modifier
+                            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                            .then(
+                                if (isWordActive && !isWordComplete) {
+                                    val sweepProgress = progress
+                                    if (softReveal) {
+                                        Modifier.slidingSoftReveal(
+                                            progressProvider = { sweepProgress },
+                                            edgeWidth = fillTransitionWidth.dp,
+                                            isRtl = isRtl,
+                                            enabled = true,
+                                        )
+                                    } else {
+                                        Modifier.hardEdgeSweepMask(
+                                            progress = sweepProgress,
+                                            fillTransitionWidth = fillTransitionWidth,
+                                            isRtl = isRtl,
+                                            sweepColors = sweepColors,
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                },
+                            ).padding(glowPadding),
+                )
+            } else {
             Text(
                 text = word.text,
                 style = overlayTextStyle,
@@ -1609,34 +1717,62 @@ private fun AnimatedWordV2(
                     ),
                 modifier =
                     if (isWordActive && !isWordComplete) {
+                        // Soft reveal ON: upstream-style sliding fade window (see
+                        // LyricsWordReveal.kt). OFF: today's exact hard-edge mask.
+                        val sweepProgress = progress
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                drawContent()
-                                val edgeWidth = fillTransitionWidth.dp.toPx()
-                                val center =
-                                    if (isRtl) {
-                                        size.width - ((size.width + edgeWidth * 2) * progress - edgeWidth)
-                                    } else {
-                                        (size.width + edgeWidth * 2) * progress - edgeWidth
-                                    }
-                                drawRect(
-                                    brush =
-                                        androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                            colors = sweepColors,
-                                            startX = center - edgeWidth,
-                                            endX = center + edgeWidth,
-                                        ),
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            }.padding(glowPadding)
+                            .then(
+                                if (softReveal) {
+                                    Modifier.slidingSoftReveal(
+                                        progressProvider = { sweepProgress },
+                                        edgeWidth = fillTransitionWidth.dp,
+                                        isRtl = isRtl,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    Modifier.hardEdgeSweepMask(
+                                        progress = sweepProgress,
+                                        fillTransitionWidth = fillTransitionWidth,
+                                        isRtl = isRtl,
+                                        sweepColors = sweepColors,
+                                    )
+                                },
+                            ).padding(glowPadding)
                     } else {
                         Modifier.padding(glowPadding)
                     },
             )
+            }
         }
     }
 }
+
+private fun Modifier.hardEdgeSweepMask(
+    progress: Float,
+    fillTransitionWidth: Float,
+    isRtl: Boolean,
+    sweepColors: List<Color>,
+): Modifier =
+    drawWithContent {
+        drawContent()
+        val edgeWidth = fillTransitionWidth.dp.toPx()
+        val center =
+            if (isRtl) {
+                size.width - ((size.width + edgeWidth * 2) * progress - edgeWidth)
+            } else {
+                (size.width + edgeWidth * 2) * progress - edgeWidth
+            }
+        drawRect(
+            brush =
+                Brush.horizontalGradient(
+                    colors = sweepColors,
+                    startX = center - edgeWidth,
+                    endX = center + edgeWidth,
+                ),
+            blendMode = BlendMode.DstIn,
+        )
+    }
 
 // Spotify style: no glow/bounce — motion lives in the pill fill sweep and the
 // line rise/fade transitions instead.
@@ -1652,9 +1788,10 @@ private fun LyricsLineSpotify(
     inactiveAlpha: Float,
     baseFontSize: Float,
     isLineAllBackground: Boolean,
-    textAlign: TextAlign,
     lyricsFontFamily: FontFamily?,
     isRtl: Boolean,
+    textAlign: TextAlign = TextAlign.Start,
+    softReveal: Boolean = true,
 ) {
     val arrangement =
         when (textAlign) {
@@ -1713,6 +1850,7 @@ private fun LyricsLineSpotify(
                     isBackground = isLineAllBackground,
                     lyricsFontFamily = lyricsFontFamily,
                     isRtl = isRtl,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1753,6 +1891,7 @@ private fun LyricsLineSpotify(
                     isBackground = true,
                     lyricsFontFamily = lyricsFontFamily,
                     isRtl = isRtl,
+                    softReveal = softReveal,
                 )
             }
         }
@@ -1771,6 +1910,7 @@ internal fun SpotifyWord(
     isBackground: Boolean,
     lyricsFontFamily: FontFamily?,
     isRtl: Boolean,
+    softReveal: Boolean = true,
 ) {
     val wordStartMs = (word.startTime * 1000).toLong()
     val wordEndMs = (word.endTime * 1000).toLong()
@@ -1867,41 +2007,54 @@ internal fun SpotifyWord(
                 color = textColor.copy(alpha = if (isBackground) 0.75f else 1f),
                 modifier =
                     if (isWordActive && !isWordComplete) {
+                        // Same upstream sliding fade idea as AnimatedWordV2 (see
+                        // LyricsWordReveal.kt): keep the pill edge position, but
+                        // soften the alpha step into a 4dp fade band. The pill
+                        // fill itself stays hard-edged, matching upstream where
+                        // the pill sweeps solid and only the text mask feathers.
+                        val spotifyProgress = progress
+                        val spotifyReveal = softReveal
                         Modifier
                             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-                            .drawWithContent {
-                                // Align the text clip edge with the pill fill edge:
-                                // pill spans [textWidth + 2*pillPaddingHorizontal].
-                                val padHpx = pillPaddingHorizontal.toPx()
-                                val pillWidth = size.width + padHpx * 2f
-                                val fillPx = pillWidth * progress
-                                val pillLeft = if (isRtl) pillWidth - fillPx else 0f
-                                val rawLeft = pillLeft - padHpx
-                                val solidFraction = (rawLeft / size.width).coerceIn(0f, 1f)
-                                drawContent()
-                                // Hard-edge alpha mask at the sweep position (same edge as the pill),
-                                // via DstIn like AnimatedWordV2 — drawContent() cannot be called
-                                // inside a nested clipRect receiver, so mask instead of clip.
-                                drawRect(
-                                    brush =
-                                        if (isRtl) {
-                                            Brush.horizontalGradient(
-                                                0f to Color.Transparent,
-                                                solidFraction.coerceAtMost(1f) to Color.Transparent,
-                                                solidFraction.coerceAtLeast(0f) to Color.Black,
-                                                1f to Color.Black,
-                                            )
-                                        } else {
-                                            Brush.horizontalGradient(
-                                                0f to Color.Black,
-                                                solidFraction.coerceIn(0f, 1f) to Color.Black,
-                                                solidFraction.coerceAtLeast(0f) to Color.Transparent,
-                                                1f to Color.Transparent,
-                                            )
-                                        },
-                                    blendMode = BlendMode.DstIn,
-                                )
-                            }
+                            .then(
+                                if (spotifyReveal) {
+                                    Modifier.slidingSoftReveal(
+                                        progressProvider = { spotifyProgress },
+                                        edgeWidth = 4.dp,
+                                        isRtl = isRtl,
+                                        enabled = true,
+                                    )
+                                } else {
+                                    Modifier.drawWithContent {
+                                        val padHpx = pillPaddingHorizontal.toPx()
+                                        val pillWidth = size.width + padHpx * 2f
+                                        val fillPx = pillWidth * spotifyProgress
+                                        val pillLeft = if (isRtl) pillWidth - fillPx else 0f
+                                        val rawLeft = pillLeft - padHpx
+                                        val solidFraction = (rawLeft / size.width).coerceIn(0f, 1f)
+                                        drawContent()
+                                        drawRect(
+                                            brush =
+                                                if (isRtl) {
+                                                    Brush.horizontalGradient(
+                                                        0f to Color.Transparent,
+                                                        solidFraction.coerceAtMost(1f) to Color.Transparent,
+                                                        solidFraction.coerceAtLeast(0f) to Color.Black,
+                                                        1f to Color.Black,
+                                                    )
+                                                } else {
+                                                    Brush.horizontalGradient(
+                                                        0f to Color.Black,
+                                                        solidFraction.coerceIn(0f, 1f) to Color.Black,
+                                                        solidFraction.coerceAtLeast(0f) to Color.Transparent,
+                                                        1f to Color.Transparent,
+                                                    )
+                                                },
+                                            blendMode = BlendMode.DstIn,
+                                        )
+                                    }
+                                },
+                            )
                     } else {
                         Modifier
                     },
@@ -1934,7 +2087,7 @@ private fun LyricsLineLrcBounce(
         if (!isActive || bounceFactor == 0f) return@LaunchedEffect
         words.indices.forEach { i ->
             launch {
-                delay(i * 40L)
+                scaledDelay(i * 40L)
                 try {
                     scaleAnimatables[i].animateTo(
                         targetValue = 1f + 0.045f * bounceFactor,
@@ -1957,7 +2110,7 @@ private fun LyricsLineLrcBounce(
                 }
             }
             launch {
-                delay(i * 40L)
+                scaledDelay(i * 40L)
                 try {
                     floatAnimatables[i].animateTo(
                         targetValue = -5f * bounceFactor,
@@ -2061,6 +2214,7 @@ private fun InstrumentalBreakRow(
     inactiveAlpha: Float,
     playbackPositionProvider: () -> Long,
     onSeek: (Long) -> Unit,
+    interludeDots: Boolean = true,
 ) {
     val startTimeMs = item.time
     val endTimeMs = item.time + item.durationMs
@@ -2153,6 +2307,23 @@ private fun InstrumentalBreakRow(
                     },
                 ),
     ) {
+        if (interludeDots && isActive) {
+            // Breathing dots beside the note while the break plays (see
+            // LyricsInterludeDots.kt). OFF renders today's note-only row.
+            androidx.compose.foundation.layout.Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                InstrumentalBreakItem(
+                    durationMs = item.durationMs,
+                    currentPositionMs = playbackPositionMs,
+                    startTimeMs = startTimeMs,
+                    textColor = textColor,
+                    inactiveAlpha = inactiveAlpha,
+                )
+                InterludeDots(textColor = textColor)
+            }
+        } else {
         InstrumentalBreakItem(
             durationMs = item.durationMs,
             currentPositionMs = playbackPositionMs,
@@ -2160,6 +2331,7 @@ private fun InstrumentalBreakRow(
             textColor = textColor,
             inactiveAlpha = inactiveAlpha,
         )
+        }
     }
 }
 

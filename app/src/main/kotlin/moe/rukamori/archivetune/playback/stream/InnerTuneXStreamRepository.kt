@@ -13,6 +13,7 @@ import com.metrolist.innertubex.cipher.RemotePlayerConfigStore
 import com.metrolist.innertubex.cipher.YouTubeCipherService
 import com.metrolist.innertubex.extraction.AudioQuality as InnerTuneXAudioQuality
 import com.metrolist.innertubex.extraction.ContentHints
+import com.metrolist.innertubex.extraction.ExtractedStream
 import com.metrolist.innertubex.extraction.InnerTubeExtractor
 import com.metrolist.innertubex.extraction.YtConfigParserImpl
 import io.ktor.client.HttpClient
@@ -26,8 +27,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import moe.rukamori.archivetune.constants.AudioQuality
-import moe.rukamori.archivetune.innertube.YouTube
 import timber.log.Timber
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * The InnerTuneX tier of [ResolveAudioStreamUseCase], and the first extractor tried after the native
@@ -55,23 +56,26 @@ class InnerTuneXStreamRepository
 
         override suspend fun resolve(request: AudioStreamRequest): ResolvedAudioStream {
             prewarmOnce()
+            val requestedQuality = request.quality.toInnerTuneXQuality()
+            // Downloads are tagged with jaudiotagger, which reads MP4 but not WebM, so AAC is asked
+            // for first. Low-data mode already maps to LOW, whose selector prefers MP4 on its own.
             val stream =
-                extractor.extract(
-                    videoId = request.mediaId,
-                    // Tells the library which transports this host can fetch: the player takes plain
-                    // media URLs, so segmented SABR, byte-range paging and HLS manifests are all
-                    // unavailable. These hints are the enforcement — the library skips those clients
-                    // and reselects, so the tier succeeds on a fetchable client rather than building a
-                    // stream that the guards below then reject. Deleting the hints regresses that;
-                    // the guards are defence-in-depth against a library regression.
-                    hints =
-                        ContentHints(wantVideo = false).withStreamCapabilities(
-                            allowHls = false,
-                            allowSabr = false,
-                            allowBoundedRange = false,
-                        ),
-                    audioQuality = request.quality.toInnerTuneXQuality(),
-                ) ?: throw InnerTuneXExtractionException("InnerTuneX returned no stream for ${request.mediaId}")
+                if (request.purpose == StreamPurpose.DOWNLOAD && requestedQuality != InnerTuneXAudioQuality.LOW) {
+                    try {
+                        extractStream(request.mediaId, InnerTuneXAudioQuality.MP4)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (ignored: Exception) {
+                        null
+                    } ?: extractStream(request.mediaId, requestedQuality)
+                } else {
+                    extractStream(request.mediaId, requestedQuality)
+                } ?: throw InnerTuneXExtractionException("InnerTuneX returned no stream for ${request.mediaId}")
+            if (stream.audioUrl.isHlsManifestUrl()) {
+                throw InnerTuneXExtractionException(
+                    "InnerTuneX returned an HLS manifest for ${request.mediaId}",
+                )
+            }
             if (stream.sabrBootstrap != null) {
                 throw InnerTuneXExtractionException(
                     "InnerTuneX returned a segmented SABR stream for ${request.mediaId}",
@@ -103,6 +107,29 @@ class InnerTuneXStreamRepository
             )
         }
 
+        private suspend fun extractStream(
+            videoId: String,
+            audioQuality: InnerTuneXAudioQuality,
+        ): ExtractedStream? =
+            extractor.extract(
+                videoId = videoId,
+                // Tells the library which transports this host can fetch: the player takes plain
+                // media URLs, so segmented SABR, byte-range paging and HLS manifests are all
+                // unavailable. These hints are the enforcement — the library skips those clients
+                // and reselects, so the tier succeeds on a fetchable client rather than building a
+                // stream that the guards in [resolve] then reject. Deleting the hints regresses that;
+                // the guards are defence-in-depth against a library regression.
+                hints =
+                    ContentHints(wantVideo = false).withStreamCapabilities(
+                        allowHls = false,
+                        allowSabr = false,
+                        allowBoundedRange = false,
+                    ),
+                audioQuality = audioQuality,
+            )
+
+        private fun String.isHlsManifestUrl(): Boolean = contains("/manifest/hls") || contains(".m3u8")
+
         /**
          * Warming the visitor data and player config is an optimisation: never let it fail the tier.
          * The flag is set only after a warm that actually ran, so a cancelled or failed attempt is
@@ -115,7 +142,7 @@ class InnerTuneXStreamRepository
             } catch (e: CancellationException) {
                 throw e
             } catch (t: Throwable) {
-                Timber.tag(TAG).d(t, "InnerTuneX prewarm failed")
+                Timber.tag(TAG).d("InnerTuneX prewarm failed: %s", t.javaClass.simpleName)
                 return
             }
             prewarmed = true
@@ -159,7 +186,7 @@ class InnerTuneXStreamRepository
 
                 engine {
                     config {
-                        proxy(YouTube.proxy)
+                        withAppProxy()
                     }
                 }
             }

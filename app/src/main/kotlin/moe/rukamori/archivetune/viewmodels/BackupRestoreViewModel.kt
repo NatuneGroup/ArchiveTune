@@ -48,6 +48,7 @@ import moe.rukamori.archivetune.backup.ObserveScheduledBackupSettingsUseCase
 import moe.rukamori.archivetune.backup.ScheduledBackupFrequency
 import moe.rukamori.archivetune.backup.ScheduledBackupSettings
 import moe.rukamori.archivetune.backup.UpdateScheduledBackupUseCase
+import moe.rukamori.archivetune.backup.isBackupFontEntry
 import moe.rukamori.archivetune.db.InternalDatabase
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.ArtistEntity
@@ -317,7 +318,6 @@ class BackupRestoreViewModel
         private var exportPlaylistListJob: Job? = null
         private var exportPlaylistJob: Job? = null
 
-        // --- Google Drive sync state ----------------------------------------------------------
         private val _googleDriveSyncState =
             MutableStateFlow<GoogleDriveSyncScreenState>(GoogleDriveSyncScreenState.Loading)
         val googleDriveSyncState: StateFlow<GoogleDriveSyncScreenState> = _googleDriveSyncState.asStateFlow()
@@ -626,7 +626,6 @@ class BackupRestoreViewModel
                 )
         }
 
-        // --- Google Drive sync -----------------------------------------------------------------
 
         fun onGoogleDriveSyncEnabledChanged(enabled: Boolean) {
             updateGoogleDriveSync { updateGoogleDriveSync.setEnabled(enabled) }
@@ -834,7 +833,7 @@ class BackupRestoreViewModel
                     val restoreEntries =
                         entryNames.filter { name ->
                             (includeSettings && (name == SETTINGS_XML_FILENAME || name == SETTINGS_FILENAME)) ||
-                                (includeSettings && name.startsWith("$FONTS_ZIP_PREFIX/")) ||
+                                (includeSettings && isBackupFontEntry(name)) ||
                                 (
                                     includeLibrary && (
                                         name == InternalDatabase.DB_NAME ||
@@ -910,7 +909,7 @@ class BackupRestoreViewModel
                                         // Custom font .ttf entries live under the `fonts/` prefix.
                                         // Extract them back to filesDir/custom_fonts/ so the
                                         // restored settings.xml font URI resolves correctly.
-                                        if (name.startsWith("$FONTS_ZIP_PREFIX/") && name.endsWith(".ttf", ignoreCase = true)) {
+                                        if (isBackupFontEntry(name)) {
                                             emit(context.getString(R.string.restore_step_restoring_file, name), indeterminate = true)
                                             val fontsDir = context.filesDir / CUSTOM_FONTS_DIR_NAME
                                             if (!fontsDir.exists()) fontsDir.mkdirs()

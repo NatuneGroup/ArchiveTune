@@ -30,3 +30,13 @@ internal fun JSONObject.readErrorMessage(): String? {
     return error?.optString("message")?.takeIf { it.isNotBlank() }
         ?: optString("error").takeIf { it.isNotBlank() }
 }
+
+/** Complete provider output only; local originals are never substituted into success results. */
+internal fun parseAiLyricSegments(response: String, expectedCount: Int): List<String> {
+    val array = extractJsonArray(response)
+    require(array.length() == expectedCount) { "AI response changed the lyric segment count" }
+    return List(array.length()) { index ->
+        (array.get(index) as? String)?.takeIf { it.isNotBlank() }
+            ?: throw AiServiceException("AI returned an invalid lyric segment")
+    }
+}

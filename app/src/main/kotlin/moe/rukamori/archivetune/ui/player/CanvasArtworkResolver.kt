@@ -19,6 +19,7 @@ import moe.rukamori.archivetune.canvas.SpotifyCanvasProvider
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.canvas.models.looselyMatchesSongIdentity
 import moe.rukamori.archivetune.canvas.models.matchesSongIdentity
+import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.telegram.isTelegramMediaId
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import timber.log.Timber
@@ -34,6 +35,9 @@ internal suspend fun resolveCanvasArtworkForPlayback(
     albumTitle: String? = null,
     trySpotifyCanvas: Boolean = false,
 ): CanvasArtwork? {
+    // A user-picked canvas outranks every provider and is never written into the playback cache,
+    // so removing it falls straight back to whatever the providers resolve.
+    withContext(Dispatchers.IO) { CustomArtworkStore.customCanvasArtwork(mediaId) }?.let { return it }
     // Telegram/local files have tag-derived (often noisy) metadata — use fuzzy identity matching
     // so a real canvas isn't discarded over a "(2019)" suffix or a channel-name artist.
     val strictIdentity = !(mediaId.isTelegramMediaId() || mediaId.isLocalMediaId())
@@ -268,13 +272,15 @@ internal suspend fun fetchAllCanvasSourcesForSong(
                 song.isNotBlank() && artist.isNotBlank()
             }
         candidates.firstNotNullOfOrNull { (song, artist) ->
-            AppleMusicProvider.getBySongArtist(
-                song = song,
-                artist = artist,
-                storefront = storefront,
-                forceRefresh = false,
-                album = albumTitle,
-            )?.takeIf { it.hasRequiredCanvasVariant(requireVertical = false) }
+            runCatching {
+                AppleMusicProvider.getBySongArtist(
+                    song = song,
+                    artist = artist,
+                    storefront = storefront,
+                    forceRefresh = false,
+                    album = albumTitle,
+                )
+            }.getOrNull()?.takeIf { it.hasRequiredCanvasVariant(requireVertical = false) }
         }
     }
 

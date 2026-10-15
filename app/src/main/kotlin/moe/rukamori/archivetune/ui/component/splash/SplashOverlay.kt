@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -14,6 +8,8 @@
  * Opening animation overlay composable — ported from YumaPlayer (github.com/MuwMx/YumaPlayer),
  * ui/component/splash/SplashOverlay.kt (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.ui.component.splash
 
@@ -41,11 +37,17 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import moe.rukamori.archivetune.utils.isLowEndDevice
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import moe.rukamori.archivetune.LocalAnimationScale
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
+import moe.rukamori.archivetune.scaledDelay
 import moe.rukamori.archivetune.utils.rememberPreference
+import kotlin.math.min
+import kotlin.math.roundToLong
+
+// Bounds the catch-up after a hitch; at the smallest animator scales a 33 ms frame needs ~14.
+private const val MAX_SPLASH_SUBSTEPS = 16
 
 @Composable
 fun SplashOverlay(
@@ -68,6 +70,10 @@ fun SplashOverlay(
         }
         val vv = SplashSlots.vectorVersion
         val animationsDisabled = LocalAnimationsDisabled.current
+        // The engine's clock is the scaled one: at 0.5x/2x the whole choreography must stay in
+        // step with the content reveal fading in behind it (a plain Compose tween, so already
+        // scaled). Read once — the overlay is composed for a single launch.
+        val animatorScale = LocalAnimationScale.current
         var showSplash by remember { mutableStateOf(!animationsDisabled) }
         val currentOnBurstStart by rememberUpdatedState(onBurstStart)
         val currentOnDismiss by rememberUpdatedState(onDismiss)
@@ -102,9 +108,11 @@ fun SplashOverlay(
             if (vv > 0) engine.rebuildSlots()
         }
 
-        // The safety net: whatever the engine is doing, the overlay gives the screen back.
+        // The safety net: whatever the engine is doing, the overlay gives the screen back. The
+        // ceiling rides the animator scale like the engine it bounds — a fixed 5s would cut the
+        // burst in half at 2x.
         LaunchedEffect(Unit) {
-            delay(SplashConfig.Reveal.MAX_VISIBLE_MS.toLong())
+            scaledDelay(SplashConfig.Reveal.MAX_VISIBLE_MS.toLong())
             dismissSplash()
         }
 
@@ -114,7 +122,19 @@ fun SplashOverlay(
 
         LaunchedEffect(showSplash) {
             if (!showSplash) return@LaunchedEffect
+            if (animatorScale <= 0f) return@LaunchedEffect
             var lastTime = 0L
+            // The engine's own clock: frame deltas divided by the animator scale, so the
+            // particle timeline stretches and shrinks with the system setting while its
+            // internal phases, the burst trigger and the force wobble all stay on one clock.
+            var engineTimeSec = 0.0
+            // The integrator clamps each step to 0.5..MAX_STEP sixtieths of a second, so the
+            // scaled time is fed in bounded substeps and any remainder below the minimum is
+            // carried to the next frame; nothing is clamped away or invented, which keeps the
+            // particles on the same clock as phaseElapsedMs and the content reveal.
+            val minSubstepSec = 0.5f / 60f
+            val maxSubstepSec = SplashPhysics.MAX_STEP / 60f
+            var pendingSec = 0f
             while (isActive) {
                 withFrameNanos { now ->
                     if (!isInitialized) return@withFrameNanos
@@ -124,7 +144,16 @@ fun SplashOverlay(
                     }
                     val dt = ((now - lastTime) / 1_000_000_000f).coerceIn(0f, 0.033f)
                     lastTime = now
-                    engine.update(dt, now / 1_000_000)
+                    pendingSec += dt / animatorScale
+                    var substeps = 0
+                    while (pendingSec + 1e-6f >= minSubstepSec && substeps < MAX_SPLASH_SUBSTEPS) {
+                        val sub = min(pendingSec, maxSubstepSec)
+                        pendingSec -= sub
+                        engineTimeSec += sub
+                        engine.update(sub, (engineTimeSec * 1000.0).roundToLong())
+                        substeps++
+                    }
+                    if (substeps == MAX_SPLASH_SUBSTEPS) pendingSec = 0f
                     frameTick = now
 
                     val burstLimit =

@@ -639,7 +639,9 @@ ${aliases.prependIndent("        ")}
         const val DarkContrastingBackground = "#FF202124"
         const val ComplexArtworkPathThreshold = 32
         const val ComplexArtworkColorThreshold = 4
-        const val IconRasterSize = 1024
+        // An adaptive-icon layer is 108dp, 432px at xxxhdpi; 512 leaves headroom for launchers that
+        // draw icons larger. 1024 quadrupled the pixels (about 3 MiB of APK) for no visible gain.
+        const val IconRasterSize = 512
         const val ViewBoxValueCount = 4
         const val FullCanvasCoordinateCount = 8
         const val FullCanvasToleranceRatio = 0.01

@@ -9,18 +9,20 @@
 package moe.rukamori.archivetune.ui.player
 
 import android.os.Build
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +37,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
@@ -44,10 +47,10 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.palette.graphics.Palette
 import coil3.imageLoader
@@ -58,20 +61,26 @@ import coil3.toBitmap
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.component.rememberLiquidGlassEnabled
 import moe.rukamori.archivetune.LocalPlayerConnection
-import moe.rukamori.archivetune.constants.FloatingBarJunctionCornerRadius
-import moe.rukamori.archivetune.constants.FloatingBarOuterCornerRadius
-import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
-import moe.rukamori.archivetune.constants.MiniPlayerHeight
-import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
+import moe.rukamori.archivetune.constants.CompactMiniPlayerKey
+import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.SwipeSensitivityKey
 import moe.rukamori.archivetune.playback.artwork.PlayerPaletteCacheKey
 import moe.rukamori.archivetune.playback.artwork.guessArtworkProvider
 import moe.rukamori.archivetune.ui.component.LocalNavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassBackdrop
+import moe.rukamori.archivetune.ui.component.PillBackdrop
+import moe.rukamori.archivetune.ui.component.PillFrostBlurRadiusPx
+import moe.rukamori.archivetune.ui.component.PillFrostOverlayAlpha
+import moe.rukamori.archivetune.ui.component.PillRole
+import moe.rukamori.archivetune.ui.component.liquidGlassEligible
 import moe.rukamori.archivetune.ui.component.liquidGlass
+import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
+import moe.rukamori.archivetune.ui.component.rememberPillStyle
 import moe.rukamori.archivetune.ui.component.rememberPreSFrostedBitmap
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.PlayerPaletteCache
@@ -87,6 +96,9 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
+    compactFractionState: State<Float>? = null,
+    compactHorizontalPadding: Dp = 0.dp,
+    compactReserveEndControl: Boolean = false,
 ) {
     NewMiniPlayer(
         position = position,
@@ -94,6 +106,9 @@ fun MiniPlayer(
         modifier = modifier,
         pureBlack = pureBlack,
         navigationProximityProvider = navigationProximityProvider,
+        compactFractionState = compactFractionState,
+        compactHorizontalPadding = compactHorizontalPadding,
+        compactReserveEndControl = compactReserveEndControl,
     )
 }
 
@@ -104,6 +119,9 @@ private fun NewMiniPlayer(
     modifier: Modifier = Modifier,
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float,
+    compactFractionState: State<Float>?,
+    compactHorizontalPadding: Dp,
+    compactReserveEndControl: Boolean,
 ) {
     val playerConnection = LocalPlayerConnection.current ?: return
     val context = LocalContext.current
@@ -115,6 +133,9 @@ private fun NewMiniPlayer(
         key = MiniPlayerBackgroundStyleKey,
         defaultValue = MiniPlayerBackgroundStyle.THEME,
     )
+    val compactMiniPlayerPreference by rememberPreference(CompactMiniPlayerKey, defaultValue = false)
+    val appleMusicExperience = rememberAppleMusicExperience()
+    val compactMiniPlayer = compactMiniPlayerPreference && !appleMusicExperience
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     // Keep the previous valid palette while the next artwork loads; replace only on success.
     var gradientColors by remember {
@@ -219,17 +240,21 @@ private fun NewMiniPlayer(
         }
     }
 
+    val pill = rememberPillStyle()
+    // Next to an Apple Music tab bar the mini player drops its accent and artwork-derived colours so
+    // it does not compete with the bar's accent. The artwork itself stays in colour.
+    val grayscale = appleMusicExperience || pill.navigationStyle == NavigationBarStyle.APPLE_MUSIC
     val backgroundPalette =
-        remember(gradientColors) {
-            MiniPlayerBackgroundPalette.from(gradientColors)
+        remember(gradientColors, grayscale) {
+            MiniPlayerBackgroundPalette.from(
+                if (grayscale) gradientColors.map { it.toGrayscale() } else gradientColors,
+            )
         }
-    val liquidGlassMaster by rememberPreference(
-        moe.rukamori.archivetune.constants.LiquidGlassEnabledKey,
-        defaultValue = false,
-    )
+    val liquidGlassMaster = rememberLiquidGlassEnabled()
+    val stockColours by rememberPreference(CompactControlsStockColorKey, defaultValue = false)
     val effectiveBackgroundStyle =
         when {
-            miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS && !liquidGlassMaster ->
+            miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS && (!liquidGlassMaster || stockColours) ->
                 MiniPlayerBackgroundStyle.THEME
             miniPlayerBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS &&
                 Build.VERSION.SDK_INT < Build.VERSION_CODES.S -> MiniPlayerBackgroundStyle.THEME
@@ -246,6 +271,7 @@ private fun NewMiniPlayer(
                 effectiveBackgroundStyle == MiniPlayerBackgroundStyle.GRADIENT ||
                     effectiveBackgroundStyle == MiniPlayerBackgroundStyle.GLOW ||
                     effectiveBackgroundStyle == MiniPlayerBackgroundStyle.LIQUID_GLASS,
+            grayscale = grayscale,
         )
     // The provider fires every sheet-drag frame; route it through derivedStateOf so the
     // shape below only recomputes when the snapped proximity value changes, and remember
@@ -253,25 +279,45 @@ private fun NewMiniPlayer(
     val navigationProximity by remember(navigationProximityProvider) {
         derivedStateOf { navigationProximityProvider().coerceIn(0f, 1f) }
     }
-    val miniPlayerShape =
-        remember(navigationProximity) {
-            RoundedCornerShape(
-                topStart = lerp(FloatingBarStandaloneCornerRadius, FloatingBarOuterCornerRadius, navigationProximity),
-                topEnd = lerp(FloatingBarStandaloneCornerRadius, FloatingBarOuterCornerRadius, navigationProximity),
-                bottomStart = lerp(FloatingBarStandaloneCornerRadius, FloatingBarJunctionCornerRadius, navigationProximity),
-                bottomEnd = lerp(FloatingBarStandaloneCornerRadius, FloatingBarJunctionCornerRadius, navigationProximity),
-            )
-        }
-    // Width snaps instead of morphing: the mini player is full-width until contact, then
-    // clamps to the nav bar width. Kept outside the shape's derivedStateOf — a boolean
-    // threshold flips at most twice per gesture, not every frame.
+    val unconstrainedShape = remember(pill, navigationProximity) { pill.shape(PillRole.MINI_PLAYER, navigationProximity) }
+    val restingShape = remember(pill) { pill.shape(PillRole.MINI_PLAYER) }
+    // Width snaps instead of morphing: a docked mini player is full-width until contact, then
+    // clamps to the nav bar width; floating and Apple Music pills never dock, so they always sit at
+    // the bar's width. Kept outside the shape's derivedStateOf — a boolean threshold flips at most
+    // twice per gesture, not every frame.
     val constrainToNavigationWidth by remember(navigationProximityProvider) {
         derivedStateOf { navigationProximityProvider() > 0f }
     }
 
+    // The compact row spans the whole bottom edge between the round buttons, so the bar-width cap
+    // and the style's corner radii give way to a full capsule as soon as the layout starts to compact.
+    val compactFraction: (() -> Float)? =
+        remember(compactFractionState) { compactFractionState?.let { state -> { state.value } } }
+    val compactActive by remember(compactFractionState) {
+        derivedStateOf { (compactFractionState?.value ?: 0f) > 0.01f }
+    }
+    val compactCapsule by remember(compactFractionState) {
+        derivedStateOf { (compactFractionState?.value ?: 0f) > 0.5f }
+    }
+    val capsuleShape = remember { RoundedCornerShape(percent = 50) }
+    val miniPlayerShape = if (compactCapsule) capsuleShape else unconstrainedShape
+    val backgroundShape = if (compactCapsule) capsuleShape else restingShape
+    // In the one-row bar without a glass tab bar the capsule matches the solid Material 3 circles
+    // beside it: opaque and without the Apple hairline.
+    val solidCompactCapsule = compactCapsule && pill.backdrop != PillBackdrop.LIQUID_GLASS
+    val themeColor =
+        remember(pill, grayscale, solidCompactCapsule) {
+            val raised =
+                if (solidCompactCapsule) pill.raisedContainerColor.copy(alpha = 1f) else pill.raisedContainerColor
+            if (grayscale) raised.toGrayscale() else raised
+        }
+    val capsuleBorder = pill.border.takeUnless { solidCompactCapsule }
+
     SwipeableMiniPlayerBox(
         modifier = modifier,
-        contentMaxWidth = if (constrainToNavigationWidth) NavigationBarMaxWidth else null,
+        contentMaxWidth =
+            if (!compactActive && (constrainToNavigationWidth || !pill.isDocked || pill.compact)) pill.maxWidth else null,
+        horizontalInset = pill.horizontalInset,
         swipeSensitivity = swipeSensitivity,
         swipeThumbnail = swipeThumbnail,
         playerConnection = playerConnection,
@@ -279,18 +325,24 @@ private fun NewMiniPlayer(
         coroutineScope = coroutineScope,
         pureBlack = pureBlack,
         useLegacyBackground = false,
+        compactFraction = compactFraction,
+        compactHorizontalPadding = compactHorizontalPadding,
+        compactReserveEndControl = compactReserveEndControl,
     ) { offsetX ->
         Box(
             modifier =
                 Modifier
                     .fillMaxWidth()
-                    .height(MiniPlayerHeight)
+                    .fillMaxHeight()
                     .offset { IntOffset(offsetX.roundToInt(), 0) }
-                    .clip(miniPlayerShape),
+                    .clip(miniPlayerShape)
+                    .then(capsuleBorder?.let { Modifier.border(it, miniPlayerShape) } ?: Modifier),
         ) {
             MiniPlayerBackground(
                 style = effectiveBackgroundStyle,
                 palette = backgroundPalette,
+                themeColor = themeColor,
+                shape = backgroundShape,
                 modifier = Modifier.fillMaxSize(),
             )
             NewMiniPlayerContent(
@@ -298,16 +350,29 @@ private fun NewMiniPlayer(
                 duration = duration,
                 playerConnection = playerConnection,
                 colors = contentColors,
+                compact = compactMiniPlayer,
+                compactFraction = compactFraction,
+                compactShowTransportControls = !compactReserveEndControl,
             )
         }
     }
 }
 
+/** Collapses hue and saturation, keeping the colour's perceived brightness and alpha. */
+private fun Color.toGrayscale(): Color {
+    val luma = 0.299f * red + 0.587f * green + 0.114f * blue
+    return Color(luma, luma, luma, alpha)
+}
+
 @Composable
-private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): MiniPlayerContentColors {
+private fun rememberMiniPlayerContentColors(
+    useArtworkBackground: Boolean,
+    grayscale: Boolean,
+): MiniPlayerContentColors {
     val colorScheme = MaterialTheme.colorScheme
     return remember(
         useArtworkBackground,
+        grayscale,
         colorScheme.primary,
         colorScheme.onPrimary,
         colorScheme.outline,
@@ -333,6 +398,21 @@ private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): Mini
                 buttonIcon = Color.White,
                 disabledButtonIcon = Color.White.copy(alpha = 0.38f),
             )
+        } else if (grayscale) {
+            val strong = colorScheme.onSurface.toGrayscale()
+            MiniPlayerContentColors(
+                title = strong,
+                secondary = colorScheme.onSurfaceVariant.toGrayscale(),
+                progress = strong,
+                progressTrack = colorScheme.outline.toGrayscale().copy(alpha = 0.18f),
+                artworkContainer = colorScheme.surfaceVariant.toGrayscale(),
+                artworkBorder = colorScheme.outline.toGrayscale().copy(alpha = 0.2f),
+                primaryButtonContainer = strong,
+                primaryButtonIcon = colorScheme.surface.toGrayscale(),
+                secondaryButtonContainer = colorScheme.surfaceContainerHighest.toGrayscale(),
+                buttonIcon = strong,
+                disabledButtonIcon = strong.copy(alpha = 0.38f),
+            )
         } else {
             MiniPlayerContentColors(
                 title = colorScheme.onSurface,
@@ -351,15 +431,12 @@ private fun rememberMiniPlayerContentColors(useArtworkBackground: Boolean): Mini
     }
 }
 
-// Frosted mini-player backdrop: blur radius in raw px (RenderEffect works in pixels) and the
-// bounded fraction of blurred content shown over the opaque base — same recipe as the nav bar.
-private const val FrostedMiniPlayerBlurRadiusPx = 60f
-private const val FrostedMiniPlayerOverlayAlpha = 0.30f
-
 @Composable
 private fun MiniPlayerBackground(
     style: MiniPlayerBackgroundStyle,
     palette: MiniPlayerBackgroundPalette?,
+    themeColor: Color,
+    shape: Shape,
     modifier: Modifier = Modifier,
 ) {
     // Frosted blur on the mini player relies on RenderEffect (API 31+). On pre-S the CPU-blurred
@@ -377,19 +454,19 @@ private fun MiniPlayerBackground(
     when (effectiveStyle) {
         MiniPlayerBackgroundStyle.THEME -> {
             Box(
-                modifier = modifier.background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                modifier = modifier.background(themeColor),
             )
         }
 
         MiniPlayerBackgroundStyle.LIQUID_GLASS -> {
             val liquidGlassBackdrop = LocalLiquidGlassBackdrop.current
-            val baseColor = MaterialTheme.colorScheme.surfaceContainerHigh
-            if (liquidGlassBackdrop != null) {
+            val baseColor = themeColor
+            if (liquidGlassEligible(liquidGlassBackdrop)) {
                 Box(
                     modifier =
                         modifier.liquidGlass(
-                            backdrop = liquidGlassBackdrop,
-                            shape = MaterialTheme.shapes.extraLarge,
+                            backdrop = liquidGlassBackdrop!!,
+                            shape = shape,
                             interactive = false,
                             baseColor = baseColor,
                         ),
@@ -403,7 +480,7 @@ private fun MiniPlayerBackground(
 
         MiniPlayerBackgroundStyle.FROSTED -> {
             val backdrop = LocalNavigationBarBackdrop.current
-            val baseColor = MaterialTheme.colorScheme.surfaceContainerHigh
+            val baseColor = themeColor
             if (backdrop == null) {
                 Box(modifier = modifier.background(baseColor))
             } else if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) {
@@ -417,7 +494,7 @@ private fun MiniPlayerBackground(
                     backdrop = backdrop,
                     barPositionInRoot = positionInRoot,
                     barSize = miniPlayerSize,
-                    blurRadiusPx = FrostedMiniPlayerBlurRadiusPx,
+                    blurRadiusPx = PillFrostBlurRadiusPx,
                     updateIntervalMs = if (LocalContext.current.isLowEndDevice()) 160L else 80L,
                 )
                 Box(
@@ -435,7 +512,7 @@ private fun MiniPlayerBackground(
                                 Modifier
                                     .fillMaxSize()
                                     .graphicsLayer {
-                                        alpha = FrostedMiniPlayerOverlayAlpha
+                                        alpha = PillFrostOverlayAlpha
                                         clip = true
                                     }.drawBehind {
                                         drawImage(blurredBitmap)
@@ -458,11 +535,11 @@ private fun MiniPlayerBackground(
                                 .graphicsLayer {
                                     renderEffect =
                                         BlurEffect(
-                                            radiusX = FrostedMiniPlayerBlurRadiusPx,
-                                            radiusY = FrostedMiniPlayerBlurRadiusPx,
+                                            radiusX = PillFrostBlurRadiusPx,
+                                            radiusY = PillFrostBlurRadiusPx,
                                             edgeTreatment = TileMode.Clamp,
                                         )
-                                    alpha = FrostedMiniPlayerOverlayAlpha
+                                    alpha = PillFrostOverlayAlpha
                                     clip = true
                                 }.drawBehind {
                                     val offset = backdrop.contentOffsetInRoot - positionInRoot

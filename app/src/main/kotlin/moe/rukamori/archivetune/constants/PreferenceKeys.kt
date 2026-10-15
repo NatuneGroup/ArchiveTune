@@ -24,6 +24,21 @@ val RandomThemeOnStartupKey = booleanPreferencesKey("randomThemeOnStartup")
 val DarkModeKey = stringPreferencesKey("darkMode")
 val PureBlackKey = booleanPreferencesKey("pureBlack")
 val DisableAnimationsKey = booleanPreferencesKey("disableAnimations")
+
+/**
+ * How the system back gesture animates the surface it closes.
+ *
+ * ORIGINAL keeps the classic instant back dispatch (the surface closes with its own close
+ * animation, untouched by the gesture). PREDICTIVE routes sheet back handling through
+ * androidx's PredictiveBackHandler, so the player sheet, bottom-sheet pages and menus scale
+ * away with the gesture and spring back when it is cancelled, and pushed screens slide.
+ */
+enum class BackAnimationStyle {
+    ORIGINAL,
+    PREDICTIVE,
+}
+
+val BackAnimationStyleKey = stringPreferencesKey("backAnimationStyle")
 val ForceHighRefreshRateKey = booleanPreferencesKey("forceHighRefreshRate")
 val WallpaperExtractionFailedKey = booleanPreferencesKey("wallpaperExtractionFailed")
 val HideStatusBarKey = booleanPreferencesKey("hideStatusBar")
@@ -61,6 +76,30 @@ val LibraryStyleKey = stringPreferencesKey("libraryStyle")
  * has always behaved, and the setting exists to be able to turn it off, not to change the default.
  */
 val AppleMusicAnimatedArtworkKey = booleanPreferencesKey("appleMusicAnimatedArtwork")
+/**
+ * Whether the Apple Music player style drifts and zooms its blurred artwork backdrop while lyrics
+ * are open. Default true: that is how the style has always behaved, and the setting exists to be
+ * able to turn it off, not to change the default.
+ */
+val AppleMusicBackdropWanderKey = booleanPreferencesKey("appleMusicBackdropWander")
+/**
+ * Whether the Apple Music player style shrinks the still cover slightly while paused. Default
+ * true: that is how the style has always behaved, and the setting exists to be able to turn it
+ * off, not to change the default.
+ */
+val AppleMusicPauseScaleKey = booleanPreferencesKey("appleMusicPauseScale")
+/**
+ * Whether the Apple Music player style scrolls overlong titles/artists as a marquee. Default
+ * true: that is how the style has always behaved, and the setting exists to be able to turn it
+ * off, not to change the default.
+ */
+val AppleMusicTitleMarqueeKey = booleanPreferencesKey("appleMusicTitleMarquee")
+/**
+ * Whether the Apple Music player style's seek bar and sliders swell while dragged. Default true:
+ * that is how the style has always behaved, and the setting exists to be able to turn it off,
+ * not to change the default.
+ */
+val AppleMusicSeekGrowKey = booleanPreferencesKey("appleMusicSeekGrow")
 
 val ShowPlayerVolumeBarKey = booleanPreferencesKey("showPlayerVolumeBar")
 val HidePlayerThumbnailKey = booleanPreferencesKey("hidePlayerThumbnail")
@@ -145,8 +184,13 @@ val BackdropEnabledKey = booleanPreferencesKey("backdropEnabled")
 val BackdropBlurAmountKey = intPreferencesKey("backdropBlurAmount")
 val MiniPlayerLastAnchorKey = intPreferencesKey("miniPlayerLastAnchor")
 val MiniPlayerBackgroundStyleKey = stringPreferencesKey("miniPlayerBackgroundStyle")
+val CompactMiniPlayerKey = booleanPreferencesKey("compactMiniPlayer")
 
-// ── Liquid Glass effects ──────────────────────────────────────────────────────
+enum class CompactLayoutChoice {
+    DEFAULT,
+    COMPACT,
+}
+
 // Master toggle: when off, all Liquid Glass surfaces (header pills on detail
 // pages, the Liquid Glass mini player background, and the Liquid Glass nav bar
 // style) are unavailable / hidden / forced to their non-glass fallback.
@@ -421,9 +465,9 @@ object DownloadSourceConfig {
 
     /**
      * Maps a playback source to the download source serving the same catalogue. Returns null for
-     * the playback-only sources this path has no resolver for (Apple, Amazon, QQ) so a pin to one
-     * of them falls back to the order rather than pinning the download to a source it can never
-     * resolve.
+     * the playback-only sources this path has no resolver for (Apple, Amazon, QQ, Spotify) so a pin
+     * to one of them falls back to the order rather than pinning the download to a source it can
+     * never resolve.
      */
     fun fromAudioSource(source: AudioSourceType): DownloadSource? =
         when (source) {
@@ -433,7 +477,7 @@ object DownloadSourceConfig {
             AudioSourceType.DEEZER -> DownloadSource.DEEZER
             AudioSourceType.JIOSAAVN -> DownloadSource.JIOSAAVN
             AudioSourceType.YOUTUBE -> DownloadSource.YOUTUBE_MUSIC
-            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ -> null
+            AudioSourceType.APPLE, AudioSourceType.AMAZON, AudioSourceType.QQ, AudioSourceType.SPOTIFY -> null
         }
 
     /**
@@ -441,14 +485,68 @@ object DownloadSourceConfig {
      * which is also the source playback used — *is* the chain: pinning YouTube yields an empty list
      * so the caller uses the YouTube resolver, and pinning a source this path cannot resolve falls
      * back to the order. Without a pin the chain is [fetchChain].
+     *
+     * When [playbackEnabled] is given, sources whose playback toggle is off are skipped (user
+     * decision 2026-10-13): the download order stays its own, but a source that playback would
+     * not use is not used for downloads either, and a pin to a disabled source yields to the
+     * order the way playback's stale pins do. Pass null to keep the ungated chain (tests,
+     * offline exports).
      */
     fun resolutionChain(
         rawOrder: String?,
         pinnedSource: AudioSourceType?,
+        playbackEnabled: Set<AudioSourceType>? = null,
     ): List<DownloadSource> {
-        val pinned = pinnedSource?.let(::fromAudioSource) ?: return fetchChain(rawOrder)
-        return if (pinned == DownloadSource.YOUTUBE_MUSIC) emptyList() else listOf(pinned)
+        val pinned = pinnedSource?.let(::fromAudioSource)
+        val pinnedActive = pinned != null && (playbackEnabled == null || pinnedSource in playbackEnabled)
+        val chain =
+            when {
+                !pinnedActive -> fetchChain(rawOrder)
+                pinned == DownloadSource.YOUTUBE_MUSIC -> emptyList()
+                else -> listOf(pinned)
+            }
+        return if (playbackEnabled == null) {
+            chain
+        } else {
+            chain.filter { source -> toAudioSource(source)?.let(playbackEnabled::contains) ?: true }
+        }
     }
+
+    /**
+     * Whether the terminal YouTube resolver may serve a download. It sits after every
+     * [resolutionChain] but is not part of it, so its playback toggle has to be checked here.
+     */
+    fun youTubeFallbackAllowed(playbackEnabled: Set<AudioSourceType>?): Boolean =
+        playbackEnabled == null || AudioSourceType.YOUTUBE in playbackEnabled
+
+    /**
+     * The already-cached keys a download may reuse for [mediaId], in the same order and under
+     * the same gates as a fresh resolution: the [resolutionChain] sources, then YouTube's bare key
+     * only while [youTubeFallbackAllowed]. A cache hit for any other source would hand the user
+     * bytes from a source they disabled or ranked below YouTube.
+     */
+    fun downloadCacheKeys(
+        rawOrder: String?,
+        pinnedSource: AudioSourceType?,
+        playbackEnabled: Set<AudioSourceType>?,
+        mediaId: String,
+    ): List<String> =
+        resolutionChain(rawOrder, pinnedSource, playbackEnabled)
+            .filterNot { it == DownloadSource.AUTO }
+            .map { "${it.name.lowercase(Locale.US)}:$mediaId" } +
+            listOfNotNull(mediaId.takeIf { youTubeFallbackAllowed(playbackEnabled) })
+
+    /** The playback source serving the same catalogue as [source], null for [DownloadSource.AUTO]. */
+    fun toAudioSource(source: DownloadSource): AudioSourceType? =
+        when (source) {
+            DownloadSource.QOBUZ -> AudioSourceType.QOBUZ
+            DownloadSource.QOBUZ_BACKUP -> AudioSourceType.QOBUZ_BACKUP
+            DownloadSource.TIDAL -> AudioSourceType.TIDAL
+            DownloadSource.DEEZER -> AudioSourceType.DEEZER
+            DownloadSource.JIOSAAVN -> AudioSourceType.JIOSAAVN
+            DownloadSource.YOUTUBE_MUSIC -> AudioSourceType.YOUTUBE
+            DownloadSource.AUTO -> null
+        }
 }
 
 val AiContentFilterEnabledKey = booleanPreferencesKey("aiContentFilterEnabled")
@@ -1136,6 +1234,13 @@ val HomeSourceKey = stringPreferencesKey("homeSource")
  */
 val ActiveHomeSourcesKey = stringPreferencesKey("activeHomeSources")
 
+/**
+ * Whether the home's quick picks follow the active catalogue (Spotify/QQ) instead of YouTube.
+ * Off by default, which is what 4nx3b's home does: its shelves come from YouTube until the reader
+ * turns this on.
+ */
+val HomeCatalogueSwitchKey = booleanPreferencesKey("homeCatalogueSwitch")
+
 val SpotifyHistorySyncEnabledKey = booleanPreferencesKey("spotifyHistorySyncEnabled")
 
 /**
@@ -1150,9 +1255,8 @@ val SpotifyHistorySyncEnabledKey = booleanPreferencesKey("spotifyHistorySyncEnab
  * @property nativeBackground the backdrop the style draws for itself, or null when it has no
  *   opinion and simply renders whatever the reader picked. A style with one still renders that
  *   backdrop when the reader has expressed no preference.
- * @property supportsBackgroundChoice whether the picker is offered at all. False for styles whose
- *   backdrop is the look — Apple Music without its blurred cover is not Apple Music — and for
- *   TikTok, whose full-bleed pages cover the backdrop so completely that changing it does nothing.
+ * @property supportsBackgroundChoice whether the picker is offered at all. Native media can still cover a selected background; decorative native
+ *   backdrops yield to an explicit choice without changing stored preferences.
  * @property forcesMonochromeChrome whether the controls are pinned white-on-black instead of
  *   following the theme. True for the styles that sit on a full-bleed black-backed sleeve, where
  *   theme-coloured chrome would be illegible over the artwork half the time.
@@ -1177,7 +1281,7 @@ enum class PlayerDesignStyle(
     V9(nativeBackground = PlayerBackgroundStyle.DEFAULT, supportsBackgroundChoice = false),
 
     /** The blurred, expanded cover is the whole look. */
-    APPLE_MUSIC(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+    APPLE_MUSIC(nativeBackground = PlayerBackgroundStyle.BLUR),
     V10,
 
     /**
@@ -1186,11 +1290,11 @@ enum class PlayerDesignStyle(
      * ones under another name — BitChord and TikTok both draw MeshBackdrop, which is the animated
      * glow, and SimpMusic draws a diagonal palette wash, which is the gradient.
      */
-    BITCHORD(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED, supportsBackgroundChoice = false),
+    BITCHORD(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED),
 
     /** The vertical pager sits on top of the backdrop, so a different one would never be seen. */
-    TIKTOK(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED, supportsBackgroundChoice = false),
-    SIMPMUSIC(nativeBackground = PlayerBackgroundStyle.GRADIENT, supportsBackgroundChoice = false),
+    TIKTOK(nativeBackground = PlayerBackgroundStyle.GLOW_ANIMATED),
+    SIMPMUSIC(nativeBackground = PlayerBackgroundStyle.GRADIENT),
 
     /**
      * The SpatialFlow player (github.com/MythicalSHUB/SpatialFlow, GPL-3.0) — artwork pager, pill
@@ -1198,12 +1302,55 @@ enum class PlayerDesignStyle(
      * Its backdrop is a blurred, expanded sleeve, so it declares BLUR rather than drawing something
      * only it understands.
      */
-    SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR, supportsBackgroundChoice = false),
+    SPATIALFLOW(nativeBackground = PlayerBackgroundStyle.BLUR),
+
+    /**
+     * The Looper player (4nx3b/ArchiveTune dev) — typography-forward layout, its own slider and
+     * seek-step gesture, sleeve artwork that drags to change track. It paints no backdrop of its
+     * own, so unlike the other self-contained styles it leaves the background choice to the reader.
+     */
+    LOOPER,
+
+    /**
+     * The Flamingo player (4nx3b/ArchiveTune dev, after Flamingo's NowPlaying) — album, lyrics and
+     * queue pages in one surface, with the artwork morphing between them. Its floating-light backdrop
+     * is a blurred sleeve drawn edge to edge, so it declares BLUR: that also zeroes the shared queue
+     * peek, which Flamingo does not need because its own queue page replaces the sheet.
+     */
+    FLAMINGO(nativeBackground = PlayerBackgroundStyle.BLUR),
     ;
 
-    /** What to actually render: the reader's pick where it is offered, the style's own otherwise. */
+    /** DEFAULT preserves the native recipe; explicit choices never rewrite storage. */
     fun resolveBackground(stored: PlayerBackgroundStyle): PlayerBackgroundStyle =
-        if (supportsBackgroundChoice) stored else nativeBackground ?: stored
+        when {
+            !supportsBackgroundChoice -> nativeBackground ?: stored
+            stored == PlayerBackgroundStyle.DEFAULT -> nativeBackground ?: stored
+            else -> stored
+        }
+
+    val supportsSharedButtons: Boolean
+        get() = this in SharedTransportStyles
+
+    val supportsSharedSeekStyle: Boolean
+        get() = this in SharedTransportStyles
+
+    val hasVolumeRow: Boolean
+        get() = this in VolumeRowStyles
+
+    val hasOrdinarySleeve: Boolean
+        get() = this in OrdinarySleeveStyles
+
+    val hasHorizontalArtworkSkip: Boolean
+        get() = this in HorizontalArtworkSkipStyles
+
+    val hasArtworkCanvasSurface: Boolean
+        get() = this in ArtworkCanvasStyles
+
+    fun usesSharedBackground(stored: PlayerBackgroundStyle): Boolean =
+        supportsBackgroundChoice && stored != PlayerBackgroundStyle.DEFAULT
+
+    fun rendersSharedBackground(stored: PlayerBackgroundStyle): Boolean =
+        usesSharedBackground(stored) || this in SharedBackgroundHosts
 
     /**
      * Whether the style paints its own artwork-driven backdrop rather than a neutral one.
@@ -1220,6 +1367,13 @@ enum class PlayerDesignStyle(
         get() = nativeBackground != null && nativeBackground != PlayerBackgroundStyle.DEFAULT
 
     companion object {
+        private val SharedTransportStyles = setOf(V1, V2, V3, V4, V5, V6, V7, V10)
+        private val VolumeRowStyles = setOf(V7, V8, BITCHORD, APPLE_MUSIC, FLAMINGO)
+        private val OrdinarySleeveStyles = setOf(BITCHORD, SIMPMUSIC, SPATIALFLOW, LOOPER, FLAMINGO, APPLE_MUSIC)
+        private val HorizontalArtworkSkipStyles = setOf(SIMPMUSIC, SPATIALFLOW, LOOPER)
+        private val ArtworkCanvasStyles = setOf(APPLE_MUSIC, SPATIALFLOW, LOOPER, FLAMINGO)
+        private val SharedBackgroundHosts = setOf(V1, V2, V3, V4, V6, V10, LOOPER)
+
         /**
          * What a fresh install opens with. Seven readers — the player, its thumbnail, the queue, the
          * menu, the Apple Music experience toggle, MainActivity and the appearance screen — each
@@ -1229,6 +1383,13 @@ enum class PlayerDesignStyle(
         val Default = V4
     }
 }
+
+/**
+ * Flamingo player settings. Upstream reads both with the same defaults written here — the volume
+ * bar on, the backdrop effect off — so a fresh install looks the way the style's reference does.
+ */
+val FlamingoShowVolumeBarKey = booleanPreferencesKey("flamingoNowPlayingShowVolumeBar")
+val FlamingoBackgroundEffectKey = booleanPreferencesKey("flamingoNowPlayingBackgroundEffect")
 
 enum class PlayerBackgroundStyle {
     DEFAULT,
@@ -1265,20 +1426,45 @@ enum class MiniPlayerBackgroundStyle {
 }
 
 // Bottom navigation bar look: DEFAULT keeps the docked full-width bar; FLOATING detaches it into
-// a pill with larger margins that never pairs with the mini player.
+// a pill with larger margins that never pairs with the mini player. SUKISU renders the SukiSU
+// liquid glass bar (ui/component/sukisu/), which fixes its own dimensions and ignores the bar
+// customization sliders; without Liquid Glass effects it falls back to a solid pill.
 enum class NavigationBarStyle {
     DEFAULT,
     FLOATING,
 
-    /**
-     * The Apple Music tab bar: edge-to-edge and flat, labels always shown, no selection pill.
-     *
-     * Forced by the Apple Music Experience switch, and selectable on its own here.
-     */
+    YUMA_PLAYER,
     APPLE_MUSIC,
+    SUKISU,
 }
 
 val NavigationBarStyleKey = stringPreferencesKey("navigationBarStyle")
+
+enum class NavigationBarCompactBehavior {
+    ADAPTIVE,
+    ALWAYS_EXPANDED,
+    ALWAYS_COMPACT,
+}
+
+val NavigationBarCompactBehaviorKey = stringPreferencesKey("navigationBarCompactBehavior")
+val CompactBottomPillsKey = booleanPreferencesKey("compactBottomPills")
+
+// The round library and search buttons that replace the tab bar while it is compacted. Off follows
+// the Liquid Glass master switch (glass when it is on); on keeps them in solid theme colours.
+val CompactControlsStockColorKey = booleanPreferencesKey("compactControlsStockColor")
+
+enum class InterfaceStyle {
+    MATERIAL_EXPRESSIVE,
+    APPLE_MUSIC,
+}
+
+enum class SearchBarPosition {
+    TOP,
+    BOTTOM,
+}
+
+val SearchBarPositionKey = stringPreferencesKey("searchBarPosition")
+val HideSearchChromeWhileScrollingKey = booleanPreferencesKey("hideSearchChromeWhileScrolling")
 
 // Draws a frosted (blurred app content) backdrop behind the navigation bar. True backdrop blur on
 // Android 12+; a translucent surface fallback below that.
@@ -1288,9 +1474,11 @@ val NavigationBarFrostedBlurKey = booleanPreferencesKey("navigationBarFrostedBlu
 // bar surface is tinted with the accent (primary) color instead of the neutral surface container.
 // Mutually exclusive with [NavigationBarFrostedBlurKey] — turning one on turns the other off.
 val NavigationBarTintFrostedBlurKey = booleanPreferencesKey("navigationBarTintFrostedBlur")
+// Opt-in BitChord pill bar (icons, stretch-squash selection pill, drag-to-switch).
+// Mutually exclusive with the frosted, tinted and liquid-glass nav treatments.
 val HideNavigationBarLabelsKey = booleanPreferencesKey("hideNavigationBarLabels")
+val NavigationBarHideOnScrollKey = booleanPreferencesKey("navigationBarHideOnScroll")
 
-// ── Navigation bar dimension customization ──────────────────────────────────
 // Advanced tuning knobs for the FLOATING nav bar style (and corner radius for
 // DEFAULT). Defaults preserve the pre-existing look.
 val NavigationBarWidthKey = floatPreferencesKey("navigationBarWidth")
@@ -1380,6 +1568,10 @@ val LyricsV2BounceFactorKey = floatPreferencesKey("lyricsV2BounceFactor")
 val LyricsV2GlowFactorKey = floatPreferencesKey("lyricsV2GlowFactor")
 val LyricsV2FillTransitionWidthKey = floatPreferencesKey("lyricsV2FillTransitionWidth")
 val LyricsV2LrcBounceEnabledKey = booleanPreferencesKey("lyricsV2LrcBounceEnabled")
+val LyricsV2AdaptiveScrollSpringKey = booleanPreferencesKey("lyricsV2AdaptiveScrollSpring")
+val LyricsV2SoftWordRevealKey = booleanPreferencesKey("lyricsV2SoftWordReveal")
+val LyricsV2EmphasizeLastWordKey = booleanPreferencesKey("lyricsV2EmphasizeLastWord")
+val LyricsV2InterludeDotsKey = booleanPreferencesKey("lyricsV2InterludeDots")
 
 // Queue lyrics pre-load settings
 val PreloadQueueLyricsEnabledKey = booleanPreferencesKey("preload_queue_lyrics_enabled")
@@ -1392,14 +1584,15 @@ val SearchSourceKey = stringPreferencesKey("searchSource")
 val SwipeThumbnailKey = booleanPreferencesKey("swipeThumbnail")
 val SwipeSensitivityKey = floatPreferencesKey("swipeSensitivity")
 // Catalog providers are independent from the local-vs-online search scope above. Spotify is a
-// metadata/search provider here; it is intentionally not an AudioSourceType because playback is
-// resolved by the existing audio-source chain.
+// metadata/search provider here; that is a different account and a different surface from the
+// experimental AudioSourceType.SPOTIFY streaming source, which has its own keys below.
 val DefaultMetadataSourceKey = stringPreferencesKey("defaultMetadataSource")
 val DefaultSearchSourceKey = stringPreferencesKey("defaultSearchSource")
 
 enum class MetadataSource {
     YOUTUBE,
     SPOTIFY,
+    APPLE_MUSIC,
 }
 
 enum class SearchProvider {
@@ -1569,21 +1762,10 @@ val AppleMusicQualityKey = stringPreferencesKey("appleMusicQuality")
  */
 val AppleMusicSourceEnabledKey = booleanPreferencesKey("appleMusicSourceEnabled")
 
-val TidalAudioQualityOptions =
-    listOf(
-        TidalAudioQuality.AAC_320,
-        TidalAudioQuality.FLAC,
-        TidalAudioQuality.HI_RES_LOSSLESS,
-    )
-
-// ---------------------------------------------------------------------------
-// Qobuz source (user-provided Qobuz-DL proxy instances, e.g. squid.wtf-style)
-// ---------------------------------------------------------------------------
 // Streaming/playback only (like Tidal): the app never bundles endpoints — the user pastes their own
 // proxy instance URLs. Each instance exposes get-music (search) + download-music (stream URL).
 val QobuzEnabledKey = booleanPreferencesKey("qobuzEnabled")
 
-// ---------------------------------------------------------------------------
 // Qobuz backup server (mlc.kouzu.in). Separate from Qobuz proper — the
 // backup takes a YouTube video id and returns a lossless stream, while
 // regular Qobuz uses source pool tokens + community proxy instances. The
@@ -1595,9 +1777,6 @@ val QobuzBackupEnabledKey = booleanPreferencesKey("qobuzBackupEnabled")
 val QobuzInstancesKey = stringPreferencesKey("qobuzInstances")
 
 
-// ---------------------------------------------------------------------------
-// Source Pool integration
-// ---------------------------------------------------------------------------
 // When ON (default), the app uses shared accounts from the community Source Pool for Tidal, Qobuz,
 // Deezer, and Apple Music playback. When OFF, only manually-added accounts are used. The manual
 // sign-in UI is always visible regardless of this toggle, so users can add their own accounts
@@ -1621,13 +1800,6 @@ enum class QobuzAudioQuality {
     HI_RES,
     MAX,
 }
-
-val QobuzAudioQualityOptions =
-    listOf(
-        QobuzAudioQuality.FLAC,
-        QobuzAudioQuality.HI_RES,
-        QobuzAudioQuality.MAX,
-    )
 
 val QobuzAudioQualityKey = stringPreferencesKey("qobuzAudioQuality")
 
@@ -1683,6 +1855,7 @@ enum class AudioSourceType {
     APPLE,
     AMAZON,
     QQ,
+    SPOTIFY,
     JIOSAAVN,
     YOUTUBE,
 }
@@ -1706,8 +1879,9 @@ enum class AudioSourceType {
 //  - it decrypts only a container the account itself was served, on device, into the app's own
 //    cache, and never writes anything back to the service;
 //  - it circumvents no advert, no limit and no purchase prompt.
-// It is deliberately not in AudioSourceConfig.DEFAULT_ORDER: it joins the order by hand through
-// withSourceAdded, once the user has signed in and turned it on.
+// QQ sits in AudioSourceConfig.DEFAULT_ORDER like every other source, just above YouTube, and
+// defaults to off: the chain filters disabled sources out, so listing it costs nothing until
+// the user signs in and switches it on.
 val QqMusicEnabledKey = booleanPreferencesKey("qqMusicEnabled")
 
 val QqMusicAudioQualityKey = stringPreferencesKey("qqMusicAudioQuality")
@@ -1723,6 +1897,49 @@ val QqMusicMusickeyKey = stringPreferencesKey("qqMusicMusickey")
 // Display-only nickname from the login reply, so the settings row can say who is signed in without
 // keeping anything else about the account.
 val QqMusicNicknameKey = stringPreferencesKey("qqMusicNickname")
+
+// ---------------------------------------------------------------------------
+// Spotify streaming source (experimental)
+// ---------------------------------------------------------------------------
+// Audio from Spotify itself, on a second account that exists only for streaming. The catalog
+// integration above (SpotifySpDcKey and friends) is never read here and never written from here:
+// the streaming source signs in through its own WebView profile, keeps its own cookie and token,
+// and refuses the account the catalog is signed in with, so playback reporting and any action
+// Spotify takes against a streaming session land on the throwaway account and not on the library.
+// Spotify sits in AudioSourceConfig.DEFAULT_ORDER like every other source, just above YouTube,
+// and defaults to off. The switch alone does nothing until a streaming account is signed in —
+// only then does the source count as enabled.
+val SpotifyStreamEnabledKey = booleanPreferencesKey("spotifyStreamEnabled")
+
+val SpotifyStreamSpDcKey = stringPreferencesKey("spotifyStreamSpDc")
+val SpotifyStreamSpKeyKey = stringPreferencesKey("spotifyStreamSpKey")
+val SpotifyStreamAccessTokenKey = stringPreferencesKey("spotifyStreamAccessToken")
+val SpotifyStreamAccessTokenExpiresAtKey = longPreferencesKey("spotifyStreamAccessTokenExpiresAt")
+
+// The streaming account's user id, kept so a later catalog sign-in with the same account can be
+// noticed and the streaming source stood down instead of reporting plays into the library.
+val SpotifyStreamUserIdKey = stringPreferencesKey("spotifyStreamUserId")
+val SpotifyStreamAccountNameKey = stringPreferencesKey("spotifyStreamAccountName")
+
+val SpotifyStreamResolveMethodKey = stringPreferencesKey("spotifyStreamResolveMethod")
+
+// The 40-hex virtual Connect device the web-player method registers. Stable per install so the
+// streaming account does not collect a new device on every play.
+val SpotifyStreamDeviceIdKey = stringPreferencesKey("spotifyStreamDeviceId")
+
+enum class SpotifyStreamResolveMethod {
+    // Web-player pipeline: Connect device + manifest + Widevine-protected AAC 128.
+    STOPIFY,
+
+    // Desktop pipeline: PlayPlay audio key + AES-CTR decrypted Ogg Vorbis/FLAC; falls back to
+    // STOPIFY when it cannot resolve.
+    ECHO,
+    ;
+
+    companion object {
+        val Default = STOPIFY
+    }
+}
 
 // ---------------------------------------------------------------------------
 // YouTube source
@@ -1966,6 +2183,7 @@ val RemindAfterKey = intPreferencesKey("remind_after")
 val EnableUpdateNotificationKey = booleanPreferencesKey("enableUpdateNotification")
 val UpdateChannelKey = stringPreferencesKey("updateChannel")
 val LastUpdateCheckKey = longPreferencesKey("lastUpdateCheck")
+val LastUpdateCheckChannelKey = stringPreferencesKey("lastUpdateCheckChannel")
 val LastNotifiedVersionKey = stringPreferencesKey("lastNotifiedVersion")
 
 val GitHubContributorsEtagKey = stringPreferencesKey("github_contributors_etag")
@@ -1984,26 +2202,28 @@ val NightlyReleasesJsonKey = stringPreferencesKey("daily_nightly_releases_json")
 val NightlyReleasesLastCheckedAtKey = longPreferencesKey("daily_nightly_releases_last_checked_at")
 val NightlyReleasesFingerprintKey = stringPreferencesKey("daily_nightly_releases_fingerprint")
 
-// Canary channel: a separate, more-bleeding-edge pre-release feed built from the `canary` branch
-// (the nightly feed above tracks `dev`). Cached independently so the two channels never clobber
-// each other's release list.
-val CanaryReleasesEtagKey = stringPreferencesKey("canary_releases_etag")
-val CanaryReleasesJsonKey = stringPreferencesKey("canary_releases_json")
-val CanaryReleasesLastCheckedAtKey = longPreferencesKey("canary_releases_last_checked_at")
-val CanaryReleasesFingerprintKey = stringPreferencesKey("canary_releases_fingerprint")
+// Keyless update feed: CI uploads a schema-v1 manifest per channel to the fixed `update-feed`
+// release (releases/download/update-feed/<channel>.json). The app caches the raw JSON with a TTL
+// (15 min nightly, 6 h stable) so a fresh manifest costs no api.github.com request at all.
+val UpdateFeedManifestNightlyJsonKey = stringPreferencesKey("update_feed_manifest_nightly_json")
+val UpdateFeedManifestNightlyLastCheckedAtKey = longPreferencesKey("update_feed_manifest_nightly_last_checked_at")
+val UpdateFeedManifestStableJsonKey = stringPreferencesKey("update_feed_manifest_stable_json")
+val UpdateFeedManifestStableLastCheckedAtKey = longPreferencesKey("update_feed_manifest_stable_last_checked_at")
 
-// The Canary channel is hidden until the user unlocks it by tapping the About-screen app icon
-// eight times, so a casual user never lands on the least-stable feed by accident.
-val CanaryChannelUnlockedKey = booleanPreferencesKey("canaryChannelUnlocked")
+// GitHub API rate-limit backoff: epoch ms until which api.github.com must not be called (403/429
+// with X-RateLimit-Remaining: 0); caches are served until it passes.
+val GitHubRateLimitedUntilKey = longPreferencesKey("github_rate_limited_until")
 
-// Guards the one-time rewrite of a stored "CANARY" update-channel value (which used to mean the
-// nightly/dev build) to "NIGHTLY", freeing "CANARY" for the new channel. See DataStore migrations.
-val UpdateChannelNightlyRenameMigratedKey = booleanPreferencesKey("updateChannelNightlyRenameMigrated")
+// Cached Updates-screen commit history, kept per requested branch (dev for Nightly, main for
+// Stable) so a channel switch never serves the other branch's page.
+val GitHubCommitsJsonKey = stringPreferencesKey("github_commits_json")
+val GitHubCommitsEtagKey = stringPreferencesKey("github_commits_etag")
+val GitHubCommitsLastCheckedAtKey = longPreferencesKey("github_commits_last_checked_at")
+val GitHubCommitsBranchKey = stringPreferencesKey("github_commits_branch")
 
 enum class UpdateChannel {
     STABLE,
     NIGHTLY,
-    CANARY,
     ;
 
     companion object {
@@ -2012,14 +2232,51 @@ enum class UpdateChannel {
             defaultValue: UpdateChannel,
         ): UpdateChannel =
             when (value) {
-                // Legacy alias from before the pre-release channel had a name. The old "CANARY"
-                // value (which meant the dev/nightly build) is rewritten to "NIGHTLY" once by a
-                // one-time DataStore migration, so "CANARY" here is the new, separate channel.
-                "DAILY_NIGHTLY" -> NIGHTLY
+                // Legacy aliases: "DAILY_NIGHTLY" from before the pre-release channel had a name,
+                // and "CANARY" from installs that had selected the since-removed Canary channel.
+                // Both land on NIGHTLY.
+                "DAILY_NIGHTLY", "CANARY" -> NIGHTLY
                 else -> entries.firstOrNull { it.name == value } ?: defaultValue
             }
     }
 }
+
+// Key names only the removed Canary channel ever wrote: the About easter-egg unlock flag and the
+// canary release cache. The CANARY→NIGHTLY DataStore migration (see DataStore.kt) drops them; the
+// names live here next to [UpdateChannel] so the migration decision below stays pure.
+internal val CanaryLegacyKeyNames: Set<String> =
+    setOf(
+        "canaryChannelUnlocked",
+        "canary_releases_etag",
+        "canary_releases_json",
+        "canary_releases_last_checked_at",
+        "canary_releases_fingerprint",
+    )
+
+/**
+ * What the one-time CANARY→NIGHTLY DataStore migration does for a given DataStore snapshot. The
+ * removed Canary channel leaves two kinds of state behind: a stored `updateChannel` of "CANARY"
+ * (rewritten to NIGHTLY — the feed those installs follow from now on) and the keys only that
+ * channel wrote ([CanaryLegacyKeyNames], dropped). [needed] is false once neither remains, so the
+ * migration never re-runs.
+ */
+internal data class CanaryChannelMigration(
+    val channelToNightly: Boolean,
+    val dropKeyNames: Set<String>,
+) {
+    val needed: Boolean
+        get() = channelToNightly || dropKeyNames.isNotEmpty()
+}
+
+/** Pure decision for the CANARY→NIGHTLY migration, applied by DataStore.kt. */
+internal fun canaryChannelMigration(
+    storedChannel: String?,
+    presentLegacyKeyNames: Set<String>,
+): CanaryChannelMigration =
+    CanaryChannelMigration(
+        channelToNightly = storedChannel == "CANARY",
+        dropKeyNames = CanaryLegacyKeyNames.intersect(presentLegacyKeyNames),
+    )
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Inline / fullscreen music-video player preferences
@@ -2065,3 +2322,18 @@ enum class VideoAspectRatio {
 }
 
 val VideoAspectRatioKey = stringPreferencesKey("videoAspectRatio")
+
+// Tryptify/LastWave audio engine toggles and bit-perfect output (ported from upstream).
+val FloatDspEnabledKey = booleanPreferencesKey("floatDspEnabled")
+val UsbExclusiveAudioKey = booleanPreferencesKey("usbExclusiveAudio")
+val BitPerfectOutputKey = booleanPreferencesKey("bitPerfectOutput")
+const val BIT_PERFECT_OUTPUT_DEFAULT = false
+val BitPerfectNativeRateKey = booleanPreferencesKey("bitPerfectNativeRate")
+const val BIT_PERFECT_NATIVE_RATE_DEFAULT = true
+val TryptifyAudioProcessingKey = booleanPreferencesKey("tryptifyAudioProcessing")
+val LastwaveAudioProcessingKey = booleanPreferencesKey("lastwaveAudioProcessing")
+
+// Lyrics provider enable toggles (ported from 4nx3b).
+val EnableBiniLyricsKey = booleanPreferencesKey("enableBiniLyrics")
+val EnableGeniusLyricsKey = booleanPreferencesKey("enableGeniusLyrics")
+val EnableLrcRedKey = booleanPreferencesKey("enableLrcRed")

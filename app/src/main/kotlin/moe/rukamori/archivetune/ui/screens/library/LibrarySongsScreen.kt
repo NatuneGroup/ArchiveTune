@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.ui.screens.library
 
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -72,7 +73,6 @@ import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.LibrarySource
 import moe.rukamori.archivetune.constants.HideExplicitKey
-import moe.rukamori.archivetune.constants.PureBlackKey
 import moe.rukamori.archivetune.constants.SongFilter
 import moe.rukamori.archivetune.constants.SongFilterKey
 import moe.rukamori.archivetune.constants.SongSortDescendingKey
@@ -85,7 +85,6 @@ import moe.rukamori.archivetune.ui.component.ExpressivePullToRefreshBox
 import moe.rukamori.archivetune.ui.component.ItemThumbnail
 import moe.rukamori.archivetune.ui.component.LocalMenuState
 import moe.rukamori.archivetune.ui.menu.SongMenu
-import moe.rukamori.archivetune.ui.screens.library.rememberArtworkGradient
 import moe.rukamori.archivetune.ui.utils.ItemWrapper
 import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberEnumPreference
@@ -104,7 +103,7 @@ fun LibrarySongsScreen(
     // or multi-select below it, so it is its own screen rather than a branch threaded through
     // this one. The source arrives from the Library, which owns the selector.
     if (librarySource == LibrarySource.SPOTIFY) {
-        LibrarySpotifySongsScreen()
+        LibrarySpotifySongsScreen(navController)
         return
     }
 
@@ -116,7 +115,7 @@ fun LibrarySongsScreen(
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
     val isDarkTheme = isSystemInDarkTheme()
-    val pureBlack by rememberPreference(PureBlackKey, defaultValue = false)
+    val pureBlack = LocalItemPreferences.current.pureBlack
 
     val (sortType, onSortTypeChange) =
         rememberEnumPreference(

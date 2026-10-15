@@ -8,8 +8,6 @@
 
 package moe.rukamori.archivetune.ui.screens.library
 
-import android.content.Intent
-import android.net.Uri
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -108,9 +106,9 @@ import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.spotify.SpotifyLibraryViewModel
 import moe.rukamori.archivetune.spotify.SpotifyMapper
-import moe.rukamori.archivetune.spotify.models.SpotifyArtist
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.ui.component.ExpressivePullToRefreshBox
+import moe.rukamori.archivetune.ui.component.rememberSpotifyCatalogOpener
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.LibraryMixViewModel
 import moe.rukamori.archivetune.viewmodels.LibraryTopMixEmptyReason
@@ -250,17 +248,7 @@ fun LibraryMixScreen(
         }
     }
 
-    // Handed to Spotify itself, the same as Spotify search results are: the app has no in-app
-    // Spotify artist page to open, and pretending otherwise would be worse than handing them over.
-    val context = LocalContext.current
-    val openSpotifyArtist: (SpotifyArtist) -> Unit = { artist ->
-        runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/artist/${artist.id}")),
-            )
-        }
-        Unit
-    }
+    val spotifyCatalogOpener = rememberSpotifyCatalogOpener(navController)
 
     LaunchedEffect(viewModel) {
         viewModel.topMixEvents.collect { message ->
@@ -443,15 +431,6 @@ fun LibraryMixScreen(
                                 }
                             }
                         }
-                    }
-                }
-
-                if (supportArchiveTuneAvailable) {
-                    item(key = "support_archive_tune", contentType = "support_ad") {
-                        SupportArchiveTuneSection(
-                            onMessage = showMessage,
-                            modifier = Modifier.padding(horizontal = 24.dp),
-                        )
                     }
                 }
 
@@ -799,7 +778,10 @@ fun LibraryMixScreen(
                                         ArtistTile(
                                             thumbnailUrl = SpotifyMapper.getArtistThumbnail(artist),
                                             name = artist.name,
-                                            onClick = { openSpotifyArtist(artist) },
+                                            onClick = {
+                                                spotifyCatalogOpener.openArtist(key = artist.id, artistName = artist.name)
+                                            },
+                                            isResolving = spotifyCatalogOpener.resolvingKey == artist.id,
                                         )
                                     }
                                 }
@@ -950,6 +932,7 @@ private fun ArtistTile(
     name: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isResolving: Boolean = false,
 ) {
     Column(
         modifier =
@@ -958,15 +941,20 @@ private fun ArtistTile(
                 .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        AsyncImage(
-            model = rememberSizedImageRequest(thumbnailUrl, 72.dp, 72.dp),
-            contentDescription = null,
-            contentScale = ContentScale.Crop,
-            modifier =
-                Modifier
-                    .size(72.dp)
-                    .clip(CircleShape),
-        )
+        Box(contentAlignment = Alignment.Center) {
+            AsyncImage(
+                model = rememberSizedImageRequest(thumbnailUrl, 72.dp, 72.dp),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier =
+                    Modifier
+                        .size(72.dp)
+                        .clip(CircleShape),
+            )
+            if (isResolving) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = name,

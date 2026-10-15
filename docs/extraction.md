@@ -5,24 +5,44 @@ Qobuz or Telegram track. See [AGENTS.md](../AGENTS.md) for the multi-source cont
 
 ## The chain
 
-`ResolveAudioStreamUseCase` (`playback/stream/`) is the entry point. Nothing in `MusicService`'s
-multi-source chain calls it yet — playback still reaches YouTube through
-`YTPlayerUtils.playerResponseForPlayback` — so this stack is groundwork, and a change here is not
-live until that wiring lands. It caches by
-`(mediaId, quality, metered, purpose, authFingerprint, pinnedFormatId)`, collapses concurrent
-requests for the same key into one in-flight resolution, and tries:
+Playback (`MusicService.resolvePlaybackDataSpec`) and downloads (`DownloadUtil.resolveYouTubeDownload`)
+resolve YouTube through the same live chain, each tier tried only after the previous one produced
+no stream:
 
-1. **`NativeStreamRepository`** — the compiled InnerTube core, via `YTPlayerUtils`.
-   Fast, no Python. This is the hot path.
-2. Fallback tiers, in order, each tried only after the previous one throws:
-   **`InnerTuneXStreamRepository`** (the `com.github.MetrolistGroup.innertubex` library's own
-   extraction stack, adapted — not forked; it refuses SABR, byte-range-only and HLS-manifest results,
-   which the player cannot fetch), then **`NewPipeStreamRepository`** (an anonymous player response minted
-   through MetrolistExtractor's JavaScript player, so no plugin APK and no session), then
-   **`YtdlnisStreamRepository`** (an external yt-dlp plugin APK through `ytdlp/CompactYtDlp.kt`, the
-   way YTDLnis does).
+1. **Shipped resolver** — `YTPlayerUtils.playerResponseForPlayback` (playback, honouring Manual
+   client mode) or `playerResponseForDownload` (downloads). The compiled InnerTube core with
+   BotGuard/QuickJS PO tokens; the hot path, documented under *Client selection* below.
+2. **`InnerTuneXStreamRepository`** — the `com.github.MetrolistGroup.innertubex` library's own
+   extraction stack, adapted, not forked. It asks for clients whose response carries a plain URL
+   and refuses SABR, byte-range-only and HLS-manifest results, which the player cannot fetch.
+3. **`NewPipeStreamRepository`** — NewPipe's own YouTube stream extractor (MetrolistExtractor, the
+   artifact `:core` already ships, through core's single NewPipe downloader), then, if that yields
+   nothing, an anonymous player response minted through NewPipe's JavaScript player.
+4. **Echo** (`echo/EchoStreamResolver`) — the very last resort, see below.
 
-The order lives in `ResolveAudioStreamUseCase.fallbackTiers` and nowhere else;
+`playback/stream/YouTubeFailsafeChain.recover` runs steps 2–4. The extractor-tier order lives in
+`ResolveAudioStreamUseCase.shippedFallbackTiers` and nowhere else. Each extractor tier is bounded at
+12 s (`YouTubeFailsafeChain.TIER_TIMEOUT_MS`) and echo at 20 s, and caller cancellation always stops
+the chain. Each tier logs one line under `PlaybackDiagnostics`:
+`YouTube tier=<shipped|innertubex|newpipe|echo> resolved=<bool> elapsedMs=<n> [reason=<type>]`.
+
+`InvalidPlaybackLoginContextException` and `LoginRequiredForPlaybackException` skip steps 2–4:
+both are actionable by the listener, and no other extractor can fix them. When every tier fails,
+the shipped resolver's original failure is rethrown so the error mapping keeps its message.
+
+Every tier hands back a `YTPlayerUtils.PlaybackData`, so the URL cache, format persistence,
+expiry and request headers downstream do not change. The headers come from the stream URL's own
+`c`/`cver` parameters through `StreamClientUtils.resolveRequestProfile`, which covers every client
+the fallback tiers produce URLs for (InnerTubeX's automatic direct clients `TVHTML5`,
+`TVHTML5_SIMPLY`, `WEB_REMIX`, `WEB_CREATOR`, `WEB_EMBEDDED_PLAYER`; NewPipe's `ANDROID_VR`;
+the anonymous `ANDROID_MUSIC`/`IOS`/`WEB_REMIX` players). The extractor tiers resolve as an
+anonymous visitor, and for downloads they prefer MP4/AAC (jaudiotagger cannot tag WebM). Low-data
+mode passes `LOW` quality to every tier.
+
+`ResolveAudioStreamUseCase.invoke` (used by `NextStreamPreloader`) wraps the same stack with its own
+cache keyed by `(mediaId, quality, metered, purpose, authFingerprint, pinnedFormatId)` and adds
+**`YtdlnisStreamRepository`** (an external yt-dlp plugin APK through `ytdlp/CompactYtDlp.kt`, the way
+YTDLnis does) after NewPipe; the plugin is optional, so it is not part of the live chain above.
 `ResolvedAudioStream.source` records which tier won (`NATIVE_INNERTUBE`, `INNERTUBE_X`,
 `NEWPIPE`, `YT_DLP`).
 
@@ -91,17 +111,19 @@ choice — manual selection must stay available.
 ## The `echo/` resolver — the fallback behind the shipped path
 
 18 files under `app/src/main/kotlin/moe/rukamori/archivetune/echo/` plus five assets, ported from
-4nx3b. `MusicService.resolvePlaybackDataSpec` runs it as the **last resort**, never as the primary:
-the resolver documented above is tried first and echo is only reached once it has produced no
-stream, so the worst case echo can cause is the same failure a moment later.
+4nx3b. `YouTubeFailsafeChain` runs it for playback and downloads as the **last resort**, never as
+the primary: the shipped resolver, InnerTubeX and NewPipe are tried first and echo is only reached
+once all of them have produced no stream, so the worst case echo can cause is the same failure a
+moment later.
 
 `EchoStreamResolver.playerResponseForPlayback` returns the same `YTPlayerUtils.PlaybackData` the
-shipped path returns, which is why it drops in as a `recoverCatching` arm with nothing downstream
-changing. Two exceptions bypass it entirely — `InvalidPlaybackLoginContextException` and
-`LoginRequiredForPlaybackException`. Both are actionable by the listener and neither is something a
-different extractor can fix, so echo would only replace a message that can be acted on with one
-that cannot. When echo does run and also fails, the *original* throwable is rethrown so the error
-mapping below it still produces the meaningful message.
+shipped path returns, so nothing downstream changes. Two exceptions bypass it (and the extractor
+tiers) entirely — `InvalidPlaybackLoginContextException` and `LoginRequiredForPlaybackException`.
+Both are actionable by the listener and neither is something a different extractor can fix, so
+echo would only replace a message that can be acted on with one that cannot. When echo does run
+and also fails, the *original* throwable is rethrown so the error mapping below it still produces
+the meaningful message. `CipherDeobfuscator.ensureInitialized` loads echo's config stores on first
+use rather than at app start.
 
 What it adds over the shipped path: the player script is parsed with a real JavaScript parser
 (`assets/solver/meriyah.js`) and regenerated with `astring.js`, so the n-parameter transform can be
@@ -117,7 +139,6 @@ the submodule along:
 | `AdaptiveFormat.isOriginal` marks the undubbed audio track | Field absent from this fork's `PlayerResponse`; every audio format stays a candidate |
 | `YouTube.getNewPipeStreamUrls(videoId)` lists every `(itag, url)` pair | `NewPipeStreamUrlExtractor.streamUrl(format, videoId)` immediately above already resolves the same format through NewPipe, so the second pass had nothing to add |
 
-Downloads are not wired to it. `DownloadUtil` resolves through `YTPlayerUtils.playerResponseForDownload`,
-a separate entry point that selects for the best storable format rather than the best playable one,
-and echo only mirrors the playback entry point. Giving downloads the same fallback means porting
-that selection too, which is its own change.
+Downloads reach echo through the same chain, but echo only mirrors the playback entry point: it
+selects the best playable format, not an MP4 one, so a download that only echo could resolve may be
+stored as WebM.

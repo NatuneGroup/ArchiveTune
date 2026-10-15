@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -15,6 +9,8 @@
  * vivi-music's listentogether.ListenTogetherServers (GPL-3.0), plus the
  * Metrolist project's community server (metrolistgroup/metrolist, GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 
@@ -51,12 +47,6 @@ object ListenTogetherServers {
             "operator": "VIVIDH"
           },
           {
-            "name": "ViviMusic Sync Server",
-            "url": "wss://vivimusic-listen-together.onrender.com",
-            "location": "USA",
-            "operator": "Vividh"
-          },
-          {
             "name": "The Meowery",
             "url": "wss://metroserverx.meowery.eu/ws",
             "location": "Poland",
@@ -76,4 +66,40 @@ object ListenTogetherServers {
         get() = servers.first().url
 
     fun findByUrl(url: String): ListenTogetherServer? = servers.firstOrNull { it.url == url }
+
+    // The retired vivi server: never contacted, only recognised so invite links handed out before
+    // the switch still open the app. Keep in sync with the https invite filter in AndroidManifest.
+    private const val LEGACY_INVITE_HOST = "vivimusic-listen-together.onrender.com"
+
+    /** Host part of a server URL, e.g. `wss://host/ws` -> `host`. */
+    fun hostOf(url: String): String? =
+        url
+            .trim()
+            .substringAfter("://", missingDelimiterValue = url.trim())
+            .substringBefore('/')
+            .substringBefore('?')
+            .substringBefore(':')
+            .lowercase()
+            .takeIf { it.isNotBlank() }
+
+    /**
+     * Host of the web invite link for [serverUrl]. Only JSON (vivi) servers serve the `/listen`
+     * web client; anything else, including a custom or LAN URL, falls back to the default server.
+     */
+    fun inviteHost(serverUrl: String): String {
+        val server = findByUrl(serverUrl)?.takeIf { it.protocol == ListenTogetherProtocol.JSON }
+        return server?.let { hostOf(it.url) }
+            ?: hostOf(defaultServerUrl)
+            ?: LEGACY_INVITE_HOST
+    }
+
+    /** Hosts whose `https://<host>/listen?code=` links open the app. */
+    val inviteHosts: Set<String> by lazy {
+        servers
+            .filter { it.protocol == ListenTogetherProtocol.JSON }
+            .mapNotNull { hostOf(it.url) }
+            .toSet() + LEGACY_INVITE_HOST
+    }
+
+    fun isInviteHost(host: String?): Boolean = host != null && host.lowercase() in inviteHosts
 }

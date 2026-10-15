@@ -1,44 +1,35 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * QQ Music's encrypted audio containers, decrypted on-device into the plain file they wrap.
- *
  * Only files this account is served are ever touched: the app asks Tencent's url-minter for a
  * track, and if what comes back is a protected container rather than a plain FLAC/MP3 the bytes are
  * decrypted locally so the player can read them. Nothing is uploaded, nothing is re-shared, and the
  * decrypted file never leaves the app's own cache directory.
- *
  * Two container families exist and they are told apart by where the key lives, not by the
  * extension:
- *
- *  - **QMC1** (`qmc0`, `qmc3`, `qmcflac`, `qmcogg`, …) is self-contained. The key is a fixed
- *    keystream indexed by byte offset, so any tool that knows the scheme can read it, and the whole
- *    file is XORed with that keystream.
- *  - **QMC2** (`mflac`, `mgg`, `mgg1`, …) is keyed per file, and the tail says where that key is.
- *    The older layouts carry it in the file — behind the literal `QTag` marker or behind a trailing
- *    little-endian size — and those decrypt on their own. The current PC layout and the Android
- *    `STag` one deliberately carry metadata only, so those payloads are decrypted with the key the
- *    service disclosed alongside the resource, and are refused when it disclosed none rather than
- *    guessed at.
- *
+ * - **QMC1** (`qmc0`, `qmc3`, `qmcflac`, `qmcogg`, …) is self-contained. The key is a fixed
+ * keystream indexed by byte offset, so any tool that knows the scheme can read it, and the whole
+ * file is XORed with that keystream.
+ * - **QMC2** (`mflac`, `mgg`, `mgg1`, …) is keyed per file, and the tail says where that key is.
+ * The older layouts carry it in the file — behind the literal `QTag` marker or behind a trailing
+ * little-endian size — and those decrypt on their own. The current PC layout and the Android
+ * `STag` one deliberately carry metadata only, so those payloads are decrypted with the key the
+ * service disclosed alongside the resource, and are refused when it disclosed none rather than
+ * guessed at.
  * The payload is therefore treated as opaque until a footer key is found or the fixed keystream is
  * applied, and the result is only accepted when the decrypted bytes actually start with a container
  * signature. A wrong key produces noise, not a plausible file, so that check is what stands between
  * a key-derivation mistake and garbage sent to the decoder.
- *
  * The schemes here are the documented behaviour of the open-source QQ Music decryptors named in
  * `docs/QQ_MUSIC.md`; the tests that pin them carry the same upstream fixtures.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 
@@ -690,17 +681,21 @@ internal object QmcDecryptor {
         val extension = encryptedExtension.lowercase().let { if (it.startsWith(".")) it else ".$it" }
 
         val footer = QmcEkey.findFooter(data)
-        val keyText = footer.keyText ?: ekey?.trim()?.takeIf { it.isNotEmpty() }
+        val disclosed = ekey?.trim()?.takeIf { it.isNotEmpty() }
+        // A footer key comes first, then the key the service disclosed. The second matters when the
+        // tail of a footer-less stream happens to read as a length word: that "key" is audio bytes,
+        // and the disclosed one is the real key.
+        val keyTexts = listOfNotNull(footer.keyText, disclosed).distinct()
         val plain: ByteArray
-        if (keyText != null) {
-            val key =
-                QmcEkey.derive(keyText) ?: run {
-                    Timber.tag(TAG).w("QQ Music container carried a key that could not be derived")
+        if (keyTexts.isNotEmpty()) {
+            if (footer.audioLength < 16) return null
+            val cipher =
+                keyTexts.firstNotNullOfOrNull { keyText -> cipherFor(keyText, data) } ?: run {
+                    Timber.tag(TAG).w("QQ Music container %s: no key decrypts it to audio", extension)
                     return null
                 }
-            if (footer.audioLength < 16) return null
             plain = data.copyOfRange(0, footer.audioLength)
-            if (key.size > 300) QmcRc4Cipher(key).decrypt(0, plain) else QmcMapCipher(key).decrypt(0, plain)
+            cipher(plain)
         } else {
             if (footer.kind != QmcEkey.FooterKind.NONE) {
                 Timber.tag(TAG).i("QQ Music container %s (%s) carries no key", extension, footer.kind)
@@ -718,4 +713,31 @@ internal object QmcDecryptor {
         Timber.tag(TAG).d("QQ Music container %s decrypted to %s", extension, container)
         return QmcDecrypted(plain, container)
     }
+
+    /**
+     * The stream cipher [keyText] selects, or null when it cannot be derived or does not turn the
+     * head of [data] into a container signature. Only the head is decrypted here, so a wrong key
+     * costs a few bytes rather than a pass over the whole file.
+     */
+    private fun cipherFor(
+        keyText: String,
+        data: ByteArray,
+    ): ((ByteArray) -> Unit)? {
+        val key =
+            QmcEkey.derive(keyText) ?: run {
+                Timber.tag(TAG).w("QQ Music container key could not be derived")
+                return null
+            }
+        val cipher: (ByteArray) -> Unit =
+            if (key.size > 300) {
+                QmcRc4Cipher(key).let { rc4 -> { buffer: ByteArray -> rc4.decrypt(0, buffer) } }
+            } else {
+                QmcMapCipher(key).let { map -> { buffer: ByteArray -> map.decrypt(0, buffer) } }
+            }
+        val head = data.copyOfRange(0, minOf(data.size, HEAD_PROBE_BYTES))
+        cipher(head)
+        return if (QmcContainer.sniff(head) != null) cipher else null
+    }
+
+    private const val HEAD_PROBE_BYTES = 16
 }

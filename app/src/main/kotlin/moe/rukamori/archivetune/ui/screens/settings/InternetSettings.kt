@@ -8,7 +8,7 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
-import android.content.Intent
+import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -61,30 +61,29 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.ui.component.*
 import moe.rukamori.archivetune.ui.utils.backToMain
+import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.ProxyUtils
-import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import java.io.InterruptedIOException
+import java.net.ConnectException
+import java.net.ProtocolException
 import java.net.Proxy
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import kotlin.system.exitProcess
 import androidx.compose.foundation.layout.asPaddingValues
 
 @Composable
@@ -155,25 +154,27 @@ fun InternetWarningBox(modifier: Modifier = Modifier) {
 fun InternetSettings(navController: NavController, scrollTo: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = moe.rukamori.archivetune.utils.rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
 
-    val (dnsOverHttpsEnabled, onDnsOverHttpsEnabledChange) = rememberPreference(key = EnableDnsOverHttpsKey, defaultValue = false)
-    val (dnsProvider, onDnsProviderChange) = rememberPreference(key = DnsOverHttpsProviderKey, defaultValue = "Cloudflare")
-    val (customDnsUrl, onCustomDnsUrlChange) = rememberPreference(key = stringPreferencesKey("customDnsUrl"), defaultValue = "https://")
-    val (proxyEnabled, onProxyEnabledChange) = rememberPreference(key = ProxyEnabledKey, defaultValue = false)
-    val (proxyType, onProxyTypeChange) = rememberEnumPreference(key = ProxyTypeKey, defaultValue = Proxy.Type.HTTP)
-    val (proxyHost, onProxyHostChange) = rememberPreference(key = ProxyHostKey, defaultValue = "")
-    val (proxyPort, onProxyPortChange) = rememberPreference(key = ProxyPortKey, defaultValue = 8080)
-    val (proxyUsername, onProxyUsernameChange) = rememberPreference(key = ProxyUsernameKey, defaultValue = "")
-    val (proxyPassword, onProxyPasswordChange) = rememberPreference(key = ProxyPasswordKey, defaultValue = "")
-    val (streamBypassProxy, onStreamBypassProxyChange) = rememberPreference(key = StreamBypassProxyKey, defaultValue = false)
+    val (dnsOverHttpsEnabled, onDnsOverHttpsEnabledChange) = prefs.state(key = EnableDnsOverHttpsKey, defaultValue = false)
+    val (dnsProvider, onDnsProviderChange) = prefs.state(key = DnsOverHttpsProviderKey, defaultValue = "Cloudflare")
+    val (customDnsUrl, onCustomDnsUrlChange) = prefs.state(key = stringPreferencesKey("customDnsUrl"), defaultValue = "https://")
+    val (proxyEnabled, onProxyEnabledChange) = prefs.state(key = ProxyEnabledKey, defaultValue = false)
+    val (proxyType, onProxyTypeChange) = prefs.enumState(key = ProxyTypeKey, defaultValue = Proxy.Type.HTTP)
+    val (proxyHost, onProxyHostChange) = prefs.state(key = ProxyHostKey, defaultValue = "")
+    val (proxyPort, onProxyPortChange) = prefs.state(key = ProxyPortKey, defaultValue = 8080)
+    val (proxyUsername, onProxyUsernameChange) = prefs.state(key = ProxyUsernameKey, defaultValue = "")
+    val (proxyPassword, onProxyPasswordChange) = prefs.state(key = ProxyPasswordKey, defaultValue = "")
+    val (streamBypassProxy, onStreamBypassProxyChange) = prefs.state(key = StreamBypassProxyKey, defaultValue = false)
 
-    val (ipRotationEnabled, onIpRotationEnabledChange) = rememberPreference(key = IpRotationEnabledKey, defaultValue = false)
+    val (ipRotationEnabled, onIpRotationEnabledChange) = prefs.state(key = IpRotationEnabledKey, defaultValue = false)
     var loadingIpRotation by remember { mutableStateOf(false) }
     var refreshingIpRotation by remember { mutableStateOf(false) }
     val activeProxyCount by YouTube.ipRotationActiveCount.collectAsStateWithLifecycle()
 
-    val (ytMusicRegion, onYtMusicRegionChange) =
-        rememberPreference(key = YouTubeMusicRegionKey, defaultValue = SYSTEM_DEFAULT)
+    val (ytMusicRegion) =
+        prefs.state(key = YouTubeMusicRegionKey, defaultValue = SYSTEM_DEFAULT)
     val ytRegionValues = remember { listOf(SYSTEM_DEFAULT) + CountryCodeToName.keys.toList() }
 
     var testingProxy by remember { mutableStateOf(false) }
@@ -249,53 +250,19 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                             }
                         },
                         onValueSelected = { newValue ->
-                            // Apply immediately — `gl` is in the JSON body of every YT Music
-                            // request (browse/search/player/next/suggestions/queue), so the next
-                            // call will use the new region.
-                            val deviceLocale = Locale.getDefault()
-                            val resolvedGl =
-                                newValue.takeIf { it != SYSTEM_DEFAULT }
-                                    ?: deviceLocale.country.takeIf { it in CountryCodeToName }
-                                    ?: "US"
-                            val spooferActive = newValue != SYSTEM_DEFAULT
-                            YouTube.regionSpooferActive = spooferActive
-                            YouTube.visitorData = null
-                            YouTube.locale = YouTube.locale.copy(gl = resolvedGl)
-                            onYtMusicRegionChange(newValue)
-
-                            // Schedule a process restart on a background coroutine so the
-                            // preference write (above) and the Toast land before we kill
-                            // the process. 400ms is enough for DataStore to flush and for
-                            // the Toast to animate in.
-                            scope.launch {
-                                // Drop the persisted visitorData too, not just the in-memory copy
-                                // above: App.kt restores YouTube.authState from DataStore on every
-                                // start, so an in-memory null was undone by the very restart this
-                                // handler schedules and the old region-pinned token came straight
-                                // back. Removing the key makes App.kt mint a fresh one against the
-                                // new region. The login cookie and dataSyncId are untouched.
-                                withContext(Dispatchers.IO) {
-                                    context.dataStore.edit { it.remove(VisitorDataKey) }
-                                }
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.youtube_music_region_restarting),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                                delay(400)
-                                withContext(Dispatchers.IO) {
-                                    val launchIntent =
-                                        context.packageManager.getLaunchIntentForPackage(context.packageName)
-                                    if (launchIntent != null) {
-                                        launchIntent.addFlags(
-                                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                                                Intent.FLAG_ACTIVITY_CLEAR_TASK,
-                                        )
-                                        context.startActivity(launchIntent)
-                                    }
-                                    exitProcess(0)
+                            if (newValue != ytMusicRegion) {
+                                restartPrompt.edit(prefs, onCommitted = {
+                                    val deviceLocale = Locale.getDefault()
+                                    val resolvedGl = newValue.takeIf { it != SYSTEM_DEFAULT }
+                                        ?: deviceLocale.country.takeIf { it in CountryCodeToName }
+                                        ?: "US"
+                                    YouTube.regionSpooferActive = newValue != SYSTEM_DEFAULT
+                                    YouTube.visitorData = null
+                                    YouTube.locale = YouTube.locale.copy(gl = resolvedGl)
+                                }) {
+                                    this[YouTubeMusicRegionKey] = newValue
+                                    // Keep login/dataSyncId; only the region-pinned visitor is invalid.
+                                    remove(VisitorDataKey)
                                 }
                             }
                         },
@@ -345,14 +312,13 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                 title = stringResource(R.string.proxy),
             ) {
                 item {
+                    // App.kt applies every proxy preference as it is written, so these handlers only store.
                     SwitchPreference(
                         title = { Text(stringResource(R.string.enable_proxy)) },
+                        description = stringResource(R.string.proxy_enable_desc),
                         icon = { Icon(painterResource(R.drawable.wifi_proxy), null) },
                         checked = proxyEnabled,
-                        onCheckedChange = {
-                            onProxyEnabledChange(it)
-                            ProxyUtils.applyYouTubeProxy(it, proxyType, proxyHost, proxyPort, proxyUsername, proxyPassword)
-                        },
+                        onCheckedChange = onProxyEnabledChange,
                     )
                 }
 
@@ -363,10 +329,7 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                         selectedValue = proxyType,
                         values = proxyTypes,
                         valueText = { it.name },
-                        onValueSelected = {
-                            onProxyTypeChange(it)
-                            ProxyUtils.applyYouTubeProxy(proxyEnabled, it, proxyHost, proxyPort, proxyUsername, proxyPassword)
-                        },
+                        onValueSelected = onProxyTypeChange,
                     )
                 }
 
@@ -375,10 +338,8 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                         modifier = positions.modifierFor("proxy_host"),
                         title = { Text(stringResource(R.string.proxy_host)) },
                         value = proxyHost,
-                        onValueChange = {
-                            onProxyHostChange(it)
-                            ProxyUtils.applyYouTubeProxy(proxyEnabled, proxyType, it, proxyPort, proxyUsername, proxyPassword)
-                        },
+                        onValueChange = { onProxyHostChange(it.trim()) },
+                        isInputValid = ProxyUtils::isValidHostInput,
                     )
                 }
 
@@ -387,10 +348,7 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                         modifier = positions.modifierFor("proxy_port"),
                         title = { Text(stringResource(R.string.proxy_port)) },
                         value = proxyPort,
-                        onValueChange = {
-                            onProxyPortChange(it)
-                            ProxyUtils.applyYouTubeProxy(proxyEnabled, proxyType, proxyHost, it, proxyUsername, proxyPassword)
-                        },
+                        onValueChange = onProxyPortChange,
                         isInputValid = { it.toIntOrNull() in 1..65535 },
                     )
                 }
@@ -403,10 +361,7 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                             modifier = positions.modifierFor("proxy_username"),
                             title = { Text(stringResource(R.string.proxy_username)) },
                             value = proxyUsername,
-                            onValueChange = {
-                                onProxyUsernameChange(it)
-                                ProxyUtils.applyYouTubeProxy(proxyEnabled, proxyType, proxyHost, proxyPort, it, proxyPassword)
-                            },
+                            onValueChange = onProxyUsernameChange,
                         )
                     }
 
@@ -415,10 +370,7 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                             modifier = positions.modifierFor("proxy_password"),
                             title = { Text(stringResource(R.string.proxy_password)) },
                             value = proxyPassword,
-                            onValueChange = {
-                                onProxyPasswordChange(it)
-                                ProxyUtils.applyYouTubeProxy(proxyEnabled, proxyType, proxyHost, proxyPort, proxyUsername, it)
-                            },
+                            onValueChange = onProxyPasswordChange,
                         )
                     }
 
@@ -429,10 +381,7 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                             description = stringResource(R.string.stream_bypass_proxy_desc),
                             icon = { Icon(painterResource(R.drawable.wifi_proxy), null) },
                             checked = streamBypassProxy,
-                            onCheckedChange = {
-                                onStreamBypassProxyChange(it)
-                                YouTube.streamBypassProxy = it
-                            },
+                            onCheckedChange = onStreamBypassProxyChange,
                         )
                     }
 
@@ -446,51 +395,18 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                                 scope.launch(Dispatchers.IO) {
                                     testingProxy = true
                                     try {
-                                        val proxy = ProxyUtils.createProxyOrNull(proxyType, proxyHost, proxyPort)
-                                        if (proxy == null) {
-                                            testResult =
-                                                context.getString(
-                                                    R.string.proxy_connection_failed,
-                                                    context.getString(R.string.proxy_connection_invalid_configuration),
-                                                )
-                                            return@launch
-                                        }
-                                        val clientBuilder =
-                                            OkHttpClient
-                                                .Builder()
-                                                .proxy(proxy)
-                                                .connectTimeout(10, TimeUnit.SECONDS)
-                                                .readTimeout(10, TimeUnit.SECONDS)
-
-                                        if (proxyUsername.isNotBlank() && proxyPassword.isNotBlank()) {
-                                            clientBuilder.proxyAuthenticator { _, response ->
-                                                val credential = okhttp3.Credentials.basic(proxyUsername, proxyPassword)
-                                                response.request
-                                                    .newBuilder()
-                                                    .header("Proxy-Authorization", credential)
-                                                    .build()
-                                            }
-                                        }
-
-                                        val client = clientBuilder.build()
-                                        val request =
-                                            Request
-                                                .Builder()
-                                                .url("https://music.youtube.com/generate_204")
-                                                .build()
-                                        client.newCall(request).execute().use { response ->
-                                            testResult =
-                                                if (response.isSuccessful || response.code == 204) {
-                                                    context.getString(R.string.proxy_connection_success)
-                                                } else {
-                                                    context.getString(R.string.proxy_connection_failed, "HTTP ${response.code}")
-                                                }
-                                        }
-                                    } catch (e: Exception) {
                                         testResult =
-                                            context.getString(
-                                                R.string.proxy_connection_failed,
-                                                e.message ?: context.getString(R.string.error_unknown),
+                                            testProxy(
+                                                context = context,
+                                                config =
+                                                    ProxyUtils.configOrNull(
+                                                        type = proxyType,
+                                                        host = proxyHost,
+                                                        port = proxyPort,
+                                                        username = proxyUsername,
+                                                        password = proxyPassword,
+                                                        bypassStreams = false,
+                                                    ),
                                             )
                                     } finally {
                                         testingProxy = false
@@ -664,3 +580,80 @@ private fun IpRotationPreference(
             },
     )
 }
+
+/**
+ * Fetches YouTube Music's 204 endpoint through [config] alone (never the process default, so a
+ * stale or half-applied setting cannot make a broken proxy look fine), and turns the outcome into
+ * something a user can act on. In mainland China that host is reachable only through a working
+ * proxy, so a success here means the proxy really carries traffic.
+ */
+private fun testProxy(
+    context: Context,
+    config: AppProxy.Config?,
+): String {
+    if (config == null) {
+        return context.getString(
+            R.string.proxy_connection_failed,
+            context.getString(R.string.proxy_connection_invalid_configuration),
+        )
+    }
+    val endpoint = "${config.host}:${config.port}"
+    val client =
+        OkHttpClient
+            .Builder()
+            .proxy(config.proxy)
+            .proxyAuthenticator(AppProxy.authenticatorFor { config })
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
+            .build()
+    val request = Request.Builder().url(PROXY_TEST_URL).build()
+    val startedAt = System.nanoTime()
+    return try {
+        client.newCall(request).execute().use { response ->
+            val elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt)
+            when {
+                response.code == 407 -> context.getString(R.string.proxy_test_auth_failed)
+                response.isSuccessful -> context.getString(R.string.proxy_test_success_latency, elapsedMs)
+                else -> context.getString(R.string.proxy_test_http_status, response.code)
+            }
+        }
+    } catch (e: Exception) {
+        describeProxyFailure(context, config, endpoint, e)
+    } finally {
+        client.connectionPool.evictAll()
+    }
+}
+
+private fun describeProxyFailure(
+    context: Context,
+    config: AppProxy.Config,
+    endpoint: String,
+    error: Exception,
+): String {
+    val message = error.message.orEmpty()
+    return when {
+        error is UnknownHostException -> context.getString(R.string.proxy_test_unknown_host, config.host)
+        error is ConnectException -> context.getString(R.string.proxy_test_unreachable, endpoint)
+        error is SocketTimeoutException || error is InterruptedIOException ->
+            context.getString(R.string.proxy_test_timeout)
+        message.contains("407") || message.contains("authenticat", ignoreCase = true) ->
+            context.getString(R.string.proxy_test_auth_failed)
+        // What a SOCKS handshake against an HTTP port, or a CONNECT against a SOCKS port, ends in.
+        error is ProtocolException ||
+            message.contains("malformed reply", ignoreCase = true) ||
+            message.contains("bad version", ignoreCase = true) ||
+            message.contains("unexpected end of stream", ignoreCase = true) ->
+            context.getString(
+                R.string.proxy_test_wrong_type,
+                if (config.type == Proxy.Type.SOCKS) "SOCKS5" else "HTTP",
+            )
+        else ->
+            context.getString(
+                R.string.proxy_connection_failed,
+                message.ifBlank { context.getString(R.string.error_unknown) },
+            )
+    }
+}
+
+private const val PROXY_TEST_URL = "https://music.youtube.com/generate_204"

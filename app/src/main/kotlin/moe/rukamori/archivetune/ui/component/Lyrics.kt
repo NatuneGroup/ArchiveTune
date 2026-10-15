@@ -410,7 +410,8 @@ fun Lyrics(
     val lyricsLineSpacing by rememberPreference(LyricsLineSpacingKey, 1.3f)
     // Default OFF: per-line blur is the heaviest per-frame cost in the lyrics
     // renderers and is the main source of choppy word-synced playback.
-    val lyricsLineBlur by rememberPreference(LyricsLineBlurKey, false)
+    val lyricsLineBlurPreference by rememberPreference(LyricsLineBlurKey, false)
+    val lyricsLineBlur = lyricsLineBlurPreference && moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val animationsDisabled = LocalAnimationsDisabled.current
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 
@@ -422,7 +423,7 @@ fun Lyrics(
     val scrollLyrics by rememberPreference(LyricsScrollKey, true)
     val romanizeChineseLyrics by rememberPreference(LyricsRomanizeChineseKey, true)
     val romanizeHindiLyrics by rememberPreference(LyricsRomanizeHindiKey, true)
-    val romanizeJapaneseLyrics by rememberPreference(LyricsRomanizeJapaneseKey, true)
+    val romanizeJapaneseLyrics by rememberPreference(LyricsRomanizeJapaneseKey, false)
     val romanizeKoreanLyrics by rememberPreference(LyricsRomanizeKoreanKey, true)
     val romanizeOtherLanguagesLyrics by rememberPreference(LyricsRomanizeOtherLanguagesKey, true)
     val romanizationPreferences =

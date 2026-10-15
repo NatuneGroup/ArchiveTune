@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.lyrics
 
@@ -33,8 +29,7 @@ class AutoTranslateExclusionTest {
     // fine — the consonants alone make Devanagari the dominant script.
     private val hindi = "मैं तुझको लेकर उड़ जाऊँ"
 
-    // Deliberately all-kana. "君の名は" is mostly Han by character count, so the detector calls it
-    // CHINESE — a real limitation of script-based detection, and not what this test is about.
+    // Deliberately all-kana; mixed kana/Han is separately covered by the language policy regressions.
     private val japanese = "きみのなまえはぼくのなまえ"
     private val chinese = "我的心里只有你"
     private val english = "Just a regular english line"
@@ -108,9 +103,9 @@ class AutoTranslateExclusionTest {
     }
 
     @Test
-    fun aliasesDoNotLeakAcrossFamilies() {
+    fun kanaIsDistinctButAmbiguousHanConservativelyRespectsJapaneseExclusion() {
         assertFalse(LyricsUtils.matchesExcludedLanguage("JAPANESE", setOf("CHINESE_SIMPLIFIED")))
-        assertFalse(LyricsUtils.matchesExcludedLanguage("CHINESE", setOf("JAPANESE")))
+        assertTrue(LyricsUtils.matchesExcludedLanguage("CHINESE", setOf("JAPANESE")))
     }
 
     @Test

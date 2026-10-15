@@ -30,13 +30,6 @@ enum class DeezerAudioQuality {
     MP3_128,
 }
 
-val DeezerAudioQualityOptions =
-    listOf(
-        DeezerAudioQuality.FLAC,
-        DeezerAudioQuality.MP3_320,
-        DeezerAudioQuality.MP3_128,
-    )
-
 val DeezerAudioQualityKey = stringPreferencesKey("deezerAudioQuality")
 
 /** The `format` string Deezer's media endpoint expects for each tier. */

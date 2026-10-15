@@ -252,24 +252,3 @@ fun resolveDiscordPresenceDecision(
             )
         }
     }
-
-fun deriveDiscordPresenceDecision(input: DiscordPresenceInputs): DiscordPresenceDecision =
-    deriveFinalDiscordPresenceDecision(
-        input = input,
-        holdContext =
-            DiscordHoldContext(
-                nowMs = 0L,
-                activeHoldState = null,
-                lastAppliedVisiblePresence = null,
-                holdTimeoutMs = 0L,
-            ),
-    ).decision
-
-fun deriveFinalDiscordPresenceDecision(
-    input: DiscordPresenceInputs,
-    holdContext: DiscordHoldContext,
-): DiscordPresenceResolution {
-    val semanticState = derivePlaybackSemanticState(input)
-    val rawDecision = deriveRawDiscordPresenceDecision(input, semanticState)
-    return resolveDiscordPresenceDecision(rawDecision, holdContext)
-}

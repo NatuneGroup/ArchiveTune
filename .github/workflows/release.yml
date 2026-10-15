@@ -464,14 +464,42 @@ jobs:
           echo "Release signing secrets present."
 
       - name: Sign APK (release keystore)
-        uses: ilharp/sign-android-release@v2.0.0
-        with:
-          releaseDir: ${{ steps.release_dir.outputs.release_dir }}/
-          signingKey: ${{ secrets.KEYSTORE }}
-          keyAlias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 35.0.0
+        shell: bash
+        env:
+          RELEASE_DIR: ${{ steps.release_dir.outputs.release_dir }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          fi
+          KEYSTORE_FILE="$(mktemp)"
+          trap 'rm -f "$KEYSTORE_FILE"' EXIT
+          echo "$KEYSTORE" | base64 -d > "$KEYSTORE_FILE"
+          mapfile -t APKS < <(
+            find "$RELEASE_DIR" -maxdepth 1 -type f -name "*.apk" ! -name "*-signed.apk"
+          )
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "Expected exactly one unsigned APK in $RELEASE_DIR, found ${#APKS[@]}"
+            find "$RELEASE_DIR" -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          SIGNED="${APK%.apk}-signed.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$SIGNED"
+          # v1 (JAR) signing is dead weight at minSdk 26: the MANIFEST.MF/.SF/.RSA block is never
+          # used to verify and costs ~215 KB per APK. v2/v3 stay on, same keystore as before.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$SIGNED"
       
       - name: Move and rename APK
         shell: bash
@@ -640,3 +668,43 @@ jobs:
             --notes-file release_notes.md \
             "$MOBILE_UNIVERSAL_APK" \
             $OTHER_APKS
+
+      - name: Publish update-feed manifest
+        # Keyless update feed, stable equivalent of the nightly step: the updater reads
+        # stable.json from the fixed `update-feed` release (releases/download/update-feed/stable.json)
+        # before touching api.github.com, because release-asset downloads are CDN-served and not
+        # API-metered. The manifest is generated from the signed APKs uploaded above; versionName
+        # is the semver, versionCode the same commit count the build used.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ needs.check-version.outputs.new_version }}
+          VERSION_CODE: ${{ needs.check-version.outputs.version_code }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          STABLE_TAG="v${NEW_VERSION}"
+          PUBLISHED_AT="$(gh release view "$STABLE_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
+          mapfile -t APK_FILES < <(find downloaded_artifacts -path '*/app-*-release/*.apk' -type f)
+          python3 .github/scripts/update_manifest.py \
+            --channel stable \
+            --tag "$STABLE_TAG" \
+            --version-name "$NEW_VERSION" \
+            --version-code "$VERSION_CODE" \
+            --commit "$COMMIT_SHA" \
+            --published-at "$PUBLISHED_AT" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$STABLE_TAG" \
+            --notes-file release_notes.md \
+            --output stable.json \
+            "${APK_FILES[@]}"
+
+          # The feed release holds only the manifests and is created once. As a prerelease marked
+          # not-latest it never matches the updater's tag filters and never displaces the stable
+          # Latest release.
+          gh release view update-feed --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create update-feed --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --latest=false \
+              --title 'Update feed (do not delete)' \
+              --notes 'Holds the nightly.json/stable.json manifests the in-app updater fetches without a token. Do not delete this release.'
+
+          gh release upload update-feed stable.json --repo "$GITHUB_REPOSITORY" --clobber

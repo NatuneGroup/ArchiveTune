@@ -1,17 +1,14 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
+ *
  * Ported from vivi-music (beta branch) ui/screens/ListenTogetherScreen.kt (GPL-3.0).
  */
+
+
 
 package moe.rukamori.archivetune.ui.screens
 
@@ -308,7 +305,8 @@ fun ListenTogetherScreen(
                 connectionState = connectionState,
                 onConnect = { listenTogetherManager.connect() },
                 onDisconnect = { listenTogetherManager.disconnect() },
-                onReconnect = { listenTogetherManager.forceReconnect() }
+                onReconnect = { listenTogetherManager.forceReconnect() },
+                errorMessage = joinErrorMessage,
             )
         }
 
@@ -344,11 +342,7 @@ fun ListenTogetherScreen(
                     if (finalUsername.isNotBlank()) {
                         savedUsername = finalUsername
                         Toast.makeText(context, R.string.creating_room, Toast.LENGTH_SHORT).show()
-                        viewModel.isCreatingRoom.value = true
-                        viewModel.isJoiningRoom.value = false
-                        viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.connect()
-                        listenTogetherManager.createRoom(finalUsername)
+                        viewModel.createRoom(finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
                     }
@@ -363,11 +357,7 @@ fun ListenTogetherScreen(
                             context.getString(R.string.joining_room, roomCodeInput),
                             Toast.LENGTH_SHORT
                         ).show()
-                        viewModel.isJoiningRoom.value = true
-                        viewModel.isCreatingRoom.value = false
-                        viewModel.joinErrorMessage.value = null
-                        listenTogetherManager.connect()
-                        listenTogetherManager.joinRoom(roomCodeInput, finalUsername)
+                        viewModel.joinRoom(roomCodeInput, finalUsername)
                     } else {
                         Toast.makeText(context, R.string.error_username_empty, Toast.LENGTH_SHORT).show()
                     }
@@ -580,7 +570,8 @@ private fun ConnectionStatusCard(
     connectionState: ConnectionState,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
-    onReconnect: () -> Unit
+    onReconnect: () -> Unit,
+    errorMessage: String?,
 ) {
     val iconTint = when (connectionState) {
         ConnectionState.CONNECTED -> MaterialTheme.colorScheme.primary
@@ -630,7 +621,21 @@ private fun ConnectionStatusCard(
                         fontWeight = FontWeight.Bold,
                         color = iconTint
                     )
-                    
+                    if ((connectionState == ConnectionState.ERROR || connectionState == ConnectionState.DISCONNECTED) &&
+                        !errorMessage.isNullOrBlank()
+                    ) {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (connectionState == ConnectionState.ERROR) {
+                                MaterialTheme.colorScheme.onErrorContainer
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+
                     if (connectionState == ConnectionState.CONNECTING || 
                         connectionState == ConnectionState.RECONNECTING) {
                         Spacer(modifier = Modifier.height(12.dp))
@@ -764,12 +769,7 @@ private fun RoomStatusCard(
                 }
             val inviteLink =
                 remember(roomCode, serverUrl) {
-                    val host = ListenTogetherServers.findByUrl(serverUrl)?.url
-                        ?.removePrefix("wss://")
-                        ?.removePrefix("ws://")
-                        ?.substringBefore('/')
-                        ?: "vivimusic-listen-together.onrender.com"
-                    "https://$host/listen?code=$roomCode"
+                    "https://${ListenTogetherServers.inviteHost(serverUrl)}/listen?code=$roomCode"
                 }
             val modifier = Modifier.weight(1f)
 

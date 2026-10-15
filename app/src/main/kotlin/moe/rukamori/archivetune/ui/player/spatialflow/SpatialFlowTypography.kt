@@ -9,6 +9,10 @@
 package moe.rukamori.archivetune.ui.player.spatialflow
 
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -16,37 +20,46 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.addons.AddonState
+import moe.rukamori.archivetune.addons.AdditionalDownloads
 
+/**
+ * Google Sans Flex, SpatialFlow's typeface, once it is installed from Settings › Additional
+ * downloads; the system font until then. The 4 MB variable font is not shipped in the APK.
+ */
 @OptIn(ExperimentalTextApi::class)
-val SpatialFlowGoogleSansFlex: FontFamily =
-    FontFamily(
-        Font(
-            resId = R.font.spatialflow_google_sans_flex,
-            variationSettings =
-                FontVariation.Settings(
-                    FontVariation.Setting("ROND", 100f),
+@Composable
+fun rememberSpatialFlowFontFamily(rounded: Boolean = true): FontFamily {
+    val state by AdditionalDownloads.spatialFlowFont.state.collectAsStateWithLifecycle()
+    val file = (state as? AddonState.Installed)?.file
+    return remember(file, rounded) {
+        if (file == null) {
+            FontFamily.Default
+        } else {
+            FontFamily(
+                Font(
+                    file = file,
+                    variationSettings =
+                        FontVariation.Settings(
+                            FontVariation.Setting("ROND", if (rounded) 100f else 0f),
+                        ),
                 ),
-        ),
-    )
+            )
+        }
+    }
+}
 
-@OptIn(ExperimentalTextApi::class)
-val SpatialFlowGoogleSansFlexNonRounded: FontFamily =
-    FontFamily(
-        Font(
-            resId = R.font.spatialflow_google_sans_flex,
-            variationSettings =
-                FontVariation.Settings(
-                    FontVariation.Setting("ROND", 0f),
-                ),
-        ),
-    )
+@Composable
+fun rememberSpatialFlowTypography(): Typography {
+    val family = rememberSpatialFlowFontFamily()
+    return remember(family) { spatialFlowTypography(family) }
+}
 
-val SpatialFlowTypography: Typography =
+private fun spatialFlowTypography(family: FontFamily): Typography =
     Typography(
         displayLarge =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 57.sp,
                 lineHeight = 64.sp,
@@ -54,49 +67,49 @@ val SpatialFlowTypography: Typography =
             ),
         displayMedium =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 45.sp,
                 lineHeight = 52.sp,
             ),
         displaySmall =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 36.sp,
                 lineHeight = 44.sp,
             ),
         headlineLarge =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 32.sp,
                 lineHeight = 40.sp,
             ),
         headlineMedium =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 28.sp,
                 lineHeight = 36.sp,
             ),
         headlineSmall =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 24.sp,
                 lineHeight = 32.sp,
             ),
         titleLarge =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
                 lineHeight = 28.sp,
             ),
         titleMedium =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
@@ -104,7 +117,7 @@ val SpatialFlowTypography: Typography =
             ),
         titleSmall =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -112,7 +125,7 @@ val SpatialFlowTypography: Typography =
             ),
         bodyLarge =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 16.sp,
                 lineHeight = 24.sp,
@@ -120,7 +133,7 @@ val SpatialFlowTypography: Typography =
             ),
         bodyMedium =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -128,7 +141,7 @@ val SpatialFlowTypography: Typography =
             ),
         bodySmall =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Normal,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
@@ -136,7 +149,7 @@ val SpatialFlowTypography: Typography =
             ),
         labelLarge =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 fontSize = 14.sp,
                 lineHeight = 20.sp,
@@ -144,7 +157,7 @@ val SpatialFlowTypography: Typography =
             ),
         labelMedium =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
@@ -152,7 +165,7 @@ val SpatialFlowTypography: Typography =
             ),
         labelSmall =
             TextStyle(
-                fontFamily = SpatialFlowGoogleSansFlex,
+                fontFamily = family,
                 fontWeight = FontWeight.Medium,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,

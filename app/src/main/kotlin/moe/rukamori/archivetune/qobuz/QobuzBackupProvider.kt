@@ -1,20 +1,20 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 package moe.rukamori.archivetune.qobuz
 
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.FlacStreamInfo
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -23,6 +23,7 @@ import org.json.JSONObject
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Catalogue lookups for the **Qobuz backup** source (the community-hosted kouzu.in
@@ -69,6 +70,7 @@ object QobuzBackupProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
@@ -199,7 +201,7 @@ object QobuzBackupProvider {
                 .build()
 
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) {
                     Timber.tag("QobuzBackup").d(
                         "search \"%s\" failed: HTTP %d",
@@ -274,6 +276,14 @@ object QobuzBackupProvider {
     fun resolveStream(
         videoId: String,
         client: OkHttpClient = this.client,
+    ): ResolvedStream? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveStreamWithinAttempt(videoId, client)
+        }
+
+    private fun resolveStreamWithinAttempt(
+        videoId: String,
+        client: OkHttpClient,
     ): ResolvedStream? {
         val id = videoId.trim()
         if (!VIDEO_ID_REGEX.matches(id)) {
@@ -324,7 +334,7 @@ object QobuzBackupProvider {
                 .header("x-request-source", "muzo")
                 .build()
         return runCatching {
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) {
                     Timber.tag("QobuzBackup").d("resolver miss for %s: HTTP %d", videoId, response.code)
                     return@use emptyList()
@@ -360,6 +370,7 @@ object QobuzBackupProvider {
                 }
             }
         }.onFailure { error ->
+            error.rethrowIfAudioSourceCancelled()
             Timber.tag("QobuzBackup").d(error, "resolver call failed for %s", videoId)
         }.getOrDefault(emptyList())
     }
@@ -382,7 +393,7 @@ object QobuzBackupProvider {
                     .header("x-request-source", "muzo")
                     .header("Range", "bytes=0-${FlacStreamInfo.REQUIRED_BYTES - 1}")
                     .build()
-            client.newCall(request).execute().use { response ->
+            client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (!response.isSuccessful) return@use null
                 val headerBytes = runCatching { response.body?.bytes() }.getOrNull()
                 val contentType = response.header("Content-Type")?.lowercase().orEmpty()
@@ -422,6 +433,7 @@ object QobuzBackupProvider {
                 )
             }
         }.onFailure { error ->
+            error.rethrowIfAudioSourceCancelled()
             Timber.tag("QobuzBackup").d(error, "mirror probe failed for %s", url.take(80))
         }.getOrNull()
 }

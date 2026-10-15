@@ -109,10 +109,6 @@
         <item quantity="one">%d Lied</item>
         <item quantity="other">%d Lieder</item>
     </plurals>
-    <plurals name="n_artist">
-        <item quantity="one">%d Künstler</item>
-        <item quantity="other">%d Künstler</item>
-    </plurals>
     <plurals name="n_album">
         <item quantity="one">%d Album</item>
         <item quantity="other">%d Alben</item>
@@ -218,7 +214,6 @@
     <string name="palette_neon_pink">Neonpink</string>
     <string name="palette_neon_blue">Neonblau</string>
     <string name="palette_neon_orange">Neonorange</string>
-    <string name="palette_cyberpunk">Cyberpunk</string>
     <string name="palette_synthwave">Synthwave</string>
     <string name="palette_ocean">Ozean</string>
     <string name="palette_forest">Tiefer Wald</string>
@@ -228,8 +223,6 @@
     <string name="palette_summer">Sommer</string>
     <string name="palette_twilight">Dämmerung</string>
     <string name="palette_aurora">Aurora</string>
-    <string name="palette_candy">Süßigkeiten</string>
-    <string name="palette_rainbow">Regenbogen</string>
     <string name="dark_theme">Dunkles Thema</string>
     <string name="dark_theme_on">An</string>
     <string name="dark_theme_off">Aus</string>
@@ -261,7 +254,6 @@
     <string name="lyrics_animation_style">Songtext-Animationsstil</string>
     <string name="content">Inhalt</string>
     <string name="action_logout">Abmelden</string>
-    <string name="action_login">Anmelden</string>
     <string name="login">Login</string>
     <string name="not_logged_in">Nicht angemeldet</string>
     <string name="content_language">Standardinhaltssprache</string>
@@ -463,8 +455,6 @@
     <string name="recently_updated">Kürzlich aktualisiert</string>
     <string name="custom_order">Individuelle Reinfolge</string>
     <string name="list_view">Listenansicht</string>
-    <string name="personal_label">Persönlich</string>
-    <string name="youtube_synced">Mit YouTube synchronisiert</string>
     <string name="options_label">Optionen</string>
     <string name="sort_order_ascending">Aufsteigend</string>
     <string name="sort_order_descending">Absteigend</string>
@@ -489,7 +479,6 @@
     <string name="proxy_password">Passwort</string>
     <string name="test_proxy_connection">Proxy-Verbindung testen</string>
     <string name="testing_proxy_connection">Teste Proxy-Verbindung</string>
-    <string name="proxy_connection_success">Proxy-Verbindung erfolgreich!</string>
     <string name="proxy_connection_failed">Proxy-Verbindung fehlgeschlagen: %s</string>
     <string name="proxy_connection_invalid_configuration">Ungültiger Proxy-Host oder Port</string>
     <string name="ip_rotation_loading">Lade Proxy-Liste</string>
@@ -739,7 +728,6 @@
     <string name="playback_error_message">Nachricht</string>
     <string name="ip_rotation_refreshing">IP aktualisieren</string>
     <string name="device_mute_recovery_volume_disabled">Deaktiviert</string>
-    <string name="account_integrations_summary">Discord, Last.fm, Libre.fm, ListenBrainz</string>
     <string name="lastfm_provider_lastfm">Last.fm</string>
     <string name="lastfm_provider_librefm">Libre.fm</string>
     <string name="lastfm_login_network_error">Netzwerkfehler. Prüfe deine Verbindung.</string>
@@ -776,7 +764,6 @@
     <string name="custom_font_desc">Wähle eine .ttf-Schriftart</string>
     <string name="custom_font_invalid">Wähle eine .ttf-Schriftartdatei</string>
     <string name="force_high_refresh_rate">Hohe Bildwiederholrate erzwingen</string>
-    <string name="max_supported_refresh_rate">Max. unterstützt: %1$d Hz</string>
     <string name="playback_error_code">Code</string>
     <string name="playback_error_cause">Ursache</string>
     <string name="device_volume_zero_playback_paused">Wiedergabe pausiert da die Lautstärke 0 ist. Erhöhe die Lautstärke, um die Wiedergabe fortzusetzen.</string>
@@ -809,7 +796,6 @@
     <string name="onboarding_gms_variant">GMS-Edition</string>
     <string name="onboarding_foss_variant">FOSS-Edition</string>
     <string name="onboarding_permission_device_audio_capture_title">Musikerkennung auf dem Gerät</string>
-    <string name="channel_canary">Canary</string>
     <string name="library_top_mixes_no_recent_history_title">Noch kein aktueller Hör-Mix</string>
     <string name="widget_listening_time_empty">Noch keine Hörzeit</string>
     <string name="widget_no_recent_songs">Noch keine aktuellen Songs</string>
@@ -817,7 +803,6 @@
     <string name="widget_no_recommendations">Noch keine Empfehlungen</string>
     <string name="add_to_n_playlists">Zu %1$d hinzufügen</string>
     <string name="no_playlists_yet">Noch keine Playlists</string>
-    <string name="show_hidden_playlists">Ausgeblendete anzeigen</string>
     <string name="hide_playlist_confirm">\"%1$s\" in Bibliothek ausblenden?</string>
     <string name="lyrics_search_still_searching">Suche noch</string>
     <string name="unsupported_language">Sprache nicht unterstützt: %1$s</string>

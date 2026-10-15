@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.db.entities.ArtistEntity
 import moe.rukamori.archivetune.db.entities.Event
 import moe.rukamori.archivetune.db.entities.EventWithSong
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.db.entities.LibraryCoverCandidate
 import moe.rukamori.archivetune.db.entities.LibraryTopMixEntity
 import moe.rukamori.archivetune.db.entities.LibraryTopMixSongMap
 import moe.rukamori.archivetune.db.entities.ListeningBySlot
@@ -84,9 +85,6 @@ private fun <T> List<T>.sortedByCollated(keySelector: (T) -> String): List<T> {
 
 @Dao
 interface DatabaseDao {
-    @Query("SELECT id FROM song WHERE inLibrary IS NOT NULL")
-    suspend fun librarySongIds(): List<String>
-
     @Transaction
     @Query("SELECT * FROM song WHERE inLibrary IS NOT NULL ORDER BY rowId")
     fun songsByRowIdAsc(): Flow<List<Song>>
@@ -608,6 +606,31 @@ interface DatabaseDao {
     @Transaction
     @Query("SELECT * FROM song WHERE id = :songId LIMIT 1")
     suspend fun getSongById(songId: String): Song?
+
+    /**
+     * Covers of every stored song whose title matches one of [titles] (ASCII case-insensitively),
+     * one row per credited artist, for the caller to pick the scrobble's own artist from.
+     *
+     * song.title has no index, and a NOCASE comparison could not use a plain one, so this scans the
+     * song table. It takes a whole batch of titles so a screen of rows costs one scan, not one per
+     * row; keep each batch under SQLite's 999 bound-variable limit.
+     */
+    @Query(
+        """
+        SELECT song.title AS title, song.thumbnailUrl AS thumbnailUrl,
+            artist.name AS artistName, song.inLibrary AS inLibrary
+        FROM song
+        LEFT JOIN song_artist_map ON song_artist_map.songId = song.id
+        LEFT JOIN artist ON artist.id = song_artist_map.artistId
+        WHERE song.title COLLATE NOCASE IN (:titles)
+            AND song.thumbnailUrl IS NOT NULL AND song.thumbnailUrl != ''
+        """,
+    )
+    suspend fun libraryCoverCandidates(titles: List<String>): List<LibraryCoverCandidate>
+
+    /** The stored portrait of the artist called [name], if one has been fetched. */
+    @Query("SELECT thumbnailUrl FROM artist WHERE name = :name COLLATE NOCASE AND thumbnailUrl IS NOT NULL AND thumbnailUrl != '' LIMIT 1")
+    suspend fun libraryArtistImage(name: String): String?
 
     @Transaction
     @Query("SELECT * FROM song WHERE id = :songId LIMIT 1")

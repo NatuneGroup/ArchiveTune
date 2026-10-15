@@ -67,6 +67,7 @@ object YTPlayerUtils {
     private val streamProbeClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(2, TimeUnit.SECONDS)
             .readTimeout(2, TimeUnit.SECONDS)
             .callTimeout(3, TimeUnit.SECONDS)
@@ -1540,14 +1541,28 @@ object YTPlayerUtils {
     ): List<PlayerResponse.StreamingData.Format> {
         Timber.tag(logTag).i("Finding format with audioQuality: $audioQuality, network metered: $networkMetered")
 
+        return rankAudioFormatCandidates(
+            formats = playerResponse.streamingData?.adaptiveFormats.orEmpty(),
+            audioQuality = audioQuality,
+            networkMetered = networkMetered,
+        )
+    }
+
+    /**
+     * [selectAudioFormatCandidates] over a bare format list, for extractors that do not produce a
+     * [PlayerResponse] (the NewPipe stream-extractor tier) but must rank quality the same way.
+     */
+    internal fun rankAudioFormatCandidates(
+        formats: List<PlayerResponse.StreamingData.Format>,
+        audioQuality: AudioQuality,
+        networkMetered: Boolean,
+    ): List<PlayerResponse.StreamingData.Format> {
         val allAudioFormats =
-            playerResponse.streamingData
-                ?.adaptiveFormats
-                ?.asSequence()
-                ?.filter { it.isAudio && it.bitrate > 0 }
-                ?.filter { it.url != null || it.signatureCipher != null || it.cipher != null }
-                ?.toList()
-                .orEmpty()
+            formats
+                .asSequence()
+                .filter { it.isAudio && it.bitrate > 0 }
+                .filter { it.url != null || it.signatureCipher != null || it.cipher != null }
+                .toList()
 
         // A dubbed video lists every language as its own adaptive format, identical in every field
         // the ranking below sorts on. Ranking them together means the winner is whichever language

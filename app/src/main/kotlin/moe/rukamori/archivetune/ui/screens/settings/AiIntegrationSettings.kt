@@ -10,6 +10,9 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.ui.component.preferenceGroup
+import androidx.compose.foundation.lazy.rememberLazyListState
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -45,11 +48,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularWavyProgressIndicator
@@ -125,13 +126,9 @@ import moe.rukamori.archivetune.ui.component.EditTextPreference
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
-import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.utils.backToMain
-import moe.rukamori.archivetune.utils.TranslatorLang
 import moe.rukamori.archivetune.utils.TranslatorLanguages
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.viewmodels.AiIntegrationSettingsViewModel
 
 private enum class TestApiVisualState { Idle, Testing, Success, Failed }
@@ -142,39 +139,40 @@ fun AiIntegrationSettings(
     viewModel: AiIntegrationSettingsViewModel = hiltViewModel(),
     scrollTo: String? = null,
 ) {
+    val prefs = rememberPreferenceSnapshot()
     val context = LocalContext.current
     val actionState by viewModel.actionState.collectAsStateWithLifecycle()
     val availableModels by viewModel.availableModels.collectAsStateWithLifecycle()
-    val (provider, setProvider) = rememberEnumPreference(AiProviderKey, AiProvider.NONE)
-    val (apiKey, setApiKey) = rememberPreference(AiApiKeyKey, "")
-    val (customEndpoint, setCustomEndpoint) = rememberPreference(AiCustomEndpointKey, "")
+    val (provider, setProvider) = prefs.enumState(AiProviderKey, AiProvider.NONE)
+    val (apiKey, setApiKey) = prefs.state(AiApiKeyKey, "")
+    val (customEndpoint, setCustomEndpoint) = prefs.state(AiCustomEndpointKey, "")
     val (validationStatus, setValidationStatus) =
-        rememberEnumPreference(AiApiValidationStatusKey, AiApiValidationStatus.UNKNOWN)
-    val (selectedModel, setSelectedModel) = rememberPreference(AiSelectedModelKey, "")
-    val (customModel, setCustomModel) = rememberPreference(AiCustomModelKey, "")
-    val (hideAiMix, onHideAiMixChange) = rememberPreference(HideAiMixKey, defaultValue = false)
+        prefs.enumState(AiApiValidationStatusKey, AiApiValidationStatus.UNKNOWN)
+    val (selectedModel, setSelectedModel) = prefs.state(AiSelectedModelKey, "")
+    val (customModel, setCustomModel) = prefs.state(AiCustomModelKey, "")
+    val (hideAiMix, onHideAiMixChange) = prefs.state(HideAiMixKey, defaultValue = false)
     val (autoTranslateLyrics, onAutoTranslateLyricsChange) =
-        rememberPreference(AutoTranslateLyricsKey, defaultValue = false)
+        prefs.state(AutoTranslateLyricsKey, defaultValue = false)
     // DeepL / OpenRouter / Mistral-specific preferences (ported from vivi-music).
-    val (deeplApiKey, setDeeplApiKey) = rememberPreference(DeeplApiKeyKey, "")
-    val (deeplFormality, setDeeplFormality) = rememberPreference(DeeplFormalityKey, "default")
-    val (openRouterApiKey, setOpenRouterApiKey) = rememberPreference(OpenRouterApiKeyKey, "")
-    val (openRouterBaseUrl, setOpenRouterBaseUrl) = rememberPreference(OpenRouterBaseUrlKey, "")
-    val (openRouterModel, setOpenRouterModel) = rememberPreference(OpenRouterModelKey, "openai/gpt-4o-mini")
-    val (translateMode, setTranslateMode) = rememberPreference(TranslateModeKey, "translate")
-    val (translateLanguage, setTranslateLanguage) = rememberPreference(TranslateLanguageKey, "en")
+    val (deeplApiKey, setDeeplApiKey) = prefs.state(DeeplApiKeyKey, "")
+    val (deeplFormality, setDeeplFormality) = prefs.state(DeeplFormalityKey, "default")
+    val (openRouterApiKey, setOpenRouterApiKey) = prefs.state(OpenRouterApiKeyKey, "")
+    val (openRouterBaseUrl, setOpenRouterBaseUrl) = prefs.state(OpenRouterBaseUrlKey, "")
+    val (openRouterModel, setOpenRouterModel) = prefs.state(OpenRouterModelKey, "openai/gpt-4o-mini")
+    val (translateMode, setTranslateMode) = prefs.state(TranslateModeKey, "translate")
+    val (translateLanguage, setTranslateLanguage) = prefs.state(TranslateLanguageKey, "en")
     var showDeeplKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenRouterKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showOpenRouterModelDialog by rememberSaveable { mutableStateOf(false) }
     val (excludedLanguageCodes, onExcludedLanguageCodesChange) =
-        rememberPreference(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
+        prefs.state(AutoTranslateExcludedLanguagesKey, defaultValue = emptySet())
     var showExcludedLanguagesDialog by rememberSaveable { mutableStateOf(false) }
     val (aiRomanizeLyrics, onAiRomanizeLyricsChange) =
-        rememberPreference(AiRomanizeLyricsKey, defaultValue = false)
+        prefs.state(AiRomanizeLyricsKey, defaultValue = false)
     val (autoAiRomanizeLyrics, onAutoAiRomanizeLyricsChange) =
-        rememberPreference(AutoAiRomanizeLyricsKey, defaultValue = false)
+        prefs.state(AutoAiRomanizeLyricsKey, defaultValue = false)
     val (romanizeExcludedLanguageCodes, onRomanizeExcludedLanguageCodesChange) =
-        rememberPreference(AiRomanizeExcludedLanguagesKey, defaultValue = emptySet())
+        prefs.state(AiRomanizeExcludedLanguagesKey, defaultValue = emptySet())
     var showRomanizeExcludedLanguagesDialog by rememberSaveable { mutableStateOf(false) }
     var showApiKeyDialog by rememberSaveable { mutableStateOf(false) }
     var showDeeplFormalityDialog by rememberSaveable { mutableStateOf(false) }
@@ -352,25 +350,31 @@ fun AiIntegrationSettings(
             .only(WindowInsetsSides.Bottom)
             .asPaddingValues()
             .calculateBottomPadding()
-    val scrollState = rememberScrollState()
+    val listState = rememberLazyListState()
     val positions = rememberPreferencePositions()
-    androidx.compose.runtime.LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
+    androidx.compose.runtime.LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, listState) }
 
-    Column(
-        Modifier
-            .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-            // Chained before verticalScroll so it measures the viewport, not the scrolling content.
-            .then(positions.containerModifier())
-            .verticalScroll(scrollState)
-            .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+    // Lazy, not a verticalScroll Column: every row composed before the first frame, inside the
+    // opening transition.
+    val aiProviderSettingsTitle = stringResource(R.string.ai_provider_settings)
+    val aiTranslationSettingsTitle = stringResource(R.string.ai_translation_settings)
+    LazyColumn(
+        state = listState,
+        contentPadding = PaddingValues(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+        modifier =
+            Modifier
+                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                .then(positions.containerModifier()),
     ) {
-        Spacer(
-            Modifier.windowInsetsPadding(
-                LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top),
-            ),
-        )
+        item {
+            Spacer(
+                Modifier.windowInsetsPadding(
+                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Top),
+                ),
+            )
+        }
 
-        PreferenceGroup(title = stringResource(R.string.ai_provider_settings)) {
+        preferenceGroup(title = aiProviderSettingsTitle) {
             item {
                 ListPreference(
                     modifier = positions.modifierFor("ai_provider"),
@@ -677,7 +681,7 @@ fun AiIntegrationSettings(
         // (ported from vivi-music) have dedicated preference keys separate from the generic
         // CHATGPT/GEMINI/CUSTOM chat-completion path, so they each get their own subsection.
         if (provider == AiProvider.DEEPL || provider == AiProvider.OPENROUTER || provider == AiProvider.MISTRAL) {
-            PreferenceGroup(title = stringResource(R.string.ai_translation_settings)) {
+            preferenceGroup(title = aiTranslationSettingsTitle) {
                 if (provider == AiProvider.DEEPL) {
                     item {
                         PreferenceEntry(

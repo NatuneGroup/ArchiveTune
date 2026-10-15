@@ -1,9 +1,11 @@
-name: Nightly (canary) build
+name: Nightly build
 
-# Produces canary/dev builds for the in-app updater's CANARY channel.
-# Runs on every push to the 'dev' branch (and on demand). The updater looks for GitHub
-# releases whose tag starts with "N" followed by date digits (newest wins) and whose assets
-# are named app-<dist>-<device>-<abi>-nightly.apk.
+# Produces nightly builds for the in-app updater's Nightly channel. Runs on every push to the
+# 'dev' branch (and on demand). The updater looks for GitHub releases whose tag starts with "N"
+# followed by date digits (newest wins) and whose assets are named
+# app-<dist>-<device>-<abi>-nightly.apk. After the release it publishes nightly.json to the fixed
+# `update-feed` release — the keyless manifest the updater reads first, so update checks do not
+# depend on the API's rate limit.
 on:
   push:
     branches:
@@ -11,22 +13,19 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: 'Build even if there are no new commits since the last canary build'
+        description: 'Build even if there are no new commits since the last nightly build'
         type: boolean
         default: false
 
 concurrency:
-  # Per-commit, and NOT cancelling the run in flight. See the matching block in canary.yml for the
-  # reasoning; nightly had the same branch-wide group and the same consequence, worse here because
-  # this matrix still builds x86 and x86_64 and so runs longer than canary does.
-  #
-  # In short: serialising whole runs made every push wait out the build ahead of it, and GitHub
-  # keeps only the newest pending run per group, so intermediate commits were dropped rather than
-  # delayed. Only publishing genuinely cannot overlap — the tag is N<yyyyMMddHHmm>, minute-granular,
-  # and the in-app updater matches it with Regex("""N\d{8}(?:\d{4})?""") and .matches(), a
-  # whole-string match, so the tag cannot be widened with a SHA or seconds. The lock therefore lives
-  # on `create-nightly`, and builds run in parallel. cancel-in-progress stays false everywhere,
-  # which is what keeps builds from being killed mid-flight.
+  # Per-commit, and NOT cancelling the run in flight. A branch-wide group used to serialise whole
+  # runs: every push waited out the build ahead of it, and GitHub keeps only the newest pending
+  # run per group, so intermediate commits were dropped rather than delayed. Only publishing
+  # genuinely cannot overlap — the tag is N<yyyyMMddHHmm>, minute-granular, and the in-app updater
+  # matches it with Regex("""N\d{8}(?:\d{4})?""") and .matches(), a whole-string match, so the tag
+  # cannot be widened with a SHA or seconds. The lock therefore lives on `create-nightly`, and
+  # builds run in parallel. cancel-in-progress stays false everywhere, which is what keeps builds
+  # from being killed mid-flight.
   group: nightly-${{ github.sha }}
   cancel-in-progress: false
 
@@ -52,7 +51,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Timestamped tag: N<yyyyMMddHHmm>. The updater sorts canary releases by the numeric
+          # Timestamped tag: N<yyyyMMddHHmm>. The updater sorts nightly releases by the numeric
           # digits after the leading "N", so a lexical/numeric timestamp gives correct ordering.
           TS="$(date -u +'%Y%m%d%H%M')"
           NIGHTLY_TAG="N${TS}"
@@ -112,8 +111,8 @@ jobs:
       VERSION_NAME_OVERRIDE: ${{ needs.check.outputs.version_name }}
       VERSION_CODE_OVERRIDE: ${{ needs.check.outputs.version_code }}
       NIGHTLY_BUILD_HASH: ${{ github.sha }}
-      # Marks the APK as a canary/nightly build (BuildConfig.IS_NIGHTLY). Drives the default update
-      # channel and the build-number-based canary update comparison.
+      # Marks the APK as a nightly build (BuildConfig.IS_NIGHTLY). Drives the effective update
+      # channel and the build-number-based update comparison.
       IS_NIGHTLY_BUILD: 'true'
     strategy:
       fail-fast: false
@@ -144,6 +143,14 @@ jobs:
             distributionName: Foss
             deviceName: Mobile
             abi: universal
+          # Full-fat build: bundles the automix analysis models and the arm64 onnxruntime
+          # (the default entries exclude them — see app/build.gradle.kts).
+          - device: mobile
+            distribution: gms
+            distributionName: Gms
+            deviceName: Mobile
+            abi: universal
+            automix: true
 
     steps:
       - uses: actions/checkout@v7
@@ -159,7 +166,10 @@ jobs:
       - name: Set Up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
+          # Writes are allowed: this is a push-triggered build, and the cache written here is what
+          # keeps the next nightly's ~20-minute matrix off a cold start.
           cache-cleanup: on-success
+          cache-read-only: false
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -180,17 +190,26 @@ jobs:
           echo "abi=$ABI" >> "$GITHUB_OUTPUT"
           echo "device_cap=$DEVICE_CAP" >> "$GITHUB_OUTPUT"
           echo "abi_cap=$ABI_CAP" >> "$GITHUB_OUTPUT"
+          EXTRA_ARGS=""
+          VARIANT_SUFFIX=""
+          if [ "${{ matrix.automix }}" = "true" ]; then
+            EXTRA_ARGS="-Pautomix=true"
+            VARIANT_SUFFIX="-automix"
+          fi
+          echo "gradle_extra=${EXTRA_ARGS}" >> "$GITHUB_OUTPUT"
           echo "gradle_task=assemble${DISTRIBUTION_CAP}${DEVICE_CAP}${ABI_CAP}Release" >> "$GITHUB_OUTPUT"
-          # Nightly asset name expected by the updater's canary channel.
-          echo "artifact_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-nightly" >> "$GITHUB_OUTPUT"
-          echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}-nightly.apk" >> "$GITHUB_OUTPUT"
+          # Nightly asset name expected by the in-app updater.
+          echo "artifact_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}${VARIANT_SUFFIX}-nightly" >> "$GITHUB_OUTPUT"
+          echo "apk_name=app-${DISTRIBUTION}-${DEVICE}-${ABI}${VARIANT_SUFFIX}-nightly.apk" >> "$GITHUB_OUTPUT"
 
       - name: Build Release APK
         shell: bash
         run: |
           set -euo pipefail
           GRADLE_TASK="${{ steps.variant.outputs.gradle_task }}"
-          ./gradlew "$GRADLE_TASK"
+          GRADLE_EXTRA="${{ steps.variant.outputs.gradle_extra }}"
+          # shellcheck disable=SC2086 — each token is a single word by construction.
+          ./gradlew $GRADLE_TASK $GRADLE_EXTRA
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -281,14 +300,42 @@ jobs:
           echo "Nightly signing secrets present."
 
       - name: Sign APK (release keystore)
-        uses: ilharp/sign-android-release@v2.0.0
-        with:
-          releaseDir: ${{ steps.release_dir.outputs.release_dir }}/
-          signingKey: ${{ secrets.KEYSTORE }}
-          keyAlias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEY_PASSWORD }}
-          buildToolsVersion: 35.0.0
+        shell: bash
+        env:
+          RELEASE_DIR: ${{ steps.release_dir.outputs.release_dir }}
+          KEYSTORE: ${{ secrets.KEYSTORE }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+          if [ ! -x "$BUILD_TOOLS/apksigner" ]; then
+            BUILD_TOOLS="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          fi
+          KEYSTORE_FILE="$(mktemp)"
+          trap 'rm -f "$KEYSTORE_FILE"' EXIT
+          echo "$KEYSTORE" | base64 -d > "$KEYSTORE_FILE"
+          mapfile -t APKS < <(
+            find "$RELEASE_DIR" -maxdepth 1 -type f -name "*.apk" ! -name "*-signed.apk"
+          )
+          if [ "${#APKS[@]}" -ne 1 ]; then
+            echo "Expected exactly one unsigned APK in $RELEASE_DIR, found ${#APKS[@]}"
+            find "$RELEASE_DIR" -maxdepth 1 -type f -print || true
+            exit 1
+          fi
+          APK="${APKS[0]}"
+          SIGNED="${APK%.apk}-signed.apk"
+          "$BUILD_TOOLS/zipalign" -p -f 4 "$APK" "$SIGNED"
+          # v1 (JAR) signing is dead weight at minSdk 26: the MANIFEST.MF/.SF/.RSA block is never
+          # used to verify and costs ~215 KB per APK. v2/v3 stay on, same keystore as before.
+          "$BUILD_TOOLS/apksigner" sign \
+            --ks "$KEYSTORE_FILE" \
+            --ks-key-alias "$KEY_ALIAS" \
+            --ks-pass "pass:$KEYSTORE_PASSWORD" \
+            --key-pass "pass:$KEY_PASSWORD" \
+            --v1-signing-enabled false \
+            "$SIGNED"
 
       - name: Move and rename APK
         shell: bash
@@ -351,7 +398,7 @@ jobs:
             echo ""
             echo "Automated Nightly build from the dev branch. Not intended for production use."
             echo ""
-            # Machine-readable monotonic build number read by the in-app updater to compare canary
+            # Machine-readable monotonic build number read by the in-app updater to compare nightly
             # builds (the display versionName is fixed, so the updater compares this instead).
             echo "<!-- at-build:${VERSION_CODE} -->"
             echo ""
@@ -388,6 +435,7 @@ jobs:
           head -c 120000 nightly_notes.md > nightly_notes.tmp && mv nightly_notes.tmp nightly_notes.md
 
       - name: Create nightly prerelease
+        id: create_nightly
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
           NIGHTLY_TAG: ${{ needs.check.outputs.nightly_tag }}
@@ -400,7 +448,7 @@ jobs:
           # carry the same minute-granular tag. This job is serialised, so the second one arrives to
           # find the tag already published: step forward a minute at a time until one is free.
           # Advancing from the queue-time base rather than the clock keeps the updater's "highest tag
-          # wins" aligned with commit order — see canary.yml for the full reasoning.
+          # wins" aligned with commit order.
           BASE="${NIGHTLY_TAG#N}"
           BASE_STAMP="${BASE:0:4}-${BASE:4:2}-${BASE:6:2} ${BASE:8:2}:${BASE:10:2} UTC"
           for bump in $(seq 0 19); do
@@ -421,6 +469,49 @@ jobs:
             --prerelease \
             "$MOBILE_UNIVERSAL_APK" \
             $OTHER_APKS
+
+          # The collision loop above may have advanced the tag; everything downstream (manifest
+          # URLs included) must use the tag as actually published.
+          echo "tag=${NIGHTLY_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish update-feed manifest
+        # Keyless update feed: the updater reads nightly.json from the fixed `update-feed` release
+        # (releases/download/update-feed/nightly.json) before touching api.github.com, because
+        # release-asset downloads are CDN-served and not API-metered. The manifest is generated
+        # from the signed APKs uploaded above, with versionCode equal to the at-build marker in
+        # the release notes, and the tag/URLs taken from the tag actually published.
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT || secrets.GITHUB_TOKEN }}
+          MANIFEST_TAG: ${{ steps.create_nightly.outputs.tag }}
+          VERSION_CODE: ${{ needs.check.outputs.version_code }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          PUBLISHED_AT="$(gh release view "$MANIFEST_TAG" --repo "$GITHUB_REPOSITORY" --json publishedAt --jq .publishedAt)"
+          mapfile -t APK_FILES < <(find downloaded_artifacts -path '*/app-*-nightly/*.apk' -type f)
+          python3 .github/scripts/update_manifest.py \
+            --channel nightly \
+            --tag "$MANIFEST_TAG" \
+            --version-name "$MANIFEST_TAG" \
+            --version-code "$VERSION_CODE" \
+            --commit "$COMMIT_SHA" \
+            --published-at "$PUBLISHED_AT" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$MANIFEST_TAG" \
+            --notes-file nightly_notes.md \
+            --output nightly.json \
+            "${APK_FILES[@]}"
+
+          # The feed release holds only the manifests and is created once. As a prerelease marked
+          # not-latest it never matches the updater's tag filters and never displaces the stable
+          # Latest release.
+          gh release view update-feed --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
+            gh release create update-feed --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --latest=false \
+              --title 'Update feed (do not delete)' \
+              --notes 'Holds the nightly.json/stable.json manifests the in-app updater fetches without a token. Do not delete this release.'
+
+          gh release upload update-feed nightly.json --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Prune old nightly prereleases (keep newest 5)
         continue-on-error: true

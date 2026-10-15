@@ -23,6 +23,15 @@ class AppleMusicLyricsPolicyTest {
     }
 
     @Test
+    fun `lyrics controls count down only while playing and left alone`() {
+        assertTrue(shouldAutoHideLyricsControls(isPlaying = true, userScrollingLyrics = false, scrubbing = false, menuOpen = false))
+        assertFalse(shouldAutoHideLyricsControls(isPlaying = false, userScrollingLyrics = false, scrubbing = false, menuOpen = false))
+        assertFalse(shouldAutoHideLyricsControls(isPlaying = true, userScrollingLyrics = true, scrubbing = false, menuOpen = false))
+        assertFalse(shouldAutoHideLyricsControls(isPlaying = true, userScrollingLyrics = false, scrubbing = true, menuOpen = false))
+        assertFalse(shouldAutoHideLyricsControls(isPlaying = true, userScrollingLyrics = false, scrubbing = false, menuOpen = true))
+    }
+
+    @Test
     fun `only a downward vertical drag past the threshold dismisses lyrics`() {
         assertTrue(isAppleMusicLyricsDismissDrag(deltaX = 8f, deltaY = 96f, threshold = 96f))
         assertFalse(isAppleMusicLyricsDismissDrag(deltaX = 0f, deltaY = 95f, threshold = 96f))

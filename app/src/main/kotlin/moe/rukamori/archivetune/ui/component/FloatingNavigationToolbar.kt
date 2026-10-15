@@ -18,9 +18,7 @@ import androidx.compose.animation.core.EaseOut
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.LocalIndication
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,8 +40,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.ShortNavigationBar
 import androidx.compose.material3.ShortNavigationBarArrangement
 import androidx.compose.material3.ShortNavigationBarItem
@@ -69,16 +67,15 @@ import android.graphics.Bitmap
 import android.os.Build
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.MotionDurationScale
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -97,7 +94,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastCoerceIn
 import androidx.compose.ui.util.lerp
 import kotlinx.coroutines.Dispatchers
@@ -107,35 +103,20 @@ import moe.rukamori.archivetune.utils.isLowEndDevice
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.scaleAwareSpring
 import moe.rukamori.archivetune.utils.ImageBlurUtils
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
-import moe.rukamori.archivetune.constants.FloatingBarJunctionCornerRadius
-import moe.rukamori.archivetune.constants.FloatingBarOuterCornerRadius
-import moe.rukamori.archivetune.constants.FloatingBarStandaloneCornerRadius
-import moe.rukamori.archivetune.constants.FloatingNavigationBarMaxWidth
 import moe.rukamori.archivetune.constants.HideNavigationBarLabelsKey
-import moe.rukamori.archivetune.constants.NAVIGATION_BAR_CORNER_RADIUS_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT
 import moe.rukamori.archivetune.constants.NAVIGATION_BAR_LABEL_SPACING_DEFAULT
-import moe.rukamori.archivetune.constants.NAVIGATION_BAR_OPACITY_DEFAULT
-import moe.rukamori.archivetune.constants.NAVIGATION_BAR_TRANSPARENCY_DEFAULT
-import moe.rukamori.archivetune.constants.NAVIGATION_BAR_WIDTH_DEFAULT
-import moe.rukamori.archivetune.constants.NavigationBarCornerRadiusKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
 import moe.rukamori.archivetune.constants.NavigationBarHeightKey
 import moe.rukamori.archivetune.constants.NavigationBarLabelSpacingKey
-import moe.rukamori.archivetune.constants.NavigationBarMaxWidth
-import moe.rukamori.archivetune.constants.NavigationBarOpacityKey
 import moe.rukamori.archivetune.constants.NavigationBarStyle
-import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
-import moe.rukamori.archivetune.constants.NavigationBarWidthKey
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.utils.rememberPreference
 import com.kyant.backdrop.backdrops.LayerBackdrop
-import com.kyant.backdrop.drawBackdrop
-import com.kyant.backdrop.effects.blur
-import com.kyant.backdrop.effects.lens
-import com.kyant.backdrop.effects.vibrancy
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sign
@@ -163,20 +144,6 @@ private val NavigationItemVerticalPadding = 8.dp
 private val SukiSUBarHeight = 64.dp
 private val SukiSUItemPadding = 4.dp // applied to the items Row on ALL sides (matches SukiSU's Row.padding(4.dp))
 
-// Frosted nav-bar backdrop blur radius, in px (RenderEffect works in raw pixels).
-private const val FrostedNavBarBlurRadiusPx = 60f
-
-// How much of the blurred backdrop shows through the opaque bar. The bar is always drawn on a
-// fully opaque surface and the blurred content is composited on top at this alpha, so page
-// brightness can only ever modulate the bar by this fraction — it reads the same over any screen,
-// and if the backdrop layer has nothing under the bar the result is simply a solid bar.
-private const val FrostedNavBarOverlayAlpha = 0.30f
-
-// The tint-frosted variant uses a DARK TRANSLUCENT base (Color.Black at 55% alpha) instead of
-// an opaque surface, so a higher overlay alpha lets more of the blurred app content show through
-// the dark tint — the "tinted glass" look (dark, translucent, with visible frosted blur).
-private const val TintFrostedNavBarOverlayAlpha = 0.45f
-
 // The sliding pill wraps just the icon (like the stock indicator), so the label sits below it,
 // outside the bubble. These are the standard Material3 active-indicator dimensions.
 private val NavigationIndicatorWidth = 56.dp
@@ -186,16 +153,6 @@ private val NavigationIndicatorHeight = 32.dp
 // tinted with the accent color like the reference bar.
 private val FloatingNavigationIndicatorWidth = 64.dp
 private val FloatingNavigationIndicatorHeight = 42.dp
-
-/**
- * Forces the signature navigation-bar motion (the sliding pill + icon pop) to always run at its
- * full, intended duration, ignoring the system "Animator duration scale" developer setting. Users
- * who run the OS at 0.5x still get expressive tab-switch motion, while the in-app "disable
- * animations" toggle continues to fully bypass these animations.
- */
-private object FullMotionDurationScale : MotionDurationScale {
-    override val scaleFactor: Float = 1f
-}
 
 @Composable
 fun FloatingNavigationToolbar(
@@ -209,28 +166,22 @@ fun FloatingNavigationToolbar(
     frostedBackdrop: NavigationBarBackdrop? = null,
     liquidGlass: Boolean = false,
     liquidGlassBackdrop: LayerBackdrop? = null,
+    glowStrength: Float = 0f,
     isSelected: (Screens) -> Boolean,
-    onItemClick: (Screens, Boolean) -> Unit,
+    // The click handler works out the selection itself at click time (it owns the pending-tab
+    // state), so no stale composition-captured `selected` is passed here.
+    onItemClick: (Screens) -> Unit,
     onSearchItemDoubleClick: (() -> Unit)? = null,
 ) {
     val isFloating = style == NavigationBarStyle.FLOATING
-    // Apple Music's tab bar is flat and edge-to-edge, always shows its labels, and draws no
-    // selection pill — the style is expressed entirely by those four facts below.
+    val isYumaPlayer = style == NavigationBarStyle.YUMA_PLAYER
     val isAppleMusic = style == NavigationBarStyle.APPLE_MUSIC
     // Navigation bar customization. Read directly here so the toolbar picks up the user's
     // tuning without the call site needing to thread 6 extra params.
-    val (navBarWidthFraction) =
-        rememberPreference(NavigationBarWidthKey, defaultValue = NAVIGATION_BAR_WIDTH_DEFAULT)
     val (navBarHeightMultiplier) =
         rememberPreference(NavigationBarHeightKey, defaultValue = NAVIGATION_BAR_HEIGHT_DEFAULT)
-    val (navBarOpacity) =
-        rememberPreference(NavigationBarOpacityKey, defaultValue = NAVIGATION_BAR_OPACITY_DEFAULT)
-    val (navBarTransparency) =
-        rememberPreference(NavigationBarTransparencyKey, defaultValue = NAVIGATION_BAR_TRANSPARENCY_DEFAULT)
     val (navBarLabelSpacing) =
         rememberPreference(NavigationBarLabelSpacingKey, defaultValue = NAVIGATION_BAR_LABEL_SPACING_DEFAULT)
-    val (navBarCornerRadius) =
-        rememberPreference(NavigationBarCornerRadiusKey, defaultValue = NAVIGATION_BAR_CORNER_RADIUS_DEFAULT)
     val isPreS = Build.VERSION.SDK_INT < Build.VERSION_CODES.S
     // Either frosted variant enables backdrop blur. The tint variant additionally tints the
     // bar surface with the accent (primary) color so the frost reads as a colored glass.
@@ -240,7 +191,7 @@ fun FloatingNavigationToolbar(
     // liquid glass surface tints itself with `surfaceContainerHigh`, so it stays
     // visible even when the rest of the UI is pitch black, and the user explicitly
     // opted in via the Liquid Glass toggle.
-    val canLiquidGlass = liquidGlass && liquidGlassBackdrop != null && !isPreS
+    val canLiquidGlass = liquidGlass && liquidGlassEligible(liquidGlassBackdrop) && !isPreS
     val resolvedBarHeight =
         if (canLiquidGlass) SukiSUBarHeight else NavigationBarHeight * navBarHeightMultiplier
     // SukiSU-Ultra: when the Liquid Glass nav bar is active, the items Row uses
@@ -256,69 +207,33 @@ fun FloatingNavigationToolbar(
     val miniPlayerProximity by remember(miniPlayerProximityProvider) {
         derivedStateOf { miniPlayerProximityProvider().coerceIn(0f, 1f) }
     }
+    val pill =
+        rememberPillStyle(
+            style = style,
+            pureBlack = pureBlack,
+            frostedBlur = frostedBlur,
+            tintFrostedBlur = tintFrostedBlur,
+            liquidGlass = liquidGlass,
+            frostedBackdropAvailable = frostedBackdrop != null,
+            liquidGlassBackdropAvailable = liquidGlassBackdrop != null,
+        )
     val navigationShape =
-        if (canLiquidGlass) {
-            RoundedCornerShape(percent = 50)
-        } else {
-            remember(isFloating, isAppleMusic, navBarCornerRadius, miniPlayerProximity) {
-                when {
-                    // Apple Music's tab bar is a floating, rounded bar inset from the edges — the
-                    // reference separates it from the content on all four sides, which is why it
-                    // keeps the hairline border below.
-                    isAppleMusic -> RoundedCornerShape(navBarCornerRadius.dp)
-                    // A detached pill keeps the user-configurable corner radius (default 28 dp).
-                    isFloating -> RoundedCornerShape(navBarCornerRadius.dp)
-                    // Docked under the mini player: top corners pinch toward the junction
-                    // radius while the bottom corners keep the outer radius, continuous in
-                    // the sheet's proximity to collapsed.
-                    else ->
-                        RoundedCornerShape(
-                            topStart = lerp(FloatingBarStandaloneCornerRadius, FloatingBarJunctionCornerRadius, miniPlayerProximity),
-                            topEnd = lerp(FloatingBarStandaloneCornerRadius, FloatingBarJunctionCornerRadius, miniPlayerProximity),
-                            bottomStart = lerp(FloatingBarStandaloneCornerRadius, FloatingBarOuterCornerRadius, miniPlayerProximity),
-                            bottomEnd = lerp(FloatingBarStandaloneCornerRadius, FloatingBarOuterCornerRadius, miniPlayerProximity),
-                        )
-                }
-            }
-        }
-    val navigationContainerColor =
-        if (canLiquidGlass) {
-            // Liquid glass surface — transparent so the LiquidGlassShader tint shows through.
-            Color.Transparent
-        } else if (canBlurBackdrop) {
-            // Frosted / tinted-frosted: surface sits under the blurred backdrop overlay.
-            // In pure-black mode we still want SOME surface so the blur has something to
-            // blend against — use a near-black tint rather than absolute black so the
-            // frosted effect remains perceptible.
-            if (pureBlack) {
-                if (tintFrostedBlur) Color.Black.copy(alpha = 0.55f) else Color.Black.copy(alpha = 0.45f)
-            } else if (tintFrostedBlur) {
-                Color.Black.copy(alpha = 0.55f)
-            } else {
-                MaterialTheme.colorScheme.surfaceContainer
-            }
-        } else if (pureBlack) {
-            Color.Black
-        } else if (isAppleMusic) {
-            // Apple Music's tab bar is a translucent material over the content rather than an
-            // opaque slab, which is what keeps the mini player above it reading as one surface.
-            MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
-        } else {
-            // Apply user-configured opacity (always) and transparency (only when no frosted
-            // variant is active — when frosted blur is on, the frost overlay already provides
-            // the see-through effect and adding transparency here would double-count).
-            val baseColor = MaterialTheme.colorScheme.surfaceContainer
-            val effectiveAlpha =
-                navBarOpacity * (1f - navBarTransparency)
-            baseColor.copy(alpha = effectiveAlpha.coerceIn(0.05f, 1f))
-        }
+        remember(pill, miniPlayerProximity) { pill.shape(PillRole.NAVIGATION_BAR, miniPlayerProximity) }
+    val tintedContent = pill.tintedContent
+    val navigationContainerColor = pill.containerColor
     val motionScheme = MaterialTheme.motionScheme
     val (disableAnimations) = rememberPreference(DisableAnimationsKey, defaultValue = false)
+    // The pill slide and the icon pop run on the system animator duration scale: an Animatable
+    // in a LaunchedEffect already shortens with Compose's MotionDurationScale, and the
+    // scale-aware spring reshapes itself below 1x so the bounce never has to be crammed into
+    // the frames that are left. Snap at 0, like everything else.
+    val animationScale = LocalAnimationScale.current
+    val glassMotion = !disableAnimations && animationScale > 0f
     val (hideNavigationBarLabelsPreference) =
         rememberPreference(HideNavigationBarLabelsKey, defaultValue = false)
     // Apple Music's tab bar is icon + label by definition, so the style wins over the global
     // "hide labels" preference rather than silently losing its own look to it.
-    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isAppleMusic
+    val hideNavigationLabels = hideNavigationBarLabelsPreference && !isYumaPlayer && !isAppleMusic
     val density = LocalDensity.current
 
     val indicatorColor =
@@ -329,18 +244,31 @@ fun FloatingNavigationToolbar(
             canLiquidGlass -> Color.Transparent
             // Apple Music's active tab sits in a tinted pill: the reference shows a solid
             // primary-coloured capsule with the glyph knocked out of it and the label in the accent.
-            isAppleMusic -> MaterialTheme.colorScheme.primary
-            // Tint-frosted: the bar is now a DARK tinted glass (Color.Black at
-            // 55% alpha), so the pill uses a translucent white blob — the
-            // selected icon stands out against the dark bar without being a
-            // harsh solid white circle.
-            tintFrostedBlur && !isFloating -> Color.White.copy(alpha = 0.18f)
+            isYumaPlayer -> MaterialTheme.colorScheme.primary
+            // Apple Music: the active tab gets a faint neutral capsule and the accent goes to the
+            // glyph and label only, so the bar itself stays monochrome.
+            isAppleMusic && pureBlack -> Color.White.copy(alpha = 0.16f)
+            isAppleMusic -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f)
+            tintFrostedBlur && !isFloating -> tintedContent.copy(alpha = 0.18f)
             isFloating -> MaterialTheme.colorScheme.primary.copy(alpha = 0.30f)
             pureBlack -> Color.White.copy(alpha = 0.16f)
             else -> MaterialTheme.colorScheme.secondaryContainer
         }
-    val indicatorWidth = if (isFloating || isAppleMusic) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
-    val indicatorHeight = if (isFloating || isAppleMusic) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
+    // The app's own theme, not the system's: a forced light theme on a dark system would otherwise
+    // put white glyphs on a light backdrop.
+    val glassIsNight = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val glassContentColor = if (glassIsNight) Color.White else MaterialTheme.colorScheme.onSurface
+    // White labels over a bright patch of artwork need a soft dark halo to stay readable.
+    val glassLabelStyle =
+        if (glassIsNight) {
+            LocalTextStyle.current.copy(shadow = Shadow(color = Color.Black.copy(alpha = 0.8f), blurRadius = 10f))
+        } else {
+            LocalTextStyle.current
+        }
+    val glassUnselectedContentColor = if (glassIsNight) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+    val largeIndicator = isFloating || isYumaPlayer || isAppleMusic
+    val indicatorWidth = if (largeIndicator) FloatingNavigationIndicatorWidth else NavigationIndicatorWidth
+    val indicatorHeight = if (largeIndicator) FloatingNavigationIndicatorHeight else NavigationIndicatorHeight
 
     // The built-in per-item indicator just fades in place; hide it so our single pill can slide
     // between items instead. On pure-black we also pin the icon/label colors for contrast.
@@ -348,15 +276,17 @@ fun FloatingNavigationToolbar(
     // onPrimary for contrast (selected = full opacity, unselected = 0.85 opacity for legibility).
     val itemColors =
         when {
+            // White-on-glass vanishes over a light backdrop, so light themes take the scheme's
+            // on-surface tones instead.
             canLiquidGlass ->
                 ShortNavigationBarItemDefaults.colors(
                     selectedIndicatorColor = Color.Transparent,
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
-                    unselectedIconColor = Color.White,
-                    unselectedTextColor = Color.White,
+                    selectedIconColor = glassContentColor,
+                    selectedTextColor = glassContentColor,
+                    unselectedIconColor = glassUnselectedContentColor,
+                    unselectedTextColor = glassUnselectedContentColor,
                 )
-            isFloating ->
+            isFloating || isAppleMusic ->
                 ShortNavigationBarItemDefaults.colors(
                     selectedIndicatorColor = Color.Transparent,
                     selectedIconColor = MaterialTheme.colorScheme.primary,
@@ -366,7 +296,7 @@ fun FloatingNavigationToolbar(
                     unselectedTextColor =
                         if (pureBlack) Color.White.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            isAppleMusic ->
+            isYumaPlayer ->
                 ShortNavigationBarItemDefaults.colors(
                     // The pill is drawn behind the item (see indicatorColor), so the item's own
                     // indicator stays transparent and the glyph is knocked out of the accent.
@@ -376,21 +306,14 @@ fun FloatingNavigationToolbar(
                     unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
                     unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            // The tinted bar keeps its tinted identity in EVERY scheme — including
-            // pure black. With the pureBlack branch first, a pure-black + tinted
-            // combination fell through to the plain white-on-black item set, which
-            // (together with the near-black 30%-tint base) made the bar read as the
-            // untinted pure-black navbar. Tint wins here, matching the container
-            // color which already stays tinted in pure black.
+            // Checked before pureBlack so an AMOLED + tinted bar keeps its tint.
             tintFrostedBlur ->
                 ShortNavigationBarItemDefaults.colors(
                     selectedIndicatorColor = Color.Transparent,
-                    selectedIconColor = Color.White,
-                    selectedTextColor = Color.White,
-                    // 0.7 alpha keeps unselected icons legible but de-emphasized
-                    // against the dark tinted glass.
-                    unselectedIconColor = Color.White.copy(alpha = 0.7f),
-                    unselectedTextColor = Color.White.copy(alpha = 0.7f),
+                    selectedIconColor = tintedContent,
+                    selectedTextColor = tintedContent,
+                    unselectedIconColor = tintedContent.copy(alpha = 0.7f),
+                    unselectedTextColor = tintedContent.copy(alpha = 0.7f),
                 )
             pureBlack ->
                 ShortNavigationBarItemDefaults.colors(
@@ -460,6 +383,11 @@ fun FloatingNavigationToolbar(
     val dampedDragAnimation =
         remember(tabsCount, canLiquidGlass) {
             if (canLiquidGlass && tabsCount > 0) {
+                // Total horizontal travel of the current gesture, reset on every touch down.
+                // A pure tap never moves the pill, so the selection change (the click navigates)
+                // is what animates it — animating here too pressed and re-released the glass a
+                // second and third time per tap.
+                var dragTravel = 0f
                 LiquidGlassDragAnimation(
                     animationScope = animationScope,
                     initialValue = selectedIndex.coerceIn(0, tabsCount - 1).toFloat(),
@@ -474,7 +402,9 @@ fun FloatingNavigationToolbar(
                         if (totalWidthPx == 0f) return@LiquidGlassDragAnimation false
                         offset.x in 0f..totalWidthPx && offset.y >= 0f
                     },
-                    onDragStarted = { /* no-op — press() is called by the modifier */ },
+                    onDragStarted = {
+                        dragTravel = 0f
+                    },
                     onDragStopped = {
                         val targetIndex = targetValue.roundToInt().coerceIn(0, tabsCount - 1)
                         animationScope.launch {
@@ -484,11 +414,14 @@ fun FloatingNavigationToolbar(
                         // otherwise we'd compare against the stale value captured
                         // at animation-creation time.
                         if (targetIndex != selectedIndexUpdated.value) {
-                            onItemClickUpdated.value(items[targetIndex], false)
+                            onItemClickUpdated.value(items[targetIndex])
                         }
-                        animateToValue(targetIndex.toFloat())
+                        if (dragTravel != 0f) {
+                            animateToValue(targetIndex.toFloat())
+                        }
                     },
                     onDrag = { _, dragAmount ->
+                        dragTravel += abs(dragAmount.x)
                         if (tabWidthPx > 0f) {
                             updateValue(
                                 (targetValue + dragAmount.x / tabWidthPx * if (isLtr) 1f else -1f)
@@ -524,7 +457,12 @@ fun FloatingNavigationToolbar(
             // lifetime of `dampedDragAnimation` (which is `remember(tabsCount, ...)`
             // keyed on `items.size`), so this check is safe.
             if (idx in 0..(items.size - 1)) {
-                anim.animateToValue(idx.toFloat())
+                // Ignore a selection update the pill is already animating to (a drag release or
+                // an earlier tap already targeted this index) — animating again would press and
+                // re-release the glass a second time for the same tap.
+                if (idx != anim.targetValue.roundToInt()) {
+                    anim.animateToValue(idx.toFloat())
+                }
             }
         }
     }
@@ -532,7 +470,15 @@ fun FloatingNavigationToolbar(
     val selectedCenter = if (selectedIndex >= 0) iconCenters[selectedIndex] else null
     val selectedItemBounds = if (selectedIndex >= 0) itemBounds[selectedIndex] else null
     var itemsRowTopInContainer by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, indicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
+    // A narrow bar (or a big font scale) can leave a tab slimmer than the large indicator, which
+    // then spills past the bar's edge; keep the capsule inside its own tab.
+    val fittedIndicatorWidth =
+        if (tabWidthPx > 0f) {
+            minOf(indicatorWidth, with(density) { tabWidthPx.toDp() } - 8.dp).coerceAtLeast(indicatorHeight)
+        } else {
+            indicatorWidth
+        }
+    LaunchedEffect(selectedIndex, selectedCenter, selectedItemBounds, containerPos, disableAnimations, animationScale, fittedIndicatorWidth, indicatorHeight, canLiquidGlass, tabWidthPx, itemsRowTopInContainer, itemVerticalPadding) {
         if (canLiquidGlass) {
             if (tabWidthPx <= 0f) return@LaunchedEffect
             liquidGlassPillWidth = with(density) { tabWidthPx.toDp() }
@@ -547,7 +493,7 @@ fun FloatingNavigationToolbar(
             // Default / frosted / floating: pill wraps only the icon (label
             // stays outside). This is the original behavior.
             val center = selectedCenter ?: return@LaunchedEffect
-            val widthPx = with(density) { indicatorWidth.toPx() }
+            val widthPx = with(density) { fittedIndicatorWidth.toPx() }
             val heightPx = with(density) { indicatorHeight.toPx() }
             val targetX = (center.x - containerPos.x) - widthPx / 2f
             indicatorY = (center.y - containerPos.y) - heightPx / 2f
@@ -556,12 +502,15 @@ fun FloatingNavigationToolbar(
                 indicatorX.snapTo(targetX)
                 indicatorPlaced = true
             } else {
-                withContext(FullMotionDurationScale) {
-                    indicatorX.animateTo(
-                        targetValue = targetX,
-                        animationSpec = spring(dampingRatio = 0.72f, stiffness = Spring.StiffnessMediumLow),
-                    )
-                }
+                indicatorX.animateTo(
+                    targetValue = targetX,
+                    animationSpec =
+                        scaleAwareSpring(
+                            scale = animationScale,
+                            dampingRatio = 0.72f,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                )
             }
         }
     }
@@ -578,25 +527,8 @@ fun FloatingNavigationToolbar(
         Box(
             modifier =
                 Modifier
-                    .widthIn(max = if (isFloating || isAppleMusic) FloatingNavigationBarMaxWidth else NavigationBarMaxWidth)
-                    .fillMaxWidth(
-                        when {
-                            // Apple Music's bar is inset, but only slightly: its five labels have to
-                            // fit, so the floating style's 0.8 default (which is a fraction for a
-                            // four-item bar) would squash them. A stored fraction still applies
-                            // upwards, so someone who wants it wider gets it.
-                            // An untouched slider keeps that wide look; a width the user picked
-                            // is honoured (the old 0.9 floor made the slider do nothing, #169).
-                            isAppleMusic ->
-                                if (navBarWidthFraction == NAVIGATION_BAR_WIDTH_DEFAULT) {
-                                    0.94f
-                                } else {
-                                    navBarWidthFraction.coerceIn(0.6f, 1f)
-                                }
-                            isFloating -> navBarWidthFraction.coerceIn(0.5f, 1f)
-                            else -> 1f
-                        },
-                    )
+                    .widthIn(max = pill.maxWidth)
+                    .fillMaxWidth(pill.widthFraction)
                     .height(resolvedBarHeight),
             contentAlignment = Alignment.CenterStart,
         ) {
@@ -615,8 +547,9 @@ fun FloatingNavigationToolbar(
                     }
                     .then(
                         if (canLiquidGlass && liquidGlassBackdrop != null) {
-                            Modifier.liquidGlass(
+                            Modifier.liquidGlassMaterial(
                                 backdrop = liquidGlassBackdrop,
+                                role = LiquidGlassRole.NavigationBar,
                                 shape = navigationShape,
                                 interactive = false,
                                 baseColor = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -624,14 +557,12 @@ fun FloatingNavigationToolbar(
                         } else {
                             Modifier
                         },
-                    ),
+                    ).glassGlowOverlay(strength = glowStrength, shape = navigationShape),
             shape = navigationShape,
             color = navigationContainerColor,
-            // The Apple Music bar separates itself from the content with a hairline rather than
-            // elevation; with a full-width rectangle the other three sides sit off-screen.
-            border = if (isAppleMusic) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
-            tonalElevation = if (canLiquidGlass) 0.dp else NavigationBarDefaults.Elevation,
-            shadowElevation = if (canLiquidGlass) 0.dp else if (isFloating) 8.dp else NavigationBarDefaults.Elevation,
+            border = pill.border,
+            tonalElevation = if (canLiquidGlass) 0.dp else pill.tonalElevation,
+            shadowElevation = if (canLiquidGlass) 0.dp else pill.shadowElevation,
         ) {
             if (canBlurBackdrop && frostedBackdrop != null) {
                 if (isPreS) {
@@ -639,12 +570,12 @@ fun FloatingNavigationToolbar(
                         backdrop = frostedBackdrop,
                         barPositionInRoot = barPositionInRoot,
                         barSize = barSize,
-                        blurRadiusPx = FrostedNavBarBlurRadiusPx,
+                        blurRadiusPx = PillFrostBlurRadiusPx,
                         updateIntervalMs = if (LocalContext.current.isLowEndDevice()) 160L else 80L,
                     )
                     if (blurredBitmap != null) {
                         // Match the S+ path's conditional overlay alpha (see the comment below).
-                        val preSOverlayAlpha = if (tintFrostedBlur) TintFrostedNavBarOverlayAlpha else FrostedNavBarOverlayAlpha
+                        val preSOverlayAlpha = if (tintFrostedBlur) PillTintFrostOverlayAlpha else PillFrostOverlayAlpha
                         Box(
                             modifier =
                                 Modifier
@@ -658,7 +589,7 @@ fun FloatingNavigationToolbar(
                         )
                     }
                 } else {
-                    val frostedOverlayAlpha = if (tintFrostedBlur) TintFrostedNavBarOverlayAlpha else FrostedNavBarOverlayAlpha
+                    val frostedOverlayAlpha = if (tintFrostedBlur) PillTintFrostOverlayAlpha else PillFrostOverlayAlpha
                     Box(
                         modifier =
                             Modifier
@@ -666,8 +597,8 @@ fun FloatingNavigationToolbar(
                                 .graphicsLayer {
                                     renderEffect =
                                         BlurEffect(
-                                            radiusX = FrostedNavBarBlurRadiusPx,
-                                            radiusY = FrostedNavBarBlurRadiusPx,
+                                            radiusX = PillFrostBlurRadiusPx,
+                                            radiusY = PillFrostBlurRadiusPx,
                                             edgeTreatment = TileMode.Clamp,
                                         )
                                     alpha = frostedOverlayAlpha
@@ -690,10 +621,7 @@ fun FloatingNavigationToolbar(
                     containerColor = Color.Transparent,
                     contentColor =
                         when {
-                            // Tint wins over pure black so the bar keeps its tinted
-                            // identity in the AMOLED scheme too (see itemColors).
-                            // Tint-frosted bar is now dark glass, so content is white.
-                            tintFrostedBlur -> Color.White
+                            tintFrostedBlur -> tintedContent
                             pureBlack -> Color.White
                             else -> MaterialTheme.colorScheme.onSurface
                         },
@@ -708,7 +636,7 @@ fun FloatingNavigationToolbar(
                     contentAlignment = Alignment.Center,
                 ) {
                     if (selectedIndex >= 0 && indicatorPlaced && !canLiquidGlass) {
-                        val pillWidth = indicatorWidth
+                        val pillWidth = fittedIndicatorWidth
                         val pillHeight = indicatorHeight
                         if (pillWidth > 0.dp && pillHeight > 0.dp) {
                             val pillShape = RoundedCornerShape(percent = 50)
@@ -760,26 +688,29 @@ fun FloatingNavigationToolbar(
                     ) {
                         items.forEachIndexed { index, screen ->
                             val selected = isSelected(screen)
-                            // Tactile "pop": when an item becomes selected, its icon springs
-                            // from 80% up past 100% and settles back, giving the bottom pill a
-                            // lively bounce on every tab switch (skipped when animations are off).
+                            // Tactile "pop": when an item becomes selected, its icon kicks
+                            // downward with velocity and springs back past 100%, giving the bottom
+                            // pill a lively bounce on every tab switch (skipped when animations are
+                            // off). The kick replaces the old snap-to-80%, which made every rapid
+                            // tap jump the icon back to 80% instead of retargeting mid-flight.
                             val iconScale = remember(screen) { Animatable(1f) }
-                            LaunchedEffect(selected, disableAnimations) {
+                            LaunchedEffect(selected, disableAnimations, animationScale) {
                                 if (disableAnimations) {
                                     iconScale.snapTo(1f)
                                 } else if (selected) {
-                                    iconScale.snapTo(0.8f)
-                                    // Fixed motion scale keeps the pop expressive at 0.5x too.
-                                    withContext(FullMotionDurationScale) {
-                                        iconScale.animateTo(
-                                            targetValue = 1f,
-                                            animationSpec =
-                                                spring(
-                                                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                                                    stiffness = Spring.StiffnessMediumLow,
-                                                ),
-                                        )
-                                    }
+                                    // The pop follows the system animator scale like every other
+                                    // motion: below 1x the spring damps so the bounce survives
+                                    // the shortened duration, and at 0 it snaps.
+                                    iconScale.animateTo(
+                                        targetValue = 1f,
+                                        animationSpec =
+                                            scaleAwareSpring(
+                                                scale = animationScale,
+                                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                                stiffness = Spring.StiffnessMediumLow,
+                                            ),
+                                        initialVelocity = -4f,
+                                    )
                                 } else {
                                     iconScale.snapTo(1f)
                                 }
@@ -789,8 +720,12 @@ fun FloatingNavigationToolbar(
                                     if (screen == Screens.Search) onSearchItemDoubleClick else null
                                 }
                             val lastClickTime = remember(screen) { mutableLongStateOf(0L) }
+                            // Not keyed on `selected`: a second tap inside the double-tap window
+                            // must not take the stale branch. The handler decides re-select vs
+                            // navigate at click time from the nav controller and its own
+                            // optimistic selection.
                             val onClick =
-                                remember(screen, selected, onItemClick, onDoubleClick) {
+                                remember(screen, onItemClick, onDoubleClick) {
                                     {
                                         val currentTime = SystemClock.uptimeMillis()
                                         val isDoubleClick =
@@ -801,7 +736,7 @@ fun FloatingNavigationToolbar(
                                             onDoubleClick?.invoke()
                                             Unit
                                         } else {
-                                            onItemClick(screen, selected)
+                                            onItemClick(screen)
                                         }
                                     }
                                 }
@@ -818,14 +753,18 @@ fun FloatingNavigationToolbar(
                                             // label) so the Liquid Glass pill can size to
                                             // cover both. The default variant ignores this
                                             // and uses the icon-only [iconCenters] map.
+                                            // Writes are guarded on equality: a fresh Rect
+                                            // for an unchanged layout would otherwise
+                                            // invalidate composition on every layout pass.
                                             val pos = coordinates.positionInRoot()
-                                            itemBounds[index] =
+                                            val bounds =
                                                 Rect(
                                                     pos.x,
                                                     pos.y,
                                                     pos.x + coordinates.size.width,
                                                     pos.y + coordinates.size.height,
                                                 )
+                                            if (itemBounds[index] != bounds) itemBounds[index] = bounds
                                         },
                                 icon = {
                                     // Measure the icon's own bounds so the pill hugs only the icon.
@@ -833,11 +772,13 @@ fun FloatingNavigationToolbar(
                                         modifier =
                                             Modifier.onGloballyPositioned { coordinates ->
                                                 val pos = coordinates.positionInRoot()
-                                                iconCenters[index] =
+                                                val center =
                                                     Offset(
                                                         pos.x + coordinates.size.width / 2f,
                                                         pos.y + coordinates.size.height / 2f,
                                                     )
+                                                // Equality guard: see the itemBounds write below.
+                                                if (iconCenters[index] != center) iconCenters[index] = center
                                             },
                                         contentAlignment = Alignment.Center,
                                     ) {
@@ -878,6 +819,7 @@ fun FloatingNavigationToolbar(
                                                 // The pill overlay renders the active label in
                                                 // SemiBold (primary color) on top of the glass.
                                                 fontWeight = FontWeight.Normal,
+                                                style = glassLabelStyle,
                                             )
                                         } else {
                                             Spacer(Modifier.height(navBarLabelSpacing.dp))
@@ -903,11 +845,7 @@ fun FloatingNavigationToolbar(
             val dragAnim = dampedDragAnimation
             if (pillWidth > 0.dp && pillHeight > 0.dp && dragAnim != null && tabWidthPx > 0f) {
                 val pillShape = RoundedCornerShape(percent = 50)
-                val isDark = isSystemInDarkTheme()
-                // Liquid Glass pill: always use white for the active icon/label so
-                // they don't change with the app's color theme. The pill's glass
-                // effect provides enough contrast on its own.
-                val primaryColor = Color.White
+                val isDark = glassIsNight
                 // Fallback surface drawn UNDER the backdrop sample. Hoisted to the
                 // composable scope because MaterialTheme.colorScheme is only
                 // accessible from a @Composable context (onDrawBehind is a plain
@@ -950,42 +888,22 @@ fun FloatingNavigationToolbar(
                                 // Velocity-stretch: the pill squishes horizontally when
                                 // flung (a physical "rubber" feel). The asymmetry (0.75 ×
                                 // horizontal, 0.25 × vertical) preserves area roughly.
-                                val pressScale = lerp(1f, 78f / 56f, dragAnim.pressProgress)
-                                val velocityStretch = (dragAnim.velocity / 10f).fastCoerceIn(-0.2f, 0.2f)
+                                val pressScale = lerp(1f, 78f / 56f, (if (glassMotion) dragAnim.pressProgress else 0f))
+                                val velocityStretch = if (glassMotion) (dragAnim.velocity / 10f).fastCoerceIn(-0.2f, 0.2f) else 0f
                                 scaleX = pressScale / (1f - velocityStretch * 0.75f)
                                 scaleY = pressScale * (1f - velocityStretch * 0.25f)
                             }
-                            .drawBackdrop(
+                            .liquidGlassMaterial(
                                 backdrop = liquidGlassBackdrop,
-                                effects = {
-                                    vibrancy()
-                                    blur(4f.dp.toPx())
-                                    lens(
-                                        refractionHeight = 24f.dp.toPx(),
-                                        refractionAmount = size.minDimension / 4f,
-                                        chromaticAberration = false,
-                                    )
-                                },
-                                onDrawBackdrop = { drawBackdrop -> drawBackdrop() },
-                                shape = { pillShape },
-                                // Fallback surface drawn UNDER the backdrop sample.
-                                // When the backdrop has content (album art, page content
-                                // behind the nav bar), the backdrop sample covers this
-                                // and you see the liquid glass refraction. When the
-                                // backdrop is EMPTY (e.g. bottom of a short page with
-                                // nothing behind the nav bar), the backdrop sample is
-                                // transparent and this opaque surface shows through —
-                                // matching the existing pattern used by the bar Surface
-                                // (baseColor = surfaceContainerHigh) and the Frosted nav
-                                // bar variant (opaque surface + 30% alpha overlay).
-                                onDrawBehind = {
-                                    drawRect(pillFallbackColor)
-                                },
+                                shape = pillShape,
+                                role = LiquidGlassRole.SelectionLens,
+                                progress = { (if (glassMotion) dragAnim.pressProgress else 0f) },
+                                baseColor = pillFallbackColor,
                                 onDrawSurface = {
-                                    val progress = dragAnim.pressProgress
+                                    val progress = (if (glassMotion) dragAnim.pressProgress else 0f)
                                     drawRect(
-                                        color = (if (isDark) Color.Black else Color.White).copy(alpha = 0.1f),
-                                        alpha = 1f - progress,
+                                        color = if (isDark) Color.Black else Color.White,
+                                        alpha = (if (isDark) 0.28f else 0.1f) * (1f - progress),
                                     )
                                     drawRect(Color.Black.copy(alpha = 0.03f * progress))
                                 },
@@ -994,11 +912,11 @@ fun FloatingNavigationToolbar(
                                 // Inner shadow only appears during press — radius + alpha
                                 // both scale with pressProgress. This is the "glass lifted
                                 // off the bar" feel.
-                                if (dragAnim.pressProgress > 0f) {
+                                if ((if (glassMotion) dragAnim.pressProgress else 0f) > 0f) {
                                     InnerShadow(
-                                        radius = 8.dp * dragAnim.pressProgress,
+                                        radius = 8.dp * (if (glassMotion) dragAnim.pressProgress else 0f),
                                         color = Color.Black.copy(alpha = 0.15f),
-                                        alpha = dragAnim.pressProgress,
+                                        alpha = (if (glassMotion) dragAnim.pressProgress else 0f),
                                     )
                                 } else {
                                     null
@@ -1014,12 +932,12 @@ fun FloatingNavigationToolbar(
                         Icon(
                             painter = painterResource(displayScreen.iconIdActive),
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = glassContentColor,
                             modifier =
                                 Modifier.graphicsLayer {
                                     // SukiSU LocalFloatingBottomBarTabScale: the
                                     // icon scales up to 1.2× during press.
-                                    val scale = lerp(1f, 1.2f, dragAnim.pressProgress)
+                                    val scale = lerp(1f, 1.2f, (if (glassMotion) dragAnim.pressProgress else 0f))
                                     scaleX = scale
                                     scaleY = scale
                                 },
@@ -1027,10 +945,11 @@ fun FloatingNavigationToolbar(
                         if (!hideNavigationLabels) {
                             Text(
                                 text = stringResource(displayScreen.titleId),
-                                color = Color.White,
+                                color = glassContentColor,
                                 fontWeight = FontWeight.SemiBold,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
+                                style = glassLabelStyle,
                             )
                         }
                     }

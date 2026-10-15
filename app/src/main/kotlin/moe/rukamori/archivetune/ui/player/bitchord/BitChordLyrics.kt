@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * Bitchord player style — lyrics model + collapsed-player lyric strip.
@@ -46,28 +42,19 @@
 
 package moe.rukamori.archivetune.ui.player.bitchord
 
-import android.os.Build
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.DragInteraction
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -76,16 +63,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableLongState
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -98,33 +81,26 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.drawscope.ContentDrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.db.entities.LyricsEntity
-import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
@@ -132,17 +108,14 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.normalizeLyricsText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldUseProvidedRomanization
-import moe.rukamori.archivetune.constants.LyricsRomanizeChineseKey
-import moe.rukamori.archivetune.constants.LyricsRomanizeHindiKey
-import moe.rukamori.archivetune.constants.LyricsRomanizeJapaneseKey
-import moe.rukamori.archivetune.constants.LyricsRomanizeKoreanKey
-import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
-import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
-import moe.rukamori.archivetune.utils.rememberPreference
-import kotlin.math.abs
+import moe.rukamori.archivetune.ui.player.InlineLyricLinesPerPage
+import moe.rukamori.archivetune.ui.player.InlineLyricTimedWord
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkIndexAt
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkText
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkWordText
+import moe.rukamori.archivetune.ui.player.rememberMeasuredInlineLyricPages
+import kotlin.math.PI
+import kotlin.math.exp
 
 // ── Model (verbatim from BitChord's data/lyrics/LyricLine.kt) ─────────────────
 
@@ -262,16 +235,7 @@ private const val GLOW_FLOOR = 0.22f
 private const val GLOW_ATTACK = 0.18f
 private const val GLOW_RELEASE = 0.38f
 
-/**
- * Height of the strip, in lines, held whether the line fills it or not.
- *
- * At one line every lyric longer than the player is wide ended in an ellipsis, which on a phone is
- * most of them. Letting the strip grow to fit instead would move the scrubber and the transport row
- * under it every time the line changed, so the second row is reserved up front and short lines
- * simply leave it empty.
- */
-private const val STRIP_LINES = 2
-private const val STRIP_MAX_LINES = 3
+private const val STRIP_LINES = InlineLyricLinesPerPage
 
 // ── Mapper from ArchiveTune's parsed lyrics ───────────────────────────────────
 
@@ -396,6 +360,9 @@ internal fun rememberLyricClock(positionMs: Long, isPlaying: Boolean): MutableLo
 
 // ── SweptLyricLine (verbatim) ─────────────────────────────────────────────────
 
+private const val BitChordLyricRiseResponseSec = 1.4f
+private const val BitChordLyricLiftEm = 0.055f
+
 /**
  * A lyric line with the sung part of it lit, the rest dimmed, and the boundary travelling across
  * the words in time with the vocal.
@@ -439,7 +406,23 @@ internal fun SweptLyricLine(
         }
     }
 
-    Box(modifier) {
+    Box(
+        modifier
+            .graphicsLayer {
+                val pos = clock.longValue
+                // Most lines on screen are before or after the sung one; skip the exp() for them.
+                // toPx() throws for a non-Sp size, and a style is not obliged to declare one.
+                translationY =
+                    if (pos <= line.timeMs || pos >= line.endMs || !style.fontSize.isSp) {
+                        0f
+                    } else {
+                        val sinceStart = (pos - line.timeMs) / 1000f
+                        val phase = 2f * PI.toFloat() * sinceStart / BitChordLyricRiseResponseSec
+                        val rise = (1f - (1f + phase) * exp(-phase)).coerceIn(0f, 1f)
+                        -BitChordLyricLiftEm * style.fontSize.toPx() * rise
+                    }
+            },
+    ) {
         Text(
             text = line.text,
             style = style,
@@ -450,7 +433,7 @@ internal fun SweptLyricLine(
             onTextLayout = { layout = it },
             modifier = room,
         )
-        if (glowAlpha > 0.01f) {
+        if (glowAlpha > 0.01f && moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
             Text(
                 text = line.text,
                 style = style,
@@ -575,15 +558,16 @@ private fun ContentDrawScope.sweepTo(layout: TextLayoutResult, revealedChars: Fl
         // anything after them.
         if (revealedChars <= start) return
         val end = layout.getLineEnd(visualLine, visibleEnd = true)
-        val right = if (revealedChars >= end) {
-            layout.getLineRight(visualLine)
+        val isRtl = layout.getParagraphDirection(start) == ResolvedTextDirection.Rtl
+        val edge = if (revealedChars >= end) {
+            if (isRtl) layout.getLineLeft(visualLine) else layout.getLineRight(visualLine)
         } else {
             horizontalAt(layout, revealedChars, start, end)
         }
         clipRect(
-            left = layout.getLineLeft(visualLine),
+            left = if (isRtl) edge else layout.getLineLeft(visualLine),
             top = layout.getLineTop(visualLine),
-            right = right,
+            right = if (isRtl) layout.getLineRight(visualLine) else edge,
             bottom = layout.getLineBottom(visualLine),
         ) {
             this@sweepTo.drawContent()
@@ -630,6 +614,25 @@ internal fun CurrentLyricLine(
         instrumental -> INSTRUMENTAL_MARK
         else -> current!!.text
     }
+    val lyricStyle = MaterialTheme.typography.titleMedium
+    val swept = current?.takeIf { !instrumental && it.isWordSynced }
+    val timedWords =
+        remember(swept?.words) {
+            swept?.words.orEmpty().map { word ->
+                InlineLyricTimedWord(
+                    text = word.text,
+                    startMs = word.startMs,
+                    endMs = word.endMs,
+                )
+            }
+        }
+    val cueStartMs = current?.timeMs ?: 0L
+    val cueEndMs =
+        lines.getOrNull(index + 1)?.timeMs
+            ?: current?.sungUntilMs?.takeIf { it > cueStartMs }
+            ?: current?.words?.lastOrNull()?.endMs?.takeIf { it > cueStartMs }
+            ?: durationMs.takeIf { it > cueStartMs }
+            ?: cueStartMs + 4_000L
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -663,28 +666,49 @@ internal fun CurrentLyricLine(
             )
             Spacer(Modifier.width(6.dp))
         }
-        val swept = current?.takeIf { !instrumental && it.isWordSynced }
-        if (swept != null) {
-            SweptLyricLine(
-                line = swept,
-                clock = clock,
-                style = MaterialTheme.typography.titleMedium,
-                dimAlpha = UNSUNG_ALPHA_STRIP,
-                minLines = STRIP_LINES,
-                maxLines = STRIP_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
-        } else {
-            Text(
-                text = text,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
-                minLines = STRIP_LINES,
-                maxLines = STRIP_MAX_LINES,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f, fill = false),
-            )
+        BoxWithConstraints(modifier = Modifier.weight(1f)) {
+            val pages =
+                rememberMeasuredInlineLyricPages(
+                    text = text,
+                    words = timedWords,
+                    linesPerPage = InlineLyricLinesPerPage,
+                    cueStartMs = cueStartMs,
+                    cueEndMs = cueEndMs,
+                    style = lyricStyle,
+                    maxWidth = maxWidth,
+                )
+            val chunk = pages.chunks.getOrNull(inlineLyricChunkIndexAt(pages.chunks, clock.longValue))
+            if (chunk != null) {
+                val chunkText = inlineLyricChunkText(text, chunk)
+                if (swept != null) {
+                    val pageWords =
+                        pages.wordRanges.mapNotNull { wordRange ->
+                            val word = swept.words.getOrNull(wordRange.wordIndex) ?: return@mapNotNull null
+                            val pageWordText = inlineLyricChunkWordText(text, chunk, wordRange) ?: return@mapNotNull null
+                            word.copy(text = pageWordText)
+                        }
+                    SweptLyricLine(
+                        line = swept.copy(
+                            timeMs = chunk.startMs,
+                            text = chunkText,
+                            words = pageWords,
+                        ),
+                        clock = clock,
+                        style = lyricStyle,
+                        dimAlpha = UNSUNG_ALPHA_STRIP,
+                        minLines = STRIP_LINES,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Text(
+                        text = chunkText,
+                        style = lyricStyle,
+                        color = Color.White,
+                        minLines = STRIP_LINES,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
         }
         Spacer(Modifier.width(6.dp))
         // Disclosure hint: this strip opens the full lyrics screen.

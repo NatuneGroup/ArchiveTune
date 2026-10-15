@@ -5,7 +5,7 @@ package moe.rukamori.archivetune.jiosaavn
 import android.util.Base64
 import android.util.Log
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
@@ -15,6 +15,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -156,7 +157,14 @@ object SaavnService {
         }
 
     private val client by lazy {
-        HttpClient(CIO) {
+        // OkHttp rather than CIO: CIO ignores the JVM proxy selector, so Saavn went around the
+        // user's proxy.
+        HttpClient(OkHttp) {
+            engine {
+                config {
+                    proxyAuthenticator(okhttp3.Authenticator.JAVA_NET_AUTHENTICATOR)
+                }
+            }
             install(ContentNegotiation) { json(json) }
             install(HttpTimeout) {
                 // Keep timeouts short so that a slow/unavailable Saavn response
@@ -326,6 +334,7 @@ object SaavnService {
 
             results
         }.onFailure {
+            if (it is CancellationException) throw it
             Log.e(TAG, "searchSongs: failed for query=\"$query\"", it)
         }
 
@@ -400,6 +409,7 @@ object SaavnService {
 
                 selectBestUrl(saavnSong.downloadUrl, quality)
             }
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         if (result.isSuccess) {
             return result.getOrNull()
         } else {

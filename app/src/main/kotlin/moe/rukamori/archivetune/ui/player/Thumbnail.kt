@@ -47,7 +47,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -56,7 +55,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -88,15 +86,13 @@ import coil3.toBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.utils.optionalRenderEffectBlur
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
-import moe.rukamori.archivetune.constants.CropThumbnailToSquareKey
-import moe.rukamori.archivetune.constants.DisableBlurKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -104,7 +100,6 @@ import moe.rukamori.archivetune.constants.PlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.PlayerDesignStyleKey
 import moe.rukamori.archivetune.constants.PlayerHorizontalPadding
-import moe.rukamori.archivetune.constants.SeekExtraSeconds
 import moe.rukamori.archivetune.constants.SwipeThumbnailKey
 import moe.rukamori.archivetune.constants.ThumbnailCornerRadiusKey
 import moe.rukamori.archivetune.extensions.metadata
@@ -117,6 +112,7 @@ import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
 import kotlin.math.abs
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private data class ThumbnailPage(
     val slotKey: String,
@@ -143,7 +139,7 @@ fun Thumbnail(
     val swipeThumbnail by rememberPreference(SwipeThumbnailKey, true)
 
     val view = LocalView.current
-    val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+    val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
     val hidePlayerThumbnail by rememberPreference(HidePlayerThumbnailKey, false)
     val archiveTuneCanvasEnabled by rememberPreference(ArchiveTuneCanvasKey, false)
@@ -152,6 +148,7 @@ fun Thumbnail(
         key = PlayerDesignStyleKey,
         defaultValue = PlayerDesignStyle.Default,
     )
+    val seekSkip = rememberSeekSkip(playerConnection)
     val (maxCanvasCacheSize, _) =
         rememberPreference(
             key = MaxCanvasCacheSizeKey,
@@ -162,8 +159,8 @@ fun Thumbnail(
             key = ThumbnailCornerRadiusKey,
             defaultValue = 16f,
         )
-    val cropThumbnailToSquare by rememberPreference(CropThumbnailToSquareKey, false)
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
+    val cropThumbnailToSquare = LocalItemPreferences.current.cropThumbnailToSquare
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val (backdropEnabled) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)
     val canSkipPrevious by playerConnection.canSkipPrevious.collectAsStateWithLifecycle()
@@ -382,9 +379,6 @@ fun Thumbnail(
                         contentType = { "thumbnailPage" },
                     ) { page ->
                         val item = page.mediaItem
-                        val incrementalSeekSkipEnabled by rememberPreference(SeekExtraSeconds, defaultValue = false)
-                        var skipMultiplier by remember { mutableStateOf(1) }
-                        var lastTapTime by remember { mutableLongStateOf(0L) }
                         val itemMetadata = remember(item) { item.metadata }
                         val storefront = remember { defaultStorefront() }
                         val shouldUseCanvas =
@@ -470,35 +464,20 @@ fun Thumbnail(
                                                         android.view.HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING,
                                                     )
                                                 }
-                                                val currentPosition = playerConnection.player.currentPosition
-                                                val duration = playerConnection.player.duration
-
-                                                val now = System.currentTimeMillis()
-                                                if (incrementalSeekSkipEnabled && now - lastTapTime < 1000) {
-                                                    skipMultiplier++
-                                                } else {
-                                                    skipMultiplier = 1
-                                                }
-                                                lastTapTime = now
-
-                                                val skipAmount = 5000 * skipMultiplier
-
-                                                if ((layoutDirection == LayoutDirection.Ltr && offset.x < size.width / 2) ||
-                                                    (layoutDirection == LayoutDirection.Rtl && offset.x > size.width / 2)
-                                                ) {
-                                                    playerConnection.player.seekTo(
-                                                        (currentPosition - skipAmount).coerceAtLeast(0),
-                                                    )
-                                                    seekDirection =
-                                                        context.getString(R.string.seek_backward_dynamic, skipAmount / 1000)
-                                                } else {
-                                                    playerConnection.player.seekTo(
-                                                        (currentPosition + skipAmount).coerceAtMost(duration),
-                                                    )
-                                                    seekDirection = context.getString(R.string.seek_forward_dynamic, skipAmount / 1000)
-                                                }
-                                                // If a user double-tap skip lands on a new media item, force a centralized Discord sync
-                                                playerConnection.service.forceDiscordSync("thumbnail_double_tap_skip")
+                                                val forward =
+                                                    if (layoutDirection == LayoutDirection.Ltr) {
+                                                        offset.x >= size.width / 2f
+                                                    } else {
+                                                        offset.x < size.width / 2f
+                                                    }
+                                                val skipAmount = seekSkip.skip(forward)
+                                                val description =
+                                                    if (forward) {
+                                                        R.string.seek_forward_dynamic
+                                                    } else {
+                                                        R.string.seek_backward_dynamic
+                                                    }
+                                                seekDirection = context.getString(description, skipAmount / 1000)
 
                                                 showSeekEffect = true
                                             },
@@ -555,7 +534,7 @@ fun Thumbnail(
 
                                     val thumbnailBgRequest = rememberOfflineArtworkImageRequest(displayUrl)
                                     val thumbnailArtworkRequest = rememberOfflineArtworkImageRequest(displayUrl)
-                                    val thumbnailBgBlurEnabled = backdropEnabled && backdropBlurAmount > 0
+                                    val thumbnailBgBlurEnabled = !disableBlur && backdropEnabled && backdropBlurAmount > 0
 
                                     if (thumbnailBgBlurEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                         val blurRadiusPx = (backdropBlurAmount * 60 / 100f).coerceAtMost(60f)
@@ -567,10 +546,8 @@ fun Thumbnail(
                                                 Modifier
                                                     .fillMaxSize()
                                                     .let { if (shouldCropArtwork) it.aspectRatio(1f) else it }
-                                                    .graphicsLayer(
-                                                        renderEffect = BlurEffect(radiusX = blurRadiusPx, radiusY = blurRadiusPx),
-                                                        alpha = 0.6f,
-                                                    ),
+                                                    .optionalRenderEffectBlur(radiusX = blurRadiusPx)
+                                                    .graphicsLayer(alpha = 0.6f),
                                         )
                                     } else if (thumbnailBgBlurEnabled) {
                                         ThumbnailBgBlurApi30(

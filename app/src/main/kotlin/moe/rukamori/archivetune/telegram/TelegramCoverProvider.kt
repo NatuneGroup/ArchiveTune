@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -18,6 +12,8 @@
  * in-memory to avoid repeat lookups.
  */
 
+
+
 package moe.rukamori.archivetune.telegram
 
 import okhttp3.OkHttpClient
@@ -27,6 +23,7 @@ import java.net.URLEncoder
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object TelegramCoverProvider {
     private const val SEARCH_ENDPOINT = "https://itunes.apple.com/search"
@@ -37,6 +34,7 @@ object TelegramCoverProvider {
     private val client: OkHttpClient by lazy {
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(8, TimeUnit.SECONDS)
             .build()

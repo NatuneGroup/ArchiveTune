@@ -1,25 +1,20 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Media3 DataSource that streams a Deezer CDN file and Blowfish-decrypts it in flight, so the
  * extractor above it sees an ordinary FLAC/MP3 byte stream.
- *
  * This is deliberately a DataSource rather than a standalone downloader. Downloads in this app run
  * through Media3's DownloadManager over the same DataSource factory as playback, so implementing
  * Deezer here means downloading, caching, tag embedding and codec reporting all keep working with no
  * Deezer-specific code in those paths. A separate download loop cannot share that machinery, and is
  * how corrupted files and unreadable tags arise.
  */
+
+
 
 package moe.rukamori.archivetune.deezer
 

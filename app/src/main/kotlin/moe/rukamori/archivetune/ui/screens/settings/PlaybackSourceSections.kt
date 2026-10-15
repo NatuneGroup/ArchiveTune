@@ -20,7 +20,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -36,7 +35,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -64,6 +62,8 @@ import moe.rukamori.archivetune.constants.DeezerAudioQualityKey
 import moe.rukamori.archivetune.constants.DeezerEnabledKey
 import moe.rukamori.archivetune.constants.AmazonEnabledKey
 import moe.rukamori.archivetune.constants.QqMusicEnabledKey
+import moe.rukamori.archivetune.constants.SpotifyStreamEnabledKey
+import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.AppleMusicSourceEnabledKey
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
 import moe.rukamori.archivetune.constants.SaavnAudioQuality
@@ -87,10 +87,8 @@ import moe.rukamori.archivetune.constants.SearchProvider
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
 import moe.rukamori.archivetune.constants.PlayerStreamClient
 import moe.rukamori.archivetune.constants.PlayerStreamClientKey
-import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
-import moe.rukamori.archivetune.ui.component.InfoLabel
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
@@ -113,6 +111,7 @@ private fun AudioSourceType.displayName(context: android.content.Context): Strin
         AudioSourceType.APPLE -> context.getString(R.string.source_apple_music)
         AudioSourceType.AMAZON -> context.getString(R.string.source_amazon)
         AudioSourceType.QQ -> context.getString(R.string.source_qq_music)
+        AudioSourceType.SPOTIFY -> context.getString(R.string.source_spotify_stream)
         AudioSourceType.JIOSAAVN -> context.getString(R.string.source_jiosaavn)
         AudioSourceType.YOUTUBE -> context.getString(R.string.source_youtube)
     }
@@ -129,6 +128,7 @@ private fun AudioSourceType.iconRes(): Int =
         AudioSourceType.AMAZON -> R.drawable.ic_music
         // Same stand-in for QQ Music.
         AudioSourceType.QQ -> R.drawable.ic_music
+        AudioSourceType.SPOTIFY -> R.drawable.spotify_icon
         AudioSourceType.JIOSAAVN -> R.drawable.provider_jiosaavn
         AudioSourceType.YOUTUBE -> R.drawable.play
     }
@@ -148,7 +148,13 @@ internal fun PlaybackSourceSections(
     val (deezerEnabled, onDeezerEnabledChangeRaw) = rememberPreference(DeezerEnabledKey, false)
     val (appleMusicEnabled, onAppleMusicEnabledChangeRaw) = rememberPreference(AppleMusicSourceEnabledKey, false)
     val (amazonEnabled, onAmazonEnabledChangeRaw) = rememberPreference(AmazonEnabledKey, false)
-    val (qqMusicEnabled, onQqMusicEnabledChange) = rememberPreference(QqMusicEnabledKey, false)
+    val (qqMusicEnabled, onQqMusicEnabledChangeRaw) = rememberPreference(QqMusicEnabledKey, false)
+    val (spotifyStreamEnabledRaw, onSpotifyStreamEnabledChangeRaw) = rememberPreference(SpotifyStreamEnabledKey, false)
+    val (spotifyStreamSpDc, _) = rememberPreference(SpotifyStreamSpDcKey, "")
+    val spotifyStreamSignedIn = spotifyStreamSpDc.isNotBlank()
+    // Matches MusicService.isSpotifyStreamingConfigured: the switch alone does nothing without an
+    // account, so the order picker must not show the source as active.
+    val spotifyStreamEnabled = spotifyStreamEnabledRaw && spotifyStreamSignedIn
     val (deezerQuality, onDeezerQualityChange) =
         rememberEnumPreference(DeezerAudioQualityKey, DeezerAudioQuality.FLAC)
     val (jioSaavnEnabled, onJioSaavnEnabledChange) = rememberPreference(JioSaavnEnabledKey, false)
@@ -173,7 +179,7 @@ internal fun PlaybackSourceSections(
         onQobuzEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
@@ -181,7 +187,7 @@ internal fun PlaybackSourceSections(
         onDeezerEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
@@ -189,7 +195,7 @@ internal fun PlaybackSourceSections(
         onAppleMusicEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
         }
     }
@@ -197,8 +203,14 @@ internal fun PlaybackSourceSections(
         onAmazonEnabledChangeRaw(enabled)
         if (enabled && PoolAccountManager.isEnabled) {
             scope.launch(Dispatchers.IO) {
-                runCatching { PoolAccountManager.refresh(context, force = true) }
+                runCatching { PoolAccountManager.refresh(context, force = false) }
             }
+        }
+    }
+    val onQqMusicEnabledChange: (Boolean) -> Unit = onQqMusicEnabledChangeRaw
+    val onSpotifyStreamEnabledChange: (Boolean) -> Unit = { enabled ->
+        if (!enabled || spotifyStreamSignedIn) {
+            onSpotifyStreamEnabledChangeRaw(enabled)
         }
     }
 
@@ -242,6 +254,7 @@ internal fun PlaybackSourceSections(
             AudioSourceType.APPLE -> appleMusicEnabled
             AudioSourceType.AMAZON -> amazonEnabled
             AudioSourceType.QQ -> qqMusicEnabled
+            AudioSourceType.SPOTIFY -> spotifyStreamEnabled
             AudioSourceType.JIOSAAVN -> jioSaavnEnabled
             AudioSourceType.YOUTUBE -> youTubeEnabled
         }
@@ -250,20 +263,26 @@ internal fun PlaybackSourceSections(
 
     // Dragging a source to the top is the strongest possible signal the user wants it — a
     // disabled top source would be silently skipped by the resolver, which is exactly how
-    // "I put Qobuz first but still got YouTube" happens. Auto-enable the new top source on
-    // confirm so the order dialog and the enable toggles can never disagree again.
+    // "I put Qobuz first but still got YouTube" happens. Confirming writes the order exactly
+    // once, then at most one enabled-flag write for the new top source; the toggles no longer
+    // touch the order, so no second unordered write can race or revert the reorder. Spotify is
+    // the exception: it is enabled only through its streaming sign-in, so a signed-out top
+    // source stays disabled and the dialog's "Disabled" label stands.
     fun onOrderConfirm(newOrder: List<AudioSourceType>) {
         newOrder.firstOrNull()?.let { top ->
-            when (top) {
-                AudioSourceType.TIDAL -> if (!tidalEnabled) onTidalEnabledChange(true)
-                AudioSourceType.QOBUZ -> if (!qobuzEnabled) onQobuzEnabledChange(true)
-                AudioSourceType.QOBUZ_BACKUP -> if (!qobuzBackupEnabled) onQobuzBackupEnabledChange(true)
-                AudioSourceType.DEEZER -> if (!deezerEnabled) onDeezerEnabledChange(true)
-                AudioSourceType.APPLE -> if (!appleMusicEnabled) onAppleMusicEnabledChange(true)
-                AudioSourceType.AMAZON -> if (!amazonEnabled) onAmazonEnabledChange(true)
-                AudioSourceType.QQ -> if (!qqMusicEnabled) onQqMusicEnabledChange(true)
-                AudioSourceType.JIOSAAVN -> if (!jioSaavnEnabled) onJioSaavnEnabledChange(true)
-                AudioSourceType.YOUTUBE -> if (!youTubeEnabled) onYouTubeEnabledChange(true)
+            if (top != AudioSourceType.SPOTIFY && !isEnabled(top)) {
+                when (top) {
+                    AudioSourceType.TIDAL -> onTidalEnabledChange(true)
+                    AudioSourceType.QOBUZ -> onQobuzEnabledChange(true)
+                    AudioSourceType.QOBUZ_BACKUP -> onQobuzBackupEnabledChange(true)
+                    AudioSourceType.DEEZER -> onDeezerEnabledChange(true)
+                    AudioSourceType.APPLE -> onAppleMusicEnabledChange(true)
+                    AudioSourceType.AMAZON -> onAmazonEnabledChange(true)
+                    AudioSourceType.QQ -> onQqMusicEnabledChange(true)
+                    AudioSourceType.SPOTIFY -> Unit // gated on streaming sign-in; never auto-enabled here
+                    AudioSourceType.JIOSAAVN -> onJioSaavnEnabledChange(true)
+                    AudioSourceType.YOUTUBE -> onYouTubeEnabledChange(true)
+                }
             }
         }
         onSourceOrderChange(newOrder.joinToString(",") { it.name })
@@ -304,6 +323,7 @@ internal fun PlaybackSourceSections(
                     when (it) {
                         MetadataSource.YOUTUBE -> stringResource(R.string.metadata_source_youtube)
                         MetadataSource.SPOTIFY -> stringResource(R.string.metadata_source_spotify)
+                        MetadataSource.APPLE_MUSIC -> stringResource(R.string.metadata_source_apple_music)
                     }
                 },
                 onValueSelected = onDefaultMetadataSourceChange,
@@ -694,6 +714,38 @@ internal fun PlaybackSourceSections(
 
         item {
             SourceCheckRow(source = AudioSourceType.QQ)
+        }
+    }
+
+    PreferenceGroup(title = stringResource(R.string.source_spotify_stream)) {
+        item {
+            SwitchPreference(
+                modifier = positions.modifierFor("spotify_stream_enable"),
+                title = { Text(stringResource(R.string.source_spotify_stream)) },
+                description =
+                    if (spotifyStreamSignedIn) {
+                        stringResource(R.string.spotify_stream_enabled_desc)
+                    } else {
+                        stringResource(R.string.spotify_stream_needs_account)
+                    },
+                icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
+                checked = spotifyStreamEnabled,
+                onCheckedChange = onSpotifyStreamEnabledChange,
+                isEnabled = spotifyStreamSignedIn || spotifyStreamEnabledRaw,
+            )
+        }
+
+        item {
+            PreferenceEntry(
+                title = { Text(stringResource(R.string.spotify_stream_settings)) },
+                description = stringResource(R.string.spotify_stream_settings_desc),
+                icon = { Icon(painterResource(R.drawable.spotify_icon), null) },
+                onClick = { navController.navigate("settings/spotify_streaming") },
+            )
+        }
+
+        item {
+            SourceCheckRow(source = AudioSourceType.SPOTIFY)
         }
     }
 

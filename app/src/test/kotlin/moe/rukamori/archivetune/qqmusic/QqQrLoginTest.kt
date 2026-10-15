@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Pins the QR-login state machine and the `ptuiCB` reply it reads.
- *
  * The login chain branches on a two-digit code buried in a JavaScript call, and every branch means
  * something different to the user: keep waiting, the code is dead, they declined, or they are in.
  * Getting that mapping wrong either burns a scanned code or, worse, treats a refusal as a success —
  * so it is pinned against the literal payloads the server sends, including the CJK status strings
  * that sit next to the codes.
  */
+
+
 
 package moe.rukamori.archivetune.qqmusic
 

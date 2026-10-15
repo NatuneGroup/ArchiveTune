@@ -30,8 +30,6 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.animateScrollBy
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -52,7 +50,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
@@ -73,7 +73,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -105,7 +104,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -133,6 +131,7 @@ import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.ui.player.LocalLyricsScrollListener
+import moe.rukamori.archivetune.ui.player.LocalLyricsSelectionListener
 import moe.rukamori.archivetune.constants.LyricsClickKey
 import moe.rukamori.archivetune.constants.LyricsLineBlurKey
 import moe.rukamori.archivetune.constants.LyricsRomanizeChineseKey
@@ -143,20 +142,19 @@ import moe.rukamori.archivetune.constants.LyricsRomanizeOtherLanguagesKey
 import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
+import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
+import moe.rukamori.archivetune.lyrics.LyricsPhonetics
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
+import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedWordsForEntry
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeWordsForLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -164,7 +162,6 @@ import moe.rukamori.archivetune.ui.theme.rememberArchiveTuneLyricsFontFamily
 import moe.rukamori.archivetune.utils.rememberPreference
 import moe.rukamori.archivetune.utils.reportException
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -173,40 +170,20 @@ private const val TTML_LEAD_MS = 0L
 private const val LYRIC_VISUAL_TUNING_OFFSET_MS = 150L
 private const val MANUAL_SCROLL_TIMEOUT_MS = 3000L
 private const val MANUAL_SCROLL_DEBOUNCE_MS = 50L
-private const val LYRIC_FOCUS_TOP_ANCHOR_RATIO = 0.08f
-// Guards define the "close enough" zone inside which the custom scroll is skipped.
-// The top guard MUST be smaller than LYRIC_FOCUS_TOP_ANCHOR_RATIO so the resting
-// position (8%) is inside the zone — otherwise the custom scroll would re-fire on
-// every line change to "fix" a position that's already correct.
-private const val LYRIC_FOCUS_TOP_GUARD_RATIO = 0.04f
-private const val LYRIC_FOCUS_BOTTOM_GUARD_RATIO = 0.30f
-private const val LYRIC_FOCUS_MIN_SCROLL_PX = 6
-// Auto-scroll deltas up to this fraction of the viewport height snap instantly
-// (no tween). A typical line-advance scroll moves the focus point from ~30%
-// (bottom guard) to ~8% (anchor) = 22% of viewport. Setting the threshold to
-// 40% covers all normal-playback line advances AND small-to-medium seeks,
-// while larger jumps (return from manual scroll, large seeks) still animate.
-// This eliminates the per-frame LazyColumn re-layout cost of the 280ms tween
-// for the common case — which was the single biggest source of "auto-scroll
-// lag" because the tween was competing with the 60Hz karaoke syllable sweep
-// for frame budget on every line change.
-private const val LYRIC_FOCUS_INSTANT_SCROLL_RATIO = 0.40f
-private const val LYRIC_FOCUS_ANIMATED_DISTANCE = 4
+private const val LYRIC_FIRST_FOCUS_SETTLE_FRAMES = 42
+private const val LYRIC_FIRST_FOCUS_EMPTY_FRAMES = 6
 private const val SMOOTH_PLAYBACK_MAX_FORWARD_DRIFT_MS = 80L
 private const val SMOOTH_PLAYBACK_MAX_BACKWARD_DRIFT_MS = 180L
 private const val SMOOTH_PLAYBACK_DRIFT_CORRECTION = 0.55f
-// Reduced from 520ms to 280ms. The previous 520ms tween was long enough that
-// it was STILL running when the next line change fired (especially on tracks
-// with short lines), causing collectLatest to cancel + restart the animation
-// repeatedly — visible as stuttery, non-monotonic scroll motion. 280ms is
-// short enough to settle before the next line change in almost all songs,
-// while still looking smooth rather than instant.
-private const val LYRIC_FOCUS_SCROLL_DURATION_MS = 280
+// Sentinels for the first-focus collector: the user took over the list, or no line index is
+// published yet.
+private const val LYRIC_FOCUS_TARGET_MANUAL = -2
+private const val LYRIC_FOCUS_TARGET_PENDING = -1
 // The lines stay transparent until the active one has been placed, then fade in
 // over this long. See `awaitingFirstFocus`.
 private const val LYRIC_FIRST_FOCUS_FADE_MS = 200
 // Hard ceiling on how long the lines may stay hidden waiting for that placement.
-private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 400L
+private const val LYRIC_FIRST_FOCUS_TIMEOUT_MS = 900L
 // A line-synced "syllable" is only a peg to hang a romanisation on, so it gets the shortest window
 // the library will accept rather than a share of the line's duration — see
 // buildWrappingKaraokeSyllables.
@@ -243,7 +220,7 @@ private const val ROMANIZATION_FIRST_BUILD_GRACE_MS = 700L
 /** One published [SyncedLyrics] plus the identity of the romanisation baked into it. */
 private data class KaraokeBuild(
     val lyrics: SyncedLyrics,
-    val romanization: Map<Int, List<String?>>,
+    val romanization: Map<Int, LyricsPhonetics>,
     val generation: Int,
 )
 
@@ -253,8 +230,8 @@ private data class KaraokeBuild(
  * one and must not count as a change (otherwise a song with nothing romanisable would re-key the
  * karaoke view for a build that looks identical).
  */
-private fun Map<Int, List<String?>>.renderedRomanization(): Map<Int, List<String?>> =
-    filterValues { values -> values.any { !it.isNullOrBlank() } }
+private fun Map<Int, LyricsPhonetics>.renderedRomanization(): Map<Int, LyricsPhonetics> =
+    filterValues { value -> !value.line.isNullOrBlank() || value.words.orEmpty().any { !it.isNullOrBlank() } }
 
 /**
  * Enhanced karaoke lyrics renderer.
@@ -304,37 +281,22 @@ fun LyricsEnhanced(
     val (lyricsLineBlurPreference) = rememberPreference(LyricsLineBlurKey, defaultValue = false)
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
 
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
+    val japanesePackState by JapaneseLanguagePackManager.state.collectAsStateWithLifecycle()
+    val japanesePackReady = japanesePackState is moe.rukamori.archivetune.lyrics.JapaneseLanguagePackState.Installed
 
-    val romanizationPreferences =
-        remember(
-            romanizeJapanese,
-            romanizeKorean,
-            romanizeChinese,
-            romanizeHindi,
-            romanizeOtherLanguages,
-            aiRomanizationSettings.active,
-        ) {
-            LyricsRomanizationPreferences(
-                romanizeJapanese = romanizeJapanese,
-                romanizeKorean = romanizeKorean,
-                romanizeChinese = romanizeChinese,
-                romanizeHindi = romanizeHindi,
-                romanizeOther = romanizeOtherLanguages,
-                aiHandled = aiRomanizationSettings.active,
-            )
-        }
+
 
     val lyricsFontFamily = rememberArchiveTuneLyricsFontFamily()
 
     // Apple Music style and all lyrics backgrounds always use white text so lyrics stay
     // readable on the dark blurred backdrop regardless of system theme.
     val textColor = textColorOverride ?: Color.White
-    val lyricsLineBlur = lyricsLineBlurOverride ?: lyricsLineBlurPreference
+    val lyricsLineBlur = (lyricsLineBlurOverride ?: lyricsLineBlurPreference) && moe.rukamori.archivetune.LocalBlurPolicy.current.any
 
     var isSelectionModeActive by rememberSaveable { mutableStateOf(false) }
     val selectedLineKeys = remember { mutableStateListOf<String>() }
@@ -360,7 +322,7 @@ fun LyricsEnhanced(
     // so the karaoke subtree tears down and re-animates from the beginning. Without this,
     // mediaId + lyrics text are unchanged on restart, so lyricsSessionKey stays the same and
     // all per-session Animatable instances retain their settled values — no intro animation replays.
-    val playbackState by playerConnection.playbackState.collectAsState()
+    val playbackState by playerConnection.playbackState.collectAsStateWithLifecycle()
     var restartTick by remember { mutableIntStateOf(0) }
     var lastPlaybackState by remember { mutableStateOf(Player.STATE_READY) }
     LaunchedEffect(mediaMetadata?.id, playbackState) {
@@ -418,6 +380,30 @@ fun LyricsEnhanced(
             }
     }
     val lyricsEntries: List<LyricsEntry> = parsedEntries.orEmpty()
+    val sourceLanguageHints = remember(lyrics, lyricsEntries) {
+        LyricsUtils.sourceLanguageHints(lyrics, lyricsEntries)
+    }
+    val aiHandlesLyrics = remember(aiRomanizationSettings, lyricsEntries, sourceLanguageHints) {
+        AiLyricsRomanization.isEligible(aiRomanizationSettings, lyricsEntries.map { it.text }, sourceLanguageHints)
+    }
+    val romanizationPreferences =
+        remember(
+            romanizeJapanese,
+            romanizeKorean,
+            romanizeChinese,
+            romanizeHindi,
+            romanizeOtherLanguages,
+            aiHandlesLyrics,
+        ) {
+            LyricsRomanizationPreferences(
+                romanizeJapanese = romanizeJapanese,
+                romanizeKorean = romanizeKorean,
+                romanizeChinese = romanizeChinese,
+                romanizeHindi = romanizeHindi,
+                romanizeOther = romanizeOtherLanguages,
+                aiHandled = aiHandlesLyrics,
+            )
+        }
 
     // Keyed on the raw lyrics text, not on lyricsEntries: the entries now arrive a beat after the
     // first composition, and re-keying on them would put a synchronous buildSyncedLyrics straight
@@ -436,30 +422,29 @@ fun LyricsEnhanced(
     // folded into the same romanizationMap the built-in engines feed, which means everything
     // downstream — the wrapping-unit distribution, the karaoke phonetics, `showPhonetic` — is shared.
     val aiRomanizationSessionKey =
-        remember(mediaMetadata?.id, lyrics) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics) }
+        remember(mediaMetadata?.id, lyrics, sourceLanguageHints) { AiLyricsRomanization.sessionKey(mediaMetadata?.id, lyrics, sourceLanguageHints) }
     val aiRomanizationResult by AiLyricsRomanization.results.collectAsStateWithLifecycle()
     // Resolved by line text, not by index — this renderer parses without the head entry and without
     // instrumental breaks, LyricsV2 parses with both, and both derive the same session key. See
     // AiLyricsRomanization.Result.
     val aiRomanizedLines: List<String?> =
-        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings.active, lyricsEntries) {
-            if (!aiRomanizationSettings.active) {
-                emptyList()
-            } else {
-                AiLyricsRomanization.linesFor(aiRomanizationSessionKey, lyricsEntries.map { it.text })
-            }
+        remember(aiRomanizationResult, aiRomanizationSessionKey, aiRomanizationSettings, lyricsEntries) {
+            AiLyricsRomanization.linesFor(aiRomanizationSessionKey, lyricsEntries.map { it.text }, sourceLanguageHints)
         }
     LaunchedEffect(aiRomanizationSessionKey, lyricsEntries, aiRomanizationSettings) {
-        if (!aiRomanizationSettings.active || !aiRomanizationSettings.auto) return@LaunchedEffect
+        if (!aiHandlesLyrics || !aiRomanizationSettings.auto) return@LaunchedEffect
         if (lyricsEntries.isEmpty()) return@LaunchedEffect
         AiLyricsRomanization.request(
             sessionKey = aiRomanizationSessionKey,
             lines = lyricsEntries.map { it.text },
             settings = aiRomanizationSettings,
+            sourceLanguageHints = sourceLanguageHints,
         )
     }
 
-    LaunchedEffect(lyricsEntries, romanizationPreferences, aiRomanizedLines) {
+    val romanizationContext = remember(lyricsEntries) { lyricsEntries.joinToString("\n") { it.text } }
+
+    LaunchedEffect(lyricsEntries, romanizationPreferences, aiRomanizedLines, japanesePackReady) {
         // Everything below (scanning + romanizing every line, often one job per word for TTML)
         // must not inherit the main dispatcher — it stutters the karaoke animation on track
         // change; run the whole batch on Default and only publish the results back.
@@ -470,7 +455,7 @@ fun LyricsEnhanced(
         // whatever it measured the first time that line was composed — so a build that changes the
         // romanisation of lines already on screen has to carry a new generation with it. See
         // KaraokeBuild.
-        fun publish(romanization: Map<Int, List<String?>>) {
+        fun publish(romanization: Map<Int, LyricsPhonetics>) {
             val previous = karaokeBuild
             val changesVisibleLines =
                 previous.lyrics.lines.isNotEmpty() &&
@@ -491,15 +476,7 @@ fun LyricsEnhanced(
                 // this build will ever have.
                 emptyList()
             } else {
-                lyricsEntries.mapIndexedNotNull { index, entry ->
-                    val hasProviderRomanization =
-                        providedRomanizedTextForEntry(entry, romanizationPreferences) != null
-                    if (hasProviderRomanization || shouldRomanizeLyricsLine(entry.text, romanizationPreferences)) {
-                        index to entry
-                    } else {
-                        null
-                    }
-                }
+                lyricsEntries.mapIndexed { index, entry -> index to entry }
             }
         if (toRomanize.isEmpty()) {
             publish(aiMap)
@@ -511,34 +488,14 @@ fun LyricsEnhanced(
                 val jobs =
                     toRomanize.map { (index, entry) ->
                         async {
-                            val romanized: List<String?> =
+                            val romanized =
                                 try {
-                                    if (entry.words != null) {
-                                        val mainWordCount = entry.words!!.count { !it.isBackground }
-                                        providedRomanizedWordsForEntry(entry, mainWordCount, romanizationPreferences)
-                                            ?: romanizeWordsForLine(
-                                                // Japanese: single-pass line tokenization (6x fewer
-                                                // Kuromoji calls than per-word). Other languages:
-                                                // per-word character-by-character (already cheap).
-                                                words = entry.words!!.filter { !it.isBackground }.map { it.text },
-                                                lineText = entry.text,
-                                                preferences = romanizationPreferences,
-                                            )
-                                    } else {
-                                        listOf(
-                                            providedRomanizedTextForEntry(entry, romanizationPreferences)
-                                                ?: romanizeLyricsLine(entry.text, romanizationPreferences),
-                                        )
-                                    }
+                                    phoneticsForEntry(entry, romanizationPreferences, romanizationContext)
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
                                     reportException(e)
-                                    if (entry.words != null) {
-                                        List(entry.words!!.count { !it.isBackground }) { null }
-                                    } else {
-                                        listOf(null)
-                                    }
+                                    LyricsPhonetics()
                                 }
                             index to romanized
                         }
@@ -623,8 +580,8 @@ fun LyricsEnhanced(
     // The scroll state is recreated together with the subtree that owns it.
     val listState = key(lyricsSessionKey, positionResetCounter, karaokeGeneration) { rememberLazyListState() }
 
-    // ── First-frame placement ── A fresh LazyListState starts at line 0 and the auto-scroll
-    // collector below walks it to the active line.
+    // ── First-frame placement ── A fresh LazyListState starts at line 0 and KaraokeLyricsView
+    // walks it to the active line; the lines stay hidden until the collector below sees it settle.
     var awaitingFirstFocus by
         remember(lyricsSessionKey, positionResetCounter, karaokeGeneration) {
             mutableStateOf(isSynced)
@@ -656,8 +613,8 @@ fun LyricsEnhanced(
         lastManualScrollTime = 0L
         isSelectionModeActive = false
         selectedLineKeys.clear()
-        // Reset the cached line index so the auto-scroll effect force-scrolls to the
-        // new track's first active line instead of inheriting the previous track's index.
+        // Reset the cached line index so first focus waits for the new track's active line
+        // instead of inheriting the previous track's index.
         currentLineIndexState.intValue = -1
     }
 
@@ -837,6 +794,16 @@ fun LyricsEnhanced(
         onLyricsScroll(isManualScrolling)
     }
 
+    // Selection pauses the page's controls auto-hide too: tucking the controls away must not
+    // dismiss the sheet the user is picking lines in.
+    val onSelectionActive = LocalLyricsSelectionListener.current
+    LaunchedEffect(isSelectionModeActive) {
+        onSelectionActive(isSelectionModeActive)
+    }
+    DisposableEffect(Unit) {
+        onDispose { onSelectionActive(false) }
+    }
+
     // Deliberately not a key on `syncedLyrics` — the value is read through rememberUpdatedState
     // below instead, so a lyrics update does not restart the collector.
     val latestSyncedLyricsForScroll = rememberUpdatedState(syncedLyrics)
@@ -849,7 +816,6 @@ fun LyricsEnhanced(
         isSynced,
         positionResetCounter,
         karaokeGeneration,
-        animationsDisabled,
     ) {
         if (!isSynced || singleActiveLine) {
             // Single-line mode never scrolls a lyric list, so there is no first focus to wait
@@ -864,51 +830,39 @@ fun LyricsEnhanced(
         // drawn at line 0 and then visibly walked to the active one. Wait for the content instead;
         // the LYRIC_FIRST_FOCUS_TIMEOUT_MS safety net above covers the case where it never arrives.
         snapshotFlow { latestSyncedLyricsForScroll.value.lines.isNotEmpty() }.first { it }
-        snapshotFlow {
-            listState.layoutInfo.viewportEndOffset > listState.layoutInfo.viewportStartOffset
-        }.first { it }
 
-        var forceNextScroll = true
+        // KaraokeLyricsView scrolls its own list to the active line, so it is the only auto-scroll
+        // owner. A second app-side scroller fought it and clipped the top active line of an
+        // accompaniment/duet aggregate. This collector only decides when the hidden list may fade in.
         snapshotFlow {
             if (isManualScrolling || isSelectionModeActive) {
-                null
+                LYRIC_FOCUS_TARGET_MANUAL
             } else {
                 currentLineIndexState.intValue
                     .takeIf { index -> index in latestSyncedLyricsForScroll.value.lines.indices }
+                    ?: LYRIC_FOCUS_TARGET_PENDING
             }
         }.distinctUntilChanged()
-            .collectLatest { index ->
-                if (index == null) {
-                    forceNextScroll = true
-                    // Nothing to place: either no line has started yet (song intro) or the user
-                    // took over the scroll. The list is already where it belongs in both cases, so
-                    // release the first-focus gate instead of letting it time out — otherwise the
-                    // lines would sit invisible for LYRIC_FIRST_FOCUS_TIMEOUT_MS on every track
-                    // whose first lyric starts a beat after playback does.
+            .collectLatest { target ->
+                if (target == LYRIC_FOCUS_TARGET_MANUAL) {
+                    // The user took over the list, so there is nothing left to hide.
                     awaitingFirstFocus = false
                     return@collectLatest
                 }
-
-                // The first placement of a session is a snap: the list is still
-                // transparent, so animating it would only spend frames on a
-                // motion nobody can see — and it is the animation that used to
-                // read as the lyrics repositioning themselves.
-                val isFirstFocus = awaitingFirstFocus
-                listState.scrollLyricIntoFocus(
-                    index = index,
-                    animateToNearbyItem = !forceNextScroll,
-                    force = forceNextScroll,
-                    snap = isFirstFocus,
-                    animationsDisabled = animationsDisabled,
-                )
-                forceNextScroll = false
-                if (isFirstFocus) awaitingFirstFocus = false
+                // No index published yet: releasing here would fade the list in at line 0 and then
+                // show the library walking to the active line. LYRIC_FIRST_FOCUS_TIMEOUT_MS still
+                // releases it if no line ever becomes active (long intro).
+                if (target == LYRIC_FOCUS_TARGET_PENDING) return@collectLatest
+                if (awaitingFirstFocus) {
+                    listState.awaitKaraokeFirstFocus(target)
+                    awaitingFirstFocus = false
+                }
             }
     }
 
     // Clear the tracked active line after a backward discontinuity so the re-keyed
-    // auto-scroll collector above force-scrolls to the first line of the new
-    // play-through instead of treating the previous line index as still current.
+    // first-focus collector above waits for the first line of the new play-through
+    // instead of treating the previous line index as still current.
     //
     // No explicit scroll here: [listState] is recreated alongside the karaoke subtree on
     // the same counter, so the fresh list already starts at the top. Scrolling the old
@@ -1608,66 +1562,22 @@ private fun LyricsSelectionLineItem(
     }
 }
 
-private suspend fun LazyListState.scrollLyricIntoFocus(
-    index: Int,
-    animateToNearbyItem: Boolean,
-    force: Boolean,
-    // Placement for a view that isn't visible yet: skip both animations so the
-    // active line is already in place on the frame the lyrics fade in.
-    snap: Boolean = false,
-    animationsDisabled: Boolean,
-) {
-    val itemCount = layoutInfo.totalItemsCount
-    if (itemCount == 0) return
-
-    val targetIndex = index.coerceIn(0, itemCount - 1)
-    var itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == targetIndex }
-    if (itemInfo == null) {
-        val distance = abs(targetIndex - firstVisibleItemIndex)
-        if (!snap && animateToNearbyItem && !animationsDisabled && distance <= LYRIC_FOCUS_ANIMATED_DISTANCE) {
-            animateScrollToItem(targetIndex)
-        } else {
-            scrollToItem(targetIndex)
-        }
+// Waits, without scrolling, until KaraokeLyricsView has placed the active line and stopped moving.
+// Both loops are frame-bounded so an empty list or a target the library never shows cannot hold
+// the lyrics hidden; LYRIC_FIRST_FOCUS_TIMEOUT_MS remains the outer ceiling.
+private suspend fun LazyListState.awaitKaraokeFirstFocus(index: Int) {
+    var framesAwaited = 0
+    var emptyFrames = 0
+    while (framesAwaited < LYRIC_FIRST_FOCUS_SETTLE_FRAMES) {
         withFrameNanos { }
-        itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == targetIndex }
-    }
-
-    itemInfo ?: return
-
-    val viewportStart = layoutInfo.viewportStartOffset
-    val viewportEnd = layoutInfo.viewportEndOffset
-    val viewportHeight = viewportEnd - viewportStart
-    if (viewportHeight <= 0) return
-
-    val itemFocusPoint = itemInfo.offset
-    val topGuard = viewportStart + (viewportHeight * LYRIC_FOCUS_TOP_GUARD_RATIO).roundToInt()
-    val bottomGuard = viewportEnd - (viewportHeight * LYRIC_FOCUS_BOTTOM_GUARD_RATIO).roundToInt()
-    if (!force && itemFocusPoint in topGuard..bottomGuard) return
-
-    val targetFocusPoint = viewportStart + (viewportHeight * LYRIC_FOCUS_TOP_ANCHOR_RATIO).roundToInt()
-    val scrollDelta = itemFocusPoint - targetFocusPoint
-    if (abs(scrollDelta) > LYRIC_FOCUS_MIN_SCROLL_PX) {
-        // For deltas up to 40% of the viewport (which covers ALL normal
-        // line-advance scrolls — they're typically ~22% of viewport), snap
-        // instantly instead of running a 280ms tween. The tween triggers a
-        // LazyColumn re-layout every frame for its entire duration, which
-        // steals frame budget from the 60Hz karaoke syllable sweep. The snap
-        // is imperceptible because the karaoke fill animation already provides
-        // visual continuity. Larger deltas (return from manual scroll, large
-        // seeks) still animate so the motion stays smooth over long distances.
-        val instantThreshold = (viewportHeight * LYRIC_FOCUS_INSTANT_SCROLL_RATIO).roundToInt()
-        if (snap || animationsDisabled || (abs(scrollDelta) <= instantThreshold && !force)) {
-            scrollBy(scrollDelta.toFloat())
+        framesAwaited++
+        if (layoutInfo.totalItemsCount == 0) {
+            emptyFrames++
+            if (emptyFrames >= LYRIC_FIRST_FOCUS_EMPTY_FRAMES) return
         } else {
-            animateScrollBy(
-                value = scrollDelta.toFloat(),
-                animationSpec =
-                    tween(
-                        durationMillis = LYRIC_FOCUS_SCROLL_DURATION_MS,
-                        easing = FastOutSlowInEasing,
-                    ),
-            )
+            emptyFrames = 0
+            val itemInfo = layoutInfo.visibleItemsInfo.firstOrNull { item -> item.index == index }
+            if (itemInfo != null && !isScrollInProgress) return
         }
     }
 }
@@ -1720,56 +1630,24 @@ private fun List<WordTimestamp>.toKaraokeSyllables(phonetics: List<String?>): Li
 private fun Double.toMilliseconds(): Int = (this * 1000.0).roundToInt().coerceAtLeast(0)
 
 /**
- * Reshapes AI romanisation — one string per lyric line — into the per-word map [buildSyncedLyrics]
- * expects.
+ * AI supplies line readings, not timed-word alignment.
  */
 private fun aiRomanizationMap(
     entries: List<LyricsEntry>,
     aiLines: List<String?>,
-): Map<Int, List<String?>> {
+): Map<Int, LyricsPhonetics> {
     if (aiLines.isEmpty() || entries.isEmpty()) return emptyMap()
-    val map = mutableMapOf<Int, List<String?>>()
-    entries.forEachIndexed { index, entry ->
+    val map = mutableMapOf<Int, LyricsPhonetics>()
+    entries.forEachIndexed { index, _ ->
         val romanized = aiLines.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEachIndexed
-        val words = entry.words?.filter { !it.isBackground }
-        map[index] =
-            if (!words.isNullOrEmpty()) {
-                distributePhonetics(words.map { it.text }, romanized)
-            } else {
-                listOf(romanized)
-            }
+        map[index] = LyricsPhonetics(line = romanized)
     }
     return map
 }
 
-/**
- * Spreads the whitespace-separated pieces of [romanized] across [words], keeping order.
- *
- * Proportional rather than one-to-one because the two sides rarely have the same count: "君の名は"
- * arrives as four TTML words and comes back as "kimi no na wa", but "ありがとう" is one word and one
- * token. Anchoring by relative position keeps a syllable's phonetic under roughly the right glyphs
- * even when the counts differ, and merging surplus tokens onto the last anchor means none are lost.
- */
-private fun distributePhonetics(
-    words: List<String>,
-    romanized: String,
-): List<String?> {
-    if (words.isEmpty()) return emptyList()
-    val tokens = romanized.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    if (tokens.isEmpty()) return List(words.size) { null }
-    if (words.size == 1) return listOf(tokens.joinToString(" "))
-
-    val out = MutableList<String?>(words.size) { null }
-    tokens.forEachIndexed { tokenIndex, token ->
-        val anchor = (tokenIndex * words.size / tokens.size).coerceIn(0, words.size - 1)
-        out[anchor] = listOfNotNull(out[anchor], token).joinToString(" ")
-    }
-    return out
-}
-
 private fun buildSyncedLyrics(
     entries: List<LyricsEntry>,
-    romanizationMap: Map<Int, List<String?>>,
+    romanizationMap: Map<Int, LyricsPhonetics>,
 ): SyncedLyrics {
     if (entries.isEmpty()) return SyncedLyrics(emptyList())
     val lines = mutableListOf<ISyncedLine>()
@@ -1790,7 +1668,7 @@ private fun buildSyncedLyrics(
                 }
 
             val wordsForMain = if (mainWords.isNotEmpty()) mainWords else entry.words!!
-            val wordPhonetics = romanizationMap[index] ?: emptyList()
+            val wordPhonetics = romanizationMap[index]?.words.orEmpty()
             val mainSyllables = wordsForMain.toKaraokeSyllables(wordPhonetics)
 
             val lineStart = mainSyllables.first().start
@@ -1827,7 +1705,7 @@ private fun buildSyncedLyrics(
                     alignment = alignment,
                     start = lineStart,
                     end = lineEnd,
-                    phonetic = null,
+                    phonetic = romanizationMap[index]?.line.takeIf { wordPhonetics.isEmpty() },
                     accompanimentLines = accompanimentLines,
                 ),
             )
@@ -1855,7 +1733,7 @@ private fun buildSyncedLyrics(
             lines.add(
                 buildLineSyncedLrcLine(
                     entry = entry,
-                    romanizedText = romanizationMap[index]?.firstOrNull(),
+                    romanizedText = romanizationMap[index]?.line,
                     start = entry.time.toInt(),
                     end = lineEnd,
                 ),
@@ -1884,12 +1762,15 @@ private fun buildLineSyncedLrcLine(
         )
     }
 
-    val syllables =
-        buildWrappingKaraokeSyllables(
-            content = entry.text,
-            romanizedText = normalizedRomanizedText,
+    // Keep the existing wrapping units, but never manufacture timed phonetic alignment.
+    val syllables = entry.text.toLyricsWrappingUnits().ifEmpty { listOf(entry.text) }.map { unit ->
+        KaraokeSyllable(
+            content = unit,
             start = start,
+            end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS,
+            phonetic = null,
         )
+    }
 
     return KaraokeLine.MainKaraokeLine(
         syllables = syllables,
@@ -1897,54 +1778,8 @@ private fun buildLineSyncedLrcLine(
         alignment = KaraokeAlignment.Start,
         start = start,
         end = end,
+        phonetic = normalizedRomanizedText,
     )
-}
-
-/**
- * Wraps a line-synced lyric into karaoke syllables purely so a romanisation can sit above it.
- *
- * Takes no `end`, deliberately: a line-synced LRC file has no word timing, so there is nothing to
- * spread across the line's duration and no reason for the syllables to know how long the line lasts.
- */
-private fun buildWrappingKaraokeSyllables(
-    content: String,
-    romanizedText: String,
-    start: Int,
-): List<KaraokeSyllable> {
-    val contentUnits = content.toLyricsWrappingUnits().ifEmpty { listOf(content) }
-    val phoneticWords = romanizedText.split(Regex("\\s+")).filter(String::isNotEmpty)
-    val phoneticAnchorIndices =
-        contentUnits.indices.filter { index ->
-            contentUnits[index].any(Char::isLetterOrDigit)
-        }
-    val phoneticsByUnit = MutableList<String?>(contentUnits.size) { null }
-
-    if (phoneticAnchorIndices.isNotEmpty()) {
-        phoneticWords.forEachIndexed { wordIndex, word ->
-            val anchorIndex = wordIndex * phoneticAnchorIndices.size / phoneticWords.size
-            val unitIndex = phoneticAnchorIndices[anchorIndex]
-            phoneticsByUnit[unitIndex] = listOfNotNull(phoneticsByUnit[unitIndex], word).joinToString(" ")
-        }
-    }
-
-    // Every unit shares one instant, deliberately: these syllables exist only to hang a
-    // romanisation over the right glyphs, so per-word timing derived from the line's *length*
-    // would be pure fabrication, and `KaraokeLineText` would faithfully animate it — making plain
-    // LRC lyrics fill word by word whenever romanisation is on, while the very same lines without
-    // romanisation highlight whole through `SyncedLine`.
-    //
-    // Collapsing every unit onto `[start, start + 1)` makes `KaraokeSyllable.progress` a step
-    // function: 0 before the line, 1 from its first millisecond. The whole line lights up at once,
-    // matching the `SyncedLine` path exactly, and each romanisation still sits above its own unit.
-    val syllableEnd = start + MIN_KARAOKE_SYLLABLE_DURATION_MS
-    return contentUnits.mapIndexed { index, unit ->
-        KaraokeSyllable(
-            content = unit,
-            start = start,
-            end = syllableEnd,
-            phonetic = phoneticsByUnit[index],
-        )
-    }
 }
 
 /**
@@ -2020,11 +1855,13 @@ private fun SingleActiveLineCluster(
     onLineClick: (ISyncedLine) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val scrollState = rememberScrollState()
+    LaunchedEffect(line.start) { scrollState.scrollTo(0) }
     Column(
         modifier =
-            modifier.clickable(enabled = line.start > 0) {
-                onLineClick(line)
-            },
+            modifier
+                .verticalScroll(scrollState)
+                .clickable(enabled = line.start > 0) { onLineClick(line) },
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
         when (line) {
@@ -2037,24 +1874,21 @@ private fun SingleActiveLineCluster(
                             text = accompanimentText,
                             style = accompanimentTextStyle,
                             color = textColor.copy(alpha = 0.45f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
 
                 val phonetic =
-                    line.syllables
-                        .mapNotNull { it.phonetic?.trim() }
-                        .filter { it.isNotEmpty() }
-                        .joinToString(" ")
+                    (line as? KaraokeLine.MainKaraokeLine)?.phonetic?.takeIf { it.isNotBlank() }
+                        ?: line.syllables
+                            .mapNotNull { it.phonetic?.trim() }
+                            .filter { it.isNotEmpty() }
+                            .joinToString(" ")
                 if (phonetic.isNotEmpty()) {
                     Text(
                         text = phonetic,
                         style = phoneticTextStyle,
                         color = textColor.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
@@ -2147,13 +1981,17 @@ private fun TranslationStack(
 }
 
 /** A separating space only between Latin-script words — CJK syllables join seamlessly. */
-private fun needsLatinWordGap(previous: String, next: String): Boolean =
-    isLatinWordChar(previous.lastOrNull()) && isLatinWordChar(next.firstOrNull())
-
-private fun isLatinWordChar(ch: Char?): Boolean {
-    if (ch == null) return false
-    return ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\'' || ch == ','
+private fun needsLatinWordGap(previous: String, next: String): Boolean {
+    val prevTail = previous.lastOrNull() ?: return false
+    val nextHead = next.firstOrNull() ?: return false
+    if (!isLatinWordChar(nextHead) || prevTail.isWhitespace() || nextHead.isWhitespace()) return false
+    return isLatinWordChar(prevTail) || prevTail in SENTENCE_PUNCTUATION
 }
+
+private const val SENTENCE_PUNCTUATION = ".,!?;:…"
+
+private fun isLatinWordChar(ch: Char): Boolean =
+    ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '\''
 
 private fun List<KaraokeSyllable>.joinSyllableContents(): String {
     val builder = StringBuilder()
@@ -2165,4 +2003,19 @@ private fun List<KaraokeSyllable>.joinSyllableContents(): String {
         }
     }
     return builder.toString()
+}
+
+internal fun extractTtmlWriters(lyrics: String?): String {
+    if (lyrics.isNullOrBlank()) return ""
+    val writerTagPattern =
+        Regex(
+            pattern = "<(songwriter|composer|lyricist|writer|ar)(?:\\s[^>]*)?>([^<]+)</\\1>",
+            options = setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
+    val writers = LinkedHashSet<String>()
+    writerTagPattern.findAll(lyrics).forEach { match ->
+        val name = match.groupValues.getOrNull(2)?.trim()
+        if (!name.isNullOrBlank()) writers.add(name)
+    }
+    return writers.joinToString(", ").trim()
 }

@@ -16,6 +16,7 @@ import java.net.InetAddress
 import java.net.UnknownHostException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * DNS resolver that falls back to DNS-over-HTTPS (Cloudflare / Google) when the system resolver
@@ -54,6 +55,7 @@ internal object TidalDns : Dns {
     private val dohClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .dns(bootstrapDns)
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(5, TimeUnit.SECONDS)

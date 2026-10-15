@@ -10,24 +10,18 @@
 
 package moe.rukamori.archivetune.ui.player
 
-import android.content.Context
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.constants.HidePlayerThumbnailKey
+import moe.rukamori.archivetune.utils.playerVolumeVisibility
+
 import android.content.res.Configuration
-import android.database.ContentObserver
 import android.graphics.Bitmap
-import android.media.AudioManager
 import android.os.Build
-import android.os.Handler
-import android.os.Looper
 import android.os.SystemClock
-import android.provider.Settings
-import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -38,7 +32,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
@@ -63,7 +56,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.width
@@ -84,9 +76,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.Stable
+import androidx.compose.runtime.SideEffect
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -98,18 +90,17 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.State
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.composed
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.asImageBitmap
@@ -129,15 +120,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
@@ -150,7 +140,6 @@ import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Player.STATE_BUFFERING
 import androidx.media3.common.Player.STATE_READY
-import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.navigation.NavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.palette.graphics.Palette
@@ -171,7 +160,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.LocalDownloadUtil
@@ -190,8 +178,6 @@ import moe.rukamori.archivetune.constants.BackdropBlurAmountKey
 import moe.rukamori.archivetune.constants.BackdropEnabledKey
 import moe.rukamori.archivetune.constants.BlurRadiusKey
 import moe.rukamori.archivetune.constants.DarkModeKey
-import moe.rukamori.archivetune.constants.DisableBlurKey
-import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.constants.PlayerBackgroundStyle
@@ -208,7 +194,6 @@ import moe.rukamori.archivetune.constants.PoTokenGvsKey
 import moe.rukamori.archivetune.constants.PoTokenPlayerKey
 import moe.rukamori.archivetune.constants.QueuePeekHeight
 import moe.rukamori.archivetune.constants.ShowCodecOnPlayerKey
-import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
 import moe.rukamori.archivetune.constants.SliderStyle
 import moe.rukamori.archivetune.constants.SliderStyleKey
 import moe.rukamori.archivetune.constants.SpotifyCanvasKey
@@ -223,6 +208,12 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.MarqueeText
+import moe.rukamori.archivetune.ui.component.PlayerBackController
+import moe.rukamori.archivetune.ui.component.LocalPlayerInlinePageBack
+import moe.rukamori.archivetune.ui.component.PlayerBackTarget
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackRegistry
+import moe.rukamori.archivetune.ui.component.PredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.player.bitchord.BitChordPlayerContent
@@ -246,103 +237,31 @@ import moe.rukamori.archivetune.utils.makeTimeString
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberLowDataModeActive
 import moe.rukamori.archivetune.utils.rememberPreference
+import moe.rukamori.archivetune.ui.player.looper.LooperPlayerContent
+import moe.rukamori.archivetune.ui.player.flamingo.FlamingoPlayerContent
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 
 private const val SeekbarSettleToleranceMs = 1_500L
-private const val V7BackdropMinArtworkSizePx = 1_024
-private const val V7BackdropMaxArtworkSizePx = 2_048
-private const val V7BackdropBlurDp = 44
-private const val V7BackdropBlurScale = 1.18f
-private const val V7BackdropArtworkOverscanFactor = 1.15f
-private const val V7SharpStagePortraitFraction = 0.62f
-private const val V7SharpStageLandscapeFraction = 0.58f
-private const val V7BackdropOverlapDp = 72
-private const val V7SharpStageBottomScrimStartFraction = 0.40f
-private const val V7BackdropFloorBlackStartFraction = 0.88f
 private const val V8BackdropArtworkSizePx = 1_024
 
-@Stable
-internal class DeviceMusicVolumeController(
-    private val audioManager: AudioManager,
-) {
-    private var minVolume by mutableIntStateOf(readMinVolume())
-    private var maxVolume by mutableIntStateOf(readMaxVolume())
-    var volumeFraction by mutableFloatStateOf(readVolumeFraction())
-        private set
-
-    fun refresh() {
-        minVolume = readMinVolume()
-        maxVolume = readMaxVolume()
-        volumeFraction = readVolumeFraction()
-    }
-
-    @JvmName("setDeviceMusicVolumeFraction")
-    fun setVolumeFraction(fraction: Float) {
-        val safeFraction = fraction.takeIf { it.isFinite() }?.coerceIn(0f, 1f) ?: volumeFraction
-        val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
-        val targetVolume =
-            (minVolume + (safeFraction * volumeRange).roundToInt())
-                .coerceIn(minVolume, maxVolume)
-        val adjustedTarget =
-            if (safeFraction > 0f && targetVolume <= minVolume) {
-                (minVolume + 1).coerceAtMost(maxVolume)
-            } else {
-                targetVolume
-            }
-
-        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, adjustedTarget, 0)
-        refresh()
-    }
-
-    private fun readVolumeFraction(): Float {
-        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        val volumeRange = (maxVolume - minVolume).coerceAtLeast(1)
-        return ((currentVolume - minVolume).toFloat() / volumeRange.toFloat()).coerceIn(0f, 1f)
-    }
-
-    private fun readMaxVolume(): Int {
-        val streamMinVolume = readMinVolume()
-        return audioManager
-            .getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            .coerceAtLeast(streamMinVolume + 1)
-    }
-
-    private fun readMinVolume(): Int =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            audioManager.getStreamMinVolume(AudioManager.STREAM_MUSIC)
-        } else {
-            0
-        }
-}
-
-@Composable
-internal fun rememberDeviceMusicVolumeController(): DeviceMusicVolumeController {
-    val context = LocalContext.current
-    val audioManager =
-        remember(context) {
-            context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-        }
-    val controller =
-        remember(audioManager) {
-            DeviceMusicVolumeController(audioManager)
-        }
-
-    DisposableEffect(context, controller) {
-        val observer =
-            object : ContentObserver(Handler(Looper.getMainLooper())) {
-                override fun onChange(selfChange: Boolean) {
-                    controller.refresh()
-                }
-            }
-        val contentResolver = context.applicationContext.contentResolver
-        contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true, observer)
-        controller.refresh()
-        onDispose {
-            contentResolver.unregisterContentObserver(observer)
-        }
-    }
-
-    return controller
-}
+/**
+ * The numbered styles that take the player-wide double-tap-to-seek handler.
+ *
+ * Every other style owns its own gesture surface — V5 the little player's scrub overlay, V7 the
+ * immersive screen, V10 and Apple Music their artwork, BitChord / SimpMusic / SpatialFlow / Looper
+ * their artwork, Flamingo its root surface, TikTok its song page — so a second handler on the
+ * shared root would seek twice for a single double-tap. V5 is excluded for that reason as much as for its own overlay gestures.
+ */
+private val NumberedSeekDoubleTapStyles =
+    setOf(
+        PlayerDesignStyle.V1,
+        PlayerDesignStyle.V2,
+        PlayerDesignStyle.V3,
+        PlayerDesignStyle.V4,
+        PlayerDesignStyle.V6,
+        PlayerDesignStyle.V8,
+        PlayerDesignStyle.V9,
+    )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -353,6 +272,11 @@ fun BottomSheetPlayer(
     pureBlack: Boolean,
     navigationProximityProvider: () -> Float = { 0f },
     onLyricsVisibilityChange: (Boolean) -> Unit = {},
+    compactFractionState: State<Float>? = null,
+    compactHorizontalPadding: Dp = 0.dp,
+    compactReserveEndControl: Boolean = false,
+    backController: PlayerBackController? = null,
+    predictiveBackState: PredictiveSheetBackState? = null,
     immersivePlayerViewModel: ImmersivePlayerViewModel = hiltViewModel(),
 ) {
     val context = LocalContext.current
@@ -402,10 +326,8 @@ fun BottomSheetPlayer(
         key = PlayerDesignStyleKey,
         defaultValue = PlayerDesignStyle.Default,
     )
-    val showPlayerVolumeBar by rememberPreference(
-        key = ShowPlayerVolumeBarKey,
-        defaultValue = true,
-    )
+    val presentationPreferences = rememberPreferenceSnapshot()
+    val showPlayerVolumeBar by presentationPreferences.playerVolumeVisibility(playerDesignStyle)
 
     val storedPlayerBackground by rememberEnumPreference(
         key = PlayerBackgroundStyleKey,
@@ -420,7 +342,7 @@ fun BottomSheetPlayer(
     val (playerCustomContrast) = rememberPreference(PlayerCustomContrastKey, 1f)
     val (playerCustomBrightness) = rememberPreference(PlayerCustomBrightnessKey, 1f)
 
-    val (disableBlur) = rememberPreference(DisableBlurKey, false)
+    val disableBlur = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val (blurRadius) = rememberPreference(BlurRadiusKey, 48f)
     val (backdropEnabled) = rememberPreference(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount) = rememberPreference(BackdropBlurAmountKey, defaultValue = 60)
@@ -487,7 +409,7 @@ fun BottomSheetPlayer(
     val currentLyricsEntity by playerConnection.currentLyrics.collectAsStateWithLifecycle(initialValue = null)
     val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
-    val deviceMusicVolumeController = rememberDeviceMusicVolumeController()
+    val deviceMusicVolumeController = rememberDeviceMusicVolumeController(playerDesignStyle)
     val onPlayerVolumeChange =
         remember(deviceMusicVolumeController) {
             { volume: Float ->
@@ -961,9 +883,23 @@ fun BottomSheetPlayer(
         mutableStateOf(false)
     }
 
+    val lifecycleOwner = LocalLifecycleOwner.current
     LaunchedEffect(mediaMetadata?.id, playbackState, aodModeEnabled) {
-        val startTime = SystemClock.elapsedRealtime()
-        if (playbackState == STATE_READY) {
+        if (playbackState != STATE_READY) {
+            mediaMetadata?.let {
+                val metaDuration = it.duration.toLong() * 1000
+                duration = if (metaDuration > 0) metaDuration else 0L
+            }
+            val player = playerConnection.player
+            val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
+            val currentPlayerPosition = player.currentPosition
+            if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
+                position = currentPlayerPosition
+            }
+            return@LaunchedEffect
+        }
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            val startTime = SystemClock.elapsedRealtime()
             while (isActive) {
                 delay(if (aodModeEnabled) 500L else 100L)
                 val isTransitioning = playerConnection.player.currentMediaItem?.mediaId != mediaMetadata?.id
@@ -1014,17 +950,6 @@ fun BottomSheetPlayer(
                     }
                 }
             }
-        } else {
-            mediaMetadata?.let {
-                val metaDuration = it.duration.toLong() * 1000
-                duration = if (metaDuration > 0) metaDuration else 0L
-            }
-            val player = playerConnection.player
-            val playerMatchesMetadata = player.currentMediaItem?.mediaId == mediaMetadata?.id
-            val currentPlayerPosition = player.currentPosition
-            if (sliderPosition == null && playerMatchesMetadata && currentPlayerPosition > 0L) {
-                position = currentPlayerPosition
-            }
         }
     }
 
@@ -1070,7 +995,6 @@ fun BottomSheetPlayer(
     // roundtrip, so the user has to manually close the queue sheet every time they return to
     // the app. Collapsing on ON_STOP writes COLLAPSED_ANCHOR into previousAnchor via the
     // sheet's onAnchorChanged callback, so the queue stays collapsed on return.
-    val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner, queueSheetState) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_STOP && !queueSheetState.isCollapsed) {
@@ -1086,7 +1010,7 @@ fun BottomSheetPlayer(
     }
 
     // The lyrics overlay belongs to the EXPANDED player: it is opened from it, drawn over it, and
-    // every way out of it — the BackHandler below, LyricsScreen's own, and the top-edge dismiss
+    // every way out of it — the shared back controller, LyricsScreen's own, and the top-edge dismiss
     // drag — is gated on `state.isExpandedOrExpanding`. Nothing tied the overlay's own lifetime to
     // that, so collapsing the player while lyrics were open (a drag on the sheet, ON_STOP, or a
     // restore from process death, since the flag is rememberSaveable) left the overlay covering
@@ -1101,12 +1025,12 @@ fun BottomSheetPlayer(
     // GPU work during ANY lyrics morph — but only isLyricsScreenVisible triggers the standalone
     // MikoLyricsTransition overlay. Without the inline state propagating, back-stack
     // LiquidGlass/Canvas GPU work competes with the sharedBounds morph and stutters.
-    var isAppleMusicInlineLyricsOpen by rememberSaveable { mutableStateOf(false) }
+    var isInlineLyricsOpen by rememberSaveable { mutableStateOf(false) }
 
-    // Report full-screen lyrics visibility upward so the status bar can be hidden for every player
-    // style while the lyrics overlay is showing, not only for the Immersive style.
+    // Report full-screen lyrics visibility upward so back-stack screens can suspend GPU work while
+    // the lyrics overlay is showing, for every player style.
     val lyricsFullScreenActive =
-        (isLyricsScreenVisible || isAppleMusicInlineLyricsOpen) && state.isExpandedOrExpanding
+        (isLyricsScreenVisible || isInlineLyricsOpen) && state.isExpandedOrExpanding
     LaunchedEffect(lyricsFullScreenActive) {
         onLyricsVisibilityChange(lyricsFullScreenActive)
     }
@@ -1125,16 +1049,42 @@ fun BottomSheetPlayer(
             }
         }
 
-    if (!aodModeEnabled) {
-        BackHandler(
-            enabled =
-                queueSheetState.isExpandedOrExpanding ||
-                    state.isExpandedOrExpanding,
-        ) {
-            when {
-                isLyricsScreenVisible && state.isExpandedOrExpanding -> isLyricsScreenVisible = false
-                queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
-                state.isExpandedOrExpanding -> state.collapseSoft()
+    // Player styles with in-player pages (Flamingo today) report whether one is open, and receive
+    // a back request through this epoch when the shared controller routes back to them.
+    val stylePageBackRequests = remember { mutableIntStateOf(0) }
+    var anyStylePageOverlayOpen by remember { mutableStateOf(false) }
+    val inlinePageBack = remember { PlayerInlinePageBackRegistry() }
+
+    // Which surface owns the next back press. Published once per composition into the shared
+    // controller; MainActivity's two player back handlers (composed after the NavHost, so they
+    // register after every handler in here) route the gesture to it. Without this the generic
+    // collapse handler won by registration order and back collapsed the whole player while the
+    // queue was open. SUB_PAGE covers the shared queue, the standalone lyrics screen, player
+    // style pages and the styles' in-place pages (inlinePageBack): a style's own BackHandler
+    // registers before the shields and cannot outrank them by toggling enabled.
+    val publishedBackTarget =
+        when {
+            aodModeEnabled -> PlayerBackTarget.NONE
+            !state.isExpandedOrExpanding && !queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.NONE
+            queueSheetState.isExpandedOrExpanding -> PlayerBackTarget.SUB_PAGE
+            isLyricsScreenVisible || anyStylePageOverlayOpen -> PlayerBackTarget.SUB_PAGE
+            backController != null && inlinePageBack.hasOpenPage -> PlayerBackTarget.SUB_PAGE
+            else -> PlayerBackTarget.SHEET
+        }
+
+    if (backController != null) {
+        SideEffect {
+            backController.backTarget = publishedBackTarget
+            backController.routeBack = {
+                when {
+                    isLyricsScreenVisible && state.isExpandedOrExpanding -> isLyricsScreenVisible = false
+                    // A Flamingo page reports through BOTH flags (its page feeds
+                    // onLyricsVisibilityChange), so the page epoch must be consulted first.
+                    anyStylePageOverlayOpen && state.isExpandedOrExpanding -> stylePageBackRequests.intValue++
+                    queueSheetState.isExpandedOrExpanding -> queueSheetState.collapseSoft()
+                    state.isExpandedOrExpanding && inlinePageBack.backTopmost() -> Unit
+                    state.isExpandedOrExpanding -> state.collapseSoft()
+                }
             }
         }
     }
@@ -1194,11 +1144,22 @@ fun BottomSheetPlayer(
         )
 
     CompositionLocalProvider(
+        LocalDeviceMusicVolumeController provides deviceMusicVolumeController,
+        LocalPlayerPresentation provides PlayerPresentation(
+            sharedBackground = playerDesignStyle.usesSharedBackground(storedPlayerBackground),
+            hideSleeve = playerDesignStyle.hasOrdinarySleeve && presentationPreferences[HidePlayerThumbnailKey, false],
+            sleeveRadius = presentationPreferences.current[ThumbnailCornerRadiusKey].takeIf { playerDesignStyle.hasOrdinarySleeve },
+            swipeArtwork = !playerDesignStyle.hasHorizontalArtworkSkip || presentationPreferences[moe.rukamori.archivetune.constants.SwipeThumbnailKey, true],
+            showCodec = showCodecOnPlayer,
+            showVolume = showPlayerVolumeBar,
+        ),
         LocalVideoArtworkState provides videoState,
         LocalVideoPreferredHeight provides videoPreferredHeight,
         LocalVideoOnPreferredHeightChange provides { videoPreferredHeight = it },
         LocalVideoAvailableHeights provides videoAvailableHeights,
         LocalVideoSelectedHeight provides videoSelectedHeight,
+        LocalVideoPlaybackFailed provides videoPlaybackFailed,
+        LocalPlayerInlinePageBack provides inlinePageBack.takeIf { backController != null },
     ) {
     Box(modifier = Modifier.fillMaxSize()) {
     BottomSheet(
@@ -1241,14 +1202,14 @@ fun BottomSheetPlayer(
 
                         Key.DirectionUp -> {
                             deviceMusicVolumeController.setVolumeFraction(
-                                (deviceMusicVolumeController.volumeFraction + 0.05f).coerceAtMost(1f),
+                                (deviceMusicVolumeController.observedFraction + 0.05f).coerceAtMost(1f),
                             )
                             true
                         }
 
                         Key.DirectionDown -> {
                             deviceMusicVolumeController.setVolumeFraction(
-                                (deviceMusicVolumeController.volumeFraction - 0.05f).coerceAtLeast(0f),
+                                (deviceMusicVolumeController.observedFraction - 0.05f).coerceAtLeast(0f),
                             )
                             true
                         }
@@ -1358,7 +1319,16 @@ fun BottomSheetPlayer(
         onDismiss = {
             playerConnection.service.stopAndClearPlayback(clearPersistentState = true)
         },
-        backHandlerEnabled = !aodModeEnabled && !isLyricsScreenVisible,
+        predictiveBackState = predictiveBackState,
+        // With a shared controller the sheet's own handler is the fallback behind MainActivity's
+        // shields: it may only fire when the sheet itself is the back target — never while a
+        // page, the queue or lyrics sit on top of it.
+        backHandlerEnabled =
+            if (backController != null) {
+                publishedBackTarget == PlayerBackTarget.SHEET
+            } else {
+                !aodModeEnabled && !isLyricsScreenVisible
+            },
         keepContentAlive = true,
         collapsedContent = {
             MiniPlayer(
@@ -1366,6 +1336,9 @@ fun BottomSheetPlayer(
                 duration = duration,
                 pureBlack = pureBlack,
                 navigationProximityProvider = navigationProximityProvider,
+                compactFractionState = compactFractionState,
+                compactHorizontalPadding = compactHorizontalPadding,
+                compactReserveEndControl = compactReserveEndControl,
             )
         },
     ) {
@@ -1434,7 +1407,7 @@ fun BottomSheetPlayer(
                 !aodModeEnabled
         val shouldUseArtworkCanvas =
             (archiveTuneCanvasEnabled || spotifyCanvasEnabled) &&
-                playerDesignStyle == PlayerDesignStyle.APPLE_MUSIC &&
+                playerDesignStyle.hasArtworkCanvasSurface &&
                 !aodModeEnabled
         val shouldFetchV7Canvas = shouldUseV7Canvas && !lowDataModeActive
         val shouldFetchArtworkCanvas = shouldUseArtworkCanvas && !lowDataModeActive
@@ -1610,19 +1583,17 @@ fun BottomSheetPlayer(
         Box(
             modifier =
                 Modifier
-                    .fillMaxSize(),
+                    .fillMaxSize()
+                    .playerSeekDoubleTap(
+                        enabled =
+                            state.isExpandedOrExpanding &&
+                                !aodModeEnabled &&
+                                playerDesignStyle in NumberedSeekDoubleTapStyles,
+                    ),
         ) {
         if (!state.isCollapsed &&
             !aodModeEnabled &&
-            playerDesignStyle != PlayerDesignStyle.V5 &&
-            playerDesignStyle != PlayerDesignStyle.V7 &&
-            playerDesignStyle != PlayerDesignStyle.V8 &&
-            playerDesignStyle != PlayerDesignStyle.V9 &&
-            playerDesignStyle != PlayerDesignStyle.APPLE_MUSIC &&
-            playerDesignStyle != PlayerDesignStyle.BITCHORD &&
-            playerDesignStyle != PlayerDesignStyle.TIKTOK &&
-            playerDesignStyle != PlayerDesignStyle.SIMPMUSIC &&
-            playerDesignStyle != PlayerDesignStyle.SPATIALFLOW
+            playerDesignStyle.rendersSharedBackground(storedPlayerBackground)
         ) {
             PlayerBackground(
                 playerBackground = playerBackground,
@@ -2073,6 +2044,83 @@ fun BottomSheetPlayer(
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
+                    // Looper (4nx3b/ArchiveTune dev): typography-forward layout, its own slider and
+                    // seek-step gesture, sleeve artwork that drags to change track. Sized to whatever
+                    // box it is given, so both orientation mirrors render it identically.
+                    enrichedMetadata?.let { metadata ->
+                        LooperPlayerContent(
+                            mediaMetadata = metadata,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentFormat = currentFormat,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            onSeek = onSliderValueChange,
+                            onSeekFinished = onSliderValueChangeFinished,
+                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onQueueClick = openQueue,
+                            lyricsVisible = isInlineLyricsOpen,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(
+                                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
+                                    ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
+                } else if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
+                    // Flamingo takes Apple Music's arguments (its signature is a superset), but its
+                    // lyrics and queue are pages of its own, so onLyricsVisibilityChange is what
+                    // reports them upward. In landscape it opens on its lyrics page.
+                    enrichedMetadata?.let { metadata ->
+                        FlamingoPlayerContent(
+                            onStylePageOpenChange = { anyStylePageOverlayOpen = it },
+                            stylePageBackRequests = stylePageBackRequests.intValue,
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            volume = deviceMusicVolumeController.volumeFraction,
+                            onVolumeChange = onPlayerVolumeChange,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            currentFormat = currentFormat,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
+                            lyricsSyncOffset = lyricsSyncOffset,
+                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
+                            landscape = true,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
                     // SimpMusic's default now-playing screen: a diagonal wash pulled from the
                     // artwork palette, the sleeve on a pager backed by the real queue, then the
@@ -2131,7 +2179,7 @@ fun BottomSheetPlayer(
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
                             onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
-                            onLyricsVisibilityChange = { isAppleMusicInlineLyricsOpen = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             landscape = true,
                             modifier =
                                 Modifier
@@ -2610,6 +2658,79 @@ fun BottomSheetPlayer(
                                     ).nestedScroll(state.preUpPostDownNestedScrollConnection),
                         )
                     }
+                } else if (playerDesignStyle == PlayerDesignStyle.LOOPER) {
+                    // Mirror of the landscape branch above; Looper sizes itself to its box.
+                    enrichedMetadata?.let { metadata ->
+                        LooperPlayerContent(
+                            mediaMetadata = metadata,
+                            isPlaying = isPlaying,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            menuState = menuState,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentFormat = currentFormat,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            onSeek = onSliderValueChange,
+                            onSeekFinished = onSliderValueChangeFinished,
+                            onLyricsClick = { isInlineLyricsOpen = !isInlineLyricsOpen },
+                            onQueueClick = openQueue,
+                            lyricsVisible = isInlineLyricsOpen,
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .windowInsetsPadding(
+                                        WindowInsets.systemBars.only(WindowInsetsSides.Horizontal),
+                                    ).nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
+                } else if (playerDesignStyle == PlayerDesignStyle.FLAMINGO) {
+                    // Mirror of the landscape branch above. Full-bleed like Apple Music: Flamingo
+                    // insets its own content from the status bar.
+                    enrichedMetadata?.let { metadata ->
+                        FlamingoPlayerContent(
+                            onStylePageOpenChange = { anyStylePageOverlayOpen = it },
+                            stylePageBackRequests = stylePageBackRequests.intValue,
+                            mediaMetadata = metadata,
+                            playbackState = playbackState,
+                            isPlaying = isPlaying && !isLyricsScreenVisible,
+                            isLoading = isLoading,
+                            canSkipPrevious = canSkipPrevious,
+                            canSkipNext = canSkipNext,
+                            sliderPosition = sliderPosition,
+                            positionProvider = positionProvider,
+                            duration = duration,
+                            playerConnection = playerConnection,
+                            navController = navController,
+                            state = state,
+                            bottomSheetPageState = bottomSheetPageState,
+                            currentSongLiked = currentSongLiked,
+                            volume = deviceMusicVolumeController.volumeFraction,
+                            onVolumeChange = onPlayerVolumeChange,
+                            canvasPrimaryUrl = artworkCanvas?.animated,
+                            canvasFallbackUrl = artworkCanvas?.videoUrl,
+                            currentFormat = currentFormat,
+                            contentBottomPadding = queueSheetState.collapsedBound + 20.dp,
+                            onQueueClick = openQueue,
+                            onLyricsClick = { isLyricsScreenVisible = true },
+                            onSliderValueChange = onSliderValueChange,
+                            onSliderValueChangeFinished = onSliderValueChangeFinished,
+                            lyricsSyncOffset = lyricsSyncOffset,
+                            onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
+                            modifier =
+                                Modifier
+                                    .fillMaxSize()
+                                    .nestedScroll(state.preUpPostDownNestedScrollConnection),
+                        )
+                    }
                 } else if (playerDesignStyle == PlayerDesignStyle.SIMPMUSIC) {
                     // SimpMusic's default now-playing screen: a diagonal wash pulled from the
                     // artwork palette, the sleeve on a pager backed by the real queue, then the
@@ -2668,7 +2789,7 @@ fun BottomSheetPlayer(
                             onSliderValueChangeFinished = onSliderValueChangeFinished,
                             lyricsSyncOffset = lyricsSyncOffset,
                             onLyricsSyncOffsetChange = { lyricsSyncOffset = it },
-                            onLyricsVisibilityChange = { isAppleMusicInlineLyricsOpen = it },
+                            onLyricsVisibilityChange = { isInlineLyricsOpen = it },
                             // Full-bleed: the artwork runs under the status bar by design, so no
                             // top inset here (mirrors the reference layout).
                             modifier =
@@ -2989,7 +3110,12 @@ private fun V8PlayerBackdrop(
                 .fillMaxSize()
                 .background(Color.Black),
     ) {
-        if (currentUrl != null) {
+        if (!moe.rukamori.archivetune.LocalBlurPolicy.current.any) {
+            moe.rukamori.archivetune.ui.utils.BlurFreeArtworkBackdrop(
+                mediaId = thumbnailUrl,
+                artworkUrl = thumbnailUrl,
+            )
+        } else if (currentUrl != null) {
             val backdropHasBlur = backdropBlurAmount > 0
             if (backdropHasBlur && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 AsyncImage(
@@ -3211,10 +3337,7 @@ private fun LittlePlayerContent(
                                 style = LocalTextStyle.current,
                                 fontSize = titleSize,
                                 fontWeight = FontWeight.Bold,
-                                modifier =
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .basicMarquee(),
+                                modifier = Modifier.fillMaxWidth(),
                             )
                         }
 
@@ -3226,16 +3349,11 @@ private fun LittlePlayerContent(
                                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                                 label = "little_album",
                             ) { album ->
-                                Text(
+                                MarqueeText(
                                     text = album,
                                     color = secondaryColor,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .basicMarquee(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }
@@ -3246,16 +3364,11 @@ private fun LittlePlayerContent(
                                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                                 label = "little_artists",
                             ) { artistLine ->
-                                Text(
+                                MarqueeText(
                                     text = "by - $artistLine",
                                     color = secondaryColor,
                                     style = MaterialTheme.typography.bodyMedium,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier =
-                                        Modifier
-                                            .fillMaxWidth()
-                                            .basicMarquee(),
+                                    modifier = Modifier.fillMaxWidth(),
                                 )
                             }
                         }
@@ -3408,7 +3521,7 @@ private fun Modifier.littlePlayerOverlayGestures(
 ): Modifier =
     composed {
         val view = LocalView.current
-        val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+        val enableHapticFeedback = LocalItemPreferences.current.hapticFeedbackEnabled
 
         pointerInput(seekEnabled, durationMs, canSkipPrevious, canSkipNext) {
             var lastTapUptimeMs = 0L

@@ -8,9 +8,14 @@
 package moe.rukamori.archivetune.qobuz
 
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
+import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
+import moe.rukamori.archivetune.utils.PoolAccountManager
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
@@ -23,6 +28,7 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
+import moe.rukamori.archivetune.utils.withAppProxy
 
 /**
  * Streaming/playback provider for user-provided Qobuz-DL proxy instances (squid.wtf / kennyy /
@@ -58,6 +64,15 @@ object QobuzAudioProvider {
     private var instances: List<Instance> = emptyList()
 
     @Volatile
+    private var manualInstances: List<Instance> = emptyList()
+
+    @Volatile
+    private var poolInstances: List<Instance> = emptyList()
+
+    @Volatile
+    private var poolDiscoveredUrls: List<String> = emptyList()
+
+    @Volatile
     private var tokens: List<QobuzToken> = emptyList()
 
     val activeInstanceUrls: List<String>
@@ -66,8 +81,21 @@ object QobuzAudioProvider {
     /** Replaces the active direct-API token list. Duplicates (by token string) are dropped. */
     fun setTokens(newTokens: List<QobuzToken>) {
         val seen = LinkedHashSet<String>()
-        tokens = newTokens.filter { it.token.isNotBlank() && seen.add(it.token) }
+        tokens =
+            newTokens.filter {
+                it.token.isNotBlank() &&
+                    (PoolAccountManager.isPoolEnabled() || !it.isPoolAccount()) &&
+                    seen.add(it.token)
+            }
     }
+
+    fun invalidatePoolAccountCache() {
+        tokens = tokens.filterNot { it.isPoolAccount() }
+        clearPoolDiscovery()
+    }
+
+    private fun QobuzToken.isPoolAccount(): Boolean =
+        poolId != null || label.equals("Source Pool", ignoreCase = true)
 
     /**
      * A resolution backend: either a direct Qobuz API token or a proxy instance. Both expose the same
@@ -97,6 +125,7 @@ object QobuzAudioProvider {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(12, TimeUnit.SECONDS)
             .callTimeout(20, TimeUnit.SECONDS)
@@ -105,6 +134,7 @@ object QobuzAudioProvider {
     private val healthClient =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .callTimeout(8, TimeUnit.SECONDS)
@@ -148,12 +178,29 @@ object QobuzAudioProvider {
     /** Replaces the active instance list. Invalid/duplicate URLs are dropped. Empty stays empty. */
     fun setInstances(baseUrls: List<String>) {
         val seen = LinkedHashSet<String>()
-        instances =
+        val parsed =
             baseUrls.mapNotNull { raw ->
                 val normalized = normalizeInstanceUrl(raw) ?: return@mapNotNull null
                 if (!seen.add(normalized)) return@mapNotNull null
                 Instance(instanceLabel(normalized), normalized)
             }
+        val poolUrls = poolDiscoveredUrls.toSet()
+        manualInstances = parsed.filterNot { it.baseUrl in poolUrls }
+        poolInstances =
+            if (PoolAccountManager.isPoolEnabled()) {
+                parsed.filter { it.baseUrl in poolUrls }
+            } else {
+                emptyList()
+            }
+        instances = manualInstances + poolInstances
+    }
+
+    private fun clearPoolDiscovery() {
+        poolInstances = emptyList()
+        instances = manualInstances
+        poolDiscoveredUrls = emptyList()
+        discoveryCache = emptyList()
+        discoveryCacheExpiresAt = 0L
     }
 
     // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, derived from the
@@ -180,11 +227,16 @@ object QobuzAudioProvider {
     private const val DISCOVERY_CACHE_MS = 10 * 60 * 1000L
 
     fun discoverInstances(): List<String> {
+        if (!PoolAccountManager.isPoolEnabled()) {
+            clearPoolDiscovery()
+            return emptyList()
+        }
         if (instanceDiscoverySources.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
         if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
         val discovered = LinkedHashSet<String>()
         for (source in instanceDiscoverySources) {
+            if (!PoolAccountManager.isPoolEnabled()) break
             runCatching {
                 val builder =
                     Request
@@ -196,7 +248,8 @@ object QobuzAudioProvider {
                     builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                 }
                 val request = builder.get().build()
-                healthClient.newCall(request).execute().use { response ->
+                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                    if (!PoolAccountManager.isPoolEnabled()) return@use
                     if (!response.isSuccessful) {
                         // A rejected read and a healthy pool with nothing contributed both end up
                         // as zero instances here, so say which one happened — this is the whole
@@ -228,11 +281,16 @@ object QobuzAudioProvider {
                         }
                     }
                 }
-            }
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+        }
+        if (!PoolAccountManager.isPoolEnabled()) {
+            clearPoolDiscovery()
+            return emptyList()
         }
         val result = discovered.toList()
         if (result.isNotEmpty()) {
             discoveryCache = result
+            poolDiscoveredUrls = result
             discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
         }
         return result
@@ -284,7 +342,7 @@ object QobuzAudioProvider {
                 .build()
         return runCatching {
             val start = System.currentTimeMillis()
-            healthClient.newCall(request).execute().use { response ->
+            healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                 if (response.code in 200..499) System.currentTimeMillis() - start else null
             }
         }.getOrNull()
@@ -354,6 +412,14 @@ object QobuzAudioProvider {
     fun resolve(
         query: Query,
         formatId: Int,
+    ): DirectStream? =
+        AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
+            resolveWithinAttempt(query, formatId)
+        }
+
+    private fun resolveWithinAttempt(
+        query: Query,
+        formatId: Int,
     ): DirectStream? {
         val backends = orderedBackends()
         if (backends.isEmpty()) {
@@ -376,6 +442,7 @@ object QobuzAudioProvider {
 
         val available = backends.filterNot { isInstanceCoolingDown(it.id, now) }.ifEmpty { backends }
         for (backend in available) {
+            if (AudioSourceAttemptScope.current()?.isExpired() == true) break
             // When directTrackId is set (user clicked a specific Qobuz search
             // result), skip the title/artist search entirely and download the
             // exact track. This prevents the resolver from matching a different
@@ -390,15 +457,26 @@ object QobuzAudioProvider {
                 )
             } else {
                 runCatching { resolveTrackId(backend, query) }
-                    .onFailure { markInstanceFailed(backend.id, hardFailure = it is java.io.IOException) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                            markInstanceFailed(backend.id, hardFailure = it is java.io.IOException)
+                        }
+                    }
                     .getOrNull() ?: continue
             }
             val trackId = match.id
             val download =
                 runCatching { backend.download(trackId, formatId) }
-                    .onFailure { markInstanceFailed(backend.id, hardFailure = it is java.io.IOException) }
+                    .onFailure {
+                        it.rethrowIfAudioSourceCancelled()
+                        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+                            markInstanceFailed(backend.id, hardFailure = it is java.io.IOException)
+                        }
+                    }
                     .getOrNull()
             if (download == null) {
+                if (AudioSourceAttemptScope.current()?.isExpired() == true) break
                 markInstanceFailed(backend.id, hardFailure = false)
                 continue
             }
@@ -433,7 +511,9 @@ object QobuzAudioProvider {
             Timber.tag("Qobuz").i("resolved \"%s\" via %s [%s]", query.title, backend.label, stream.label)
             return stream
         }
-        failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        if (AudioSourceAttemptScope.current()?.isExpired() != true) {
+            failureCache[cacheKey] = now + FAILURE_CACHE_MS
+        }
         return null
     }
 
@@ -446,12 +526,10 @@ object QobuzAudioProvider {
         query: String,
         limit: Int = 8,
     ): List<CandidateMetadata> {
-        // Auto-populate tokens/instances if they're empty. This matches the
-        // logic in MusicService.resolveQobuzStream so the search popup works
-        // without the user having to play a Qobuz song first.
-        if (tokens.isEmpty()) {
-            val poolTokens = runCatching {
-                moe.rukamori.archivetune.utils.PoolAccountManager.qobuzAccounts().map {
+        val poolTokens =
+            if (PoolAccountManager.isPoolEnabled()) {
+                runCatching {
+                    PoolAccountManager.qobuzAccounts().map {
                     QobuzToken(
                         token = it.token,
                         appId = it.appId,
@@ -461,12 +539,11 @@ object QobuzAudioProvider {
                         poolId = it.id,
                     )
                 }
-            }.getOrDefault(emptyList())
-            if (poolTokens.isNotEmpty()) {
-                setTokens(poolTokens)
-                Timber.tag("Qobuz").d("searchCandidates auto-populated %d pool tokens", poolTokens.size)
+                }.getOrDefault(emptyList())
+            } else {
+                emptyList()
             }
-        }
+        setTokens(tokens.filterNot { it.isPoolAccount() } + poolTokens)
         if (instances.isEmpty()) {
             val discovered = runCatching { discoverInstances() }.getOrDefault(emptyList())
             if (discovered.isNotEmpty()) {
@@ -533,7 +610,7 @@ object QobuzAudioProvider {
     /** Builds the ordered backend list: direct API tokens first (highest fidelity), then proxies. */
     private fun orderedBackends(): List<Backend> {
         val tokenBackends =
-            tokens.map { token ->
+            tokens.filter { PoolAccountManager.isPoolEnabled() || !it.isPoolAccount() }.map { token ->
                 Backend(
                     id = "token:${token.id}",
                     label = "Qobuz token ${token.label.ifBlank { token.userId.ifBlank { "account" } }}",
@@ -703,7 +780,7 @@ object QobuzAudioProvider {
                 .header("Accept", "application/json")
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -742,7 +819,7 @@ object QobuzAudioProvider {
                 .header("Accept", "application/json")
                 .get()
                 .build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -776,7 +853,7 @@ object QobuzAudioProvider {
                 .addQueryParameter("limit", SEARCH_LIMIT.toString())
                 .addQueryParameter("app_id", token.appId)
                 .build()
-        client.newCall(directRequest(url.toString(), token)).execute().use { response ->
+        client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
                 token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
             }
@@ -798,7 +875,7 @@ object QobuzAudioProvider {
         trackId: String,
         formatId: Int,
     ): DownloadResult? {
-        client.newCall(directDownloadRequest(token, trackId, formatId)).execute().use { response ->
+        client.newCall(directDownloadRequest(token, trackId, formatId)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (response.code == 401 || response.code == 403) {
                 token.poolId?.let { moe.rukamori.archivetune.utils.PoolAccountManager.report("qobuz", "account", it, "dead") }
             }
@@ -906,7 +983,7 @@ object QobuzAudioProvider {
                 .addQueryParameter("app_id", token.appId)
                 .addQueryParameter("user_auth_token", token.token)
                 .build()
-        client.newCall(directRequest(url.toString(), token)).execute().use { response ->
+        client.newCall(directRequest(url.toString(), token)).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) return null
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) return null
@@ -923,6 +1000,7 @@ object QobuzAudioProvider {
     private fun hasValidAppSecret(token: QobuzToken): Boolean {
         client
             .newCall(directDownloadRequest(token, HEALTH_PROBE_TRACK_ID, HEALTH_PROBE_FORMAT_ID))
+            .withAudioSourceAttemptDeadline()
             .execute()
             .use { response ->
                 val body = response.body?.string().orEmpty().lowercase(Locale.US)
@@ -1093,7 +1171,7 @@ object QobuzAudioProvider {
             ?.lowercase(Locale.US)
             ?.let { Normalizer.normalize(it, Normalizer.Form.NFD) }
             ?.replace(Regex("\\p{Mn}+"), "")
-            ?.replace(Regex("[^a-z0-9]+"), " ")
+            ?.replace(Regex("[^\\p{L}\\p{N}]+"), " ")
             ?.trim()
             .orEmpty()
 

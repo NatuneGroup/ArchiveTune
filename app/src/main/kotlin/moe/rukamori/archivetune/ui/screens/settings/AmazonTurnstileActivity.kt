@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 @file:OptIn(ExperimentalMaterial3Api::class)
 
@@ -57,6 +53,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.audiosource.AmazonAudioProvider
+import moe.rukamori.archivetune.audiosource.AmazonInstances
+import moe.rukamori.archivetune.constants.AmazonBypassTokenKey
 import moe.rukamori.archivetune.constants.AmazonInstancesKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtExpiryMsKey
 import moe.rukamori.archivetune.constants.AmazonTurnstileJwtKey
@@ -74,10 +72,14 @@ import timber.log.Timber
  * as the base URL — this sets `window.location`/document origin to monochrome.tf, which is what the
  * Turnstile script validates against.
  *
- * Flow: render invisible widget -> execute -> callback returns cf_turnstile_response ->
- * [AmazonAudioProvider.exchangeTurnstileToken] against the first configured instance -> access JWT
- * -> persisted into PreferenceStore with a ~1h expiry, ready for use as the X-Turnstile-JWT header
- * on subsequent track/stream requests. Re-running this activity refreshes the JWT.
+ * Flow: render an interaction-only widget -> execute -> callback returns the Turnstile token ->
+ * [AmazonAudioProvider.exchangeTurnstileToken] against the first configured instance (with the
+ * operator API key, if one is set) -> access JWT -> persisted into PreferenceStore with the expiry
+ * its `exp` claim states (~1h), ready for use as the X-Turnstile-JWT header on subsequent
+ * track/stream requests. Re-running this activity refreshes the JWT.
+ *
+ * The token only verifies on a host that holds the secret paired with the web player's sitekey;
+ * an instance running its own Turnstile widget is authorized with its operator token instead.
  *
  * The instance base is read from `AmazonInstancesKey` (the settings screen stores a newline- or
  * comma-separated list); the first non-blank entry is used. [EXTRA_INSTANCE_URL] may override it,
@@ -98,11 +100,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
     private suspend fun resolveInstanceUrl(): String? {
         val override = intent.getStringExtra(EXTRA_INSTANCE_URL)?.takeIf { it.isNotBlank() }
         if (override != null) return override
-        val stored = dataStore.data.first()[AmazonInstancesKey].orEmpty()
-        return stored
-            .split('\n', ',')
-            .map { it.trim() }
-            .firstOrNull { it.isNotEmpty() }
+        return AmazonInstances.parseBaseUrls(dataStore.data.first()[AmazonInstancesKey].orEmpty()).firstOrNull()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -134,16 +132,20 @@ class AmazonTurnstileActivity : ComponentActivity() {
                 finishWithError("no-instance-configured")
                 return@launch
             }
-            val jwt = AmazonAudioProvider.exchangeTurnstileToken(cfToken, instanceUrl)
+            val apiToken = dataStore.data.first()[AmazonBypassTokenKey]?.trim()?.ifBlank { null }
+            val jwt = AmazonAudioProvider.exchangeTurnstileToken(cfToken, instanceUrl, apiToken)
             if (isCompleted || isFinishing) return@launch
             if (jwt.isNullOrBlank()) {
                 finishWithError("token-exchange-failed")
                 return@launch
             }
+            val now = System.currentTimeMillis()
+            // The instance states the JWT's lifetime in its `exp` claim; the fixed TTL is only for
+            // opaque tokens. The margin never takes more than half of a short-lived token.
             val expiry =
-                System.currentTimeMillis() +
-                    AmazonAudioProvider.TURNSTILE_JWT_TTL_MS -
-                    AmazonAudioProvider.TURNSTILE_JWT_SAFETY_MS
+                AmazonAudioProvider.jwtExpiresAtMs(jwt)?.let { expiresAt ->
+                    expiresAt - minOf(AmazonAudioProvider.TURNSTILE_JWT_SAFETY_MS, (expiresAt - now) / 2)
+                } ?: (now + AmazonAudioProvider.TURNSTILE_JWT_TTL_MS - AmazonAudioProvider.TURNSTILE_JWT_SAFETY_MS)
             runCatching {
                 dataStore.edit { prefs ->
                     prefs[AmazonTurnstileJwtKey] = jwt
@@ -187,6 +189,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
                 function renderWidget(visible){
                   var opts = {
                     sitekey: '$sitekey',
+                    action: 'auth',
                     theme: 'auto',
                     callback: function(token){ done(token); },
                     'error-callback': function(){
@@ -195,7 +198,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
                     },
                     'expired-callback': function(){ report('turnstile-expired'); }
                   };
-                  if(!visible){ opts.size = 'invisible'; opts.execution = 'execute'; }
+                  if(!visible){ opts.appearance = 'interaction-only'; opts.execution = 'execute'; }
                   try {
                     var id = window.turnstile.render('#cf', opts);
                     if(!visible){ window.turnstile.execute(id); }
@@ -217,7 +220,8 @@ class AmazonTurnstileActivity : ComponentActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     @Composable
     private fun TurnstileContent() {
-        var status by remember { mutableStateOf("Verifying with Cloudflare…") }
+        val signingIn = stringResource(R.string.amazon_turnstile_signing_in)
+        var status by remember { mutableStateOf<String?>(null) }
 
         Scaffold(
             topBar = {
@@ -252,7 +256,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
                     CircularProgressIndicator()
                     Spacer(Modifier.height(20.dp))
                     Text(
-                        text = status,
+                        text = status ?: stringResource(R.string.amazon_turnstile_verifying),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center,
@@ -278,7 +282,7 @@ class AmazonTurnstileActivity : ComponentActivity() {
                                     fun onToken(token: String?) {
                                         if (!token.isNullOrBlank()) {
                                             runOnUiThread {
-                                                status = "Signing in…"
+                                                status = signingIn
                                                 onTurnstileToken(token)
                                             }
                                         }

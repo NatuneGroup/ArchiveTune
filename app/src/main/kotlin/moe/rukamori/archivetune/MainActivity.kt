@@ -37,13 +37,14 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.DrawableRes
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.EaseOut
-import androidx.compose.animation.core.EaseOutCubic
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.snap
@@ -52,7 +53,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -80,18 +80,14 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -152,6 +148,8 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
@@ -175,7 +173,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.util.fastAny
 import androidx.compose.ui.util.fastForEach
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
@@ -186,6 +183,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.datastore.preferences.core.edit
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
@@ -212,10 +210,8 @@ import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.vibrancy
 import com.valentinilk.shimmer.LocalShimmerTheme
 import dagger.hilt.android.AndroidEntryPoint
-import dev.chrisbanes.haze.HazeState
 import java.util.Locale
 import javax.inject.Inject
-import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.days
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -235,39 +231,38 @@ import moe.rukamori.archivetune.constants.AodAutoTimerSecondsKey
 import moe.rukamori.archivetune.constants.AppBarHeight
 import moe.rukamori.archivetune.constants.AppFontPreference
 import moe.rukamori.archivetune.constants.AppLanguageKey
-import moe.rukamori.archivetune.constants.CustomFontUriKey
+import moe.rukamori.archivetune.constants.BackAnimationStyle
+import moe.rukamori.archivetune.constants.BackAnimationStyleKey
 import moe.rukamori.archivetune.constants.CustomThemeColorKey
 import moe.rukamori.archivetune.constants.DarkModeKey
 import moe.rukamori.archivetune.constants.DefaultOpenTabKey
 import moe.rukamori.archivetune.constants.DefaultSearchSourceKey
+import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.constants.DisableAnimationsKey
 import moe.rukamori.archivetune.constants.DisableScreenshotKey
 import moe.rukamori.archivetune.constants.DynamicThemeKey
 import moe.rukamori.archivetune.constants.EnableHapticFeedbackKey
 import moe.rukamori.archivetune.constants.EnablePipModeKey
 import moe.rukamori.archivetune.constants.EnableVideoPlaybackKey
-import moe.rukamori.archivetune.constants.FloatingNavigationBarBottomPadding
-import moe.rukamori.archivetune.constants.FloatingNavigationBarHorizontalPadding
 import moe.rukamori.archivetune.constants.FontPreferenceKey
 import moe.rukamori.archivetune.constants.HasPressedStarKey
 import moe.rukamori.archivetune.constants.HideStatusBarKey
 import moe.rukamori.archivetune.constants.LastShownUpdatePopupVersionKey
 import moe.rukamori.archivetune.constants.LaunchCountKey
-import moe.rukamori.archivetune.constants.LiquidGlassEnabledKey
-import moe.rukamori.archivetune.constants.LiquidGlassNavBarEnabledKey
+import moe.rukamori.archivetune.constants.CompactControlsStockColorKey
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyle
 import moe.rukamori.archivetune.constants.MiniPlayerBackgroundStyleKey
 import moe.rukamori.archivetune.constants.MiniPlayerBottomSpacing
 import moe.rukamori.archivetune.constants.MiniPlayerHeight
 import moe.rukamori.archivetune.constants.MiniPlayerLastAnchorKey
 import moe.rukamori.archivetune.constants.NavigationBarAnimationSpec
-import moe.rukamori.archivetune.constants.NavigationBarBottomPadding
-import moe.rukamori.archivetune.constants.NavigationBarFrostedBlurKey
 import moe.rukamori.archivetune.constants.NavigationBarHeight
-import moe.rukamori.archivetune.constants.NavigationBarHorizontalPadding
+import moe.rukamori.archivetune.constants.BottomSheetAnimationSpec
+import moe.rukamori.archivetune.constants.MiniPlayerCompactHeight
 import moe.rukamori.archivetune.constants.NavigationBarStyle
 import moe.rukamori.archivetune.constants.NavigationBarStyleKey
-import moe.rukamori.archivetune.constants.NavigationBarTintFrostedBlurKey
+import moe.rukamori.archivetune.constants.NavigationBarCompactBehavior
+import moe.rukamori.archivetune.constants.NavigationBarHideOnScrollKey
 import moe.rukamori.archivetune.constants.NeverShowUpdatePopupKey
 import moe.rukamori.archivetune.constants.PauseSearchHistoryKey
 import moe.rukamori.archivetune.constants.PersistentUpdatePopupKey
@@ -283,18 +278,14 @@ import moe.rukamori.archivetune.constants.SearchSource
 import moe.rukamori.archivetune.constants.SearchSourceKey
 import moe.rukamori.archivetune.constants.SplashOverlayEnabledKey
 import moe.rukamori.archivetune.constants.StopMusicOnTaskClearKey
-import moe.rukamori.archivetune.constants.TabletModeEnabledKey
-import moe.rukamori.archivetune.constants.UiScaleFactorKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.constants.UseSystemFontKey
 import moe.rukamori.archivetune.constants.WallpaperExtractionFailedKey
 import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.db.entities.SearchHistory
-import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.innertube.YouTube
-import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.musicrecognition.ACTION_MUSIC_RECOGNITION
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionRoute
 import moe.rukamori.archivetune.musicrecognition.openMusicRecognition
@@ -308,32 +299,47 @@ import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
-import moe.rukamori.archivetune.systemAnimationScale
 import moe.rukamori.archivetune.ui.component.AutoResizeText
 import moe.rukamori.archivetune.ui.component.BottomSheetMenu
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
+import moe.rukamori.archivetune.ui.component.CompactControlCircle
+import moe.rukamori.archivetune.ui.component.rememberNavigationBarCompactBehavior
+import moe.rukamori.archivetune.ui.component.CompactControlSize
+import moe.rukamori.archivetune.ui.component.NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowIntensityKey
+import moe.rukamori.archivetune.ui.component.NavigationBarGlassGlowKey
 import moe.rukamori.archivetune.ui.component.COLLAPSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.DISMISSED_ANCHOR
 import moe.rukamori.archivetune.ui.component.EXPANDED_ANCHOR
 import moe.rukamori.archivetune.ui.component.FloatingNavigationToolbar
 import moe.rukamori.archivetune.ui.component.FontSizeRange
+import moe.rukamori.archivetune.ui.component.HeaderCircleButton
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState
 import moe.rukamori.archivetune.ui.component.LocalLiquidGlassBackdrop
 import moe.rukamori.archivetune.ui.component.LocalMenuState
+import moe.rukamori.archivetune.ui.component.LocalNavigationBarHiddenByScroll
 import moe.rukamori.archivetune.ui.component.LocalNavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.MarkdownText
 import moe.rukamori.archivetune.ui.component.NavigationBarBackdrop
 import moe.rukamori.archivetune.ui.component.NetworkStatusBanner
+import moe.rukamori.archivetune.ui.component.PlayerBackController
+import moe.rukamori.archivetune.ui.component.PlayerBackTarget
+import moe.rukamori.archivetune.ui.component.PredictiveStyleBackHandler
 import moe.rukamori.archivetune.ui.component.ProfileMenuDialog
 import moe.rukamori.archivetune.ui.component.ProfileMenuItem
 import moe.rukamori.archivetune.ui.component.SearchSourcePicker
 import moe.rukamori.archivetune.ui.component.StarDialog
 import moe.rukamori.archivetune.ui.component.TopSearch
 import moe.rukamori.archivetune.ui.component.TvNavigationRail
+import moe.rukamori.archivetune.ui.component.pillBottomInset
+import moe.rukamori.archivetune.ui.component.pillHorizontalInset
 import moe.rukamori.archivetune.ui.component.rememberAppleMusicExperience
 import moe.rukamori.archivetune.ui.component.rememberBottomSheetState
+import moe.rukamori.archivetune.ui.component.rememberPredictiveSheetBackState
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerTheme
+import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBar
+import moe.rukamori.archivetune.ui.component.sukisu.SukisuLiquidNavBarHeight
 import moe.rukamori.archivetune.ui.component.splash.SplashConfig
 import moe.rukamori.archivetune.ui.component.splash.SplashOverlay
 import moe.rukamori.archivetune.ui.component.splash.SplashSlots
@@ -341,9 +347,7 @@ import moe.rukamori.archivetune.ui.component.splash.SplashVectorLoader
 import moe.rukamori.archivetune.ui.player.BottomSheetPlayer
 import moe.rukamori.archivetune.ui.player.ProvideVideoFullscreenState
 import moe.rukamori.archivetune.ui.screens.HomeSourceToggleButton
-import moe.rukamori.archivetune.ui.screens.HomeTopFadeBlur
 import moe.rukamori.archivetune.ui.screens.LOGIN_URL_ARGUMENT
-import moe.rukamori.archivetune.ui.screens.LocalHomeHazeState
 import moe.rukamori.archivetune.ui.screens.LoginScreen
 import moe.rukamori.archivetune.ui.screens.Screens
 import moe.rukamori.archivetune.ui.screens.buildLoginRoute
@@ -360,12 +364,20 @@ import moe.rukamori.archivetune.ui.screens.settings.NavigationTab
 import moe.rukamori.archivetune.ui.theme.ArchiveTuneTheme
 import moe.rukamori.archivetune.ui.theme.ColorSaver
 import moe.rukamori.archivetune.ui.theme.DefaultThemeColor
+import moe.rukamori.archivetune.ui.theme.ExpressiveThemeColor
 import moe.rukamori.archivetune.ui.theme.PlayerColorExtractor
 import moe.rukamori.archivetune.ui.theme.extractThemeColor
 import moe.rukamori.archivetune.ui.theme.extractWallpaperThemeColor
+import moe.rukamori.archivetune.ui.utils.TabNavAction
+import moe.rukamori.archivetune.ui.utils.TabNavEvent
+import moe.rukamori.archivetune.ui.utils.TabNavState
 import moe.rukamori.archivetune.ui.utils.appBarScrollBehavior
+import moe.rukamori.archivetune.ui.utils.ItemPreferences
+import moe.rukamori.archivetune.ui.utils.LocalItemPreferences
 import moe.rukamori.archivetune.ui.utils.backToMain
+import moe.rukamori.archivetune.ui.utils.reduceTabNav
 import moe.rukamori.archivetune.ui.utils.resetHeightOffset
+import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.SyncUtils
@@ -374,6 +386,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.LocalListenTogetherManager
 import moe.rukamori.archivetune.listentogether.ListenTogetherManager
+import moe.rukamori.archivetune.listentogether.ListenTogetherServers
 import moe.rukamori.archivetune.utils.isLowRamDevice
 import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.isLowRamDevice
@@ -415,6 +428,8 @@ class MainActivity : ComponentActivity() {
     private var pendingBackupRestoreUri by mutableStateOf<Uri?>(null)
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
     private var latestUpdateChannel by mutableStateOf(defaultUpdateChannel)
+    private var latestUpdateOffer by mutableStateOf<moe.rukamori.archivetune.utils.UpdateOffer?>(null)
+    private var latestUpdateOfferRevision by mutableStateOf(-1L)
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private var isMusicServiceBound = false
@@ -744,49 +759,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
 
-            val effectiveUpdateChannel =
-                when {
-                    isCanaryBuild -> UpdateChannel.CANARY
-                    isNightlyBuild -> UpdateChannel.NIGHTLY
-                    else -> updateChannel
-                }
-
-            LaunchedEffect(Unit) {
-                while (playerConnection == null) {
-                    delay(100)
-                }
-                delay(500)
-
-                if (
-                    BuildConfig.UPDATER_AVAILABLE &&
-                    System.currentTimeMillis() - Updater.lastCheckTime > 1.days.inWholeMilliseconds
-                ) {
-                    val channelString = withContext(Dispatchers.IO) { dataStore.data.first()[UpdateChannelKey] }
-                    val userSelectedChannel = UpdateChannel.fromStoredName(channelString, defaultUpdateChannel)
-                    // Lock canary builds to canary updates regardless of the user's
-                    // selection — see the comment on effectiveUpdateChannel above.
-                    val actualChannel =
-                        when {
-                            isCanaryBuild -> UpdateChannel.CANARY
-                            isNightlyBuild -> UpdateChannel.NIGHTLY
-                            else -> userSelectedChannel
-                        }
-                    val versionResult =
-                        when (actualChannel) {
-                            UpdateChannel.CANARY -> Updater.getLatestCanaryVersionName()
-                            UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
-                            UpdateChannel.STABLE -> Updater.getLatestVersionName()
-                        }
-                    versionResult.onSuccess {
-                        if (Updater.isUpdateAvailable(it, BuildConfig.VERSION_NAME)) {
-                            latestUpdateChannel = actualChannel
-                            latestVersionName = it
-                        }
-                    }
-                }
-                moe.rukamori.archivetune.utils.UpdateNotificationManager
-                    .checkForUpdates(this@MainActivity)
-            }
+            val effectiveChannel = effectiveUpdateChannel(updateChannel)
+            val channelRevision by Updater.selectionChanges.collectAsStateWithLifecycle()
+            val launchUpdateChannel = remember { effectiveChannel }
+            val launchUpdateRevision = remember { channelRevision }
 
             // Use remembered instances so the same state object is used everywhere: retrieving the
             // composition local directly creates a different instance per composition scope, which
@@ -801,11 +777,36 @@ class MainActivity : ComponentActivity() {
                     moe.rukamori.archivetune.ui.component
                         .MenuState()
                 }
-            // Shared Haze state for the Home route's progressive top-fade blur. HomeScreen tags
-            // its root Box as the haze source; the top bar renders the blurred strip (see the
-            // topBar slot). Provided to the tree via LocalHomeHazeState.
-            val homeHazeState = remember { HazeState() }
-            val releaseNotesState = remember { mutableStateOf<String?>(null) }
+            var shownUpdateChannel by remember { mutableStateOf<UpdateChannel?>(null) }
+            LaunchedEffect(bottomSheetPageState.isVisible) {
+                if (!bottomSheetPageState.isVisible) shownUpdateChannel = null
+            }
+            LaunchedEffect(effectiveChannel, channelRevision) {
+                latestVersionName = BuildConfig.VERSION_NAME
+                latestUpdateOffer = null
+                latestUpdateChannel = effectiveChannel
+                if (shownUpdateChannel != null) {
+                    bottomSheetPageState.dismiss()
+                    shownUpdateChannel = null
+                }
+                val revision = Updater.selectionRevision
+                while (playerConnection == null) delay(100)
+                delay(500)
+                if (BuildConfig.UPDATER_AVAILABLE) {
+                    val cached = Updater.cachedOffer(effectiveChannel)
+                    val offer = if (cached == null ||
+                        System.currentTimeMillis() - Updater.lastCheckTime(effectiveChannel) > 1.days.inWholeMilliseconds
+                    ) {
+                        Updater.getLatestRelease(effectiveChannel).getOrNull()
+                            ?.let { Updater.eligibleOffer(it, effectiveChannel) }
+                    } else cached
+                    if (!Updater.isCurrentSelection(effectiveChannel, revision)) return@LaunchedEffect
+                    latestUpdateOfferRevision = revision
+                    latestUpdateOffer = offer
+                    latestVersionName = offer?.versionName ?: BuildConfig.VERSION_NAME
+                }
+                moe.rukamori.archivetune.utils.UpdateNotificationManager.checkForUpdates(this@MainActivity)
+            }
             val currentVersionMarker = remember {
                 "${BuildConfig.VERSION_NAME}|${BuildConfig.VERSION_CODE}"
             }
@@ -846,7 +847,7 @@ class MainActivity : ComponentActivity() {
                             .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
                 ) {
-                    val notes = releaseNotesState.value
+                    val notes = latestUpdateOffer?.takeIf { it.channel == effectiveChannel }?.notes
                     if (notes != null && notes.isNotBlank()) {
                         MarkdownText(
                             markdown = notes,
@@ -906,40 +907,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Show the sheet once per offered release unless the reader asked for the reminder.
-            // Without the lastShown gate the effect re-fires on every process start and re-opens
-            // the same sheet for a release already dismissed, which is a nag rather than a notice —
-            // a reader who tracks a pre-release channel sees it on every launch, and a stable
-            // reader pointed at one never converges to it at all.
             LaunchedEffect(
-                latestVersionName,
-                latestUpdateChannel,
-                effectiveUpdateChannel,
+                latestUpdateOffer,
+                channelRevision,
+                effectiveChannel,
                 neverShowUpdatePopup,
                 lastShownUpdatePopupVersion,
                 persistentUpdatePopup,
             ) {
-                if (
-                    BuildConfig.UPDATER_AVAILABLE &&
-                    !neverShowUpdatePopup &&
-                    (persistentUpdatePopup || lastShownUpdatePopupVersion != latestVersionName) &&
-                    latestUpdateChannel == effectiveUpdateChannel &&
-                    Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
+                val offer = latestUpdateOffer ?: return@LaunchedEffect
+                if (BuildConfig.UPDATER_AVAILABLE && !neverShowUpdatePopup &&
+                    channelRevision == launchUpdateRevision && effectiveChannel == launchUpdateChannel &&
+                    offer.channel == effectiveChannel &&
+                    (persistentUpdatePopup || lastShownUpdatePopupVersion != offer.identity) &&
+                    Updater.isCurrentSelection(offer.channel, latestUpdateOfferRevision)
                 ) {
-                    val releaseNotesResult =
-                        when (latestUpdateChannel) {
-                            UpdateChannel.CANARY -> Updater.getLatestCanaryReleaseNotes()
-                            UpdateChannel.NIGHTLY -> Updater.getLatestNightlyReleaseNotes()
-                            UpdateChannel.STABLE -> Updater.getLatestReleaseNotes()
-                        }
-                    releaseNotesResult
-                        .onSuccess {
-                            releaseNotesState.value = it
-                        }.onFailure {
-                            releaseNotesState.value = null
-                        }
-
-                    onLastShownUpdatePopupVersionChange(latestVersionName)
+                    onLastShownUpdatePopupVersionChange(offer.identity)
+                    shownUpdateChannel = offer.channel
                     bottomSheetPageState.show(updateSheetContent)
                 }
             }
@@ -949,20 +933,30 @@ class MainActivity : ComponentActivity() {
             val darkTheme by rememberEnumPreference(DarkModeKey, defaultValue = DarkMode.AUTO)
             val defaultDisableAnimations = remember(this@MainActivity) { applicationContext.isLowRamDevice() }
             // Developer options can halve or disable every animation; the springs need to know.
-            val systemAnimationScale =
-                remember(this@MainActivity) { applicationContext.systemAnimationScale() }
+            // Live, not latched: the developer option does not recreate this Activity, so a
+            // one-shot read would go stale until the next launch.
+            val animatorScale by rememberAnimatorDurationScale()
             val disableAnimations by rememberPreference(
                 DisableAnimationsKey,
                 defaultValue = defaultDisableAnimations,
             )
+            // Scale 0 is the system's own "remove animations": everything downstream treats it
+            // exactly like the in-app toggle.
+            val animationsOff = disableAnimations || animatorScale == 0f
+            val backAnimationStyle by rememberEnumPreference(
+                BackAnimationStyleKey,
+                defaultValue = BackAnimationStyle.PREDICTIVE,
+            )
+            val disableBlur by rememberPreference(DisableBlurKey, defaultValue = false)
             // Task 8: app-wide scrollbar toggle. Provided via LocalHideScrollbar so any
             // composable that draws a scrollbar can opt-out when the user has hidden them.
             val hideScrollbar by rememberPreference(
                 moe.rukamori.archivetune.constants.HideScrollbarKey,
                 defaultValue = false,
             )
-            val fontPreference by rememberEnumPreference(FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
-            val customFontUri by rememberPreference(CustomFontUriKey, defaultValue = "")
+            // Restart-scoped: swapping the typography live remeasures every text node in the app.
+            val fontPreference = StartupSettings.fontPreference
+            val customFontUri = StartupSettings.customFontUri
             val legacyUseSystemFont by rememberPreference(UseSystemFontKey, defaultValue = false)
             val isSystemInDarkTheme = isSystemInDarkTheme()
             val useDarkTheme =
@@ -979,28 +973,58 @@ class MainActivity : ComponentActivity() {
             // The Apple Music Experience carries the tab bar with it, the same way it carries the
             // iOS page headers. Written as a read-side override so turning the switch back off
             // restores whichever bar the user had chosen instead of overwriting that choice.
+            val appleMusicExperience = rememberAppleMusicExperience()
             val navigationBarStyle =
-                if (rememberAppleMusicExperience()) {
+                if (appleMusicExperience) {
                     NavigationBarStyle.APPLE_MUSIC
                 } else {
                     navigationBarStyleStored
                 }
-            val navigationBarFrostedBlur by rememberPreference(
-                NavigationBarFrostedBlurKey,
+            // Restart-scoped (see StartupSettings): each of these turns on a whole-NavHost backdrop
+            // recording, which cannot be set up or torn down cheaply while the app is running.
+            val navigationBarFrostedBlur = StartupSettings.navigationBarFrostedBlur
+            val navigationBarTintFrostedBlur = StartupSettings.navigationBarTintFrostedBlur
+            val liquidGlassEnabled = StartupSettings.liquidGlassEnabled
+            val compactControlsStockColor by rememberPreference(
+                CompactControlsStockColorKey,
                 defaultValue = false,
             )
-            val navigationBarTintFrostedBlur by rememberPreference(
-                NavigationBarTintFrostedBlurKey,
+            val navigationBarGlassGlow by rememberPreference(NavigationBarGlassGlowKey, defaultValue = true)
+            val navigationBarGlassGlowIntensity by rememberPreference(
+                NavigationBarGlassGlowIntensityKey,
+                defaultValue = NAVIGATION_BAR_GLASS_GLOW_INTENSITY_DEFAULT,
+            )
+            val navGlassStrength =
+                if (navigationBarGlassGlow && !compactControlsStockColor) navigationBarGlassGlowIntensity else 0f
+            val liquidGlassNavBarEnabled = StartupSettings.liquidGlassNavBarEnabled
+            // Forced high refresh rate applies at the activity level so it holds on
+            // every screen, not just while Appearance settings is composed.
+            val forceHighRefreshRate by rememberPreference(
+                moe.rukamori.archivetune.constants.ForceHighRefreshRateKey,
                 defaultValue = false,
             )
-            val liquidGlassEnabled by rememberPreference(
-                LiquidGlassEnabledKey,
-                defaultValue = false,
-            )
-            val liquidGlassNavBarEnabled by rememberPreference(
-                LiquidGlassNavBarEnabledKey,
-                defaultValue = false,
-            )
+            val activityView = androidx.compose.ui.platform.LocalView.current
+            val supportedHighestFps =
+                remember(activityView) {
+                    val display = activityView.display
+                    display?.supportedModes?.maxOfOrNull { it.refreshRate }
+                        ?: display?.refreshRate
+                        ?: 60f
+                }
+            DisposableEffect(activityView, forceHighRefreshRate, supportedHighestFps) {
+                val requested =
+                    if (forceHighRefreshRate && supportedHighestFps > 60.5f) supportedHighestFps else 0f
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+                    activityView.setRequestedFrameRate(requested)
+                } else {
+                    val attributes = window.attributes
+                    if (attributes.preferredRefreshRate != requested) {
+                        attributes.preferredRefreshRate = requested
+                        window.attributes = attributes
+                    }
+                }
+                onDispose { }
+            }
 
             val customThemeSeedPalette =
                 remember(customThemeColorValue) {
@@ -1102,10 +1126,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val restartPrompt: moe.rukamori.archivetune.viewmodels.RestartPromptViewModel = hiltViewModel()
             ArchiveTuneTheme(
                 darkTheme = useDarkTheme,
                 pureBlack = pureBlack,
                 themeColor = themeColor,
+                defaultSeed = if (rememberAppleMusicExperience()) DefaultThemeColor else ExpressiveThemeColor,
                 seedPalette = if (!enableDynamicTheme) customThemeSeedPalette else null,
                 disableAnimations = disableAnimations,
                 fontPreference = fontPreference,
@@ -1179,7 +1205,12 @@ class MainActivity : ComponentActivity() {
                 // an entry animation belongs to this launch, so flipping the switch mid-session
                 // must not start one.
                 val splashAnimationEnabled by rememberPreference(SplashOverlayEnabledKey, defaultValue = true)
-                val coldSplash = remember { splashAnimationEnabled && !disableAnimations }
+                // Latched once per process. animatorScale is read inside the calculation on
+                // purpose: the entry animation belongs to this launch, so its gate is whether
+                // animation was on at launch — the particle burst cannot follow a developer
+                // option that flips mid-session. Scale 0 is animations off, so no splash.
+                val coldSplash =
+                    remember { splashAnimationEnabled && !disableAnimations && animatorScale > 0f }
                 var contentVisible by remember { mutableStateOf(!coldSplash) }
                 // Set by the first tap on the opening animation. The overlay owns the exit (it
                 // fades itself out), this only tells it that the reader has asked for the screen.
@@ -1237,7 +1268,7 @@ class MainActivity : ComponentActivity() {
                     val bottomInsetDp = WindowInsets.systemBars.asPaddingValues().calculateBottomPadding()
 
                     val isTvDevice = remember { applicationContext.isTvDevice() }
-                    val (tabletModeEnabled) = rememberPreference(TabletModeEnabledKey, defaultValue = false)
+                    val tabletModeEnabled = StartupSettings.tabletModeEnabled
                     val useRail =
                         isTvDevice ||
                             tabletModeEnabled ||
@@ -1256,8 +1287,8 @@ class MainActivity : ComponentActivity() {
                     // device's own font-size setting still applies. The slider in Appearance
                     // Settings clamps to [0.85, 1.30]; we additionally guard here in case a
                     // backup-restore injects an out-of-range value.
-                    val (uiScaleRaw) = rememberPreference(UiScaleFactorKey, defaultValue = 1.0f)
-                    val uiScale = uiScaleRaw.coerceIn(0.85f, 1.30f)
+                    // Restart-scoped: a live change relayouts the whole app. Clamped in StartupSettings.
+                    val uiScale = StartupSettings.uiScale
                     val scaledDensity = remember(density, uiScale) {
                         Density(
                             density = density.density,
@@ -1320,9 +1351,13 @@ class MainActivity : ComponentActivity() {
                             intent?.action == ACTION_MUSIC_RECOGNITION
                         }
 
-                    val topLevelScreens =
+                    val tabRoutes =
                         remember(navigationItems) {
-                            navigationItems.map(Screens::route) + "settings"
+                            navigationItems.map(Screens::route)
+                        }
+                    val topLevelScreens =
+                        remember(tabRoutes) {
+                            tabRoutes + "settings"
                         }
 
                     val (query, onQueryChange) =
@@ -1489,38 +1524,145 @@ class MainActivity : ComponentActivity() {
                                 !active
                         }
 
-                    fun getBottomNavPadding(): Dp =
-                        if (shouldShowNavigationBar && !useRail) {
-                            NavigationBarHeight
-                        } else {
-                            0.dp
+                    val hideNavigationBarOnScroll by rememberPreference(
+                        NavigationBarHideOnScrollKey,
+                        defaultValue = false,
+                    )
+                    val (navigationBarCompactBehavior) = rememberNavigationBarCompactBehavior()
+                    // Written by the scroll connection below; every destination starts expanded.
+                    // The route-change reset is throttled into the settle collector below (one
+                    // inset re-provision per switch, after the content transition) instead of an
+                    // immediate LaunchedEffect on every route change.
+                    var scrolledDown by remember { mutableStateOf(false) }
+                    // The one-row layout: the tab bar folds into round Library/Home and Search buttons
+                    // with the mini player between them. It steps aside while the top search is open,
+                    // exactly as the tab bar does (shouldShowNavigationBar is false then); it is not
+                    // tied to shouldShowNavigationBar as a whole because the row deliberately stays
+                    // on pages below the tabs.
+                    val isBottomUiCompact =
+                        !useRail &&
+                            !active &&
+                            when (navigationBarCompactBehavior) {
+                                NavigationBarCompactBehavior.ALWAYS_COMPACT -> true
+                                NavigationBarCompactBehavior.ADAPTIVE -> scrolledDown
+                                NavigationBarCompactBehavior.ALWAYS_EXPANDED -> false
+                            }
+                    // "Hide while scrolling" with the one-row layout turned off keeps the older look:
+                    // the bar slides away and the full-width mini player drops into its place.
+                    val navigationBarHiddenByScroll =
+                        hideNavigationBarOnScroll &&
+                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED &&
+                            scrolledDown
+                    val scrollDrivesBottomUi =
+                        !useRail &&
+                            (
+                                navigationBarCompactBehavior == NavigationBarCompactBehavior.ADAPTIVE ||
+                                    (
+                                        hideNavigationBarOnScroll &&
+                                            navigationBarCompactBehavior == NavigationBarCompactBehavior.ALWAYS_EXPANDED &&
+                                            shouldShowNavigationBar
+                                    )
+                            )
+                    // Same stiffness as BottomSheetAnimationSpec: the mini player's drop into the row is
+                    // a sheet-bound animation, so its resize stays in step with it.
+                    val bottomUiCompactFractionState =
+                        animateFloatAsState(
+                            targetValue = if (isBottomUiCompact) 1f else 0f,
+                            animationSpec =
+                                if (disableAnimations) snap() else spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+                            label = "bottomUiCompactFraction",
+                        )
+                    val navigationBarScrollThresholdPx = with(density) { NavigationBarHideScrollThreshold.toPx() }
+                    val navigationBarScrollConnection =
+                        remember(navigationBarScrollThresholdPx) {
+                            object : NestedScrollConnection {
+                                private var travelled = 0f
+
+                                override fun onPostScroll(
+                                    consumed: Offset,
+                                    available: Offset,
+                                    source: NestedScrollSource,
+                                ): Offset {
+                                    if (source != NestedScrollSource.UserInput || consumed.y == 0f) return Offset.Zero
+                                    if (travelled != 0f && (travelled < 0f) != (consumed.y < 0f)) travelled = 0f
+                                    travelled += consumed.y
+                                    if (travelled <= -navigationBarScrollThresholdPx) {
+                                        scrolledDown = true
+                                        travelled = 0f
+                                    } else if (travelled >= navigationBarScrollThresholdPx) {
+                                        scrolledDown = false
+                                        travelled = 0f
+                                    }
+                                    return Offset.Zero
+                                }
+                            }
                         }
+                    val navigationBarVisible =
+                        shouldShowNavigationBar && !navigationBarHiddenByScroll && !isBottomUiCompact
+
+                    val compactLeftCircleIsLibrary =
+                        remember(currentRoute) {
+                            val route = currentRoute.orEmpty()
+                            route == Screens.Home.route ||
+                                route == "history" ||
+                                route == "local_songs" ||
+                                route == "library_playlists" ||
+                                route == "library_spotify_playlists" ||
+                                route == "library_artists" ||
+                                route.startsWith("local_playlist/") ||
+                                route.startsWith("auto_playlist/") ||
+                                route.startsWith("cache_playlist/") ||
+                                route.startsWith("spotify_playlist/") ||
+                                route.startsWith("online_playlist/") ||
+                                route.startsWith("top_playlist/")
+                        }
+                    // These pages have their own search field; the round button opens it in place.
+                    val compactRouteHasInPageSearch =
+                        currentRoute == "history" || currentRoute == "local_songs"
+                    val compactSearchCircleVisible =
+                        currentRoute?.startsWith("artist/") != true &&
+                            (compactRouteHasInPageSearch || !compactLeftCircleIsLibrary || currentRoute == Screens.Home.route)
 
                     // FLOATING detaches the bar into a pill: bigger bottom margin, tighter width.
                     // Every consumer below (collapsed player anchor, slide distance, insets, FAB
                     // padding) derives from these two values so the styles stay in sync.
                     val isFloatingNavBar = navigationBarStyle == NavigationBarStyle.FLOATING
-                    val floatingBarsBottomPadding =
-                        if (isFloatingNavBar) FloatingNavigationBarBottomPadding else NavigationBarBottomPadding
+                    val isSukisuNavBar = navigationBarStyle == NavigationBarStyle.SUKISU
+                    val floatingBarsBottomPadding = navigationBarStyle.pillBottomInset
                     // Task 6: respect the user's navigation bar height multiplier so the bottom
-                    // sheet anchor and the rendered bar stay aligned.
+                    // sheet anchor and the rendered bar stay aligned. The SukiSU bar fixes its
+                    // own height instead (its sliders are disabled in settings), so the chrome
+                    // reserves exactly the bar, no more.
                     val (navBarHeightMultiplier) = rememberPreference(
                         moe.rukamori.archivetune.constants.NavigationBarHeightKey,
                         defaultValue = moe.rukamori.archivetune.constants.NAVIGATION_BAR_HEIGHT_DEFAULT,
                     )
-                    val navVisibleHeight = NavigationBarHeight * navBarHeightMultiplier
-                    val navBarHorizontalPadding =
-                        if (isFloatingNavBar) FloatingNavigationBarHorizontalPadding else NavigationBarHorizontalPadding
+                    val navVisibleHeight =
+                        if (isSukisuNavBar) {
+                            SukisuLiquidNavBarHeight
+                        } else {
+                            NavigationBarHeight * navBarHeightMultiplier
+                        }
+                    val navBarHorizontalPadding = navigationBarStyle.pillHorizontalInset
 
-                    // Frosted backdrop (nav bar + mini player + tablet rail): allocated whenever
-                    // any frosted surface can run (RenderEffect available). The bottom toolbar and
-                    // the tablet-mode NavigationRail both consume it via LocalNavigationBarBackdrop.
+                    // Frosted backdrop (nav bar + mini player + tablet rail). Recording the whole
+                    // NavHost into this layer costs a full extra screen render per frame, so it is
+                    // allocated only when a frosted surface actually samples it. Left always live,
+                    // every launch — including the opening animation — paid that pass for a
+                    // frosted bar most users never turn on. Mirrors 4nx3b's anyFrostedConsumerActive.
                     val miniPlayerBgStyle by rememberEnumPreference(
                         MiniPlayerBackgroundStyleKey,
                         defaultValue = MiniPlayerBackgroundStyle.THEME,
                     )
+                    val anyFrostedConsumerActive =
+                        !disableBlur &&
+                            (
+                                navigationBarFrostedBlur ||
+                                    navigationBarTintFrostedBlur ||
+                                    miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED
+                            )
                     val navBarFrostedBackdrop =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && anyFrostedConsumerActive) {
                             val frostedLayer = rememberGraphicsLayer()
                             remember(frostedLayer) { NavigationBarBackdrop(frostedLayer) }
                         } else {
@@ -1529,6 +1671,7 @@ class MainActivity : ComponentActivity() {
 
                     val liquidGlassActive =
                         liquidGlassEnabled &&
+                            !disableBlur &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
                     val liquidGlassBackdrop: LayerBackdrop? =
                         if (liquidGlassActive) {
@@ -1539,21 +1682,31 @@ class MainActivity : ComponentActivity() {
 
                     val bottomNavigationBarHeightState =
                         animateDpAsState(
-                            targetValue = if (shouldShowNavigationBar && !useRail) navVisibleHeight else 0.dp,
+                            targetValue = if (navigationBarVisible && !useRail) navVisibleHeight else 0.dp,
                             animationSpec = if (disableAnimations) snap() else NavigationBarAnimationSpec,
                             label = "",
                         )
                     val bottomNavigationBarHeight by bottomNavigationBarHeightState
 
+                    // Top edge of the slim mini player in the one-row layout, measured from the bottom inset:
+                    // centred on the tab bar's line where there is one, at its usual height elsewhere.
+                    val compactMiniPlayerTop =
+                        if (shouldShowNavigationBar) {
+                            floatingBarsBottomPadding + (navVisibleHeight + MiniPlayerCompactHeight) / 2
+                        } else {
+                            MiniPlayerBottomSpacing + MiniPlayerHeight
+                        }
                     val playerBottomSheetState =
                         rememberBottomSheetState(
                             dismissedBound = 0.dp,
                             collapsedBound =
                                 bottomInset +
-                                    (if (shouldShowNavigationBar && !useRail) floatingBarsBottomPadding else 0.dp) +
-                                    getBottomNavPadding() +
-                                    MiniPlayerBottomSpacing +
-                                    MiniPlayerHeight,
+                                    when {
+                                        navigationBarVisible && !useRail ->
+                                            floatingBarsBottomPadding + navVisibleHeight + MiniPlayerBottomSpacing + MiniPlayerHeight
+                                        isBottomUiCompact -> compactMiniPlayerTop
+                                        else -> MiniPlayerBottomSpacing + MiniPlayerHeight
+                                    },
                             expandedBound = maxHeight,
                         )
 
@@ -1565,6 +1718,12 @@ class MainActivity : ComponentActivity() {
                         key = PlayerDesignStyleKey,
                         defaultValue = PlayerDesignStyle.Default,
                     )
+
+                    // One owner of the player's back target: BottomSheetPlayer reports which
+                    // surface is on top (the sheet, a page over it, or nothing) and what back
+                    // should do; the two handlers composed after the NavHost route the gesture.
+                    val playerBackController = remember { PlayerBackController() }
+                    val playerSheetPredictiveBack = rememberPredictiveSheetBackState()
 
                     val aodModeEnabled by remember(playerConnection) {
                         playerConnection?.aodModeEnabled ?: MutableStateFlow(false)
@@ -1703,6 +1862,8 @@ class MainActivity : ComponentActivity() {
 
                     var isPlayerLyricsFullScreen by remember { mutableStateOf(false) }
 
+                    // The lyrics page keeps the status bar like every other page; only the global
+                    // "Hide status bar" setting removes it there.
                     val shouldHideStatusBars =
                         hideStatusBar ||
                             isYearInMusicScreen ||
@@ -1710,8 +1871,7 @@ class MainActivity : ComponentActivity() {
                             (
                                 menuState.isVisible &&
                                     playerBottomSheetState.isExpandedOrExpanding
-                            ) ||
-                            (playerBottomSheetState.isExpandedOrExpanding && isPlayerLyricsFullScreen)
+                            )
 
                     LaunchedEffect(shouldHideStatusBars, menuState.isVisible, aodModeEnabled) {
                         if (aodModeEnabled) return@LaunchedEffect
@@ -1791,6 +1951,11 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
+                    // Stepped in 5% increments so the compact animation re-provides the insets a handful
+                    // of times instead of on every frame.
+                    val quantizedCompactFraction by remember {
+                        derivedStateOf { kotlin.math.round(bottomUiCompactFractionState.value * 20f) / 20f }
+                    }
                     val playerAwareWindowInsets =
                         remember(
                             useRail,
@@ -1798,14 +1963,25 @@ class MainActivity : ComponentActivity() {
                             shouldShowNavigationBar,
                             playerBottomSheetState.isDismissed,
                             navigationBarStyle,
+                            navVisibleHeight,
                             effectiveStatusBarTop,
+                            quantizedCompactFraction,
                         ) {
                             var bottom = bottomInset
-                            if (shouldShowNavigationBar && !useRail) {
-                                bottom += getBottomNavPadding() + floatingBarsBottomPadding
-                            }
+                            val navStack = shouldShowNavigationBar && !useRail
                             if (!playerBottomSheetState.isDismissed) {
-                                bottom += MiniPlayerHeight + MiniPlayerBottomSpacing
+                                bottom +=
+                                    if (navStack) {
+                                        androidx.compose.ui.unit.lerp(
+                                            floatingBarsBottomPadding + navVisibleHeight + MiniPlayerBottomSpacing + MiniPlayerHeight,
+                                            floatingBarsBottomPadding + (navVisibleHeight + MiniPlayerCompactHeight) / 2,
+                                            quantizedCompactFraction,
+                                        )
+                                    } else {
+                                        MiniPlayerHeight + MiniPlayerBottomSpacing
+                                    }
+                            } else if (navStack) {
+                                bottom += floatingBarsBottomPadding + navVisibleHeight
                             }
                             effectiveWindowsInsets
                                 .only(
@@ -1847,42 +2023,137 @@ class MainActivity : ComponentActivity() {
                             },
                         )
 
-                    val handlePrimaryNavigationClick: (Screens, Boolean) -> Unit = { screen, isSelected ->
-                        if (isSelected) {
-                            if (screen == Screens.Search) {
-                                openSearch()
-                                coroutineScope.launch { searchScrollBehavior.state.resetHeightOffset() }
-                            } else {
-                                navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
-                                when (screen) {
-                                    Screens.Home -> {
-                                        coroutineScope.launch { homeScrollBehavior.state.resetHeightOffset() }
-                                    }
+                    // Coalesced tab navigation. A tap navigates right away when the current entry
+                    // is RESUMED and nothing is pending; otherwise it becomes the pending tab and
+                    // the collector below navigates to the last one once the running transition
+                    // settles — a tap burst costs at most one extra transition instead of stacked
+                    // navigates. optimisticTabRoute shows the tapped tab as selected from the tap
+                    // frame, so the bar's pill/highlight never waits for the back stack.
+                    var optimisticTabRoute by remember { mutableStateOf<String?>(null) }
+                    var tabNavState by remember { mutableStateOf(TabNavState()) }
 
-                                    else -> {}
-                                }
+                    // All header resets (re-select taps, route changes and search activation)
+                    // share one cancellable job: overlapping animate() writers on the same
+                    // heightOffset jitter the header when re-select is spammed.
+                    var headerResetJob by remember { mutableStateOf<Job?>(null) }
+                    val launchHeaderReset: (suspend () -> Unit) -> Unit = { block ->
+                        headerResetJob?.cancel()
+                        headerResetJob = coroutineScope.launch { block() }
+                    }
+
+                    val navigateToTab: (String) -> Unit = { route ->
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                saveState = true
                             }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+
+                    val reselectTab: (String) -> Unit = { route ->
+                        if (route == Screens.Search.route) {
+                            openSearch()
+                            launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
                         } else {
-                            if (navController.currentDestination?.route != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.startDestinationId) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                            navController.currentBackStackEntry?.savedStateHandle?.set("scrollToTop", true)
+                            if (route == Screens.Home.route) {
+                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
+                            }
+                        }
+                    }
+
+                    // The round Library/Home button returns to the tab's root even from deep inside it,
+                    // where the tab item itself would only reselect the current page.
+                    val navigateToTabRoot: (String) -> Unit = { route ->
+                        val popped = runCatching { navController.popBackStack(route, false) }.getOrDefault(false)
+                        if (!popped && navController.currentDestination?.route != route) {
+                            navigateToTab(route)
+                        }
+                        if (navController.currentDestination?.route == route) {
+                            reselectTab(route)
+                        }
+                    }
+
+                    val runTabNavAction: (TabNavAction) -> Unit = { action ->
+                        when (action) {
+                            is TabNavAction.Navigate -> {
+                                optimisticTabRoute = action.targetRoute
+                                if (action.toRoot) {
+                                    navigateToTabRoot(action.targetRoute)
+                                } else {
+                                    navigateToTab(action.targetRoute)
+                                    if (action.reselect) reselectTab(action.targetRoute)
+                                }
+                                // A root request already on its root page does not navigate, so
+                                // the current entry stays RESUMED and no settle would clear this.
+                                if (navController.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED) {
+                                    optimisticTabRoute = null
                                 }
                             }
+
+                            is TabNavAction.SetPending -> optimisticTabRoute = action.targetRoute
+
+                            is TabNavAction.Reselect -> reselectTab(action.targetRoute)
+
+                            TabNavAction.None -> {}
+                        }
+                    }
+
+                    // Tab items and the round root buttons both go through the reducer, so a
+                    // root request joins the same last-wins pending slot instead of navigating
+                    // over an in-flight transition.
+                    val requestTab: (String, Boolean) -> Unit = { route, toRoot ->
+                        val (nextState, action) =
+                            reduceTabNav(
+                                tabNavState,
+                                TabNavEvent.Tap(
+                                    targetRoute = route,
+                                    isCurrentTab =
+                                        navController.currentDestination?.hierarchy
+                                            ?.any { it.route == route } == true,
+                                    currentResumed =
+                                        navController.currentBackStackEntry?.lifecycle?.currentState ==
+                                            Lifecycle.State.RESUMED,
+                                    toRoot = toRoot,
+                                ),
+                            )
+                        tabNavState = nextState
+                        runTabNavAction(action)
+                    }
+                    val handlePrimaryNavigationClick: (Screens) -> Unit = { screen -> requestTab(screen.route, false) }
+
+                    // One collector drives the coalesced navigation: when the current entry
+                    // settles (RESUMED) it navigates to the last pending tab. It also clears the
+                    // optimistic selection once the back stack caught up, and resets the
+                    // scroll-driven bottom-UI state at the settle point — the inset re-provision
+                    // then runs once per switch, after the content transition, instead of racing
+                    // it.
+                    LaunchedEffect(navController) {
+                        navController.currentBackStackEntryFlow.collectLatest { entry ->
+                            entry.lifecycle.currentStateFlow.first { it == Lifecycle.State.RESUMED }
+                            val route = entry.destination.route
+                            if (route == null) {
+                                tabNavState = TabNavState()
+                                optimisticTabRoute = null
+                            } else {
+                                val (nextState, action) = reduceTabNav(tabNavState, TabNavEvent.Settled(route))
+                                tabNavState = nextState
+                                if (action !is TabNavAction.Navigate) optimisticTabRoute = null
+                                runTabNavAction(action)
+                            }
+                            if (scrolledDown) scrolledDown = false
                         }
                     }
 
                     LaunchedEffect(currentRoute) {
                         when (currentRoute) {
                             Screens.Home.route -> {
-                                homeScrollBehavior.state.resetHeightOffset()
+                                launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                             }
 
                             Screens.Search.route -> {
-                                searchScrollBehavior.state.resetHeightOffset()
+                                launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
                             }
 
                             else -> {}
@@ -1934,11 +2205,11 @@ class MainActivity : ComponentActivity() {
                         if (active) {
                             when (currentRoute) {
                                 Screens.Home.route -> {
-                                    homeScrollBehavior.state.resetHeightOffset()
+                                    launchHeaderReset { homeScrollBehavior.state.resetHeightOffset() }
                                 }
 
                                 Screens.Search.route -> {
-                                    searchScrollBehavior.state.resetHeightOffset()
+                                    launchHeaderReset { searchScrollBehavior.state.resetHeightOffset() }
                                 }
 
                                 else -> {}
@@ -2037,13 +2308,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
 
-                    var shouldShowTopBar by rememberSaveable { mutableStateOf(false) }
-
-                    LaunchedEffect(navBackStackEntry) {
-                        shouldShowTopBar =
-                            !active && navBackStackEntry?.destination?.route in topLevelScreens &&
-                            navBackStackEntry?.destination?.route != "settings"
-                    }
+                    // Derived in composition, not in an effect: an effect flips it a frame after the
+                    // route changes, so the header used to vanish before the outgoing page had moved.
+                    val shouldShowTopBar =
+                        !active && currentRoute in topLevelScreens && currentRoute != "settings"
+                    // While the header fades out it keeps drawing the page it belongs to instead of
+                    // restyling itself for the incoming route.
+                    val lastTopBarRoute = remember { arrayOfNulls<String>(1) }
+                    if (shouldShowTopBar) lastTopBarRoute[0] = currentRoute
+                    val topBarRoute = if (shouldShowTopBar) currentRoute else lastTopBarRoute[0]
 
                     LaunchedEffect(Unit) {
                         if (pendingIntent != null) {
@@ -2135,6 +2408,23 @@ class MainActivity : ComponentActivity() {
                         }
                     val haptic = LocalHapticFeedback.current
                     val (enableHapticFeedback) = rememberPreference(EnableHapticFeedbackKey, true)
+                    val swipeToSongEnabled by rememberPreference(
+                        moe.rukamori.archivetune.constants.SwipeToSongKey,
+                        defaultValue = true,
+                    )
+                    val cropThumbnailToSquare by rememberPreference(
+                        moe.rukamori.archivetune.constants.CropThumbnailToSquareKey,
+                        defaultValue = false,
+                    )
+                    val itemPreferences =
+                        remember(enableHapticFeedback, swipeToSongEnabled, cropThumbnailToSquare, pureBlackEnabled) {
+                            ItemPreferences(
+                                hapticFeedbackEnabled = enableHapticFeedback,
+                                swipeToSongEnabled = swipeToSongEnabled,
+                                cropThumbnailToSquare = cropThumbnailToSquare,
+                                pureBlack = pureBlackEnabled,
+                            )
+                        }
                     val customHaptic =
                         remember(haptic, enableHapticFeedback) {
                             object : HapticFeedback {
@@ -2147,9 +2437,13 @@ class MainActivity : ComponentActivity() {
                         }
 
                     CompositionLocalProvider(
+                        moe.rukamori.archivetune.ui.component.LocalRestartPrompt provides restartPrompt,
                         LocalHapticFeedback provides customHaptic,
-                        LocalAnimationsDisabled provides disableAnimations,
-                        moe.rukamori.archivetune.LocalAnimationScale provides systemAnimationScale,
+                        LocalAnimationsDisabled provides animationsOff,
+                        moe.rukamori.archivetune.LocalBlurPolicy provides remember(disableBlur) { moe.rukamori.archivetune.BlurPolicy(userEnabled = !disableBlur) },
+                        moe.rukamori.archivetune.ui.component.LocalBottomUiCompactFraction provides bottomUiCompactFractionState,
+                        moe.rukamori.archivetune.LocalAnimationScale provides animatorScale,
+                        moe.rukamori.archivetune.ui.component.LocalBackAnimationStyle provides backAnimationStyle,
                         moe.rukamori.archivetune.LocalHideScrollbar provides hideScrollbar,
                         LocalDatabase provides database,
                         LocalDensity provides scaledDensity,
@@ -2157,20 +2451,21 @@ class MainActivity : ComponentActivity() {
                         LocalPlayerConnection provides playerConnection,
                         LocalListenTogetherManager provides listenTogetherManager,
                         LocalPlayerAwareWindowInsets provides playerAwareWindowInsets,
+                        LocalNavigationBarHiddenByScroll provides
+                            (navigationBarHiddenByScroll && shouldShowNavigationBar && !useRail),
                         LocalStableSystemBarsTopPadding provides effectiveStatusBarTop,
                         LocalDownloadUtil provides downloadUtil,
                         LocalShimmerTheme provides ShimmerTheme,
                         LocalSyncUtils provides syncUtils,
-                        // The haze state shared between HomeScreen's hazeSource and the top
-                        // bar's progressive fade blur over the Home route.
-                        moe.rukamori.archivetune.ui.screens.LocalHomeHazeState provides homeHazeState,
                         moe.rukamori.archivetune.ui.component.LocalBottomSheetPageState provides bottomSheetPageState,
                         moe.rukamori.archivetune.ui.component.LocalMenuState provides menuState,
                         LocalNavigationBarBackdrop provides navBarFrostedBackdrop,
                         LocalLiquidGlassBackdrop provides liquidGlassBackdrop,
                         moe.rukamori.archivetune.ui.player.LocalIsInPipMode provides isInPictureInPictureModeState,
                         moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen provides isPlayerLyricsFullScreen,
+                        LocalItemPreferences provides itemPreferences,
                     ) {
+                        moe.rukamori.archivetune.ui.component.RestartPromptHost(restartPrompt)
                         // The opening animation sits under the content and over the background,
                         // so the home screen rises through the particles as the burst lands
                         // rather than wiping them away. Composed only when it is this launch's
@@ -2191,6 +2486,13 @@ class MainActivity : ComponentActivity() {
                                 },
                             )
                         }
+                        // Hoisted so the frosted backdrop gate can follow the rail's real on-screen
+                        // presence, including its exit fade, rather than the tablet-mode flag alone.
+                        val railVisibleState = remember { MutableTransitionState(false) }
+                        railVisibleState.targetState =
+                            useRail &&
+                            shouldShowNavigationBar &&
+                            (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding)
                         Row(
                             modifier =
                                 Modifier
@@ -2225,10 +2527,7 @@ class MainActivity : ComponentActivity() {
                                     },
                         ) {
                             AnimatedVisibility(
-                                visible =
-                                    useRail &&
-                                        shouldShowNavigationBar &&
-                                        (isTvDevice || !playerBottomSheetState.isExpandedOrExpanding),
+                                visibleState = railVisibleState,
                                 enter = fadeIn(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 150)),
                                 exit = fadeOut(animationSpec = tween(durationMillis = if (disableAnimations) 0 else 100)),
                             ) {
@@ -2261,7 +2560,7 @@ class MainActivity : ComponentActivity() {
                                             if (wasPlayerActive && isSelected) {
                                                 return@TvNavigationRail
                                             }
-                                            handlePrimaryNavigationClick(screen, isSelected)
+                                            handlePrimaryNavigationClick(screen)
                                         },
                                     )
                                 } else {
@@ -2274,7 +2573,7 @@ class MainActivity : ComponentActivity() {
                                         (navigationBarFrostedBlur || navigationBarTintFrostedBlur) &&
                                             navBarFrostedBackdrop != null && !isPreS
                                     val canRailLiquidGlass =
-                                        liquidGlassEnabled && liquidGlassNavBarEnabled &&
+                                        liquidGlassEnabled && liquidGlassNavBarEnabled && !disableBlur &&
                                             liquidGlassBackdrop != null && !isPreS
                                     var railPositionInRoot by remember {
                                         mutableStateOf(Offset.Zero)
@@ -2365,7 +2664,7 @@ class MainActivity : ComponentActivity() {
                                                         }
 
                                                         if (wasPlayerActive && isSelected) return@NavigationRailItem
-                                                        handlePrimaryNavigationClick(screen, isSelected)
+                                                        handlePrimaryNavigationClick(screen)
                                                     },
                                                 )
                                             }
@@ -2399,21 +2698,25 @@ class MainActivity : ComponentActivity() {
 
                             Scaffold(
                                 topBar = {
-                                    if (shouldShowTopBar) {
+                                    AnimatedVisibility(
+                                        visible = shouldShowTopBar,
+                                        enter = fadeIn(tween(if (disableAnimations) 0 else 220, delayMillis = if (disableAnimations) 0 else 60)),
+                                        exit = fadeOut(tween(if (disableAnimations) 0 else 180)),
+                                    ) {
                                         val shouldUseFloatingTopBar =
-                                            remember(navBackStackEntry) {
-                                                navBackStackEntry?.destination?.route == Screens.Home.route ||
-                                                    navBackStackEntry?.destination?.route == Screens.Search.route ||
-                                                    navBackStackEntry?.destination?.route == Screens.Library.route
+                                            remember(topBarRoute) {
+                                                topBarRoute == Screens.Home.route ||
+                                                    topBarRoute == Screens.Search.route ||
+                                                    topBarRoute == Screens.Library.route
                                             }
                                         val shouldShowBlurBackground =
-                                            remember(navBackStackEntry) {
+                                            remember(topBarRoute) {
                                                 shouldUseFloatingTopBar
                                             }
 
                                         val surfaceColor = MaterialTheme.colorScheme.surface
                                         val currentScrollBehavior =
-                                            when (navBackStackEntry?.destination?.route) {
+                                            when (topBarRoute) {
                                                 Screens.Home.route -> homeScrollBehavior
 
                                                 Screens.Search.route -> searchScrollBehavior
@@ -2422,12 +2725,12 @@ class MainActivity : ComponentActivity() {
                                                 // sub-screens use the shared shell behavior.
                                                 else -> topAppBarScrollBehavior
                                             }
-                                        val isLibraryRoute = navBackStackEntry?.destination?.route == Screens.Library.route
+                                        val isLibraryRoute = topBarRoute == Screens.Library.route
                                         // Home keeps its bar pinned so content scrolls under it into
                                         // the progressive blur. The title stays put with it — see the
                                         // note on AutoResizeText below for why the fade that came with
                                         // this design was wrong here.
-                                        val isHomeRoute = navBackStackEntry?.destination?.route == Screens.Home.route
+                                        val isHomeRoute = topBarRoute == Screens.Home.route
 
                                         var headerHeightPx by remember { mutableIntStateOf(0) }
                                         LaunchedEffect(currentScrollBehavior, headerHeightPx) {
@@ -2467,23 +2770,6 @@ class MainActivity : ComponentActivity() {
                                                     },
                                         ) {
                                             if (shouldShowBlurBackground) {
-                                                if (isHomeRoute &&
-                                                    Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                                                    !playerBottomSheetState.isExpandedOrExpanding
-                                                ) {
-                                                    // ── TopFadeBlur ────────────────────────────────────────
-                                                    // Full blur along the top edge ramping to nothing on the
-                                                    // way down (progressive vertical gradient, EaseOutCubic,
-                                                    // peak 0.75), over the HazeState HomeScreen tags its
-                                                    // content with. A modest readability scrim sits over
-                                                    // the blur so the bar's glyphs keep a floor whatever
-                                                    // scrolls beneath them.
-                                                    HomeTopFadeBlur(
-                                                        hazeState = homeHazeState,
-                                                        pageColor = surfaceColor,
-                                                        barHeight = AppBarHeight + effectiveStatusBarTop,
-                                                    )
-                                                } else {
                                                 val appBarHeightPx = with(LocalDensity.current) { AppBarHeight.toPx() }
                                                 Box(
                                                     modifier =
@@ -2513,7 +2799,6 @@ class MainActivity : ComponentActivity() {
                                                                 ),
                                                             ),
                                                 )
-                                                }
                                             }
 
                                             TopAppBar(
@@ -2527,87 +2812,153 @@ class MainActivity : ComponentActivity() {
                                                             }
                                                         ) + WindowInsetsSides.Top,
                                                     ),
+                                                navigationIcon = {
+                                                    if (isHomeRoute) {
+                                                        HeaderCircleButton(
+                                                            onClick = { profileMenuExpanded = true },
+                                                            contentDescription = stringResource(R.string.account),
+                                                            backdrop = LocalLiquidGlassBackdrop.current,
+                                                            modifier = Modifier.padding(start = 12.dp),
+                                                        ) {
+                                                            if (!accountImageUrl.isNullOrBlank()) {
+                                                                AsyncImage(
+                                                                    model = accountImageUrl,
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.fillMaxSize(),
+                                                                    contentScale = ContentScale.Crop,
+                                                                )
+                                                            } else {
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.account),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(24.dp),
+                                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                },
                                                 title = {
-                                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                                        // app icon
-                                                        Icon(
-                                                            painter = painterResource(R.drawable.about_appbar),
-                                                            contentDescription = null,
-                                                            modifier =
-                                                                Modifier
-                                                                    .size(35.dp)
-                                                                    .padding(end = 3.dp),
-                                                        )
-                                                        // Always visible, on Home too. The BitChord
-                                                        // design this came from fades the bar title in
-                                                        // only once scrolled, because there the big
-                                                        // in-list header IS the page title and the two
-                                                        // would otherwise say the same thing twice.
-                                                        // Ours is a greeting — "Good morning, <name>" —
-                                                        // so fading the bar title left nothing on the
-                                                        // home screen naming the app at all.
-                                                        AutoResizeText(
-                                                            text = stringResource(R.string.app_name),
-                                                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                                            fontSizeRange = FontSizeRange(min = 14.sp, max = 22.sp),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Visible,
-                                                            softWrap = true,
-                                                            modifier = Modifier.weight(1f, fill = false),
-                                                        )
+                                                    if (isHomeRoute) {
+                                                        Box(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            contentAlignment = Alignment.Center,
+                                                        ) {
+                                                            Text(
+                                                                text = stringResource(R.string.home),
+                                                                color = MaterialTheme.colorScheme.onBackground,
+                                                                fontWeight = FontWeight.Bold,
+                                                                style = MaterialTheme.typography.titleLarge,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis,
+                                                            )
+                                                        }
+                                                    } else {
+                                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                                            // app icon
+                                                            Icon(
+                                                                painter = painterResource(R.drawable.about_appbar),
+                                                                contentDescription = null,
+                                                                modifier =
+                                                                    Modifier
+                                                                        .size(35.dp)
+                                                                        .padding(end = 3.dp),
+                                                            )
+                                                            // Always visible rather than faded in on scroll:
+                                                            // BitChord fades it because its big in-list header
+                                                            // is the page title, but ours is a greeting.
+                                                            AutoResizeText(
+                                                                text = stringResource(R.string.app_name),
+                                                                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                                                fontSizeRange = FontSizeRange(min = 14.sp, max = 22.sp),
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Visible,
+                                                                softWrap = true,
+                                                                modifier = Modifier.weight(1f, fill = false),
+                                                            )
+                                                        }
                                                     }
                                                 },
                                                 actions = {
-                                                    // Home only, and only with a Spotify session:
-                                                    // the toggle swaps which home page the tab
-                                                    // shows, which means nothing anywhere else.
-                                                    // Sits left of the avatar, and carries the
-                                                    // logo of the page it switches TO.
+                                                    val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
+                                                        latestUpdateChannel == effectiveChannel &&
+                                                        latestUpdateOfferRevision == channelRevision &&
+                                                        Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                     if (isHomeRoute) {
-                                                        HomeSourceToggleButton()
-                                                    }
-                                                    Box(
-                                                        modifier = Modifier.padding(end = 4.dp),
-                                                    ) {
-                                                        IconButton(
-                                                            onClick = { profileMenuExpanded = true },
-                                                            colors = IconButtonDefaults.iconButtonColors(
-                                                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                                                                    .copy(alpha = TopAppBarIconButtonContainerAlpha),
-                                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                            ),
-                                                        ) {
-                                                            Surface(
-                                                                modifier = Modifier.size(28.dp),
-                                                                shape = CircleShape,
-                                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                        // Only with a Spotify session: the toggle swaps which home
+                                                        // page the tab shows, which means nothing anywhere else.
+                                                        // Sits left of the settings button, and carries the logo of
+                                                        // the page it switches TO.
+                                                        HomeSourceToggleButton(
+                                                            onOpenSpotifySettings = {
+                                                                navController.navigate("settings/integration?scrollTo=spotify")
+                                                            },
+                                                        )
+                                                        Box(modifier = Modifier.padding(start = 4.dp, end = 12.dp)) {
+                                                            HeaderCircleButton(
+                                                                onClick = { navController.navigate("settings") },
+                                                                contentDescription = stringResource(R.string.settings),
+                                                                backdrop = LocalLiquidGlassBackdrop.current,
                                                             ) {
-                                                                if (!accountImageUrl.isNullOrBlank()) {
-                                                                    AsyncImage(
-                                                                        model = accountImageUrl,
-                                                                        contentDescription = stringResource(R.string.account),
-                                                                        modifier = Modifier
-                                                                            .fillMaxSize()
-                                                                            .clip(CircleShape),
-                                                                        contentScale = ContentScale.Crop,
-                                                                    )
-                                                                } else {
-                                                                    Box(contentAlignment = Alignment.Center) {
-                                                                        Icon(
-                                                                            painter = painterResource(R.drawable.account),
+                                                                Icon(
+                                                                    painter = painterResource(R.drawable.settings),
+                                                                    contentDescription = null,
+                                                                    modifier = Modifier.size(22.dp),
+                                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                                )
+                                                            }
+                                                            if (showSettingsBadge) {
+                                                                Box(
+                                                                    modifier =
+                                                                        Modifier
+                                                                            .align(Alignment.TopEnd)
+                                                                            .offset(x = 2.dp, y = 2.dp)
+                                                                            .size(10.dp)
+                                                                            .background(MaterialTheme.colorScheme.error, CircleShape),
+                                                                )
+                                                            }
+                                                        }
+                                                    } else {
+                                                        Box(
+                                                            modifier = Modifier.padding(end = 4.dp),
+                                                        ) {
+                                                            IconButton(
+                                                                onClick = { profileMenuExpanded = true },
+                                                                colors = IconButtonDefaults.iconButtonColors(
+                                                                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
+                                                                        .copy(alpha = TopAppBarIconButtonContainerAlpha),
+                                                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                                ),
+                                                            ) {
+                                                                Surface(
+                                                                    modifier = Modifier.size(28.dp),
+                                                                    shape = CircleShape,
+                                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                                ) {
+                                                                    if (!accountImageUrl.isNullOrBlank()) {
+                                                                        AsyncImage(
+                                                                            model = accountImageUrl,
                                                                             contentDescription = stringResource(R.string.account),
-                                                                            modifier = Modifier.size(20.dp),
-                                                                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                            modifier = Modifier
+                                                                                .fillMaxSize()
+                                                                                .clip(CircleShape),
+                                                                            contentScale = ContentScale.Crop,
                                                                         )
+                                                                    } else {
+                                                                        Box(contentAlignment = Alignment.Center) {
+                                                                            Icon(
+                                                                                painter = painterResource(R.drawable.account),
+                                                                                contentDescription = stringResource(R.string.account),
+                                                                                modifier = Modifier.size(20.dp),
+                                                                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                                            )
+                                                                        }
                                                                     }
                                                                 }
                                                             }
                                                         }
                                                     }
                                                     if (profileMenuExpanded) {
-                                                        val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
-                                                            latestUpdateChannel == effectiveUpdateChannel &&
-                                                            Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                         ProfileMenuDialog(
                                                             accountName = accountName,
                                                             accountImageUrl = accountImageUrl,
@@ -2670,26 +3021,29 @@ class MainActivity : ComponentActivity() {
                                                                 } else {
                                                                     null
                                                                 },
-                                                                // Settings entry removed — the Home route's
-                                                                // top-end settings icon in liquid glass is
-                                                                // now the sole entry point, and it carries
-                                                                // the update-available badge.
-                                                                ProfileMenuItem(
-                                                                    icon = R.drawable.settings,
-                                                                    label = stringResource(R.string.settings),
-                                                                    showBadge = showSettingsBadge,
-                                                                    onClick = {
-                                                                        profileMenuExpanded = false
-                                                                        navController.navigate("settings")
-                                                                    },
-                                                                ),
+                                                                // Home has its own settings button, with the
+                                                                // update badge; every other tab reaches
+                                                                // settings from here.
+                                                                if (!isHomeRoute) {
+                                                                    ProfileMenuItem(
+                                                                        icon = R.drawable.settings,
+                                                                        label = stringResource(R.string.settings),
+                                                                        showBadge = showSettingsBadge,
+                                                                        onClick = {
+                                                                            profileMenuExpanded = false
+                                                                            navController.navigate("settings")
+                                                                        },
+                                                                    )
+                                                                } else {
+                                                                    null
+                                                                },
                                                             ).filterNotNull(),
                                                             onDismiss = { profileMenuExpanded = false },
                                                         )
                                                     }
                                                 },
                                                 scrollBehavior =
-                                                    if (navBackStackEntry?.destination?.route == Screens.Library.route ||
+                                                    if (topBarRoute == Screens.Library.route ||
                                                         shouldUseFloatingTopBar
                                                     ) {
                                                         null
@@ -3017,6 +3371,8 @@ class MainActivity : ComponentActivity() {
                                                         !showNavigationBarState.value ||
                                                         useRailState.value ||
                                                         isFloatingNavBar ||
+                                                        isSukisuNavBar ||
+                                                        navigationBarStyle == NavigationBarStyle.YUMA_PLAYER ||
                                                         navigationBarStyle == NavigationBarStyle.APPLE_MUSIC
                                                     ) {
                                                         0f
@@ -3033,6 +3389,11 @@ class MainActivity : ComponentActivity() {
                                                 pureBlack = pureBlack,
                                                 navigationProximityProvider = navigationProximityProvider,
                                                 onLyricsVisibilityChange = { isPlayerLyricsFullScreen = it },
+                                                compactFractionState = bottomUiCompactFractionState,
+                                                compactHorizontalPadding = navBarHorizontalPadding,
+                                                compactReserveEndControl = compactSearchCircleVisible,
+                                                backController = playerBackController,
+                                                predictiveBackState = playerSheetPredictiveBack,
                                             )
                                         }
 
@@ -3077,43 +3438,207 @@ class MainActivity : ComponentActivity() {
                                                                         )
                                                                 slideOffset + hideOffset
                                                             }
+                                                        alpha = 1f - bottomUiCompactFractionState.value * 0.9f
                                                     },
                                         ) {
-                                            FloatingNavigationToolbar(
-                                                items = navigationItems,
-                                                pureBlack = pureBlack,
-                                                miniPlayerProximityProvider = navigationProximityProvider,
-                                                style = navigationBarStyle,
-                                                frostedBlur = navigationBarFrostedBlur,
-                                                tintFrostedBlur = navigationBarTintFrostedBlur,
-                                                frostedBackdrop = navBarFrostedBackdrop,
-                                                liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled,
-                                                liquidGlassBackdrop = liquidGlassBackdrop,
+                                            if (isSukisuNavBar) {
+                                                // The SukiSU liquid glass bar renders in this same
+                                                // container (slide/hide, compact fade, insets), with the
+                                                // same footprint as the floating pill, and goes through
+                                                // the same coalescing click handler. It falls back to a
+                                                // solid pill when Liquid Glass is off or pre-S.
+                                                SukisuLiquidNavBar(
+                                                    items = navigationItems,
+                                                    // "Stock colours instead of Liquid Glass" draws the bar with no glass.
+                                                    backdrop = liquidGlassBackdrop.takeIf { !compactControlsStockColor },
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                start = navBarHorizontalPadding,
+                                                                end = navBarHorizontalPadding,
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ).height(navVisibleHeight),
+                                                    isSelected = { screen ->
+                                                        // Optimistic selection: the tapped or pending tab is
+                                                        // highlighted from the tap frame; otherwise the real
+                                                        // back-stack hierarchy decides.
+                                                        optimisticTabRoute?.let { it == screen.route }
+                                                            ?: (
+                                                                navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                                    true
+                                                                )
+                                                    },
+                                                    onItemClick = handlePrimaryNavigationClick,
+                                                )
+                                            } else {
+                                                FloatingNavigationToolbar(
+                                                    items = navigationItems,
+                                                    pureBlack = pureBlack,
+                                                    miniPlayerProximityProvider = navigationProximityProvider,
+                                                    style = navigationBarStyle,
+                                                    frostedBlur = navigationBarFrostedBlur,
+                                                    tintFrostedBlur = navigationBarTintFrostedBlur,
+                                                    frostedBackdrop = navBarFrostedBackdrop,
+                                                    liquidGlass = liquidGlassEnabled && liquidGlassNavBarEnabled && !disableBlur && !compactControlsStockColor,
+                                                    liquidGlassBackdrop = liquidGlassBackdrop,
+                                                    glowStrength = navGlassStrength,
+                                                    modifier =
+                                                        Modifier
+                                                            .align(Alignment.BottomCenter)
+                                                            .padding(
+                                                                start = navBarHorizontalPadding,
+                                                                end = navBarHorizontalPadding,
+                                                                bottom = bottomInset + floatingBarsBottomPadding,
+                                                            ).height(navVisibleHeight),
+                                                    isSelected = { screen ->
+                                                        // Optimistic selection: the tapped or pending tab is
+                                                        // highlighted from the tap frame; otherwise the real
+                                                        // back-stack hierarchy decides.
+                                                        optimisticTabRoute?.let { it == screen.route }
+                                                            ?: (
+                                                                navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
+                                                                    true
+                                                                )
+                                                    },
+                                                    onItemClick = handlePrimaryNavigationClick,
+                                                    onSearchItemDoubleClick = {
+                                                        searchSource = SearchSource.ONLINE
+                                                        openSearch()
+                                                    },
+                                                )
+                                            }
+                                        }
+
+                                        // The round buttons share the slim mini player's centre line. Animated so
+                                        // the row glides with the sheet when the tab bar comes or goes.
+                                        val compactRowBottom by animateDpAsState(
+                                            targetValue =
+                                                bottomInset + compactMiniPlayerTop -
+                                                    (MiniPlayerCompactHeight + CompactControlSize) / 2,
+                                            animationSpec = if (disableAnimations) snap() else BottomSheetAnimationSpec,
+                                            label = "compactRowBottom",
+                                        )
+                                        // Boolean gate only: the fraction itself is read in graphicsLayer, so the
+                                        // spring does not recompose this scope every frame.
+                                        // Keyed: rememberBottomSheetState hands out a new state when
+                                        // its collapsed bound changes, and an unkeyed derivedStateOf
+                                        // would keep reading the old one.
+                                        val compactRowVisible by remember(playerBottomSheetState) {
+                                            derivedStateOf {
+                                                bottomUiCompactFractionState.value *
+                                                    (1f - playerBottomSheetState.progress.coerceIn(0f, 1f)) > 0.01f
+                                            }
+                                        }
+                                        if (compactRowVisible) {
+                                            // The circles stand in for the tab bar, so they are glass only when the
+                                            // tab bar would be; otherwise they are solid Material 3 surfaces.
+                                            // The SukiSU style is a glass bar by definition, so its circles qualify too.
+                                            val compactBackdrop =
+                                                liquidGlassBackdrop.takeIf {
+                                                    (liquidGlassNavBarEnabled || isSukisuNavBar) && !compactControlsStockColor
+                                                }
+                                            val compactGlow = if (compactBackdrop != null) navGlassStrength else 0f
+                                            Box(
                                                 modifier =
                                                     Modifier
                                                         .align(Alignment.BottomCenter)
-                                                        .padding(
-                                                            start = navBarHorizontalPadding,
-                                                            end = navBarHorizontalPadding,
-                                                            bottom = bottomInset + floatingBarsBottomPadding,
-                                                        ).height(navVisibleHeight),
-                                                isSelected = { screen ->
-                                                    navBackStackEntry?.destination?.hierarchy?.any { it.route == screen.route } ==
-                                                        true
-                                                },
-                                                onItemClick = { screen, isSelected ->
-                                                    handlePrimaryNavigationClick(screen, isSelected)
-                                                },
-                                                onSearchItemDoubleClick = {
-                                                    searchSource = SearchSource.ONLINE
-                                                    openSearch()
-                                                },
-                                            )
+                                                        .fillMaxWidth()
+                                                        .offset { IntOffset(0, -compactRowBottom.roundToPx()) }
+                                                        .padding(horizontal = navBarHorizontalPadding)
+                                                        .height(CompactControlSize)
+                                                        .graphicsLayer {
+                                                            val rowAlpha =
+                                                                bottomUiCompactFractionState.value *
+                                                                    (1f - playerBottomSheetState.progress.coerceIn(0f, 1f))
+                                                            alpha = rowAlpha
+                                                            translationY = (1f - rowAlpha) * (CompactControlSize + 8.dp).toPx()
+                                                        },
+                                            ) {
+                                                CompactControlCircle(
+                                                    iconRes =
+                                                        if (compactLeftCircleIsLibrary) {
+                                                            Screens.Library.iconIdActive
+                                                        } else {
+                                                            Screens.Home.iconIdActive
+                                                        },
+                                                    contentDescription =
+                                                        stringResource(
+                                                            if (compactLeftCircleIsLibrary) {
+                                                                Screens.Library.titleId
+                                                            } else {
+                                                                Screens.Home.titleId
+                                                            },
+                                                        ),
+                                                    onClick = {
+                                                        requestTab(
+                                                            if (compactLeftCircleIsLibrary) Screens.Library.route else Screens.Home.route,
+                                                            true,
+                                                        )
+                                                    },
+                                                    backdrop = compactBackdrop,
+                                                    glowStrength = compactGlow,
+                                                    modifier = Modifier.align(Alignment.CenterStart),
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                )
+                                                if (compactSearchCircleVisible) {
+                                                    CompactControlCircle(
+                                                        iconRes = Screens.Search.iconIdInactive,
+                                                        contentDescription = stringResource(Screens.Search.titleId),
+                                                        onClick = {
+                                                            if (compactRouteHasInPageSearch) {
+                                                                navController.currentBackStackEntry
+                                                                    ?.savedStateHandle
+                                                                    ?.set("openInPageSearch", true)
+                                                            } else {
+                                                                handlePrimaryNavigationClick(Screens.Search)
+                                                            }
+                                                        },
+                                                        backdrop = compactBackdrop,
+                                                        glowStrength = compactGlow,
+                                                        modifier = Modifier.align(Alignment.CenterEnd),
+                                                    )
+                                                }
+                                            }
                                         }
                                     }
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             ) {
+                                // The frosted layer is recorded only while a surface on screen
+                                // samples it: the bottom bar (on screen while its animated height is
+                                // above zero) or rail with a frosted treatment, or a present frosted
+                                // mini player. The backdrop object itself stays allocated so the
+                                // pill colours that key off its availability do not flip.
+                                val recordFrostedBackdrop by remember(
+                                    navBarFrostedBackdrop,
+                                    playerBottomSheetState,
+                                    navigationBarFrostedBlur,
+                                    navigationBarTintFrostedBlur,
+                                    miniPlayerBgStyle,
+                                    useRail,
+                                    isSukisuNavBar,
+                                ) {
+                                    derivedStateOf {
+                                        val railOnScreen =
+                                            useRail &&
+                                                (railVisibleState.currentState || railVisibleState.targetState)
+                                        val navBarFrosted =
+                                            (navigationBarFrostedBlur || navigationBarTintFrostedBlur) &&
+                                                (railOnScreen || (!isSukisuNavBar && bottomNavigationBarHeightState.value > 0.dp))
+                                        val miniPlayerFrosted =
+                                            miniPlayerBgStyle == MiniPlayerBackgroundStyle.FROSTED &&
+                                                !playerBottomSheetState.isDismissed
+                                        navBarFrostedBackdrop != null &&
+                                            !playerBottomSheetState.isExpanded &&
+                                            (navBarFrosted || miniPlayerFrosted)
+                                    }
+                                }
+                                // In predictive mode only real bottom-nav tabs fade; Settings and its
+                                // sub-pages are pushed screens and take the right-edge slides. The
+                                // original mode keeps Settings top-level with its fade/scale hop.
+                                val predictiveTransitions = backAnimationStyle == BackAnimationStyle.PREDICTIVE
+                                val transitionTabRoutes = if (predictiveTransitions) tabRoutes else topLevelScreens
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -3126,21 +3651,33 @@ class MainActivity : ComponentActivity() {
                                                 else -> Screens.Home.route
                                             }
                                         },
+                                    // Opening Settings from a tab is a destination change, not a tab switch:
+                                    // the old 90 ms cut-out exit left the header and page popping away.
                                     enterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
-                                        } else if (initialState.destination.route in topLevelScreens &&
-                                            targetState.destination.route in topLevelScreens
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in transitionTabRoutes
                                         ) {
-                                            // Material "fade through" for bottom-nav switches: the
-                                            // incoming screen fades in slightly delayed while gently
-                                            // scaling up from 92%, so Home↔Search↔Library feels animated
-                                            // instead of an imperceptible straight crossfade.
-                                            fadeIn(tween(220, delayMillis = 90)) +
-                                                scaleIn(
-                                                    animationSpec = tween(220, delayMillis = 90),
-                                                    initialScale = 0.92f,
-                                                )
+                                            // Predictive back: pushed screens arrive from the right
+                                            // edge; navigation-compose 2.9 scrubs this slide with the
+                                            // gesture on the way back.
+                                            slideInHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                initialOffsetX = { it },
+                                            ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
+                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopEnter
+                                        } else if (initialState.destination.route in transitionTabRoutes &&
+                                            targetState.destination.route in transitionTabRoutes
+                                        ) {
+                                            // Short, overlap-free fade-through for bottom-nav switches:
+                                            // no delay and no scale. The delayed 220 ms scale-in left a
+                                            // blank gap, re-rasterized text every scale step, and a tap
+                                            // burst kept restarting it. tween() follows the system
+                                            // animator scale.
+                                            fadeIn(tween(150))
                                         } else {
                                             fadeIn(tween(250)) + slideInHorizontally { it / 2 }
                                         }
@@ -3148,8 +3685,20 @@ class MainActivity : ComponentActivity() {
                                     exitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
-                                        } else if (initialState.destination.route in topLevelScreens &&
-                                            targetState.destination.route in topLevelScreens
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in transitionTabRoutes
+                                        ) {
+                                            // The screen under a pushed one retreats a third of the
+                                            // width (parallax) instead of only fading.
+                                            slideOutHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                targetOffsetX = { -it / 3 },
+                                            ) + fadeOut(tween(200, easing = LinearOutSlowInEasing))
+                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopExit
+                                        } else if (initialState.destination.route in transitionTabRoutes &&
+                                            targetState.destination.route in transitionTabRoutes
                                         ) {
                                             fadeOut(tween(90))
                                         } else {
@@ -3159,17 +3708,26 @@ class MainActivity : ComponentActivity() {
                                     popEnterTransition = {
                                         if (disableAnimations) {
                                             fadeIn(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            targetState.destination.route !in transitionTabRoutes
+                                        ) {
+                                            // Revealed pushed screens return from their parallax
+                                            // position; popping back to a tab keeps the fade below.
+                                            slideInHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                initialOffsetX = { -it / 3 },
+                                            ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
+                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopEnter
                                         } else if ((
-                                                initialState.destination.route in topLevelScreens ||
+                                                initialState.destination.route in transitionTabRoutes ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
                                             ) &&
-                                            targetState.destination.route in topLevelScreens
+                                            targetState.destination.route in transitionTabRoutes
                                         ) {
-                                            fadeIn(tween(220, delayMillis = 90)) +
-                                                scaleIn(
-                                                    animationSpec = tween(220, delayMillis = 90),
-                                                    initialScale = 0.92f,
-                                                )
+                                            // Matches the enter spec: short fade, no delay, no scale.
+                                            fadeIn(tween(150))
                                         } else {
                                             fadeIn(tween(250)) + slideInHorizontally { -it / 2 }
                                         }
@@ -3177,11 +3735,23 @@ class MainActivity : ComponentActivity() {
                                     popExitTransition = {
                                         if (disableAnimations) {
                                             fadeOut(tween(0))
+                                        } else if (
+                                            backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
+                                            initialState.destination.route !in transitionTabRoutes
+                                        ) {
+                                            // The pushed screen leaves through the right edge it came
+                                            // from — the transition navigation scrubs with the finger.
+                                            slideOutHorizontally(
+                                                animationSpec = tween(360, easing = FastOutSlowInEasing),
+                                                targetOffsetX = { it },
+                                            ) + fadeOut(tween(280, easing = LinearOutSlowInEasing))
+                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                            SettingsHopExit
                                         } else if ((
-                                                initialState.destination.route in topLevelScreens ||
+                                                initialState.destination.route in transitionTabRoutes ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
                                             ) &&
-                                            targetState.destination.route in topLevelScreens
+                                            targetState.destination.route in transitionTabRoutes
                                         ) {
                                             fadeOut(tween(90))
                                         } else {
@@ -3201,8 +3771,10 @@ class MainActivity : ComponentActivity() {
                                                 },
                                             ).then(
                                                 // Frosted nav bar: capture the app content into a
-                                                // layer each frame so the bar can draw it blurred.
-                                                if (navBarFrostedBackdrop != null) {
+                                                // layer each frame so the bar can draw it blurred,
+                                                // only while recordFrostedBackdrop says a visible
+                                                // surface samples it.
+                                                if (recordFrostedBackdrop && navBarFrostedBackdrop != null) {
                                                     Modifier
                                                         .onGloballyPositioned { coordinates ->
                                                             navBarFrostedBackdrop.contentOffsetInRoot =
@@ -3217,7 +3789,7 @@ class MainActivity : ComponentActivity() {
                                                     Modifier
                                                 },
                                             ).then(
-                                                if (liquidGlassBackdrop != null && !isPlayerLyricsFullScreen) {
+                                                if (liquidGlassBackdrop != null && !isPlayerLyricsFullScreen && !playerBottomSheetState.isExpanded) {
                                                     // Suspend the outer app-wide layerBackdrop while the
                                                     // full-screen lyrics overlay is open. The overlay is
                                                     // opaque, so nothing visible samples this backdrop
@@ -3231,33 +3803,64 @@ class MainActivity : ComponentActivity() {
                                                 },
                                             ).nestedScroll(
                                                 topAppBarScrollBehavior.nestedScrollConnection,
+                                            ).then(
+                                                if (scrollDrivesBottomUi) {
+                                                    Modifier.nestedScroll(navigationBarScrollConnection)
+                                                } else {
+                                                    Modifier
+                                                },
                                             ),
                                 ) {
                                     navigationBuilder(
                                         navController,
                                         topAppBarScrollBehavior,
-                                        { latestVersionName },
+                                        {
+                                            if (latestUpdateChannel == effectiveChannel && latestUpdateOfferRevision == channelRevision) {
+                                                latestVersionName
+                                            } else BuildConfig.VERSION_NAME
+                                        },
                                         disableAnimations,
-                                        onClearUpdateBadge = { latestVersionName = BuildConfig.VERSION_NAME },
+                                        onClearUpdateBadge = {
+                                            latestVersionName = BuildConfig.VERSION_NAME
+                                            latestUpdateOffer = null
+                                        },
                                         onSearchQuery = onSearch,
                                         onVoiceSearch = launchVoiceSearch,
                                         homeListState = homeListState,
                                         searchListState = searchListState,
                                         homeScrollConnection = homeScrollBehavior.nestedScrollConnection,
                                         searchScrollConnection = searchScrollBehavior.nestedScrollConnection,
-                                        onlineSearchSort = onlineSearchSort,
+                                        onlineSearchSort = { onlineSearchSort },
+                                        backAnimationStyle = { backAnimationStyle },
                                     )
                                 }
                             }
                         }
 
-                        BackHandler(enabled = playerBottomSheetState.isExpanded && !isPlayerLyricsFullScreen && !aodModeEnabled) {
-                            playerBottomSheetState.collapseSoft()
+                        // Player back ownership (see playerBackController): these two handlers are
+                        // composed after the NavHost, so they register after every handler inside
+                        // the player sheet and win the gesture whenever enabled. Only one is
+                        // enabled at a time; when neither is, back belongs to the rest of the app.
+                        // An open queue/lyrics/style page (SUB_PAGE) closes before the sheet does.
+                        PredictiveStyleBackHandler(
+                            backState = playerSheetPredictiveBack,
+                            enabled = playerBackController.backTarget == PlayerBackTarget.SHEET,
+                            onBack = playerBottomSheetState::collapseSoft,
+                        )
+
+                        BackHandler(
+                            enabled = playerBackController.backTarget == PlayerBackTarget.SUB_PAGE,
+                        ) {
+                            playerBackController.routeBack()
                         }
 
                         BottomSheetMenu(
                             state = LocalMenuState.current,
-                            modifier = Modifier.align(Alignment.BottomCenter),
+                            // Above the maximized player sheet, or the menu opens underneath it.
+                            modifier =
+                                Modifier
+                                    .align(Alignment.BottomCenter)
+                                    .zIndex(100f),
                         )
 
                         BottomSheetPage(
@@ -3467,7 +4070,7 @@ class MainActivity : ComponentActivity() {
         }
 
         // Listen Together invite links: the share URL from the room screen
-        // (https://vivimusic-listen-together.onrender.com/listen?code=X) and
+        // (https://<server host>/listen?code=X, see ListenTogetherServers.inviteHosts) and
         // the direct custom scheme (archivetune://listen?code=X) — joins the
         // room with the stored username.
         val listenCode =
@@ -3477,12 +4080,16 @@ class MainActivity : ComponentActivity() {
         val isListenLink =
             uri.pathSegments.firstOrNull() == "listen" ||
                 uri.host?.equals("listen", ignoreCase = true) == true ||
-                uri.host?.equals("vivimusic-listen-together.onrender.com", ignoreCase = true) == true
+                ListenTogetherServers.isInviteHost(uri.host)
         if (!listenCode.isNullOrBlank() && isListenLink) {
             val username =
                 dataStore.get(moe.rukamori.archivetune.constants.ListenTogetherUsernameKey, "")
                     .ifBlank { "Guest" }
-            listenTogetherManager.joinRoom(listenCode, username)
+            if (!listenTogetherManager.joinRoom(listenCode, username)) {
+                Toast
+                    .makeText(this, R.string.listen_together_request_in_progress, Toast.LENGTH_LONG)
+                    .show()
+            }
             return
         }
 
@@ -3833,3 +4440,22 @@ private fun Context.isTvDevice(): Boolean {
         packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK) ||
         packageManager.hasSystemFeature(PackageManager.FEATURE_TELEVISION)
 }
+
+private val NavigationBarHideScrollThreshold = 14.dp
+
+private fun isSettingsHop(
+    from: String?,
+    to: String?,
+): Boolean {
+    fun isTab(route: String?) = Screens.MainScreens.any { it.route == route }
+    return (from == "settings" && isTab(to)) || (to == "settings" && isTab(from))
+}
+
+private val SettingsHopEnter =
+    fadeIn(tween(260, delayMillis = 60, easing = FastOutSlowInEasing)) +
+        scaleIn(
+            animationSpec = tween(260, delayMillis = 60, easing = FastOutSlowInEasing),
+            initialScale = 0.94f,
+        )
+
+private val SettingsHopExit = fadeOut(tween(220, easing = LinearOutSlowInEasing))

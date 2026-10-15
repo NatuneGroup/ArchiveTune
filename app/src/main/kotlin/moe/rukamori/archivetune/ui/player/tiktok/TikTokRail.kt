@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 /*
  * TikTok player style — the action rail.
@@ -45,7 +41,6 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -60,18 +55,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
@@ -86,9 +78,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
@@ -96,6 +86,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.ui.utils.optionalBlur
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
@@ -108,11 +100,8 @@ import moe.rukamori.archivetune.ui.component.BottomSheetState
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
-import moe.rukamori.archivetune.ui.utils.formatCompactCount
-import moe.rukamori.archivetune.utils.isLocalMediaId
 import moe.rukamori.archivetune.utils.shareLocalAudio
 import timber.log.Timber
-import java.util.concurrent.ConcurrentHashMap
 
 /** TikTok's brand red, the same one the reference feed uses for its active heart. */
 internal val TIKTOK_RED = Color(0xFFFE2C55)
@@ -509,13 +498,15 @@ internal fun rememberTikTokLikeAction(
     }
 }
 
-private fun reportLikeFailure(
+private suspend fun reportLikeFailure(
     error: Throwable,
     message: String,
     context: Context,
 ) {
     Timber.w(error, message)
-    Toast.makeText(context, R.string.error_unknown, Toast.LENGTH_SHORT).show()
+    withContext(Dispatchers.Main) {
+        Toast.makeText(context, R.string.error_unknown, Toast.LENGTH_SHORT).show()
+    }
 }
 
 /**
@@ -583,38 +574,6 @@ private fun TikTokLikeRailButton(
 }
 
 /**
- * The TikTok-style count label under a rail icon: small white text with the
- * same drop-shadow treatment as [TikTokRailGlyph] (a blurred, slightly
- * offset dark copy behind the crisp one), so the label stays legible over
- * light artwork exactly like the glyphs do.
- */
-@Composable
-private fun TikTokRailCountLabel(label: String) {
-    Box {
-        Text(
-            text = label,
-            color = Color.Black.copy(alpha = 0.35f),
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            modifier =
-                Modifier
-                    .align(Alignment.Center)
-                    .offset(y = 1.dp)
-                    .blur(2.dp),
-        )
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            modifier = Modifier.align(Alignment.Center),
-        )
-    }
-}
-
-/**
  * One rail action: a plain glyph, no pills, no glass — the 48dp touch target
  * meets accessibility guidance.
  */
@@ -653,7 +612,7 @@ private fun TikTokRailGlyph(
                 Modifier
                     .fillMaxSize()
                     .offset(y = 1.dp)
-                    .blur(2.dp),
+                    .optionalBlur(2.dp),
         )
         Icon(
             painter = painterResource(iconRes),

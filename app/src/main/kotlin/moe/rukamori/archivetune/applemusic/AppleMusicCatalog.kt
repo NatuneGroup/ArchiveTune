@@ -1,19 +1,17 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
 
+
+
 package moe.rukamori.archivetune.applemusic
 
+import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
+import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -24,6 +22,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.util.concurrent.TimeUnit
+import moe.rukamori.archivetune.utils.withAppProxy
 
 object AppleMusicCatalog {
     private const val SEARCH_ENDPOINT = "https://itunes.apple.com/search"
@@ -31,6 +30,7 @@ object AppleMusicCatalog {
     private val client =
         OkHttpClient
             .Builder()
+            .withAppProxy()
             .connectTimeout(6, TimeUnit.SECONDS)
             .readTimeout(10, TimeUnit.SECONDS)
             .callTimeout(15, TimeUnit.SECONDS)
@@ -62,7 +62,11 @@ object AppleMusicCatalog {
                 val responses =
                     entities
                         .map { entity ->
-                            async { runCatching { request(trimmed, entity, limit, offset) }.getOrNull() }
+                            async {
+                                runCatching { request(trimmed, entity, limit, offset) }
+                                    .onFailure { it.rethrowIfAudioSourceCancelled() }
+                                    .getOrNull()
+                            }
                         }.awaitAll()
 
                 val tracks = responses.getOrNull(0)?.toTracks().orEmpty()
@@ -84,6 +88,7 @@ object AppleMusicCatalog {
             val trimmed = query.trim()
             if (trimmed.isEmpty()) return@withContext emptyList()
             runCatching { request(trimmed, "song", limit, 0) }
+                .onFailure { it.rethrowIfAudioSourceCancelled() }
                 .getOrNull()
                 ?.toTracks()
                 .orEmpty()
@@ -111,7 +116,7 @@ object AppleMusicCatalog {
                 .header("Accept", "application/json")
                 .build()
 
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
             if (!response.isSuccessful) error("Apple Music catalog search failed: HTTP ${response.code}")
             val body = response.body?.string().orEmpty()
             if (body.isBlank()) error("Apple Music catalog search returned an empty body")

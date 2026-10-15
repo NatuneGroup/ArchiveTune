@@ -6,13 +6,6 @@
  */
 
 /*
- * ArchiveTune (2026)
- * © Rukamori — github.com/rukamori
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
  * SimpMusic player style.
  *
  * The layout is SimpMusic's default now-playing screen — its `NowPlayingContentSpotify`
@@ -51,14 +44,10 @@
 
 package moe.rukamori.archivetune.ui.player.simpmusic
 
-import androidx.activity.compose.BackHandler
+import moe.rukamori.archivetune.ui.component.PlayerInlinePageBackHandler
 import moe.rukamori.archivetune.ui.utils.smoothFadingEdge
 import androidx.compose.ui.graphics.luminance
-import moe.rukamori.archivetune.ui.player.viewportEdgeFade
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.draw.clipToBounds
 import moe.rukamori.archivetune.ui.menu.AddToPlaylistDialog
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils
@@ -83,9 +72,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.MarqueeAnimationMode
 import androidx.compose.foundation.background
-import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -142,7 +129,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -166,7 +156,9 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.playback.PlayerConnection
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.BottomSheetState
-import moe.rukamori.archivetune.ui.component.LyricsEnhanced
+import moe.rukamori.archivetune.ui.player.SelectedLyrics
+import moe.rukamori.archivetune.ui.player.LocalPlayerPresentation
+import moe.rukamori.archivetune.ui.player.ordinarySleeve
 import moe.rukamori.archivetune.ui.player.bitchord.SweptLyricLine
 import moe.rukamori.archivetune.ui.player.bitchord.UNSUNG_ALPHA_STRIP
 import moe.rukamori.archivetune.ui.player.bitchord.rememberLyricClock
@@ -174,12 +166,18 @@ import moe.rukamori.archivetune.ui.player.bitchord.toBitChordLyrics
 import moe.rukamori.archivetune.ui.component.MarqueeText
 import moe.rukamori.archivetune.ui.component.MenuState
 import moe.rukamori.archivetune.ui.menu.PlayerMenu
+import moe.rukamori.archivetune.ui.player.InlineLyricLinesPerPage
+import moe.rukamori.archivetune.ui.player.InlineLyricTimedWord
 import moe.rukamori.archivetune.ui.player.LosslessOrStats
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkIndexAt
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkText
+import moe.rukamori.archivetune.ui.player.inlineLyricChunkWordText
+import moe.rukamori.archivetune.ui.player.rememberMeasuredInlineLyricPages
 import moe.rukamori.archivetune.ui.player.rememberInlineLyricLines
+import moe.rukamori.archivetune.ui.player.playerSeekDoubleTap
 import moe.rukamori.archivetune.ui.utils.ShowMediaInfo
 import moe.rukamori.archivetune.ui.utils.highRes
 import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import java.util.Locale
 
 /** The dark ground the palette gradient fades into — SimpMusic's own backdrop colour. */
@@ -268,6 +266,7 @@ fun SimpMusicPlayerContent(
     onSeekFinished: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val presentation = LocalPlayerPresentation.current
     val density = LocalDensity.current
     val queueWindows by playerConnection.queueWindows.collectAsStateWithLifecycle()
     val currentWindowIndex by playerConnection.currentWindowIndex.collectAsStateWithLifecycle()
@@ -308,13 +307,13 @@ fun SimpMusicPlayerContent(
     }
 
     var queueOpen by rememberSaveable { mutableStateOf(false) }
-    BackHandler(enabled = queueOpen) { queueOpen = false }
+    PlayerInlinePageBackHandler(enabled = queueOpen) { queueOpen = false }
 
     // SimpMusic reads its lyrics on its own full-screen sheet rather than the shared LyricsScreen,
     // so the style stays self-contained the way bitchord/ and tiktok/ do.
     var lyricsFullscreenOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(mediaMetadata.id) { lyricsFullscreenOpen = false }
-    BackHandler(enabled = lyricsFullscreenOpen) { lyricsFullscreenOpen = false }
+    PlayerInlinePageBackHandler(enabled = lyricsFullscreenOpen) { lyricsFullscreenOpen = false }
 
     // Measured, not guessed — see the file header. Held in dp so the gap survives a rotation.
     // Only the two rows whose height depends on their CONTENT are measured; the artwork is derived
@@ -331,7 +330,15 @@ fun SimpMusicPlayerContent(
         // plus the two rows and their minimum gaps, in which case the square gives way rather than
         // the controls sliding off the bottom. SimpMusic sizes the artwork on width alone and
         // clips the controls on a short screen; there is no reason to reproduce that.
-        val lyricBand = if (lyricLines.isEmpty()) 0.dp else LyricBandHeight
+        val lyricBand =
+            if (lyricLines.isEmpty()) {
+                0.dp
+            } else {
+                val twoLineHeight = with(density) {
+                    MaterialTheme.typography.labelMedium.resolvedLineHeight().toDp() * InlineLyricLinesPerPage
+                }
+                maxOf(LyricBandHeight, twoLineHeight)
+            }
         val artworkSide =
             (maxWidth * ARTWORK_WIDTH_FRACTION)
                 .coerceAtMost(screenHeight - topBarHeight - infoHeight - lyricBand - MinGap * 2)
@@ -345,8 +352,10 @@ fun SimpMusicPlayerContent(
             modifier =
                 Modifier
                     .fillMaxSize()
-                    .background(Backdrop)
-                    .simpMusicHeroWash(startColor, screenHeightPx)
+                    .then(
+                        if (presentation.sharedBackground) Modifier
+                        else Modifier.background(Backdrop).simpMusicHeroWash(startColor, screenHeightPx),
+                    )
                     // Gated on the sheet being expanded, so a drag on the collapsed mini-player is
                     // never eaten by this. Up-drags at the top still reach the sheet through the
                     // nested-scroll connection the caller attached.
@@ -411,7 +420,6 @@ fun SimpMusicPlayerContent(
                             sliderPosition = sliderPosition,
                             position = position,
                             duration = duration,
-                            isLoading = isLoading,
                             currentFormat = currentFormat,
                             onSeek = onSeek,
                             onSeekFinished = onSeekFinished,
@@ -655,6 +663,7 @@ private fun SimpMusicArtworkPager(
     var pendingSeek by remember { mutableStateOf<Int?>(null) }
     val liveIndex = rememberUpdatedState(currentWindowIndex)
     val liveQueue = rememberUpdatedState(queueWindows)
+    val animationsDisabled = moe.rukamori.archivetune.LocalAnimationsDisabled.current
 
     // Feed → engine. Keyed only on the pager so the collector is never restarted: a restarted
     // snapshotFlow re-emits the settled page immediately, which on an engine-driven advance is the
@@ -685,14 +694,14 @@ private fun SimpMusicArtworkPager(
         }
         if (currentWindowIndex !in queueWindows.indices) return@LaunchedEffect
         if (pagerState.currentPage == currentWindowIndex) return@LaunchedEffect
-        if (kotlin.math.abs(currentWindowIndex - pagerState.currentPage) == 1) {
+        if (!animationsDisabled && kotlin.math.abs(currentWindowIndex - pagerState.currentPage) == 1) {
             pagerState.animateScrollToPage(currentWindowIndex)
         } else {
             pagerState.scrollToPage(currentWindowIndex)
         }
     }
 
-    HorizontalPager(state = pagerState, beyondViewportPageCount = 1, modifier = modifier) { page ->
+    HorizontalPager(state = pagerState, beyondViewportPageCount = 1, userScrollEnabled = LocalPlayerPresentation.current.swipeArtwork, modifier = modifier) { page ->
         SimpMusicArtwork(
             metadata = queueWindows.getOrNull(page)?.mediaItem?.metadata ?: fallback,
             topInset = topInset,
@@ -716,7 +725,7 @@ private fun SimpMusicArtwork(
             model = metadata.thumbnailUrl?.highRes(),
             contentDescription = null,
             contentScale = ContentScale.Crop,
-            modifier = Modifier.size(side).clip(RoundedCornerShape(8.dp)),
+            modifier = Modifier.size(side).ordinarySleeve(LocalPlayerPresentation.current.hideSleeve).clip(RoundedCornerShape(LocalPlayerPresentation.current.radius(8.dp))).playerSeekDoubleTap(),
         )
     }
 }
@@ -741,11 +750,14 @@ private fun SimpMusicLyricLine(
     val audioAdvancing by playerConnection.isAudioAdvancing.collectAsStateWithLifecycle()
 
     var positionMs by remember(lines) { mutableLongStateOf(0L) }
-    LaunchedEffect(lines, active) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lines, active, lifecycleOwner) {
         if (lines.isEmpty() || !active) return@LaunchedEffect
-        while (true) {
-            positionMs = playerConnection.player.currentPosition
-            delay(200L)
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                positionMs = playerConnection.player.currentPosition
+                delay(200L)
+            }
         }
     }
 
@@ -760,35 +772,77 @@ private fun SimpMusicLyricLine(
     val style =
         MaterialTheme.typography.labelMedium.copy(textAlign = TextAlign.Center)
 
-    Box(modifier = modifier, contentAlignment = Alignment.Center) {
-        if (current != null && current.isWordSynced) {
-            SweptLyricLine(
-                line = current,
-                clock = clock,
-                style = style,
-                dimAlpha = UNSUNG_ALPHA_STRIP,
-                maxLines = 2,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = Gutter),
-            )
-        } else {
-            // Whole-line highlight is all a line-synced provider can support; the crossfade is what
-            // stands in for the sweep there.
-            Crossfade(
-                targetState = current?.text.orEmpty(),
-                animationSpec = tween(300),
-                label = "simpMusicLyricLine",
-            ) { text ->
-                Text(
-                    text = text,
+    BoxWithConstraints(
+        modifier = modifier.padding(horizontal = Gutter),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (current != null) {
+            val words =
+                remember(current.words) {
+                    current.words.map { word ->
+                        InlineLyricTimedWord(
+                            text = word.text,
+                            startMs = word.startMs,
+                            endMs = word.endMs,
+                        )
+                    }
+                }
+            val cueEndMs =
+                sweptLines.getOrNull(index + 1)?.timeMs
+                    ?: current.sungUntilMs?.takeIf { it > current.timeMs }
+                    ?: current.words.lastOrNull()?.endMs?.takeIf { it > current.timeMs }
+                    ?: playerConnection.player.duration.takeIf { it > current.timeMs }
+                    ?: current.timeMs + 4_000L
+            val pages =
+                rememberMeasuredInlineLyricPages(
+                    text = current.text,
+                    words = words,
+                    linesPerPage = InlineLyricLinesPerPage,
+                    cueStartMs = current.timeMs,
+                    cueEndMs = cueEndMs,
                     style = style,
-                    color = Color.White,
-                    // Wraps rather than marquees. A sideways-scrolling marquee is harder to read
-                    // than a second line and unlike every reference player; two lines is what the
-                    // band above is sized for.
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = Gutter),
+                    maxWidth = maxWidth,
                 )
+            val chunk = pages.chunks.getOrNull(inlineLyricChunkIndexAt(pages.chunks, clock.longValue))
+            if (chunk != null) {
+                val pageLine =
+                    remember(current, pages, chunk) {
+                        val pageWords =
+                            pages.wordRanges.mapNotNull { wordRange ->
+                                val word = current.words.getOrNull(wordRange.wordIndex) ?: return@mapNotNull null
+                                val pageWordText = inlineLyricChunkWordText(current.text, chunk, wordRange) ?: return@mapNotNull null
+                                word.copy(text = pageWordText)
+                            }
+                        current.copy(
+                            timeMs = chunk.startMs,
+                            text = inlineLyricChunkText(current.text, chunk),
+                            words = pageWords,
+                        )
+                    }
+                if (current.isWordSynced) {
+                    SweptLyricLine(
+                        line = pageLine,
+                        clock = clock,
+                        style = style,
+                        dimAlpha = UNSUNG_ALPHA_STRIP,
+                        minLines = InlineLyricLinesPerPage,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                } else {
+                    Crossfade(
+                        targetState = pageLine.text,
+                        animationSpec = tween(300),
+                        label = "simpMusicLyricLine",
+                    ) { text ->
+                        Text(
+                            text = text,
+                            style = style,
+                            color = Color.White,
+                            minLines = InlineLyricLinesPerPage,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
             }
         }
     }
@@ -873,7 +927,6 @@ private fun SimpMusicProgressRow(
     sliderPosition: Long?,
     position: Long,
     duration: Long,
-    isLoading: Boolean,
     currentFormat: FormatEntity?,
     onSeek: (Long) -> Unit,
     onSeekFinished: () -> Unit,
@@ -920,22 +973,27 @@ private fun SimpMusicProgressRow(
             modifier = Modifier.fillMaxWidth(),
         )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = clockTime(shown),
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.55f),
-                modifier = Modifier.weight(1f),
-            )
+            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = clockTime(shown),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.55f),
+                )
+            }
             // SimpMusic keeps this middle slot for its "Crossfading" shimmer. ArchiveTune knows
             // what it is actually streaming, so the slot carries that instead of sitting empty.
-            LosslessOrStats(isLoading = isLoading, format = currentFormat)
-            Text(
-                text = if (hasDuration) clockTime(duration) else "",
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color.White.copy(alpha = 0.55f),
-                textAlign = TextAlign.End,
+            if (LocalPlayerPresentation.current.showCodec) LosslessOrStats(format = currentFormat)
+            Row(
                 modifier = Modifier.weight(1f),
-            )
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (hasDuration) clockTime(duration) else "",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.55f),
+                )
+            }
         }
     }
 }
@@ -1212,16 +1270,12 @@ private fun SimpMusicLyricsCard(
                         modifier = Modifier.fillMaxSize(),
                     )
                 } else {
-                    // Every other mode renders as Enhanced here on purpose: the card is a 300dp
-                    // preview, and the karaoke sweep the other renderers are built around needs a
-                    // full screen to read as anything but flicker.
-                    LyricsEnhanced(
+                    SelectedLyrics(
                         sliderPositionProvider = lyricsPositionProvider,
                         lyricsSyncOffset = 0,
                         modifier = Modifier.fillMaxSize(),
                         textColorOverride = Color.White,
                         textSizeOverride = CARD_LYRICS_SIZE_SP,
-                        spotifyStyle = lyricsMode == LyricsMode.SPOTIFY,
                     )
                 }
             }

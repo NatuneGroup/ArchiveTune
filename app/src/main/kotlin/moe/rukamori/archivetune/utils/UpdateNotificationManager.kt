@@ -23,6 +23,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,10 +35,9 @@ import moe.rukamori.archivetune.MainActivity
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.EnableUpdateNotificationKey
 import moe.rukamori.archivetune.constants.LastNotifiedVersionKey
+import moe.rukamori.archivetune.constants.LastUpdateCheckChannelKey
 import moe.rukamori.archivetune.constants.LastUpdateCheckKey
 import moe.rukamori.archivetune.constants.UpdateChannel
-import moe.rukamori.archivetune.constants.UpdateChannelKey
-import moe.rukamori.archivetune.defaultUpdateChannel
 import java.util.concurrent.TimeUnit
 
 object UpdateNotificationManager {
@@ -119,66 +119,63 @@ object UpdateNotificationManager {
 
                 schedulePeriodicUpdateCheck(context)
 
-                val updateChannel =
-                    dataStore.data
-                        .map { UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel) }
-                        .first()
-
-                val lastCheck = dataStore.data.map { it[LastUpdateCheckKey] ?: 0L }.first()
+                val revision = Updater.selectionRevision
+                val preferences = dataStore.data.first()
+                val updateChannel = Updater.selectedChannel(preferences)
+                val lastCheck = if (preferences[LastUpdateCheckChannelKey] == updateChannel.name) {
+                    preferences[LastUpdateCheckKey] ?: 0L
+                } else 0L
                 val now = System.currentTimeMillis()
-                val checkInterval =
-                    when (updateChannel) {
-                        UpdateChannel.CANARY -> NIGHTLY_CHECK_INTERVAL_MS
-                        UpdateChannel.NIGHTLY -> NIGHTLY_CHECK_INTERVAL_MS
-                        UpdateChannel.STABLE -> STABLE_CHECK_INTERVAL_MS
-                    }
-
+                val checkInterval = when (updateChannel) {
+                    UpdateChannel.NIGHTLY -> NIGHTLY_CHECK_INTERVAL_MS
+                    UpdateChannel.STABLE -> STABLE_CHECK_INTERVAL_MS
+                }
                 if (now - lastCheck < checkInterval) return@launch
-
-                dataStore.edit { it[LastUpdateCheckKey] = now }
-
-                val versionResult =
-                    when (updateChannel) {
-                        UpdateChannel.CANARY -> Updater.getLatestCanaryVersionName()
-                        UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
-                        UpdateChannel.STABLE -> Updater.getLatestVersionName()
-                    }
-
-                versionResult.onSuccess { latestVersion ->
-                    if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                        notifyIfNewVersion(context, latestVersion, updateChannel)
+                if (!Updater.isCurrentSelection(updateChannel, revision)) return@launch
+                dataStore.edit {
+                    it[LastUpdateCheckKey] = now
+                    it[LastUpdateCheckChannelKey] = updateChannel.name
+                }
+                Updater.getLatestRelease(updateChannel).onSuccess { release ->
+                    Updater.eligibleOffer(release, updateChannel)?.let { offer ->
+                        notifyIfNewVersion(context, offer, revision)
                     }
                 }
-            } catch (e: Exception) {
-                // Silently fail
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // An unavailable feed must not disturb playback.
             }
         }
     }
 
-    suspend fun notifyIfNewVersion(
-        context: Context,
-        latestVersion: String,
-        updateChannel: UpdateChannel = UpdateChannel.STABLE,
-    ) {
-        if (!BuildConfig.UPDATER_AVAILABLE) return
-
+    suspend fun notifyIfNewVersion(context: Context, offer: UpdateOffer, revision: Long) {
+        if (!BuildConfig.UPDATER_AVAILABLE ||
+            updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER
+        ) return
         try {
-            val dataStore = context.dataStore
-            val lastNotified = dataStore.data.map { it[LastNotifiedVersionKey] ?: "" }.first()
-
-            if (latestVersion != lastNotified && Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                showUpdateNotification(context, latestVersion, updateChannel)
-                dataStore.edit { it[LastNotifiedVersionKey] = latestVersion }
+            val preferences = context.dataStore.data.first()
+            if (preferences[EnableUpdateNotificationKey] != true ||
+                preferences[LastNotifiedVersionKey] == offer.identity ||
+                !Updater.isCurrentSelection(offer.channel, revision)
+            ) return
+            // Selection invalidation and notification publication share the same short lock.
+            Updater.publishIfCurrent(revision) { showUpdateNotification(context, offer) }
+            context.dataStore.edit {
+                if (Updater.selectionRevision == revision && Updater.selectedChannel(it) == offer.channel) {
+                    it[LastNotifiedVersionKey] = offer.identity
+                }
             }
-        } catch (e: Exception) {
-            // Silently fail
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // Silently fail, retaining the next check's opportunity to notify.
         }
     }
 
     private fun showUpdateNotification(
         context: Context,
-        newVersion: String,
-        updateChannel: UpdateChannel = UpdateChannel.STABLE,
+        offer: UpdateOffer,
     ) {
         createNotificationChannel(context)
 
@@ -195,13 +192,7 @@ object UpdateNotificationManager {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
 
-        val downloadUrl =
-            when (updateChannel) {
-                UpdateChannel.CANARY -> Updater.getLatestCanaryDownloadUrl()
-                UpdateChannel.NIGHTLY -> Updater.getLatestNightlyDownloadUrl()
-                UpdateChannel.STABLE -> Updater.getLatestDownloadUrl()
-            }
-        val downloadIntent = Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl))
+        val downloadIntent = Intent(Intent.ACTION_VIEW, Uri.parse(offer.downloadUrl))
         val downloadPendingIntent =
             PendingIntent.getActivity(
                 context,
@@ -215,7 +206,7 @@ object UpdateNotificationManager {
                 .Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.small_icon)
                 .setContentTitle(context.getString(R.string.update_notification_title))
-                .setContentText(context.getString(R.string.update_notification_text, newVersion))
+                .setContentText(context.getString(R.string.update_notification_text, offer.versionName))
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .setContentIntent(openAppPendingIntent)
                 .setAutoCancel(true)

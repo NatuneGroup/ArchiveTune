@@ -99,11 +99,6 @@ dependencyResolutionManagement {
     }
 }
 
-// F-Droid doesn't support foojay-resolver plugin
-// plugins {
-//     id("org.gradle.toolchains.foojay-resolver-convention") version("1.0.0")
-// }
-
 rootProject.name = "ArchiveTune"
 include(":app")
 include(":core")
@@ -121,19 +116,3 @@ include(":shazamkit")
 include(":spotifycore")
 include(":morideobfuscator")
 include(":jiosaavn")
-
-// Use a local copy of MetrolistExtractor by uncommenting the lines below.
-// We assume, that ArchiveTune and MetrolistExtractor have the same parent directory.
-// If this is not the case, please change the path in includeBuild().
-//
-// For this to work you also need to change the implementation in core/build.gradle.kts
-// to one which does not specify a version.
-// From:
-//      implementation(libs.metrolist.extractor)
-// To:
-//      implementation("com.github.MetrolistGroup:MetrolistExtractor")
-// includeBuild("../MetrolistExtractor") {
-//    dependencySubstitution {
-//        substitute(module("com.github.MetrolistGroup:MetrolistExtractor")).using(project(":extractor"))
-//    }
-// }

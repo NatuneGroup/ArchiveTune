@@ -14,7 +14,7 @@
 
 package moe.rukamori.archivetune.ui.component
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Row
@@ -26,26 +26,57 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton as Material3IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.Stable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.lerp
 import com.kyant.backdrop.backdrops.LayerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.drawBackdrop
+import com.kyant.backdrop.highlight.Highlight
+import com.kyant.backdrop.shadow.Shadow
+import moe.rukamori.archivetune.LocalBlurPolicy
+import moe.rukamori.archivetune.LocalAnimationsDisabled
+import moe.rukamori.archivetune.LocalAnimationScale
+import moe.rukamori.archivetune.ui.component.sukisu.SukisuInteractiveHighlight
+import moe.rukamori.archivetune.ui.component.sukisu.rememberSukisuSpecularHighlight
 import com.kyant.backdrop.effects.blur
 import com.kyant.backdrop.effects.lens
 import com.kyant.backdrop.effects.vibrancy
 
 /** Alias so call sites can refer to a stable type name regardless of the backdrop impl. */
 typealias PlatformBackdrop = LayerBackdrop
+
+/** Legacy tuning read by the player's ordinary frosted container, not refractive material. */
+@Stable
+data class LiquidGlassTuning(
+    val blurFactor: Float = 1f,
+    val backdropVibrancy: Boolean = false,
+) {
+    /** Colour controls saturation for the sampled backdrop; vibrancy pushes it past 1. */
+    val saturation: Float = if (backdropVibrancy) 1.7f else 1.0f
+
+    companion object {
+        val STOCK = LiquidGlassTuning()
+    }
+}
+
+/** Defaults to [LiquidGlassTuning.STOCK], so a host that provides no tuning still renders. */
+val LocalLiquidGlassTuning = compositionLocalOf { LiquidGlassTuning.STOCK }
 
 /**
  * Records the content of the composable it is called on into a [LayerBackdrop]
@@ -67,59 +98,121 @@ fun Modifier.layerBackdrop(backdrop: PlatformBackdrop): Modifier = this.layerBac
  */
 val LocalLiquidGlassBackdrop = compositionLocalOf<LayerBackdrop?> { null }
 
-/** Applies the SimpMusic liquid-glass effect to any element. */
+/** Geometry and interaction remain with the caller; only optical treatment is shared. */
+enum class LiquidGlassRole {
+    Surface, NavigationBar, SelectionLens, Card, ActionMenu,
+}
+
+internal fun liquidGlassAllowed(
+    masterEnabled: Boolean,
+    platformBlurAllowed: Boolean,
+    sourceAvailable: Boolean,
+    visible: Boolean,
+): Boolean = masterEnabled && platformBlurAllowed && sourceAvailable && visible
+
+internal fun liquidGlassRefractionHeight(requestedPx: Float, minDimensionPx: Float): Float =
+    minOf(requestedPx.coerceAtLeast(0f), minDimensionPx.coerceAtLeast(0f) / 2f)
+
+/** Owners still decide source visibility and local style/stock-colour eligibility. */
+@Composable
+fun liquidGlassEligible(source: Backdrop?, visible: Boolean = true): Boolean =
+    liquidGlassAllowed(
+        masterEnabled = rememberLiquidGlassEnabled(),
+        platformBlurAllowed = LocalBlurPolicy.current.renderEffect,
+        sourceAvailable = source != null,
+        visible = visible,
+    )
+
+/** The single optical adapter, including combined navigation backdrops. Never records content. */
+@Composable
+fun Modifier.liquidGlassMaterial(
+    backdrop: Backdrop?,
+    shape: Shape = CircleShape,
+    role: LiquidGlassRole = LiquidGlassRole.Surface,
+    interactive: Boolean = false,
+    baseColor: Color = Color.Unspecified,
+    fallbackColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    progress: () -> Float = { 1f },
+    highlight: (() -> Highlight)? = null,
+    layerBlock: (GraphicsLayerScope.() -> Unit)? = null,
+    onDrawSurface: (DrawScope.() -> Unit)? = null,
+): Modifier {
+    if (!liquidGlassEligible(backdrop)) return background(fallbackColor, shape)
+    val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
+    val specular = rememberSukisuSpecularHighlight(
+        if (role == LiquidGlassRole.SelectionLens) 90f else -45f,
+    )
+    // Static directional light is deliberate: list items must not own tilt listeners.
+    val motion = !LocalAnimationsDisabled.current && LocalAnimationScale.current > 0f
+    val scope = rememberCoroutineScope()
+    val spotlight = if (interactive && motion) remember(scope) { SukisuInteractiveHighlight(scope) } else null
+    DisposableEffect(spotlight) { onDispose { spotlight?.cancel() } }
+    val tint = when (role) {
+        LiquidGlassRole.ActionMenu -> Color.Black.copy(alpha = 0.30f)
+        LiquidGlassRole.Card -> MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.7f)
+        LiquidGlassRole.NavigationBar -> MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.4f)
+        LiquidGlassRole.SelectionLens -> (if (dark) Color.White else Color.Black).copy(alpha = 0.1f)
+        LiquidGlassRole.Surface -> (if (dark) Color.Black else Color.White).copy(alpha = 0.28f)
+    }
+    // Remember only the optical node, never the caller's layout/semantics modifier chain.
+    val material = remember(backdrop, shape, role, baseColor, tint, dark, motion, specular, progress, highlight, layerBlock, onDrawSurface) {
+        Modifier.drawBackdrop(
+            backdrop = backdrop!!,
+            shape = { shape },
+            effects = {
+                val p = if (motion) progress().coerceIn(0f, 1f) else 0f
+                if (role != LiquidGlassRole.SelectionLens) {
+                    padding = maxOf(padding, 40.dp.toPx())
+                    vibrancy()
+                    blur(if (role == LiquidGlassRole.ActionMenu) 20.dp.toPx() else 4.dp.toPx())
+                }
+                val height = when (role) {
+                    LiquidGlassRole.SelectionLens -> 10.dp.toPx() * p
+                    LiquidGlassRole.Card -> 2.dp.toPx()
+                    LiquidGlassRole.ActionMenu -> 16.dp.toPx()
+                    else -> 24.dp.toPx()
+                }
+                lens(
+                    refractionHeight = liquidGlassRefractionHeight(height, size.minDimension),
+                    refractionAmount = when (role) {
+                        LiquidGlassRole.SelectionLens -> 14.dp.toPx() * p
+                        LiquidGlassRole.Card -> 2.dp.toPx()
+                        LiquidGlassRole.ActionMenu -> 40.dp.toPx()
+                        else -> size.minDimension / 4f
+                    },
+                    depthEffect = role == LiquidGlassRole.SelectionLens,
+                    chromaticAberration = role == LiquidGlassRole.SelectionLens,
+                )
+            },
+            highlight = {
+                if (motion) highlight?.invoke() ?: specular.value.copy(alpha = 0.75f)
+                else specular.value.copy(alpha = 0.75f)
+            },
+            shadow = {
+                if (role == LiquidGlassRole.NavigationBar) {
+                    Shadow(radius = 10.dp, color = Color.Black, alpha = if (dark) 0.2f else 0.1f)
+                } else null
+            },
+            layerBlock = { if (motion) layerBlock?.invoke(this) },
+            onDrawBehind = if (baseColor != Color.Unspecified) { { drawRect(baseColor) } } else null,
+            onDrawSurface = { if (onDrawSurface != null) onDrawSurface.invoke(this) else drawRect(tint) },
+        )
+    }
+    return then(material).then(spotlight?.let { it.modifier.then(it.gestureModifier) } ?: Modifier)
+}
+
 @Composable
 fun Modifier.liquidGlass(
     backdrop: PlatformBackdrop,
     shape: Shape = CircleShape,
     interactive: Boolean = true,
     baseColor: Color = Color.Unspecified,
-): Modifier {
-    val isDark = isSystemInDarkTheme()
-    // Memoize the entire drawBackdrop modifier chain so it isn't rebuilt on every
-    // recomposition. The chain depends only on (backdrop, shape, interactive, baseColor,
-    // isDark) — all stable across scroll-driven recompositions of the host screen. Without
-    // this memo, every recomposition rebuilt the kyant effect stack and re-installed the
-    // RuntimeShader on the GraphicsLayer, which was the dominant cause of "lag when
-    // switching pages" (the new page's first frames all paid that GPU setup cost while the
-    // user was already trying to scroll).
-    return remember(backdrop, shape, interactive, baseColor, isDark) {
-        this.drawBackdrop(
-            backdrop = backdrop,
-            effects = {
-                val l = 0f
-                vibrancy()
-                blur(
-                    if (l > 0f) {
-                        lerp(8f.dp.toPx(), 16f.dp.toPx(), l)
-                    } else {
-                        lerp(8f.dp.toPx(), 2f.dp.toPx(), -l)
-                    },
-                )
-                lens(24f.dp.toPx(), size.minDimension / 4f, false)
-            },
-            onDrawBackdrop = { drawBackdrop ->
-                drawBackdrop()
-            },
-            shape = { shape },
-            onDrawBehind =
-                if (baseColor != Color.Unspecified) {
-                    { drawRect(baseColor) }
-                } else {
-                    null
-                },
-            onDrawSurface = {
-                val luminanceAnimation = 0.5f
-                val darken = lerp(
-                    0.12f,
-                    0.5f,
-                    ((luminanceAnimation - 0.3f) / 0.5f).coerceIn(0f, 1f),
-                )
-                drawRect((if (isDark) Color.Black else Color.White).copy(alpha = darken))
-            },
-        )
-    }
-}
+): Modifier = liquidGlassMaterial(
+    backdrop = backdrop,
+    shape = shape,
+    interactive = interactive,
+    baseColor = baseColor,
+)
 
 /**
  * A liquid-glass surface wrapping arbitrary [content] (e.g. a pill of icon buttons). Thin
@@ -182,7 +275,7 @@ fun LiquidGlassIconButton(
     painter: Painter,
     modifier: Modifier = Modifier.size(48.dp),
     shape: Shape = CircleShape,
-    tint: Color = Color.White,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
     contentDescription: String? = null,
     interactive: Boolean = false,
     onClick: () -> Unit,
@@ -215,7 +308,7 @@ fun LiquidGlassIconButton(
     imageVector: ImageVector,
     modifier: Modifier = Modifier.size(48.dp),
     shape: Shape = CircleShape,
-    tint: Color = Color.White,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
     contentDescription: String? = null,
     interactive: Boolean = false,
     onClick: () -> Unit,

@@ -1,24 +1,19 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  *
  * Listen Together message codec — ported from vivi-music (beta branch),
  * vivi-music's listentogether.MessageCodec (GPL-3.0).
- *
  * The protobuf path is hand-encoded through [ProtoWriter]/[ProtoReader] against the field numbers in
  * app/src/main/proto/listentogether.proto (which remains the source of truth). See ProtoWire.kt for
  * why the generated classes were dropped: neither protobuf-gradle-plugin (AGP 9) nor a pre-generated
  * copy (a `com.google.protobuf` runtime clash) is usable in this build.
  */
+
+
 
 package moe.rukamori.archivetune.listentogether
 

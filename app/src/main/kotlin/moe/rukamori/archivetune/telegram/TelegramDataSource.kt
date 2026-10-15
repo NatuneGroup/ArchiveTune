@@ -1,12 +1,6 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
@@ -17,9 +11,10 @@
  * when the player reads faster than the network. Seeking simply re-opens the source at the new
  * position, which TDLib translates into a new download offset — so FLAC seeking works without
  * waiting for the whole file.
- *
  * TDLib keeps the partial file in its own cache, so pause/resume and replays don't re-download.
  */
+
+
 
 package moe.rukamori.archivetune.telegram
 

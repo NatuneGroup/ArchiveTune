@@ -30,7 +30,6 @@ import moe.rukamori.archivetune.constants.ThumbnailCornerRadius
 import moe.rukamori.archivetune.db.entities.Playlist
 import moe.rukamori.archivetune.db.entities.PlaylistEntity
 import moe.rukamori.archivetune.spotify.SpotifyMapper
-import moe.rukamori.archivetune.spotify.SPOTIFY_LIKED_SONGS_ID
 import moe.rukamori.archivetune.spotify.models.SpotifyPlaylist
 import moe.rukamori.archivetune.spotify.models.SpotifyTrack
 import moe.rukamori.archivetune.ui.utils.resize
@@ -66,24 +65,6 @@ fun SpotifyLibraryPlaylistListItem(
                 .fillMaxWidth()
                 .focusable()
                 .clickable(onClick = openPlaylist),
-    )
-}
-
-@Composable
-fun SpotifyLikedSongsListItem(
-    navController: NavController,
-    modifier: Modifier = Modifier,
-) {
-    LibraryPinnedCollectionTile(
-        title = stringResource(R.string.liked_songs),
-        iconRes = R.drawable.favorite,
-        modifier =
-            modifier
-                .fillMaxWidth()
-                .clickable {
-                    navController.navigate("spotify_playlist/$SPOTIFY_LIKED_SONGS_ID")
-                },
-        accentColor = MaterialTheme.colorScheme.primary,
     )
 }
 

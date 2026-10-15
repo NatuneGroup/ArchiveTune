@@ -10,6 +10,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -39,8 +41,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -144,7 +146,7 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
         // Appearance is now a hub of three pages, so every row indexed under it has to say which.
         own(
             "appearance_theme", "appearance",
-            "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette",
+            "interface_style", "dynamic_theme", "random_theme_on_startup", "dark_theme", "pure_black", "color_palette",
             "color_source", "palette_picker", "theme_creator", "app_icon", "disable_animations",
             "splash_overlay_enabled",
             "hide_status_bar", "ui_scale", "blur_intensity", "disable_blur", "backdrop_blur",
@@ -157,17 +159,20 @@ private val CROSS_PAGE_SCROLL_OWNERS: Map<String, String> =
             "mini_player_background_style", "player_buttons_style", "player_slider_style",
             "show_player_volume_bar", "hide_player_thumbnail", "crop_thumbnail_to_square",
             "thumbnail_corner_radius", "customized_background", "album_canvas_enabled",
-            "apple_music_animated_artwork", "simpmusic_lyrics", "apple_music_experience",
+            "apple_music_animated_artwork", "simpmusic_lyrics",
         )
         own(
             "appearance_interface", "appearance",
-            "home_screen_style", "minimal_home_mode", "default_open_tab",
+            "home_screen_style", "minimal_home_mode", "default_open_tab", "search_bar_position",
+            "hide_search_bar_while_scrolling", "back_animation_style",
             "tablet_mode", "navigation_bar_style", "navigation_bar_settings", "hide_scrollbar",
             "grid_layout", "default_lib_chips", "extras", "app_language",
         )
 
         // Appearance rows that were moved out to their own pages.
-        own("navigation_bar", "appearance", "frosted_nav_bar", "liquid_glass_nav_bar", "hide_navigation_bar_labels")
+        own("navigation_bar", "appearance", "frosted_nav_bar", "liquid_glass_nav_bar", "hide_navigation_bar_labels",
+            "navigation_bar_hide_on_scroll",
+        )
         own("appearance_extras", "appearance", "show_home_category_chips")
         own("playback", "appearance", "swipe_sensitivity")
         own("behavior", "appearance", "force_high_refresh_rate")
@@ -221,7 +226,10 @@ private fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Stri
             "po_token" -> PO_TOKEN_ROUTE
             else -> return null
         }
-    // About / developer-options screens intentionally don't participate in auto-scroll
+    if (ownerKey == "developer_options" && scrollKey == "acoustic_quality") {
+        return "$route?scrollTo=acoustic_quality"
+    }
+    // Other developer-options children and About intentionally don't auto-scroll
     // (their contents are mostly static links). All other screens honor ?scrollTo=.
     val supportsScroll =
         ownerKey !in
@@ -243,6 +251,7 @@ fun SettingsScreen(
     latestVersionName: String,
     onClearUpdateBadge: () -> Unit = {},
 ) {
+    val prefs = rememberPreferenceSnapshot()
     val context = LocalContext.current
     val isAndroid12OrLater = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val listState = rememberLazyListState()
@@ -291,7 +300,14 @@ fun SettingsScreen(
         BuildConfig.UPDATER_AVAILABLE &&
             Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
     var isUpdateDismissed by remember { mutableStateOf(false) }
-    val allSettingsGroups = buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context)
+    val colorScheme = MaterialTheme.colorScheme
+    val configuration = LocalConfiguration.current
+    // The index holds ~440 children; rebuilding it on each recomposition re-ran on every
+    // search keystroke. Configuration covers a locale change.
+    val allSettingsGroups =
+        remember(navController, isAndroid12OrLater, hasUpdate, context, colorScheme, configuration) {
+            buildSettingsGroups(navController, isAndroid12OrLater, hasUpdate, context, colorScheme)
+        }
     // When searching, flatten all individual SettingsChildren across every category so each
     // matching setting is shown as a separate row.
     val filteredChildResults = remember(searchQuery, allSettingsGroups) {
@@ -317,7 +333,10 @@ fun SettingsScreen(
     // dialog composables signal show/dismiss via LocalSettingsDialogShowing.
     val settingsDialogShowing = rememberSettingsDialogHostState()
 
-    CompositionLocalProvider(LocalSettingsDialogShowing provides settingsDialogShowing) {
+    CompositionLocalProvider(
+        LocalSettingsDialogShowing provides settingsDialogShowing,
+        LocalSettingsPreferenceSnapshot provides prefs,
+    ) {
         Scaffold(
             modifier =
                 Modifier
@@ -328,7 +347,7 @@ fun SettingsScreen(
                         // directly so the modifier chain is stable when
                         // no dialog is open (avoids unnecessary
                         // RenderEffect allocation on every recomposition).
-                        if (settingsDialogShowing.value) {
+                        if (settingsDialogShowing.value && moe.rukamori.archivetune.LocalBlurPolicy.current.renderEffect) {
                             Modifier.blur(10.dp)
                         } else {
                             Modifier

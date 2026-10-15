@@ -1,16 +1,12 @@
 /*
  * ArchiveTune (2026)
  * © vossgraves — github.com/vossgraves
- * GPL-3.0 License | Contributors: see git history
- * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
- */
-
-/*
- * ArchiveTune (2026)
  * © Rukamori — github.com/rukamori
  * GPL-3.0 License | Contributors: see git history
  * Do not remove or alter this notice. - Per GPL-3.0 Section 4 & Section 5
  */
+
+
 
 package moe.rukamori.archivetune.canvas
 
@@ -32,7 +28,6 @@ import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.ArchiveTuneCanvasKey
 import moe.rukamori.archivetune.constants.CanvasSourceKey
 import moe.rukamori.archivetune.constants.CanvasWifiOnlyKey
-import moe.rukamori.archivetune.constants.LowDataModeKey
 import moe.rukamori.archivetune.constants.MaxCanvasCacheSizeKey
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.utils.dataStore
@@ -50,13 +45,7 @@ class CanvasSettingsRepository @Inject constructor(
     val spotifyConnected = spotifyCanvas.connected
 
     val configuration: Flow<CanvasConfiguration> = context.dataStore.data.map { preferences ->
-        CanvasConfiguration(
-            enabled = preferences[ArchiveTuneCanvasKey] ?: false,
-            source = CanvasSource.fromPreference(preferences[CanvasSourceKey]),
-            wifiOnly = preferences[CanvasWifiOnlyKey] ?: false,
-            cacheLimitMb = (preferences[MaxCanvasCacheSizeKey] ?: 256).coerceAtLeast(-1),
-            lowDataMode = preferences[LowDataModeKey] ?: false,
-        )
+        canvasConfigurationFrom(preferences)
     }.distinctUntilChanged()
 
     val connectivity: Flow<CanvasConnectivity> = callbackFlow {

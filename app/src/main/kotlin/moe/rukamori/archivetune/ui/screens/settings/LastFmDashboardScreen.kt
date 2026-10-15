@@ -99,13 +99,19 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil3.compose.AsyncImage
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import timber.log.Timber
+import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
+import moe.rukamori.archivetune.db.MusicDatabase
+import moe.rukamori.archivetune.db.entities.LibraryCoverCandidate
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.DarkModeKey
@@ -280,6 +286,23 @@ private fun dashboardTheme(): DashboardTheme {
 
 private enum class LastFmFilter { RECENT, TOP_TRACKS, TOP_ARTISTS, TOP_ALBUMS }
 
+// Last successful load, shown immediately when the dashboard reopens while a refresh runs, and
+// kept per section when a refresh fails offline.
+private data class LastFmDashboardSnapshot(
+    val username: String,
+    val userInfo: Result<UserInfo>,
+    val recentTracks: Result<List<RecentTrack>>,
+    val topTracks: Result<TopTracksResponse>,
+    val topArtists: Result<TopArtistsResponse>,
+    val topAlbums: Result<TopAlbumsResponse>,
+)
+
+@Volatile
+private var dashboardSnapshot: LastFmDashboardSnapshot? = null
+
+private fun <T> Result<T>.orPreviousSuccess(previous: Result<T>?): Result<T> =
+    if (isFailure && previous?.isSuccess == true) previous else this
+
 /**
  * Process-wide cache of YouTube search results keyed by "<title>::<artist>". Last.fm tracks don't
  * carry YouTube video IDs, so every playback action on a Last.fm track needs to round-trip through
@@ -423,17 +446,6 @@ fun LastFmDashboardScreen(
     var topTracks by remember { mutableStateOf<Result<TopTracksResponse>?>(null) }
     var topArtists by remember { mutableStateOf<Result<TopArtistsResponse>?>(null) }
     var topAlbums by remember { mutableStateOf<Result<TopAlbumsResponse>?>(null) }
-    // Stats-only responses from the limit=1 fetches. Mirrors LastWave-native's
-    // _fetchHomeData() Promise.allSettled batch, which fires four parallel
-    // calls (user.getinfo + the three limit=1 stats calls) so the hero card
-    // reads `attr.total` (the lifetime unique-item count) instead of the
-    // page size. The list calls below (limit=20) feed the filter views; the
-    // stats calls here feed the hero stat pills — separated so that a slow
-    // list fetch can't delay the stats, and a stats fetch failure can't take
-    // the lists down with it.
-    var statsTopTracks by remember { mutableStateOf<Result<TopTracksResponse>?>(null) }
-    var statsTopArtists by remember { mutableStateOf<Result<TopArtistsResponse>?>(null) }
-    var statsTopAlbums by remember { mutableStateOf<Result<TopAlbumsResponse>?>(null) }
     var isRefreshing by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf(LastFmFilter.RECENT) }
     var overflowTrack by remember { mutableStateOf<LastFmTrackRef?>(null) }
@@ -451,6 +463,14 @@ fun LastFmDashboardScreen(
     var searchVisible by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
 
+    fun applySnapshot(snapshot: LastFmDashboardSnapshot) {
+        userInfo = snapshot.userInfo
+        recentTracks = snapshot.recentTracks
+        topTracks = snapshot.topTracks
+        topArtists = snapshot.topArtists
+        topAlbums = snapshot.topAlbums
+    }
+
     fun refresh() {
         val username = current?.username?.takeIf { it.isNotBlank() } ?: return
         if (!isLoggedIn) return
@@ -458,16 +478,9 @@ fun LastFmDashboardScreen(
             isRefreshing = true
             try {
                 current.serviceConfig.apply(sessionKey = current.sessionKey)
-                // Eight parallel Last.fm calls — mirrors LastWave-native's _fetchHomeData()
-                // Promise.allSettled batch: • user.getInfo → header + hero scrobbles count •
-                // user.getRecentTracks(200) → RECENT filter view • user.getTopTracks(20) →
-                // TOP_TRACKS filter view • user.getTopArtists(20) → TOP_ARTISTS filter view •
-                // user.getTopAlbums(20) → TOP_ALBUMS filter view • user.getTopTracks(1) → hero stat
-                // pill (attr.total) • user.getTopArtists(1) → hero stat pill (attr.total) •
-                // user.getTopAlbums(1) → hero stat pill (attr.total) The three limit=1 stats calls
-                // only need to read `@attr.total` (the lifetime unique-item count) — fetching a
-                // single item is enough to get the count, and is much lighter than pulling the
-                // whole first page just to count it.
+                // Five parallel calls. The hero stat pills read `@attr.total` (the lifetime
+                // unique-item count) from the same limit=20 top-list responses that feed the
+                // filter views, so no separate limit=1 stats requests are needed.
                 withContext(Dispatchers.IO) {
                     val infoDeferred = async { LastFM.getUserInfo(username) }
                     // Last.fm permits up to 200 recent tracks per request. Keep every
@@ -477,18 +490,12 @@ fun LastFmDashboardScreen(
                     val topTracksDeferred = async { LastFM.getTopTracks(username, period = "overall", limit = 20) }
                     val topArtistsDeferred = async { LastFM.getTopArtists(username, period = "overall", limit = 20) }
                     val topAlbumsDeferred = async { LastFM.getTopAlbums(username, period = "overall", limit = 20) }
-                    val statsTracksDeferred = async { LastFM.getTopTracks(username, period = "overall", limit = 1) }
-                    val statsArtistsDeferred = async { LastFM.getTopArtists(username, period = "overall", limit = 1) }
-                    val statsAlbumsDeferred = async { LastFM.getTopAlbums(username, period = "overall", limit = 1) }
 
                     val infoResult = infoDeferred.await()
                     val recentResult = recentDeferred.await()
                     val topTracksResult = topTracksDeferred.await()
                     val topArtistsResult = topArtistsDeferred.await()
                     val topAlbumsResult = topAlbumsDeferred.await()
-                    val statsTracksResult = statsTracksDeferred.await()
-                    val statsArtistsResult = statsArtistsDeferred.await()
-                    val statsAlbumsResult = statsAlbumsDeferred.await()
 
                     // Surface parse / auth failures to logcat so the dashboard
                     // doesn't silently fall back to "0" stats without any signal
@@ -499,22 +506,21 @@ fun LastFmDashboardScreen(
                     topTracksResult.onFailure { Timber.e(it, "Last.fm user.getTopTracks(limit=20) failed") }
                     topArtistsResult.onFailure { Timber.e(it, "Last.fm user.getTopArtists(limit=20) failed") }
                     topAlbumsResult.onFailure { Timber.e(it, "Last.fm user.getTopAlbums(limit=20) failed") }
-                    statsTracksResult.onFailure { Timber.e(it, "Last.fm user.getTopTracks(limit=1 stats) failed") }
-                    statsArtistsResult.onFailure { Timber.e(it, "Last.fm user.getTopArtists(limit=1 stats) failed") }
-                    statsAlbumsResult.onFailure { Timber.e(it, "Last.fm user.getTopAlbums(limit=1 stats) failed") }
 
-                    userInfo = infoResult
-                    recentTracks = recentResult.map { it.recenttracks.track }
-                    // Keep the wrappers intact (see the var declaration comment
-                    // for why) — the read site unwraps to the page list, and the
-                    // hero stat pills read .toptracks.attr.total etc. directly
-                    // off the same state.
-                    topTracks = topTracksResult
-                    topArtists = topArtistsResult
-                    topAlbums = topAlbumsResult
-                    statsTopTracks = statsTracksResult
-                    statsTopArtists = statsArtistsResult
-                    statsTopAlbums = statsAlbumsResult
+                    // A failed refresh keeps the last successful section instead of replacing
+                    // loaded data with an error while offline.
+                    val previous = dashboardSnapshot?.takeIf { it.username == username }
+                    val snapshot =
+                        LastFmDashboardSnapshot(
+                            username = username,
+                            userInfo = infoResult.orPreviousSuccess(previous?.userInfo),
+                            recentTracks = recentResult.map { it.recenttracks.track }.orPreviousSuccess(previous?.recentTracks),
+                            topTracks = topTracksResult.orPreviousSuccess(previous?.topTracks),
+                            topArtists = topArtistsResult.orPreviousSuccess(previous?.topArtists),
+                            topAlbums = topAlbumsResult.orPreviousSuccess(previous?.topAlbums),
+                        )
+                    dashboardSnapshot = snapshot
+                    applySnapshot(snapshot)
                 }
             } finally {
                 isRefreshing = false
@@ -523,7 +529,9 @@ fun LastFmDashboardScreen(
     }
 
     LaunchedEffect(isLoggedIn, current?.username) {
-        if (isLoggedIn) refresh()
+        if (!isLoggedIn) return@LaunchedEffect
+        dashboardSnapshot?.takeIf { it.username == current?.username }?.let(::applySnapshot)
+        refresh()
     }
 
     // ── Notch / status-bar handling ───────────────────────────────────── The Scaffold's
@@ -630,6 +638,7 @@ fun LastFmDashboardScreen(
         // whose image array is empty we fall back to a YouTube artist-channel
         // search and use the returned thumbnail. Mirrors the track artwork
         // pipeline (seed cache → resolve missing → publish snapshot).
+        val database = LocalDatabase.current
         val artistSeedMap = remember(artists) {
             val snapshot = HashMap<String, String>()
             for (artist in artists) {
@@ -669,7 +678,11 @@ fun LastFmDashboardScreen(
                         async(Dispatchers.IO) {
                             val name = artist.name.orEmpty()
                             val key = name.trim().lowercase()
-                            val url = resolveArtistImage(name)
+                            // Last.fm has no portraits at all now, so the artists the library already
+                            // knows by name come first; the YouTube search is for the rest.
+                            val url =
+                                runCatching { database.libraryArtistImage(name.trim()) }.getOrNull()?.takeIf(String::isNotBlank)
+                                    ?: resolveArtistImage(name)
                             if (url != null) {
                                 CachedArtworkStore.put("artist::$key", url)
                                 key to url
@@ -719,16 +732,11 @@ fun LastFmDashboardScreen(
                 HeroStatsCard(
                     userInfo = userInfo,
                     isRefreshing = isRefreshing,
-                    // Read the lifetime unique-item counts off the dedicated limit=1 stats
-                    // responses — mirrors LastWave-native's _fetchHomeData() batch where the
-                    // hero stats come from the limit=1 fetches, not the list fetches. Falls
-                    // back to the list responses if the stats fetch failed (defensive: same
-                    // source, so the value is still authoritative).
-                    trackCount = (statsTopTracks ?: topTracks)
+                    trackCount = topTracks
                         ?.getOrNull()?.toptracks?.attr?.total?.toIntOrNull() ?: 0,
-                    artistCount = (statsTopArtists ?: topArtists)
+                    artistCount = topArtists
                         ?.getOrNull()?.topartists?.attr?.total?.toIntOrNull() ?: 0,
-                    albumCount = (statsTopAlbums ?: topAlbums)
+                    albumCount = topAlbums
                         ?.getOrNull()?.topalbums?.attr?.total?.toIntOrNull() ?: 0,
                     onRetry = ::refresh,
                     onOpenProfile = {
@@ -860,12 +868,22 @@ fun LastFmDashboardScreen(
                                     albumsFiltered.withIndex().toList(),
                                     key = { "album_${it.index}_${it.value.name}_${it.value.artist?.text ?: ""}" },
                                 ) { (index, album) ->
+                                    val albumTitle = album.name.orEmpty()
+                                    val albumArtist = album.artist?.text
                                     DashboardAlbumRow(
-                                        title = album.name.orEmpty(),
-                                        artist = album.artist?.text,
+                                        title = albumTitle,
+                                        artist = albumArtist,
                                         playCount = album.playcount,
                                         rank = index + 1,
-                                        artworkUrl = bestArtwork(album.image),
+                                        // 29 of a typical 50 top albums come back with no image at all,
+                                        // so the row resolves its own the way a track row does.
+                                        artworkUrl =
+                                            rememberResolvedArtwork(
+                                                lastFmUrl = bestArtwork(album.image),
+                                                key = "album::${albumTitle.trim().lowercase()}::${albumArtist.orEmpty().trim().lowercase()}",
+                                                title = albumTitle,
+                                                artist = albumArtist,
+                                            ),
                                         theme = theme,
                                     )
                                 }
@@ -1428,6 +1446,7 @@ private fun DashboardTrackRow(
     // Resolved URLs are written back to the [CachedArtworkStore] so re-composition (filter switch,
     // scroll back) doesn't re-resolve.
     val artworkKey = track.artworkKey()
+    val database = LocalDatabase.current
     // When the user has enabled "Prefer YouTube thumbnails" in settings,
     // skip the Last.fm image array entirely (it can return non-square /
     // brown-matted images from Last.fm's catalogue) and go straight to
@@ -1449,7 +1468,7 @@ private fun DashboardTrackRow(
     LaunchedEffect(artworkKey, resolvedArtworkUrl) {
         if (!resolvedArtworkUrl.isNullOrBlank()) return@LaunchedEffect
         val url = withContext(Dispatchers.IO) {
-            resolveCatalogueCover(ArtworkLookup(artworkKey, track.title, track.artist))
+            resolveCatalogueCover(ArtworkLookup(artworkKey, track.title, track.artist), database)
         }
         if (!url.isNullOrBlank()) {
             CachedArtworkStore.put(artworkKey, url)
@@ -2268,13 +2287,122 @@ private object CachedArtworkStore {
     }
 }
 
-private suspend fun resolveCatalogueCover(lookup: ArtworkLookup): String? {
+/**
+ * Library covers for dashboard rows. A title lookup scans the song table (see
+ * [MusicDatabase.libraryCoverCandidates]), so the titles of rows that resolve together are folded
+ * into one query, and every answer, misses included, is kept for the process: scrolling back,
+ * switching tabs or reopening the dashboard never scans for the same title again.
+ */
+private object LibraryCoverCache {
+    private const val MAX_TITLES = 512
+    private const val MAX_BATCH = 500
+
+    private val lock = Mutex()
+    private val pending = LinkedHashSet<String>()
+    private val byTitle =
+        object : LinkedHashMap<String, List<LibraryCoverCandidate>>(64, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<LibraryCoverCandidate>>?): Boolean =
+                size > MAX_TITLES
+        }
+
+    suspend fun coverFor(
+        database: MusicDatabase,
+        title: String,
+        artist: String?,
+    ): String? {
+        val trimmed = title.trim()
+        if (trimmed.isEmpty()) return null
+        val key = trimmed.lowercase()
+        // Registered before waiting on the lock, so whichever row holds it next queries this
+        // title along with its own.
+        synchronized(pending) { pending.add(trimmed) }
+        val candidates =
+            lock.withLock {
+                byTitle[key] ?: run {
+                    val drained = synchronized(pending) { pending.toList().also { pending.clear() } }
+                    val batch =
+                        (drained + trimmed)
+                            .distinctBy { it.lowercase() }
+                            .filterNot { byTitle.containsKey(it.lowercase()) }
+                    val found = HashMap<String, MutableList<LibraryCoverCandidate>>()
+                    try {
+                        for (chunk in batch.chunked(MAX_BATCH)) {
+                            for (row in database.libraryCoverCandidates(chunk)) {
+                                val rowTitle = row.title ?: continue
+                                found.getOrPut(rowTitle.lowercase()) { ArrayList() }.add(row)
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Timber.w(e, "Library cover lookup failed")
+                        return null
+                    }
+                    for (requested in batch) {
+                        val requestedKey = requested.lowercase()
+                        byTitle[requestedKey] = found[requestedKey].orEmpty()
+                    }
+                    found[key].orEmpty()
+                }
+            }
+        // A scrobble's artist string joins every credited artist, so a stored artist is matched by
+        // containment. The title alone can be shared by unrelated songs; the artist only decides
+        // between them, it is not required to match.
+        val scrobbleArtist = artist.orEmpty().lowercase()
+        return candidates
+            .filter { !it.thumbnailUrl.isNullOrBlank() }
+            .minWithOrNull(
+                compareBy<LibraryCoverCandidate> { candidate ->
+                    val name = candidate.artistName
+                    if (name != null && scrobbleArtist.contains(name.lowercase())) 0 else 1
+                }.thenByDescending { it.inLibrary ?: Long.MIN_VALUE },
+            )?.thumbnailUrl
+    }
+}
+
+/**
+ * Last.fm answers most of what ArchiveTune scrobbles with its grey placeholder, since it has no
+ * catalogue entry for a YouTube upload. But the app scrobbled those plays itself, so the song —
+ * and the cover it already shows everywhere else — is in the library: asking the database first
+ * is instant, exact, and costs no network. The rest of the chain only runs for what it lacks.
+ */
+private suspend fun resolveCatalogueCover(
+    lookup: ArtworkLookup,
+    database: MusicDatabase? = null,
+): String? {
     if (lookup.title.isBlank()) return null
     val title = lookup.title
     val artist = lookup.artist
+    database
+        ?.let { db -> LibraryCoverCache.coverFor(db, title, artist) }
+        ?.let { return it }
     return resolveYtThumbnail(title, artist)
         ?: TelegramCoverProvider.coverUrl(title, artist)
         ?: CatalogueCoverProvider.resolveCoverUrl(title, artist)
+}
+
+/**
+ * The artwork for a row whose own Last.fm image may be missing: [lastFmUrl] when it is real, else
+ * what the process already resolved, else a lookup that runs only while the row is composed.
+ */
+@Composable
+private fun rememberResolvedArtwork(
+    lastFmUrl: String?,
+    key: String,
+    title: String,
+    artist: String?,
+): String? {
+    val database = LocalDatabase.current
+    var resolved by remember(key, lastFmUrl) { mutableStateOf(lastFmUrl ?: CachedArtworkStore.get(key)) }
+    LaunchedEffect(key, lastFmUrl) {
+        if (!resolved.isNullOrBlank()) return@LaunchedEffect
+        val url = withContext(Dispatchers.IO) { resolveCatalogueCover(ArtworkLookup(key, title, artist), database) }
+        if (!url.isNullOrBlank()) {
+            CachedArtworkStore.put(key, url)
+            resolved = url
+        }
+    }
+    return resolved
 }
 
 private suspend fun resolveYtThumbnail(title: String, artist: String?): String? {

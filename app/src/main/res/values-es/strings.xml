@@ -869,7 +869,6 @@
     <string name="copy_log_entry">Copiar entrada de registro</string>
     <string name="export_logs_failed">No se pueden exportar los registros</string>
     <string name="enable_update_notification_channel_desc">Recibe notificaciones cuando haya una nueva versión disponible en el canal seleccionado</string>
-    <string name="updates_stable_locked_on_nightly">Las compilaciones Nightly siempre siguen el canal Nightly, por lo que el canal Stable no está disponible.</string>
     <string name="updates_nightly_hosting_description">Las versiones Nightly se publican automáticamente desde la última versión en desarrollo.</string>
     <string name="updates_channel_warning_nightly_title">Versión Nightly</string>
     <string name="updates_channel_warning_nightly_risk">Las versiones Nightly pueden incluir funciones experimentales, cambios incompletos o regresiones temporales.</string>

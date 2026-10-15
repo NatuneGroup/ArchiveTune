@@ -901,7 +901,6 @@
     <string name="export_logs_failed">Impossible d\'exporter les journaux</string>
     <string name="export">Exporter</string>
     <string name="enable_update_notification_channel_desc">Recevez une notification lorsqu\'une nouvelle version est disponible sur le canal sélectionné</string>
-    <string name="updates_stable_locked_on_nightly">Les builds Nightly suivent toujours le canal Nightly ; le canal Stable n\'est donc pas disponible.</string>
     <string name="updates_nightly_hosting_description">Les versions « Nightly » sont publiées automatiquement à partir de la dernière branche de développement.</string>
     <string name="updates_channel_warning_nightly_title">Versions Nightly</string>
     <string name="updates_channel_warning_nightly_risk">Les versions « Nightly » peuvent inclure des fonctionnalités expérimentales, des modifications non finalisées ou des régressions temporaires.</string>

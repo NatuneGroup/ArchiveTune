@@ -71,8 +71,8 @@ import androidx.compose.material3.WavyProgressIndicatorDefaults
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfo
 import androidx.compose.material3.toShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +104,7 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
 import kotlin.math.roundToInt
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
@@ -114,7 +115,6 @@ import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.defaultUpdateChannel
 import moe.rukamori.archivetune.effectiveUpdateChannel
-import moe.rukamori.archivetune.isNightlyBuild
 import moe.rukamori.archivetune.ui.component.BottomSheetPage
 import moe.rukamori.archivetune.ui.component.BottomSheetPageState
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -126,6 +126,7 @@ import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.GitCommit
 import moe.rukamori.archivetune.utils.UpdateNotificationManager
+import moe.rukamori.archivetune.utils.UpdateOffer
 import moe.rukamori.archivetune.utils.Updater
 import moe.rukamori.archivetune.utils.rememberEnumPreference
 import moe.rukamori.archivetune.utils.rememberPreference
@@ -153,19 +154,19 @@ fun UpdateScreen(
         )
     val (persistentUpdatePopup, onPersistentUpdatePopupChange) =
         rememberPreference(PersistentUpdatePopupKey, defaultValue = false)
-    val (storedUpdateChannel, onUpdateChannelChange) =
+    val (storedUpdateChannel) =
         rememberEnumPreference(
             UpdateChannelKey,
             defaultValue = defaultUpdateChannel,
         )
 
-    // Same build-based lock as every other update path: a nightly build follows NIGHTLY no matter
-    // what is stored, so the whole screen — feed, subtitle, selector — reads the effective channel.
     val updateChannel = effectiveUpdateChannel(storedUpdateChannel)
+    val channelRevision by Updater.selectionChanges.collectAsStateWithLifecycle()
 
-    var commits by remember { mutableStateOf<List<GitCommit>>(emptyList()) }
-    var isLoadingCommits by remember { mutableStateOf(true) }
-    var latestVersion by remember { mutableStateOf<String?>(null) }
+    var commits by remember(updateChannel, channelRevision) { mutableStateOf<List<GitCommit>>(emptyList()) }
+    var isLoadingCommits by remember(updateChannel, channelRevision) { mutableStateOf(true) }
+    var latestVersion by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
+    var latestOffer by remember(updateChannel, channelRevision) { mutableStateOf<UpdateOffer?>(null) }
     var isExpanded by rememberSaveable { mutableStateOf(true) }
     var showNightlyChannelConfirmDialog by rememberSaveable { mutableStateOf(false) }
     var showEnableUpdateNotificationConfirmDialog by rememberSaveable { mutableStateOf(false) }
@@ -181,21 +182,18 @@ fun UpdateScreen(
             },
         )
     }
-    val isUpdateAvailable by remember(latestVersion) {
-        derivedStateOf {
-            BuildConfig.UPDATER_AVAILABLE &&
-                (latestVersion?.let { Updater.isUpdateAvailable(it, BuildConfig.VERSION_NAME) } ?: false)
-        }
-    }
+    val isUpdateAvailable = BuildConfig.UPDATER_AVAILABLE && latestOffer?.channel == updateChannel
     val updateSheetState = remember { BottomSheetPageState() }
-    var updateSheetLoading by remember { mutableStateOf(false) }
-    var updateSheetVersion by remember { mutableStateOf<String?>(null) }
-    var updateSheetNotes by remember { mutableStateOf<String?>(null) }
-    var updateSheetError by remember { mutableStateOf<String?>(null) }
-    var updateSheetIsSameVersion by remember { mutableStateOf(false) }
+    var updateSheetLoading by remember(updateChannel, channelRevision) { mutableStateOf(false) }
+    var updateSheetVersion by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
+    var updateSheetNotes by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
+    var updateSheetError by remember(updateChannel, channelRevision) { mutableStateOf<String?>(null) }
+    var updateSheetIsSameVersion by remember(updateChannel, channelRevision) { mutableStateOf(false) }
     var updateCheckJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-    var showUpdateUpToDateDialog by remember { mutableStateOf(false) }
-    var showUpdateErrorDialog by remember { mutableStateOf(false) }
+    var showUpdateUpToDateDialog by remember(updateChannel, channelRevision) { mutableStateOf(false) }
+    var showUpdateErrorDialog by remember(updateChannel, channelRevision) { mutableStateOf(false) }
+    var updateSheetOffer by remember(updateChannel, channelRevision) { mutableStateOf<UpdateOffer?>(null) }
+    var updateSheetRevision by remember(updateChannel, channelRevision) { mutableStateOf(Updater.selectionRevision) }
     val useInAppUpdateInstaller = BuildConfig.DISTRIBUTION == "gms"
     // The download itself lives in AppUpdateInstaller; this screen only renders whichever state the
     // process-scoped job is in, so a navigation away and back does not lose it.
@@ -209,17 +207,35 @@ fun UpdateScreen(
         }
     }
 
-    val installUpdate: (String) -> Unit = { url ->
-        if (!useInAppUpdateInstaller) {
-            openUpdateUrl(url)
-        } else {
-            updateSheetError = null
-            showUpdateErrorDialog = false
-            // The download runs in AppUpdateInstaller's process-scoped job, so leaving this screen —
-            // or any recomposition that disposes it — no longer aborts it. The dialog below reads
-            // its state, so progress is still on screen when the reader comes back.
-            AppUpdateInstaller.startDownload(context, url)
+    val onUpdateChannelChange: (UpdateChannel) -> Unit = { channel ->
+        if (channel != updateChannel) {
+            coroutineScope.launch {
+                try {
+                    Updater.selectChannel(context, channel)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    snackbarHostState.showSnackbar(error.message ?: context.getString(R.string.error_unknown))
+                }
+            }
         }
+    }
+    val installUpdate: (UpdateOffer, Long) -> Unit = { offer, revision ->
+        coroutineScope.launch {
+            if (Updater.isCurrentSelection(offer.channel, revision)) {
+                updateSheetState.dismiss()
+                if (useInAppUpdateInstaller) {
+                    updateSheetError = null
+                    showUpdateErrorDialog = false
+                    AppUpdateInstaller.startDownload(context, offer)
+                } else {
+                    openUpdateUrl(offer.downloadUrl)
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) {
+        onDispose { updateCheckJob?.cancel() }
     }
 
     // Terminal states are consumed exactly once. A download that finished while the reader was on
@@ -235,11 +251,13 @@ fun UpdateScreen(
         when (val outcome = downloadOutcome) {
             is AppUpdateInstaller.DownloadState.ReadyToInstall -> {
                 AppUpdateInstaller.acknowledgeResult()
-                if (AppUpdateInstaller.installStagedUpdate(context)) {
+                if (AppUpdateInstaller.installStagedUpdate(context, outcome.offer)) {
                     // A reused APK was already announced as downloaded when it first arrived.
                     if (!outcome.reused) {
                         coroutineScope.launch {
-                            snackbarHostState.showSnackbar(context.getString(R.string.download_complete))
+                            snackbarHostState.showSnackbar(
+                                context.getString(R.string.update_download_complete_offer, outcome.offer.channel.name, outcome.offer.versionName),
+                            )
                         }
                     }
                 } else {
@@ -250,7 +268,10 @@ fun UpdateScreen(
             }
 
             is AppUpdateInstaller.DownloadState.Failed -> {
-                updateSheetError = outcome.message ?: context.getString(R.string.error_unknown)
+                updateSheetError = context.getString(
+                    R.string.update_offer_failure, outcome.offer.channel.name, outcome.offer.versionName,
+                    outcome.message ?: context.getString(R.string.error_unknown),
+                )
                 showUpdateErrorDialog = true
                 AppUpdateInstaller.acknowledgeResult()
             }
@@ -310,14 +331,11 @@ fun UpdateScreen(
 
         Spacer(Modifier.height(12.dp))
 
-        val downloadUrl =
-            when (updateChannel) {
-                UpdateChannel.NIGHTLY -> Updater.getLatestNightlyDownloadUrl()
-                UpdateChannel.STABLE -> Updater.getLatestDownloadUrl()
-            }
-
+        val offer = updateSheetOffer
+        val revision = updateSheetRevision
         Button(
-            onClick = { installUpdate(downloadUrl) },
+            onClick = { if (offer != null) installUpdate(offer, revision) },
+            enabled = offer != null && offer.channel == updateChannel,
             modifier = Modifier.fillMaxWidth(),
             shapes = ButtonDefaults.shapes(),
         ) {
@@ -339,24 +357,23 @@ fun UpdateScreen(
 
             updateCheckJob =
                 coroutineScope.launch {
-                    val releaseResult =
-                        when (updateChannel) {
-                            UpdateChannel.NIGHTLY -> Updater.getLatestNightlyReleaseInfo(forceRefresh = true)
-                            UpdateChannel.STABLE -> Updater.getLatestReleaseInfo(forceRefresh = true)
-                        }
+                    val requestChannel = updateChannel
+                    val revision = Updater.selectionRevision
+                    val releaseResult = Updater.getLatestRelease(requestChannel, forceRefresh = true)
+                    if (!Updater.isCurrentSelection(requestChannel, revision)) return@launch
 
                     updateSheetLoading = false
 
                     releaseResult
                         .onSuccess { release ->
-                            val version =
-                                when (updateChannel) {
-                                    UpdateChannel.NIGHTLY -> Updater.getNightlyReleaseVersionName(release)
-                                    UpdateChannel.STABLE -> Updater.getReleaseVersionName(release)
-                                }
+                            val offer = Updater.eligibleOffer(release, requestChannel)
+                            val version = Updater.releaseVersionName(release, requestChannel)
                             latestVersion = version
+                            latestOffer = offer
+                            updateSheetOffer = offer
+                            updateSheetRevision = revision
                             updateSheetNotes = release.body
-                            updateSheetIsSameVersion = !Updater.isUpdateAvailable(version, BuildConfig.VERSION_NAME)
+                            updateSheetIsSameVersion = offer == null
                             updateSheetVersion = version
 
                             if (updateSheetIsSameVersion) {
@@ -366,6 +383,9 @@ fun UpdateScreen(
                                 updateSheetState.show(updateSheetContent)
                             }
                         }.onFailure { error ->
+                            latestVersion = ""
+                            latestOffer = null
+                            updateSheetOffer = null
                             updateSheetError = error.message ?: context.getString(R.string.error_unknown)
                             showUpdateErrorDialog = true
                         }
@@ -491,38 +511,28 @@ fun UpdateScreen(
         )
     }
 
-    LaunchedEffect(updateChannel) {
+    LaunchedEffect(updateChannel, channelRevision) {
+        updateCheckJob?.cancel()
+        updateCheckJob = null
+        updateSheetState.dismiss()
         if (!BuildConfig.UPDATER_AVAILABLE) {
             isLoadingCommits = false
             return@LaunchedEffect
         }
-        // Switching channels re-runs this, so clear the previous channel's commits rather than
-        // leaving them on screen while the new branch loads.
-        isLoadingCommits = true
-        commits = emptyList()
-
-        val versionResult =
-            when (updateChannel) {
-                UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
-                else -> Updater.getLatestVersionName()
-            }
-        versionResult.onSuccess {
-            latestVersion = it
-            if (!Updater.isUpdateAvailable(it, BuildConfig.VERSION_NAME)) {
-                onUpToDate()
-            }
+        val revision = Updater.selectionRevision
+        val releaseResult = Updater.getLatestRelease(updateChannel)
+        if (!Updater.isCurrentSelection(updateChannel, revision)) return@LaunchedEffect
+        releaseResult.onSuccess { release ->
+            latestVersion = Updater.releaseVersionName(release, updateChannel)
+            latestOffer = Updater.eligibleOffer(release, updateChannel)
+            if (latestOffer == null) onUpToDate()
+        }.onFailure {
+            latestVersion = ""
+            latestOffer = null
         }
-
-        // Capped at 50: this page is for a glance at recent activity, and the full history is
-        // always on GitHub. Read from the channel's own branch — showing main's commits to a
-        // Nightly reader describes a build they are not on.
-        Updater
-            .getCommitHistory(50, branch = Updater.branchForChannel(updateChannel))
-            .onSuccess {
-                commits = it
-            }.onFailure {
-                commits = emptyList()
-            }
+        val commitResult = Updater.getCommitHistory(50, branch = Updater.branchForChannel(updateChannel))
+        if (!Updater.isCurrentSelection(updateChannel, revision)) return@LaunchedEffect
+        commits = commitResult.getOrDefault(emptyList())
         isLoadingCommits = false
     }
 
@@ -730,7 +740,7 @@ fun UpdateScreen(
 
         val downloadTitle =
             buildString {
-                when (updateChannel) {
+                when (inFlightDownload.offer.channel) {
                     UpdateChannel.NIGHTLY -> {
                         append(context.getString(R.string.app_name))
                         append(' ')
@@ -739,10 +749,12 @@ fun UpdateScreen(
 
                     UpdateChannel.STABLE -> {
                         append(context.getString(R.string.app_name))
+                        append(' ')
+                        append(context.getString(R.string.channel_stable))
                     }
                 }
                 append(' ')
-                append(updateSheetVersion ?: "?")
+                append(inFlightDownload.offer.versionName)
             }
 
         AlertDialog(
@@ -819,7 +831,7 @@ fun UpdateScreen(
             },
             title = {
                 Text(
-                    text = stringResource(R.string.updates_status_current),
+                    text = stringResource(R.string.update_no_installable_title),
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.fillMaxWidth(),
                     textAlign = TextAlign.Center,
@@ -827,7 +839,7 @@ fun UpdateScreen(
             },
             text = {
                 Text(
-                    text = updateSheetVersion ?: BuildConfig.VERSION_NAME,
+                    text = stringResource(R.string.update_no_installable_build),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth(),
@@ -962,8 +974,9 @@ private fun UpdateStatusPanel(
     val supportingText =
         when {
             latestVersion == null -> stringResource(R.string.updates_status_checking)
+            latestVersion.isEmpty() -> stringResource(R.string.update_feed_unavailable)
             isUpdateAvailable -> stringResource(R.string.latest_version_format, latestVersion)
-            else -> stringResource(R.string.updates_status_current)
+            else -> stringResource(R.string.update_no_installable_title)
         }
     val statusContainerColor =
         if (isUpdateAvailable) {
@@ -1233,14 +1246,10 @@ private fun UpdatePreferencesPanel(
                     }
                 }
 
-                // Two channels, Stable and Nightly. On a nightly build the stored choice is
-                // overridden (see effectiveUpdateChannel), so Nightly shows as active and Stable
-                // is disabled — its releases would only ever be a versionCode downgrade here.
                 SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
                     SegmentedButton(
                         selected = updateChannel == UpdateChannel.STABLE,
                         onClick = onStableSelected,
-                        enabled = !isNightlyBuild,
                         shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
                         icon = {},
                     ) {
@@ -1255,13 +1264,11 @@ private fun UpdatePreferencesPanel(
                         Text(text = stringResource(R.string.channel_nightly))
                     }
                 }
-                if (isNightlyBuild) {
-                    Text(
-                        text = stringResource(R.string.updates_stable_locked_on_nightly),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = stringResource(R.string.update_choice_newer_build_only),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }

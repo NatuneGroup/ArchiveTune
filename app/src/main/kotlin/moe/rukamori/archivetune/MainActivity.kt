@@ -428,6 +428,8 @@ class MainActivity : ComponentActivity() {
     private var pendingBackupRestoreUri by mutableStateOf<Uri?>(null)
     private var latestVersionName by mutableStateOf(BuildConfig.VERSION_NAME)
     private var latestUpdateChannel by mutableStateOf(defaultUpdateChannel)
+    private var latestUpdateOffer by mutableStateOf<moe.rukamori.archivetune.utils.UpdateOffer?>(null)
+    private var latestUpdateOfferRevision by mutableStateOf(-1L)
 
     private var playerConnection by mutableStateOf<PlayerConnection?>(null)
     private var isMusicServiceBound = false
@@ -757,38 +759,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             val updateChannel by rememberEnumPreference(UpdateChannelKey, defaultValue = defaultUpdateChannel)
 
-            // One channel rule for every update path — a nightly build follows NIGHTLY regardless
-            // of the stored selection (see effectiveUpdateChannel).
             val effectiveChannel = effectiveUpdateChannel(updateChannel)
-
-            LaunchedEffect(Unit) {
-                while (playerConnection == null) {
-                    delay(100)
-                }
-                delay(500)
-
-                if (
-                    BuildConfig.UPDATER_AVAILABLE &&
-                    System.currentTimeMillis() - Updater.lastCheckTime > 1.days.inWholeMilliseconds
-                ) {
-                    val channelString = withContext(Dispatchers.IO) { dataStore.data.first()[UpdateChannelKey] }
-                    val actualChannel =
-                        effectiveUpdateChannel(UpdateChannel.fromStoredName(channelString, defaultUpdateChannel))
-                    val versionResult =
-                        when (actualChannel) {
-                            UpdateChannel.NIGHTLY -> Updater.getLatestNightlyVersionName()
-                            UpdateChannel.STABLE -> Updater.getLatestVersionName()
-                        }
-                    versionResult.onSuccess {
-                        if (Updater.isUpdateAvailable(it, BuildConfig.VERSION_NAME)) {
-                            latestUpdateChannel = actualChannel
-                            latestVersionName = it
-                        }
-                    }
-                }
-                moe.rukamori.archivetune.utils.UpdateNotificationManager
-                    .checkForUpdates(this@MainActivity)
-            }
+            val channelRevision by Updater.selectionChanges.collectAsStateWithLifecycle()
+            val launchUpdateChannel = remember { effectiveChannel }
+            val launchUpdateRevision = remember { channelRevision }
 
             // Use remembered instances so the same state object is used everywhere: retrieving the
             // composition local directly creates a different instance per composition scope, which
@@ -803,7 +777,36 @@ class MainActivity : ComponentActivity() {
                     moe.rukamori.archivetune.ui.component
                         .MenuState()
                 }
-            val releaseNotesState = remember { mutableStateOf<String?>(null) }
+            var shownUpdateChannel by remember { mutableStateOf<UpdateChannel?>(null) }
+            LaunchedEffect(bottomSheetPageState.isVisible) {
+                if (!bottomSheetPageState.isVisible) shownUpdateChannel = null
+            }
+            LaunchedEffect(effectiveChannel, channelRevision) {
+                latestVersionName = BuildConfig.VERSION_NAME
+                latestUpdateOffer = null
+                latestUpdateChannel = effectiveChannel
+                if (shownUpdateChannel != null) {
+                    bottomSheetPageState.dismiss()
+                    shownUpdateChannel = null
+                }
+                val revision = Updater.selectionRevision
+                while (playerConnection == null) delay(100)
+                delay(500)
+                if (BuildConfig.UPDATER_AVAILABLE) {
+                    val cached = Updater.cachedOffer(effectiveChannel)
+                    val offer = if (cached == null ||
+                        System.currentTimeMillis() - Updater.lastCheckTime(effectiveChannel) > 1.days.inWholeMilliseconds
+                    ) {
+                        Updater.getLatestRelease(effectiveChannel).getOrNull()
+                            ?.let { Updater.eligibleOffer(it, effectiveChannel) }
+                    } else cached
+                    if (!Updater.isCurrentSelection(effectiveChannel, revision)) return@LaunchedEffect
+                    latestUpdateOfferRevision = revision
+                    latestUpdateOffer = offer
+                    latestVersionName = offer?.versionName ?: BuildConfig.VERSION_NAME
+                }
+                moe.rukamori.archivetune.utils.UpdateNotificationManager.checkForUpdates(this@MainActivity)
+            }
             val currentVersionMarker = remember {
                 "${BuildConfig.VERSION_NAME}|${BuildConfig.VERSION_CODE}"
             }
@@ -844,7 +847,7 @@ class MainActivity : ComponentActivity() {
                             .weight(1f, fill = false)
                             .verticalScroll(rememberScrollState()),
                 ) {
-                    val notes = releaseNotesState.value
+                    val notes = latestUpdateOffer?.takeIf { it.channel == effectiveChannel }?.notes
                     if (notes != null && notes.isNotBlank()) {
                         MarkdownText(
                             markdown = notes,
@@ -904,39 +907,23 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Show the sheet once per offered release unless the reader asked for the reminder.
-            // Without the lastShown gate the effect re-fires on every process start and re-opens
-            // the same sheet for a release already dismissed, which is a nag rather than a notice —
-            // a reader who tracks a pre-release channel sees it on every launch, and a stable
-            // reader pointed at one never converges to it at all.
             LaunchedEffect(
-                latestVersionName,
-                latestUpdateChannel,
+                latestUpdateOffer,
+                channelRevision,
                 effectiveChannel,
                 neverShowUpdatePopup,
                 lastShownUpdatePopupVersion,
                 persistentUpdatePopup,
             ) {
-                if (
-                    BuildConfig.UPDATER_AVAILABLE &&
-                    !neverShowUpdatePopup &&
-                    (persistentUpdatePopup || lastShownUpdatePopupVersion != latestVersionName) &&
-                    latestUpdateChannel == effectiveChannel &&
-                    Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
+                val offer = latestUpdateOffer ?: return@LaunchedEffect
+                if (BuildConfig.UPDATER_AVAILABLE && !neverShowUpdatePopup &&
+                    channelRevision == launchUpdateRevision && effectiveChannel == launchUpdateChannel &&
+                    offer.channel == effectiveChannel &&
+                    (persistentUpdatePopup || lastShownUpdatePopupVersion != offer.identity) &&
+                    Updater.isCurrentSelection(offer.channel, latestUpdateOfferRevision)
                 ) {
-                    val releaseNotesResult =
-                        when (latestUpdateChannel) {
-                            UpdateChannel.NIGHTLY -> Updater.getLatestNightlyReleaseNotes()
-                            UpdateChannel.STABLE -> Updater.getLatestReleaseNotes()
-                        }
-                    releaseNotesResult
-                        .onSuccess {
-                            releaseNotesState.value = it
-                        }.onFailure {
-                            releaseNotesState.value = null
-                        }
-
-                    onLastShownUpdatePopupVersionChange(latestVersionName)
+                    onLastShownUpdatePopupVersionChange(offer.identity)
+                    shownUpdateChannel = offer.channel
                     bottomSheetPageState.show(updateSheetContent)
                 }
             }
@@ -2892,6 +2879,7 @@ class MainActivity : ComponentActivity() {
                                                 actions = {
                                                     val showSettingsBadge = BuildConfig.UPDATER_AVAILABLE &&
                                                         latestUpdateChannel == effectiveChannel &&
+                                                        latestUpdateOfferRevision == channelRevision &&
                                                         Updater.isUpdateAvailable(latestVersionName, BuildConfig.VERSION_NAME)
                                                     if (isHomeRoute) {
                                                         // Only with a Spotify session: the toggle swaps which home
@@ -3823,9 +3811,16 @@ class MainActivity : ComponentActivity() {
                                     navigationBuilder(
                                         navController,
                                         topAppBarScrollBehavior,
-                                        { latestVersionName },
+                                        {
+                                            if (latestUpdateChannel == effectiveChannel && latestUpdateOfferRevision == channelRevision) {
+                                                latestVersionName
+                                            } else BuildConfig.VERSION_NAME
+                                        },
                                         disableAnimations,
-                                        onClearUpdateBadge = { latestVersionName = BuildConfig.VERSION_NAME },
+                                        onClearUpdateBadge = {
+                                            latestVersionName = BuildConfig.VERSION_NAME
+                                            latestUpdateOffer = null
+                                        },
                                         onSearchQuery = onSearch,
                                         onVoiceSearch = launchVoiceSearch,
                                         homeListState = homeListState,

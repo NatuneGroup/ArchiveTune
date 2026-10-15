@@ -20,6 +20,7 @@ import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
@@ -111,33 +112,43 @@ object AppUpdateInstaller {
      * away a finished download, which is what "tap Update, dismiss the system installer, tap Update
      * again" used to do, and what reopening the app after a download used to do.
      */
+    @Synchronized
     fun startDownload(
         context: Context,
         offer: UpdateOffer,
     ) {
-        if (downloadJob?.isActive == true ||
+        // A cancelled job is not active, but still owns staging until its cleanup completes.
+        if (downloadJob?.isCompleted == false ||
             updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER
         ) return
         val appContext = context.applicationContext
         _downloadState.value = DownloadState.Downloading(null, offer)
         downloadJob =
-            scope.launch {
+            scope.launch(start = CoroutineStart.LAZY) {
                 val result = download(appContext, offer)
-                _downloadState.value =
-                    result.fold(
-                        onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
-                        onFailure = { DownloadState.Failed(it.message, offer) },
-                    )
+                synchronized(AppUpdateInstaller) {
+                    if (downloadJob?.isActive == true) {
+                        _downloadState.value =
+                            result.fold(
+                                onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
+                                onFailure = { DownloadState.Failed(it.message, offer) },
+                            )
+                    }
+                }
             }
+        // Publish ownership before IO can report progress or finish.
+        downloadJob?.start()
     }
 
+    @Synchronized
     fun cancelDownload() {
         downloadJob?.cancel()
-        downloadJob = null
+        // Do not join on the UI thread or release ownership ahead of NonCancellable cleanup.
         _downloadState.value = DownloadState.Idle
     }
 
     /** Clears a terminal state the caller has already acted on, so a returning screen does not repeat it. */
+    @Synchronized
     fun acknowledgeResult() {
         if (_downloadState.value is DownloadState.Downloading) return
         _downloadState.value = DownloadState.Idle
@@ -202,7 +213,7 @@ object AppUpdateInstaller {
             withContext(NonCancellable + Dispatchers.IO) { clearStagedUpdate(context) }
             throw e
         } catch (e: Throwable) {
-            withContext(Dispatchers.IO) { clearStagedUpdate(context) }
+            withContext(NonCancellable + Dispatchers.IO) { clearStagedUpdate(context) }
             Result.failure(e)
         }
     }
@@ -323,10 +334,12 @@ object AppUpdateInstaller {
         return apkFile
     }
 
+    @Synchronized
     private fun emitProgress(
         downloadedBytes: Long,
         totalBytes: Long,
     ) {
+        if (downloadJob?.isActive != true) return
         val active = _downloadState.value as? DownloadState.Downloading ?: return
         _downloadState.value = active.copy(fraction = fractionOrNull(downloadedBytes, totalBytes))
     }

@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.models
 
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
 import java.io.Serializable
 
 data class PersistQueue(
@@ -17,6 +18,8 @@ data class PersistQueue(
     val position: Long,
     val queueType: QueueType = QueueType.LIST,
     val queueData: QueueData? = null,
+    val shuffleOrder: List<Int>? = null,
+    val manualQueueKinds: List<Int?>? = null,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -33,6 +36,10 @@ sealed class QueueType : Serializable {
     }
 
     object YOUTUBE : QueueType() {
+        private const val serialVersionUID = 1L
+    }
+
+    object YOUTUBE_PLAYLIST : QueueType() {
         private const val serialVersionUID = 1L
     }
 
@@ -70,6 +77,19 @@ sealed class QueueData : Serializable {
         companion object {
             private const val serialVersionUID = 1L
         }
+    }
+
+    data class YouTubePlaylistData(
+        val playlistId: String,
+        val videoId: String? = null,
+        val endpointParams: String? = null,
+        val endpointIndex: Int? = null,
+        val playlistSetVideoId: String? = null,
+        val snapshot: FinitePlaylistSnapshot,
+        val timelineOccurrences: List<String?>,
+        val needsReconciliation: Boolean = false,
+    ) : QueueData() {
+        companion object { private const val serialVersionUID = 1L }
     }
 
     data class LocalAlbumRadioData(

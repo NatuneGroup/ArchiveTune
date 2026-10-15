@@ -171,6 +171,7 @@ fun PlayerMenu(
     val context = LocalContext.current
     val database = LocalDatabase.current
     val playerConnection = LocalPlayerConnection.current ?: return
+    YouTubePlaylistLoadDialog()
     val deviceMusicVolumeController = rememberDeviceMusicVolumeController()
     val onPlayerVolumeChange =
         remember(deviceMusicVolumeController) {
@@ -671,6 +672,7 @@ fun PlayerMenu(
                 )
             }
         } else {
+        item { YouTubePlaylistRecoveryActions() }
         item {
             MenuSurfaceSection(modifier = Modifier.padding(vertical = 6.dp)) {
                 NewActionGrid(

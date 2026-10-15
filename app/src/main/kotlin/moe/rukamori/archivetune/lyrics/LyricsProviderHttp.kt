@@ -264,9 +264,9 @@ internal object LyricsPayload {
         if ('&' !in text) return text
         return text
             .replace(HEX_ENTITY) { match ->
-                runCatching { match.groupValues[1].toInt(16).toChar().toString() }.getOrDefault(match.value)
+                decodeScalarEntity(match.groupValues[1], 16) ?: match.value
             }.replace(DEC_ENTITY) { match ->
-                runCatching { match.groupValues[1].toInt().toChar().toString() }.getOrDefault(match.value)
+                decodeScalarEntity(match.groupValues[1], 10) ?: match.value
             }.replace("&apos;", "'")
             .replace("&quot;", "\"")
             .replace("&nbsp;", " ")
@@ -274,6 +274,12 @@ internal object LyricsPayload {
             .replace("&gt;", ">")
 
             .replace("&amp;", "&")
+    }
+
+    private fun decodeScalarEntity(digits: String, radix: Int): String? {
+        val codePoint = digits.toIntOrNull(radix) ?: return null
+        if (codePoint !in 0..0x10FFFF || codePoint in 0xD800..0xDFFF) return null
+        return String(Character.toChars(codePoint))
     }
 
     private fun escapeXml(text: String): String =

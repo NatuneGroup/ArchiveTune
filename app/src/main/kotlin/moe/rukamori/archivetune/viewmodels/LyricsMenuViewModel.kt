@@ -24,7 +24,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import androidx.datastore.preferences.core.Preferences
 import moe.rukamori.archivetune.constants.AutoTranslateLyricsKey
-import moe.rukamori.archivetune.constants.TranslateLanguageKey
+import moe.rukamori.archivetune.constants.TranslatorTargetLangKey
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -99,6 +99,7 @@ class LyricsMenuViewModel
         private var job: Job? = null
         private var aiTranslationJob: Job? = null
         private var translationTarget: Pair<String, String>? = null
+        private var translationRequestTarget: Pair<String, List<String>>? = null
         private val translationGeneration = AtomicLong(0L)
         private val searchGeneration = AtomicLong(0L)
         private val _lyricsSearchState = MutableStateFlow<LyricsSearchScreenState>(LyricsSearchScreenState.Empty)
@@ -286,67 +287,81 @@ class LyricsMenuViewModel
         }
 
         /** Renderers call this on track/text changes, even when auto-translation is disabled. */
+        @Synchronized
         fun onLyricsTargetChanged(mediaId: String, lyrics: String?) {
             val target = mediaId to lyrics.orEmpty()
             if (translationTarget != null && translationTarget != target) cancelAiTranslation()
             translationTarget = target
         }
 
-        private fun translationIdentity(prefs: Preferences): List<Any?> = listOf(
+        private fun translationIdentity(prefs: Preferences, requestTarget: String): List<Any?> = listOf(
             prefs.toAiServiceConfig().cacheIdentity,
             prefs[AutoTranslateLyricsKey] ?: false,
-            prefs[TranslateLanguageKey],
+            prefs[TranslatorTargetLangKey]?.ifBlank { requestTarget } ?: requestTarget,
+            requestTarget,
             prefs[AutoTranslateExcludedLanguagesKey] ?: emptySet<String>(),
         )
 
+        @Synchronized
         fun translateLyricsWithAi(
             mediaMetadata: MediaMetadata,
             lyrics: String,
             targetLanguage: String,
             automatic: Boolean = false,
+            sourceLanguageHints: List<String> = LyricsUtils.sourceLanguageHints(lyrics),
         ) {
             onLyricsTargetChanged(mediaMetadata.id, lyrics)
+            val requestTarget = targetLanguage.ifBlank { "ENGLISH" }
+            val requestHints = sourceLanguageHints.mapNotNull(LyricsUtils::validatedSourceLanguage).distinct().sorted()
+            val requestIdentityTarget = requestTarget to requestHints
+            // A new target must be able to retry before the cancelled request's finally runs.
+            if (translationRequestTarget != null &&
+                (translationRequestTarget != requestIdentityTarget || aiTranslationJob?.isActive == false)) cancelAiTranslation()
             if (lyrics.isBlank() || !isAiTranslating.compareAndSet(false, true)) return
+            translationRequestTarget = requestIdentityTarget
             val generation = translationGeneration.incrementAndGet()
             aiTranslationJob = viewModelScope.launch(Dispatchers.IO) {
                 var monitor: Job? = null
+                var requestIdentity: List<Any?>? = null
                 val valid = java.util.concurrent.atomic.AtomicBoolean(true)
                 try {
                     val prefs = context.dataStore.data.first()
-                    val identity = translationIdentity(prefs)
+                    val identity = translationIdentity(prefs, requestTarget)
+                    requestIdentity = identity
+                    if (prefs[TranslatorTargetLangKey]?.takeIf { it.isNotBlank() }?.let { it != requestTarget } == true) return@launch
                     val config = prefs.toAiServiceConfig()
                     if (!config.canCallApi) return@launch
                     if (config.provider == moe.rukamori.archivetune.constants.AiProvider.DEEPL &&
-                        moe.rukamori.archivetune.api.DeepLService.targetCode(targetLanguage.ifBlank { "ENGLISH" }) == null) {
+                        moe.rukamori.archivetune.api.DeepLService.targetCode(requestTarget) == null) {
                         if (!automatic) _aiTranslationEvents.emit(context.getString(R.string.ai_unsupported_translation_target))
                         return@launch
                     }
                     if (automatic) {
                         if (prefs[AutoTranslateLyricsKey] != true) return@launch
-                        val dominant = LyricsUtils.detectDominantLanguageCode(lyrics)
-                        if (dominant != null && LyricsUtils.matchesExcludedLanguage(
-                                dominant, prefs[AutoTranslateExcludedLanguagesKey] ?: emptySet())) return@launch
+                        if (!LyricsUtils.isAutomaticLanguageEligible(
+                                lyrics, prefs[AutoTranslateExcludedLanguagesKey] ?: emptySet(), requestHints)) return@launch
                     }
                     val expected = database.withTransaction { getLyricsById(mediaMetadata.id) }
                     val requestJob = currentCoroutineContext()[Job]!!
                     monitor = launch {
                         context.dataStore.data.collect { current ->
-                            if (translationIdentity(current) != identity) {
+                            if (translationIdentity(current, requestTarget) != identity) {
                                 valid.set(false)
                                 requestJob.cancel()
                             }
                         }
                     }
                     val translated = AiLyricsTranslator().translate(
-                        config, lyrics, targetLanguage.ifBlank { "ENGLISH" },
+                        config, lyrics, requestTarget,
                         isCurrent = { valid.get() && generation == translationGeneration.get() },
                     )
                     currentCoroutineContext().ensureActive()
-                    if (translationIdentity(context.dataStore.data.first()) != identity) return@launch
+                    if (translationIdentity(context.dataStore.data.first(), requestTarget) != identity) return@launch
                     val usable = usableTranslatedLyrics(translated) ?: throw IllegalStateException("Empty translation")
                     val saved = database.withTransaction {
                         currentCoroutineContext().ensureActive()
                         if (!valid.get() || generation != translationGeneration.get() ||
+                            translationIdentity(context.dataStore.data.first(), requestTarget) != identity ||
                             getLyricsById(mediaMetadata.id) != expected) return@withTransaction false
                         if (expected != null && expected.source != LyricsEntity.Source.AI_TRANSLATION.value &&
                             expected.source != LyricsEntity.Source.TRANSLATION.value) {
@@ -358,7 +373,8 @@ class LyricsMenuViewModel
                         true
                     }
                     currentCoroutineContext().ensureActive()
-                    if (saved && valid.get() && generation == translationGeneration.get()) {
+                    if (saved && valid.get() && generation == translationGeneration.get() &&
+                        translationIdentity(context.dataStore.data.first(), requestTarget) == identity) {
                         _translationDismissedMediaIds.value = _translationDismissedMediaIds.value - mediaMetadata.id
                         if (!automatic) _aiTranslationEvents.emit(context.getString(R.string.translation_success))
                     }
@@ -366,13 +382,19 @@ class LyricsMenuViewModel
                     throw e
                 } catch (_: Exception) {
                     Log.w(TAG, "AI translation failed")
-                    if (!automatic) _aiTranslationEvents.emit(context.getString(R.string.translation_failed))
+                    if (!automatic && valid.get() && generation == translationGeneration.get() &&
+                        translationIdentity(context.dataStore.data.first(), requestTarget) == requestIdentity) {
+                        _aiTranslationEvents.emit(context.getString(R.string.translation_failed))
+                    }
                 } finally {
                     valid.set(false)
                     monitor?.cancel()
-                    if (generation == translationGeneration.get()) {
-                        isAiTranslating.value = false
-                        aiTranslationJob = null
+                    synchronized(this@LyricsMenuViewModel) {
+                        if (generation == translationGeneration.get()) {
+                            isAiTranslating.value = false
+                            aiTranslationJob = null
+                            translationRequestTarget = null
+                        }
                     }
                 }
             }
@@ -383,10 +405,12 @@ class LyricsMenuViewModel
                 .normalizeLyricsText(lyrics)
                 .takeIf(LyricsUtils::hasMeaningfulLyricsContent)
 
+        @Synchronized
         fun cancelAiTranslation() {
             translationGeneration.incrementAndGet()
             aiTranslationJob?.cancel()
             aiTranslationJob = null
+            translationRequestTarget = null
             isAiTranslating.value = false
         }
 

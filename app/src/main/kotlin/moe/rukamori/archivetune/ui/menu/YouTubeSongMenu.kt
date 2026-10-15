@@ -77,6 +77,8 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalSyncUtils
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.ui.utils.AcousticQualityMenuAction
 import moe.rukamori.archivetune.constants.ArtistSeparatorsKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderEnabledKey
 import moe.rukamori.archivetune.constants.ExternalDownloaderPackageKey
@@ -925,6 +927,15 @@ fun YouTubeSongMenu(
                     HorizontalDivider(
                         modifier = Modifier.padding(start = 56.dp),
                         color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+
+                    AcousticQualityMenuAction(
+                        target = AcousticAuditTarget(
+                            mediaId = song.id,
+                            title = song.title,
+                            artists = song.artists.joinToString { it.name },
+                        ),
+                        onDismiss = onDismiss,
                     )
 
                     ListItem(

@@ -101,9 +101,12 @@ class YouTubePlaylistQueue(
     override suspend fun nextPage(): List<MediaItem> = proposeNext().entries.map { it.toMediaItem() }
 
     internal fun status(proposal: Proposal): Queue.Status {
-        val entries = if (shuffled) proposal.entries.shuffled() else proposal.entries
+        val entries = orderedEntries(proposal)
         return Queue.Status(proposal.snapshot.title, entries.map { it.toMediaItem() }, if (shuffled) 0 else proposal.selectedIndex)
     }
+
+    internal fun orderedEntries(proposal: Proposal): List<FinitePlaylistEntry> =
+        if (shuffled) proposal.entries.shuffled() else proposal.entries
 
     internal suspend fun proposeInitial(
         source: FinitePlaylistSource = YouTubeFinitePlaylistSource,

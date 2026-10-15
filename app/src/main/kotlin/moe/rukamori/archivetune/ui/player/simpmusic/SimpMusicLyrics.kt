@@ -173,7 +173,7 @@ fun SimpMusicLyrics(
     // The same romanization switches Enhanced and V2 honour. Without these the style ignored
     // every lyrics-related setting beyond text size and tap-to-seek.
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)

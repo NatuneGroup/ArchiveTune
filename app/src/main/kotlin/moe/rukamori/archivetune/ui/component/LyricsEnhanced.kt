@@ -143,6 +143,7 @@ import moe.rukamori.archivetune.constants.LyricsTextSizeKey
 import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.LyricsEntity.Companion.LYRICS_NOT_FOUND
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
+import moe.rukamori.archivetune.lyrics.LyricsPhonetics
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsRomanizationPreferences
 import moe.rukamori.archivetune.lyrics.LyricsUtils.hasTrueWordSync
@@ -150,12 +151,8 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isLineSyncedLrc
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedWordsForEntry
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeWordsForLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -221,7 +218,7 @@ private const val ROMANIZATION_FIRST_BUILD_GRACE_MS = 700L
 /** One published [SyncedLyrics] plus the identity of the romanisation baked into it. */
 private data class KaraokeBuild(
     val lyrics: SyncedLyrics,
-    val romanization: Map<Int, List<String?>>,
+    val romanization: Map<Int, LyricsPhonetics>,
     val generation: Int,
 )
 
@@ -231,8 +228,8 @@ private data class KaraokeBuild(
  * one and must not count as a change (otherwise a song with nothing romanisable would re-key the
  * karaoke view for a build that looks identical).
  */
-private fun Map<Int, List<String?>>.renderedRomanization(): Map<Int, List<String?>> =
-    filterValues { values -> values.any { !it.isNullOrBlank() } }
+private fun Map<Int, LyricsPhonetics>.renderedRomanization(): Map<Int, LyricsPhonetics> =
+    filterValues { value -> !value.line.isNullOrBlank() || value.words.orEmpty().any { !it.isNullOrBlank() } }
 
 /**
  * Enhanced karaoke lyrics renderer.
@@ -282,7 +279,7 @@ fun LyricsEnhanced(
     val (lyricsLineBlurPreference) = rememberPreference(LyricsLineBlurKey, defaultValue = false)
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
 
@@ -437,6 +434,8 @@ fun LyricsEnhanced(
         )
     }
 
+    val romanizationContext = remember(lyricsEntries) { lyricsEntries.joinToString("\n") { it.text } }
+
     LaunchedEffect(lyricsEntries, romanizationPreferences, aiRomanizedLines) {
         // Everything below (scanning + romanizing every line, often one job per word for TTML)
         // must not inherit the main dispatcher — it stutters the karaoke animation on track
@@ -448,7 +447,7 @@ fun LyricsEnhanced(
         // whatever it measured the first time that line was composed — so a build that changes the
         // romanisation of lines already on screen has to carry a new generation with it. See
         // KaraokeBuild.
-        fun publish(romanization: Map<Int, List<String?>>) {
+        fun publish(romanization: Map<Int, LyricsPhonetics>) {
             val previous = karaokeBuild
             val changesVisibleLines =
                 previous.lyrics.lines.isNotEmpty() &&
@@ -469,15 +468,7 @@ fun LyricsEnhanced(
                 // this build will ever have.
                 emptyList()
             } else {
-                lyricsEntries.mapIndexedNotNull { index, entry ->
-                    val hasProviderRomanization =
-                        providedRomanizedTextForEntry(entry, romanizationPreferences) != null
-                    if (hasProviderRomanization || shouldRomanizeLyricsLine(entry.text, romanizationPreferences)) {
-                        index to entry
-                    } else {
-                        null
-                    }
-                }
+                lyricsEntries.mapIndexed { index, entry -> index to entry }
             }
         if (toRomanize.isEmpty()) {
             publish(aiMap)
@@ -489,34 +480,14 @@ fun LyricsEnhanced(
                 val jobs =
                     toRomanize.map { (index, entry) ->
                         async {
-                            val romanized: List<String?> =
+                            val romanized =
                                 try {
-                                    if (entry.words != null) {
-                                        val mainWordCount = entry.words!!.count { !it.isBackground }
-                                        providedRomanizedWordsForEntry(entry, mainWordCount, romanizationPreferences)
-                                            ?: romanizeWordsForLine(
-                                                // Japanese: single-pass line tokenization (6x fewer
-                                                // Kuromoji calls than per-word). Other languages:
-                                                // per-word character-by-character (already cheap).
-                                                words = entry.words!!.filter { !it.isBackground }.map { it.text },
-                                                lineText = entry.text,
-                                                preferences = romanizationPreferences,
-                                            )
-                                    } else {
-                                        listOf(
-                                            providedRomanizedTextForEntry(entry, romanizationPreferences)
-                                                ?: romanizeLyricsLine(entry.text, romanizationPreferences),
-                                        )
-                                    }
+                                    phoneticsForEntry(entry, romanizationPreferences, romanizationContext)
                                 } catch (e: CancellationException) {
                                     throw e
                                 } catch (e: Exception) {
                                     reportException(e)
-                                    if (entry.words != null) {
-                                        List(entry.words!!.count { !it.isBackground }) { null }
-                                    } else {
-                                        listOf(null)
-                                    }
+                                    LyricsPhonetics()
                                 }
                             index to romanized
                         }
@@ -1657,50 +1628,19 @@ private fun Double.toMilliseconds(): Int = (this * 1000.0).roundToInt().coerceAt
 private fun aiRomanizationMap(
     entries: List<LyricsEntry>,
     aiLines: List<String?>,
-): Map<Int, List<String?>> {
+): Map<Int, LyricsPhonetics> {
     if (aiLines.isEmpty() || entries.isEmpty()) return emptyMap()
-    val map = mutableMapOf<Int, List<String?>>()
-    entries.forEachIndexed { index, entry ->
+    val map = mutableMapOf<Int, LyricsPhonetics>()
+    entries.forEachIndexed { index, _ ->
         val romanized = aiLines.getOrNull(index)?.trim()?.takeIf { it.isNotEmpty() } ?: return@forEachIndexed
-        val words = entry.words?.filter { !it.isBackground }
-        map[index] =
-            if (!words.isNullOrEmpty()) {
-                distributePhonetics(words.map { it.text }, romanized)
-            } else {
-                listOf(romanized)
-            }
+        map[index] = LyricsPhonetics(line = romanized)
     }
     return map
 }
 
-/**
- * Spreads the whitespace-separated pieces of [romanized] across [words], keeping order.
- *
- * Proportional rather than one-to-one because the two sides rarely have the same count: "君の名は"
- * arrives as four TTML words and comes back as "kimi no na wa", but "ありがとう" is one word and one
- * token. Anchoring by relative position keeps a syllable's phonetic under roughly the right glyphs
- * even when the counts differ, and merging surplus tokens onto the last anchor means none are lost.
- */
-private fun distributePhonetics(
-    words: List<String>,
-    romanized: String,
-): List<String?> {
-    if (words.isEmpty()) return emptyList()
-    val tokens = romanized.split(Regex("\\s+")).filter { it.isNotEmpty() }
-    if (tokens.isEmpty()) return List(words.size) { null }
-    if (words.size == 1) return listOf(tokens.joinToString(" "))
-
-    val out = MutableList<String?>(words.size) { null }
-    tokens.forEachIndexed { tokenIndex, token ->
-        val anchor = (tokenIndex * words.size / tokens.size).coerceIn(0, words.size - 1)
-        out[anchor] = listOfNotNull(out[anchor], token).joinToString(" ")
-    }
-    return out
-}
-
 private fun buildSyncedLyrics(
     entries: List<LyricsEntry>,
-    romanizationMap: Map<Int, List<String?>>,
+    romanizationMap: Map<Int, LyricsPhonetics>,
 ): SyncedLyrics {
     if (entries.isEmpty()) return SyncedLyrics(emptyList())
     val lines = mutableListOf<ISyncedLine>()
@@ -1721,7 +1661,7 @@ private fun buildSyncedLyrics(
                 }
 
             val wordsForMain = if (mainWords.isNotEmpty()) mainWords else entry.words!!
-            val wordPhonetics = romanizationMap[index] ?: emptyList()
+            val wordPhonetics = romanizationMap[index]?.words.orEmpty()
             val mainSyllables = wordsForMain.toKaraokeSyllables(wordPhonetics)
 
             val lineStart = mainSyllables.first().start
@@ -1758,7 +1698,7 @@ private fun buildSyncedLyrics(
                     alignment = alignment,
                     start = lineStart,
                     end = lineEnd,
-                    phonetic = null,
+                    phonetic = romanizationMap[index]?.line.takeIf { wordPhonetics.isEmpty() },
                     accompanimentLines = accompanimentLines,
                 ),
             )
@@ -1786,7 +1726,7 @@ private fun buildSyncedLyrics(
             lines.add(
                 buildLineSyncedLrcLine(
                     entry = entry,
-                    romanizedText = romanizationMap[index]?.firstOrNull(),
+                    romanizedText = romanizationMap[index]?.line,
                     start = entry.time.toInt(),
                     end = lineEnd,
                 ),
@@ -1815,12 +1755,9 @@ private fun buildLineSyncedLrcLine(
         )
     }
 
-    val syllables =
-        buildWrappingKaraokeSyllables(
-            content = entry.text,
-            romanizedText = normalizedRomanizedText,
-            start = start,
-        )
+    val syllables = listOf(
+        KaraokeSyllable(content = entry.text, start = start, end = start + MIN_KARAOKE_SYLLABLE_DURATION_MS, phonetic = null),
+    )
 
     return KaraokeLine.MainKaraokeLine(
         syllables = syllables,
@@ -1828,54 +1765,8 @@ private fun buildLineSyncedLrcLine(
         alignment = KaraokeAlignment.Start,
         start = start,
         end = end,
+        phonetic = normalizedRomanizedText,
     )
-}
-
-/**
- * Wraps a line-synced lyric into karaoke syllables purely so a romanisation can sit above it.
- *
- * Takes no `end`, deliberately: a line-synced LRC file has no word timing, so there is nothing to
- * spread across the line's duration and no reason for the syllables to know how long the line lasts.
- */
-private fun buildWrappingKaraokeSyllables(
-    content: String,
-    romanizedText: String,
-    start: Int,
-): List<KaraokeSyllable> {
-    val contentUnits = content.toLyricsWrappingUnits().ifEmpty { listOf(content) }
-    val phoneticWords = romanizedText.split(Regex("\\s+")).filter(String::isNotEmpty)
-    val phoneticAnchorIndices =
-        contentUnits.indices.filter { index ->
-            contentUnits[index].any(Char::isLetterOrDigit)
-        }
-    val phoneticsByUnit = MutableList<String?>(contentUnits.size) { null }
-
-    if (phoneticAnchorIndices.isNotEmpty()) {
-        phoneticWords.forEachIndexed { wordIndex, word ->
-            val anchorIndex = wordIndex * phoneticAnchorIndices.size / phoneticWords.size
-            val unitIndex = phoneticAnchorIndices[anchorIndex]
-            phoneticsByUnit[unitIndex] = listOfNotNull(phoneticsByUnit[unitIndex], word).joinToString(" ")
-        }
-    }
-
-    // Every unit shares one instant, deliberately: these syllables exist only to hang a
-    // romanisation over the right glyphs, so per-word timing derived from the line's *length*
-    // would be pure fabrication, and `KaraokeLineText` would faithfully animate it — making plain
-    // LRC lyrics fill word by word whenever romanisation is on, while the very same lines without
-    // romanisation highlight whole through `SyncedLine`.
-    //
-    // Collapsing every unit onto `[start, start + 1)` makes `KaraokeSyllable.progress` a step
-    // function: 0 before the line, 1 from its first millisecond. The whole line lights up at once,
-    // matching the `SyncedLine` path exactly, and each romanisation still sits above its own unit.
-    val syllableEnd = start + MIN_KARAOKE_SYLLABLE_DURATION_MS
-    return contentUnits.mapIndexed { index, unit ->
-        KaraokeSyllable(
-            content = unit,
-            start = start,
-            end = syllableEnd,
-            phonetic = phoneticsByUnit[index],
-        )
-    }
 }
 
 /**

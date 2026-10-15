@@ -150,10 +150,8 @@ import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isTtml
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseLyrics
 import moe.rukamori.archivetune.lyrics.LyricsUtils.parseTtml
-import moe.rukamori.archivetune.lyrics.LyricsUtils.providedRomanizedTextForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.providedTranslationTextForEntry
-import moe.rukamori.archivetune.lyrics.LyricsUtils.romanizeLyricsLine
-import moe.rukamori.archivetune.lyrics.LyricsUtils.shouldRomanizeLyricsLine
+import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.WordTimestamp
 import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
@@ -269,7 +267,7 @@ fun LyricsV2(
     val lrcBounceEnabled = lrcBounceEnabledPreference && !v2AnimationsDisabled
     val (romanizeChinese) = rememberPreference(LyricsRomanizeChineseKey, defaultValue = true)
     val (romanizeHindi) = rememberPreference(LyricsRomanizeHindiKey, defaultValue = true)
-    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = true)
+    val (romanizeJapanese) = rememberPreference(LyricsRomanizeJapaneseKey, defaultValue = false)
     val (romanizeKorean) = rememberPreference(LyricsRomanizeKoreanKey, defaultValue = true)
     val (romanizeOtherLanguages) = rememberPreference(LyricsRomanizeOtherLanguagesKey, defaultValue = true)
     val aiRomanizationSettings = AiLyricsRomanization.rememberSettings()
@@ -394,6 +392,8 @@ fun LyricsV2(
         }
     }
 
+    val romanizationContext = remember(entriesWithWords) { entriesWithWords.joinToString("\n") { it.text } }
+
     LaunchedEffect(entriesWithWords, romanizationPreferences) {
         if (!romanizationPreferences.isEnabled) {
             // Guard against clobbering AI results: when the AI engine owns romanisation the effect
@@ -409,27 +409,12 @@ fun LyricsV2(
         }
 
         entriesWithWords.forEach { entry ->
-            val providerRomanized = providedRomanizedTextForEntry(entry, romanizationPreferences)
-            if (providerRomanized != null) {
-                if (entry.romanizedTextFlow.value != providerRomanized) {
-                    entry.romanizedTextFlow.value = providerRomanized
-                }
-                return@forEach
-            }
-
-            if (!shouldRomanizeLyricsLine(entry.text, romanizationPreferences)) {
-                if (entry.romanizedTextFlow.value != null) {
-                    entry.romanizedTextFlow.value = null
-                }
-                return@forEach
-            }
-
             // Off the UI thread: one romanization per line on Main would queue dozens of
             // dispatcher hops right as the karaoke animation starts.
             launch(Dispatchers.Default) {
                 val romanized =
                     try {
-                        romanizeLyricsLine(entry.text, romanizationPreferences)
+                        phoneticsForEntry(entry, romanizationPreferences, romanizationContext).line
                     } catch (e: CancellationException) {
                         throw e
                     } catch (e: Exception) {

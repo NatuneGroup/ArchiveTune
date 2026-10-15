@@ -11,7 +11,6 @@ package moe.rukamori.archivetune.utils
 import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import moe.rukamori.archivetune.constants.AccountChannelHandleKey
 import moe.rukamori.archivetune.constants.AccountEmailKey
 import moe.rukamori.archivetune.constants.AccountImageUrlKey
@@ -29,6 +28,8 @@ import moe.rukamori.archivetune.constants.VisitorDataKey
 import moe.rukamori.archivetune.constants.WebClientPoTokenEnabledKey
 import moe.rukamori.archivetune.innertube.PlaybackAuthState
 import moe.rukamori.archivetune.innertube.YouTube
+import moe.rukamori.archivetune.App
+import moe.rukamori.archivetune.auth.YouTubeLoginRepository
 
 fun Preferences.toPlaybackAuthState(): PlaybackAuthState =
     PlaybackAuthState(
@@ -70,8 +71,6 @@ fun MutablePreferences.clearPlaybackAuthSession(clearAccountIdentity: Boolean = 
     }
 }
 
-fun PlaybackAuthState.withoutPlaybackLoginContext(): PlaybackAuthState = copy(dataSyncId = null).normalized()
-
 fun MutablePreferences.putLegacyPoToken(value: String?) {
     val normalized = value?.trim()?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
     if (normalized == null) {
@@ -83,85 +82,19 @@ fun MutablePreferences.putLegacyPoToken(value: String?) {
     remove(PoTokenPlayerKey)
 }
 
+/** Preserve the selected context and terminal auth errors; a repair is never a default-account retry. */
 suspend fun <T> Context.retryWithoutPlaybackLoginContext(block: suspend () -> Result<T>): Result<T> {
-    val initialAuthState = YouTube.currentPlaybackAuthState()
-    val initialResult = block()
-    if (initialResult.isSuccess) {
-        val repairedAuthState = YouTube.currentPlaybackAuthState()
-        restoreTemporaryPlaybackLoginContext(initialAuthState, repairedAuthState)
-        persistPlaybackAuthRepair(
-            initialAuthState = initialAuthState,
-            repairedAuthState = repairedAuthState,
-        )
-        return initialResult
-    }
-    val failure = initialResult.exceptionOrNull()
-
-    val currentAuthState = YouTube.currentPlaybackAuthState()
-    if (!shouldRetryWithoutPlaybackLoginContext(initialAuthState, currentAuthState, failure)) {
-        return initialResult
-    }
-
-    YouTube.authState = currentAuthState.withoutPlaybackLoginContext()
-    YTPlayerUtils.clearPlaybackAuthCaches()
-    var retryAuthState: PlaybackAuthState? = null
-    val retryResult =
-        try {
-            block().also {
-                retryAuthState = YouTube.currentPlaybackAuthState()
-            }
-        } finally {
-            restoreTemporaryPlaybackLoginContext(
-                initialAuthState = currentAuthState,
-                repairedAuthState = retryAuthState ?: YouTube.currentPlaybackAuthState(),
-            )
-        }
-    if (retryResult.isSuccess) {
-        persistPlaybackAuthRepair(
-            initialAuthState = currentAuthState,
-            repairedAuthState = requireNotNull(retryAuthState),
-        )
-    }
-    return retryResult
+    return retryWithoutPlaybackLoginContext(App.instance.youTubeLoginRepository, { YouTube.currentPlaybackAuthState() }, block)
 }
 
-private fun restoreTemporaryPlaybackLoginContext(
-    initialAuthState: PlaybackAuthState,
-    repairedAuthState: PlaybackAuthState,
-) {
-    val dataSyncId = initialAuthState.dataSyncId ?: return
-    if (repairedAuthState.dataSyncId != null) return
-    if (repairedAuthState.cookie != initialAuthState.cookie) return
-    if (YouTube.currentPlaybackAuthState().fingerprint != repairedAuthState.fingerprint) return
-    YouTube.authState = repairedAuthState.copy(dataSyncId = dataSyncId).normalized()
-}
-
-private suspend fun Context.persistPlaybackAuthRepair(
-    initialAuthState: PlaybackAuthState,
-    repairedAuthState: PlaybackAuthState,
-) {
-    if (initialAuthState.cookie != repairedAuthState.cookie) return
-    if (initialAuthState.fingerprint == repairedAuthState.fingerprint) return
-
-    dataStore.edit { preferences ->
-        repairedAuthState.visitorData
-            ?.takeIf { it.isNotBlank() && it != initialAuthState.visitorData }
-            ?.let { preferences[VisitorDataKey] = it }
-        repairedAuthState.dataSyncId
-            ?.takeIf { it.isNotBlank() && it != initialAuthState.dataSyncId }
-            ?.let { preferences[DataSyncIdKey] = it }
-    }
-}
-
-internal fun shouldRetryWithoutPlaybackLoginContext(
-    initialAuthState: PlaybackAuthState,
-    currentAuthState: PlaybackAuthState,
-    failure: Throwable?,
-): Boolean {
-    if (failure !is YTPlayerUtils.InvalidPlaybackLoginContextException) return false
-    if (!initialAuthState.hasPlaybackLoginContext) return false
-    if (!currentAuthState.hasPlaybackLoginContext) return false
-    if (currentAuthState.cookie != initialAuthState.cookie) return false
-    if (currentAuthState.dataSyncId != initialAuthState.dataSyncId) return false
-    return true
+internal suspend fun <T> retryWithoutPlaybackLoginContext(
+    owner: YouTubeLoginRepository,
+    currentAuth: () -> PlaybackAuthState,
+    block: suspend () -> Result<T>,
+): Result<T> {
+    owner.reconcilePersisted()
+    val origin = owner.origin()
+    val result = block()
+    if (result.isSuccess) owner.persistRepair(origin, currentAuth())
+    return result
 }

@@ -8,7 +8,24 @@
 
 package moe.rukamori.archivetune.models
 
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
 import java.io.Serializable
+import java.io.InputStream
+import java.io.OutputStream
+import java.io.ObjectInputStream
+import java.io.ObjectOutputStream
+
+/** Shared with MusicService's file adapter; keep the existing Java object-stream format. */
+internal object PlaybackPersistenceCodec {
+    fun read(input: InputStream): Any = ObjectInputStream(input).use { it.readObject() }
+
+    fun write(output: OutputStream, payload: Serializable) {
+        ObjectOutputStream(output).use {
+            it.writeObject(payload)
+            it.flush()
+        }
+    }
+}
 
 data class PersistQueue(
     val title: String?,
@@ -17,6 +34,8 @@ data class PersistQueue(
     val position: Long,
     val queueType: QueueType = QueueType.LIST,
     val queueData: QueueData? = null,
+    val shuffleOrder: List<Int>? = null,
+    val manualQueueKinds: List<Int?>? = null,
 ) : Serializable {
     companion object {
         private const val serialVersionUID = 1L
@@ -33,6 +52,10 @@ sealed class QueueType : Serializable {
     }
 
     object YOUTUBE : QueueType() {
+        private const val serialVersionUID = 1L
+    }
+
+    object YOUTUBE_PLAYLIST : QueueType() {
         private const val serialVersionUID = 1L
     }
 
@@ -70,6 +93,19 @@ sealed class QueueData : Serializable {
         companion object {
             private const val serialVersionUID = 1L
         }
+    }
+
+    data class YouTubePlaylistData(
+        val playlistId: String,
+        val videoId: String? = null,
+        val endpointParams: String? = null,
+        val endpointIndex: Int? = null,
+        val playlistSetVideoId: String? = null,
+        val snapshot: FinitePlaylistSnapshot,
+        val timelineOccurrences: List<String?>,
+        val needsReconciliation: Boolean = false,
+    ) : QueueData() {
+        companion object { private const val serialVersionUID = 1L }
     }
 
     data class LocalAlbumRadioData(

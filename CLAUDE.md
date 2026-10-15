@@ -51,7 +51,7 @@ history, and the app migrates a stored Canary channel to Nightly — see
 | [docs/sponsorblock.md](docs/sponsorblock.md) | Segment lookup and skipping |
 | [docs/tv.md](docs/tv.md) | Android TV / Fire TV: detection, focus, what is known to be missing |
 | [docs/fork-divergence.md](docs/fork-divergence.md) | What 4nx3b's fork has that we do not and the reverse, by tree comparison rather than commit count |
-| [docs/source-logins.md](docs/source-logins.md) | The four WebView sign-in screens: what each captures, why nothing saves unverified, the Qobuz app-secret search |
+| [docs/source-logins.md](docs/source-logins.md) | Provider sign-in, YouTube embedded recovery/private verification, credential proof limits and the Qobuz app-secret search |
 | [docs/instance-racing.md](docs/instance-racing.md) | Tidal public instances: where they come from, how the resolver races them, health and cooldowns |
 | [docs/telegram-native.md](docs/telegram-native.md) | The TDLight engine: why the native library is downloaded, the digest pinning, schema drift from 1.8.56 |
 | [docs/spotify-native-playback.md](docs/spotify-native-playback.md) | Playing Spotify tracks with no YouTube release: shipped ISRC resolution, and the unshipped native-id design |
@@ -63,12 +63,23 @@ history, and the app migrates a stored Canary channel to Nightly — see
 The channel/default, settings text/shared restart modal, bounded acoustic graph,
 existing DSP pin updates and audited native/USB cleanup are implemented follow-ups, including Unicode/phonetics, SimpMusic parity, optional JP-region dictionary
 automation, settings/target-bound AI results and downloader/room/account lifecycle repairs.
-Implementation, separate bounded final cleanup, three independent source reviews and confirmed
-fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new test methods were integrated,
-not executed. Actual exact-head CI results belong to the candidate PR/Actions; dev merge and
-Nightly verification follow both separate green gates. The no-local-JVM/build policy is scoped to this
-constrained mission, not ordinary contributor setup. See the maintained docs below
-for boundaries and the already-shipped final Canary; do not publish another Canary.
+Those changes shipped through PR #198 at `643a35fd09888769a4a2d588324398d68f0d6fb5`:
+Nightly `N202610151104` / build 6833, with separate green build/tests and 835 passed,
+0 failed, 0 skipped. Inherited permissive lint was not lint-clean; no device QA is claimed.
+
+The current YouTube follow-up is integrated local source, uncompiled and unreleased.
+Finite browse queues preserve occurrences and paging; unknown legacy recovery is conservative.
+Strict complete-list actions/sync and client shuffle do not claim exact server shuffle.
+Login-only recovery addresses an embedded `net::ERR_UNKNOWN_URL_SCHEME` Music store intent
+with one same-WebView return, private verified candidates and YouTube-scoped logout.
+The anonymous MetrolistGroup InnerTubeX `v0.9.2` pin is separate from those app fixes.
+At the 2026-10-15 review-fix integration checkpoint, 134 focused test methods are
+authored and integrated (original 121 plus 13 regressions), locally unexecuted.
+The five confirmed source-review corrections await targeted recheck and exact-head
+remote BUILD/TESTS; consult the candidate PR/Actions for actual final results.
+Historical results do not validate new code or live login/UI/audio behavior. The no-local-JVM/build
+policy is scoped to this constrained mission, not ordinary contributor setup. Keep gitlinks
+uninitialized/unchanged here and never publish another Canary.
 
 [docs/claude/](docs/claude/) carries what survives between sessions:
 [ARCHITECTURE.md](docs/claude/ARCHITECTURE.md) (playback and source boundaries),

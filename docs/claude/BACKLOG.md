@@ -21,11 +21,13 @@
 
 ## Release
 
-- Implementation, separate bounded final cleanup, three independent source reviews and confirmed
-  fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused tests were integrated
-  but unexecuted. Check candidate PR/Actions for exact-head parallel build/tests before the
-  new dev draft PR can be history-preservingly merged, followed by Nightly/
-  manifest verification. Final Canary already shipped; never publish another or reuse merged #196.
+- PR #198 shipped Nightly N202610151104 / build 6833 at merge
+  `643a35fd09888769a4a2d588324398d68f0d6fb5`, after separate green build/tests
+  (835 passed, 0 failed, 0 skipped; inherited permissive lint was not lint-clean).
+  The new finite-playlist/login/InnerTubeX source is local and uncompiled; focused fixtures,
+  independent changed-path review and exact-head remote BUILD/TESTS remain pending.
+  A new dev PR and history-preserving merge must precede its automatic Nightly/feed
+  verification. Never reuse merged #198/#196 or publish another Canary.
 - Device/thermal/USB/visual checks are unrun and explicitly waived for this continuation; keep
   that limitation visible. Stable promotion remains separate.
 
@@ -37,8 +39,8 @@ and [playback checkpoint](../playback-refinements-2026-10-04.md) while their ope
 reference pins and sibling ArchivePool delivery remain unresolved. Their dated branch/CI/provider
 snapshots are historical, not current service or feature status. In particular:
 
-- Half-silent downloads/seek-background silence need affected-source evidence; current
-  request-owned downloader staging/latch fixes are integrated locally, not established root-cause closure.
+- Half-silent downloads/seek-background silence need affected-source evidence; request-owned
+  downloader staging/latch fixes shipped in N202610151104, not established root-cause closure.
 - Preserve per-style seek, codec/Track Info, playlist/Spotify routing, lyrics offset/rendering,
   pill/BitChord/Yuma geometry and Looper requirements until actual current implementation is reviewed.
   Looper now exists; the old “not restored” snapshot is not current status.
@@ -52,8 +54,8 @@ snapshots are historical, not current service or feature status. In particular:
   WAF/deployment work is a separate delivery, not proof it was published.
 - Japanese/Unicode/AI/provider/cache and Listen Together/Spotify-account lifecycle changes are
   implemented and source-reviewed with focused fixtures, including real pinned IPADIC data and
-  the production tokenizer. Actual execution must be established by candidate PR/Actions;
-  source checks are not service, all-language or device validation.
+  the production tokenizer. Those fixtures executed in PR #198's green 835-test run;
+  neither that run nor source checks establish service, all-language or device validation.
 
 The superseded appearance and Home/Listen Together review notes were consolidated into
 [SETTINGS](SETTINGS.md), [ARCHITECTURE](ARCHITECTURE.md) and [RELEASES](RELEASES.md).

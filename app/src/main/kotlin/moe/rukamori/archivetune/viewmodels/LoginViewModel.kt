@@ -12,144 +12,191 @@ import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
-import moe.rukamori.archivetune.auth.CompleteYouTubeLoginUseCase
 import moe.rukamori.archivetune.auth.MissingYouTubeDataSyncIdException
-import moe.rukamori.archivetune.auth.SaveYouTubePoTokenUseCase
-import moe.rukamori.archivetune.auth.UpdateYouTubeLoginContextUseCase
+import moe.rukamori.archivetune.auth.YouTubeLoginAttempt
+import moe.rukamori.archivetune.auth.YouTubeLoginRepository
+import moe.rukamori.archivetune.auth.YouTubeSessionOrigin
 import moe.rukamori.archivetune.innertube.PlaybackAuthState
-import timber.log.Timber
 import javax.inject.Inject
 
 sealed interface LoginScreenState {
     data object Loading : LoginScreenState
-
-    data class Success(
-        val account: LoginAccountUiModel,
-    ) : LoginScreenState
-
+    data class Success(val account: LoginAccountUiModel) : LoginScreenState
     data object Empty : LoginScreenState
-
-    data class Error(
-        val error: LoginError,
-    ) : LoginScreenState
+    data class Error(val error: LoginError) : LoginScreenState
 }
 
 @Immutable
-data class LoginAccountUiModel(
-    val name: String,
-    val email: String,
-    val channelHandle: String,
-    val dataSyncId: String,
-)
+data class LoginAccountUiModel(val name: String, val email: String, val channelHandle: String, val dataSyncId: String)
 
-enum class LoginError {
-    MissingDataSyncId,
-    LoginFailed,
-}
+enum class LoginError { MissingDataSyncId, LoginFailed, Network, Http, UnsupportedNavigation, RedirectLoop, RendererLost }
 
 @HiltViewModel
-class LoginViewModel
-    @Inject
-    constructor(
-        private val completeYouTubeLogin: CompleteYouTubeLoginUseCase,
-        private val updateYouTubeLoginContext: UpdateYouTubeLoginContextUseCase,
-        private val saveYouTubePoToken: SaveYouTubePoTokenUseCase,
-    ) : ViewModel() {
-        private val _screenState = MutableStateFlow<LoginScreenState>(LoginScreenState.Empty)
-        val screenState: StateFlow<LoginScreenState> = _screenState.asStateFlow()
+class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRepository) : ViewModel() {
+    private val _screenState = MutableStateFlow<LoginScreenState>(LoginScreenState.Loading)
+    val screenState: StateFlow<LoginScreenState> = _screenState.asStateFlow()
+    private val _webRevision = MutableStateFlow(0L)
+    val webRevision: StateFlow<Long> = _webRevision.asStateFlow()
+    private var attempt: YouTubeLoginAttempt? = null
+    private var loginJob: Job? = null
+    private var beginJob: Job? = null
+    private var candidate: PlaybackAuthState? = null
+    private var submitted: PlaybackAuthState? = null
+    private var submissionRevision = 0L
+    private var released = true
+    private var completedOrigin: YouTubeSessionOrigin? = null
+    private var successConsumed = false
 
-        private var latestVisitorData: String? = null
-        private var latestDataSyncId: String? = null
-        private var loginJob: Job? = null
-        private var activeCookie: String? = null
-        private var completedCookie: String? = null
-
-        fun onVisitorDataExtracted(visitorData: String?) {
-            val normalized = visitorData.normalizeAuthValue() ?: return
-            latestVisitorData = normalized
-            viewModelScope.launch {
-                updateYouTubeLoginContext(visitorData = normalized)
+    init {
+        viewModelScope.launch {
+            repository.changes.collect {
+                val owner = attempt
+                if (!released && owner != null && !repository.isCurrent(owner) &&
+                    loginJob?.isActive != true && _screenState.value !is LoginScreenState.Success) {
+                    _screenState.value = LoginScreenState.Error(LoginError.LoginFailed)
+                }
             }
         }
+    }
 
-        fun onDataSyncIdExtracted(dataSyncId: String?) {
-            val normalized = dataSyncId.normalizeDataSyncId() ?: return
-            if (latestDataSyncId == normalized) return
+    fun consumeSuccess(): Boolean {
+        val origin = completedOrigin ?: return false
+        if (released || successConsumed) return false
+        if (!repository.isCurrent(origin)) {
+            _screenState.value = LoginScreenState.Error(LoginError.LoginFailed)
+            return false
+        }
+        successConsumed = true
+        return true
+    }
 
-            val currentState = _screenState.value
-            if (currentState is LoginScreenState.Success && currentState.account.dataSyncId != normalized) return
+    fun open() {
+        if (!released) return
+        released = false
+        begin(retryCandidate = false)
+    }
 
-            latestDataSyncId = normalized
-            viewModelScope.launch {
-                updateYouTubeLoginContext(dataSyncId = normalized)
+    fun retry() { if (!released) begin(retryCandidate = true) }
+
+    private fun begin(retryCandidate: Boolean) {
+        repository.cancel(attempt)
+        attempt = null
+        loginJob?.cancel()
+        beginJob?.cancel()
+        ++submissionRevision
+        submitted = null
+        completedOrigin = null
+        successConsumed = false
+        _screenState.value = LoginScreenState.Loading
+        beginJob = viewModelScope.launch {
+            try {
+                val next = repository.beginAttempt()
+                if (released) { repository.cancel(next); return@launch }
+                attempt = next
+                _webRevision.value += 1
+                // An incomplete cached snapshot needs the new document's finite extraction,
+                // not another immediate missing-context failure that blocks fresh snapshots.
+                if (retryCandidate) candidate?.takeIf { it.hasPlaybackLoginContext }?.let { submit(it) }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                if (!released) _screenState.value = LoginScreenState.Error(LoginError.LoginFailed)
             }
-            activeCookie?.let { startLogin(it, replaceActive = true) }
         }
+    }
 
-        fun onPoTokenExtracted(poToken: String?) {
-            val normalized = poToken.normalizeAuthValue() ?: return
-            viewModelScope.launch {
-                saveYouTubePoToken(normalized)
-            }
+    fun ownsView(viewRevision: Long): Boolean = !released && viewRevision == _webRevision.value &&
+        attempt?.let(repository::isCurrent) == true
+
+    fun onPageLoading(viewRevision: Long) {
+        if (ownsView(viewRevision) && _screenState.value !is LoginScreenState.Error && loginJob?.isActive != true) {
+            _screenState.value = LoginScreenState.Loading
         }
+    }
 
-        fun onCookiesCaptured(cookie: String?) {
-            val normalizedCookie = cookie.normalizeAuthValue() ?: return
-            startLogin(normalizedCookie, replaceActive = false)
+    fun onPageReady(viewRevision: Long) {
+        if (ownsView(viewRevision) && _screenState.value == LoginScreenState.Loading && loginJob?.isActive != true) {
+            _screenState.value = LoginScreenState.Empty
         }
+    }
 
-        private fun startLogin(
-            normalizedCookie: String,
-            replaceActive: Boolean,
-        ) {
-            if (completedCookie == normalizedCookie) return
-            if (!replaceActive && loginJob?.isActive == true && activeCookie == normalizedCookie) return
+    fun onError(viewRevision: Long, error: LoginError) {
+        if (!ownsView(viewRevision)) return
+        loginJob?.cancel()
+        ++submissionRevision
+        _screenState.value = LoginScreenState.Error(error)
+    }
 
-            activeCookie = normalizedCookie
+    fun onContextExtracted(viewRevision: Long, cookie: String, visitor: String?, dataSyncId: String?) {
+        if (!ownsView(viewRevision) || _screenState.value is LoginScreenState.Error) return
+        val next = PlaybackAuthState(cookie = cookie, visitorData = visitor, dataSyncId = dataSyncId).normalized()
+        if (candidate != next && next.dataSyncId == null) {
             loginJob?.cancel()
-            loginJob =
-                viewModelScope.launch {
-                    _screenState.value = LoginScreenState.Loading
-                    completeYouTubeLogin(
-                        cookie = normalizedCookie,
-                        visitorData = latestVisitorData,
-                        dataSyncId = latestDataSyncId,
-                    ).onSuccess { session ->
-                        completedCookie = normalizedCookie
-                        latestVisitorData = session.authState.visitorData
-                        latestDataSyncId = session.authState.dataSyncId
-                        _screenState.value =
-                            LoginScreenState.Success(
-                                LoginAccountUiModel(
-                                    name = session.accountName,
-                                    email = session.accountEmail,
-                                    channelHandle = session.accountChannelHandle,
-                                    dataSyncId = session.authState.dataSyncId.orEmpty(),
-                                ),
-                            )
-                    }.onFailure { throwable ->
-                        Timber.e(throwable, "Failed to complete YouTube login")
-                        _screenState.value =
-                            LoginScreenState.Error(
-                                if (throwable is MissingYouTubeDataSyncIdException) {
-                                    LoginError.MissingDataSyncId
-                                } else {
-                                    LoginError.LoginFailed
-                                },
-                            )
+            ++submissionRevision
+            submitted = null
+        }
+        candidate = next
+        // Wait for the finite extraction budget before reporting a missing page context.
+        if (next.dataSyncId != null) submit(next)
+    }
+
+    fun onExtractionExhausted(viewRevision: Long) {
+        if (ownsView(viewRevision) && _screenState.value !is LoginScreenState.Success && loginJob?.isActive != true) {
+            _screenState.value = LoginScreenState.Error(if (candidate?.dataSyncId == null) LoginError.MissingDataSyncId else LoginError.LoginFailed)
+        }
+    }
+
+    private fun submit(next: PlaybackAuthState) {
+        val owner = attempt ?: return
+        if (submitted == next) return
+        // A newly observed selected context supersedes the old candidate, not the committed
+        // account. The repository's private validation mutex keeps cancelled/new work single-flight.
+        loginJob?.cancel()
+        submitted = next
+        val submission = ++submissionRevision
+        loginJob = viewModelScope.launch {
+            _screenState.value = LoginScreenState.Loading
+            repository.completeLogin(owner, next.cookie.orEmpty(), next.visitorData, next.dataSyncId)
+                .onSuccess { session ->
+                    // Commit invalidates attempt ownership itself. Only this still-mounted submission
+                    // may deliver its success; a later logout/switch cannot receive a stale callback.
+                    if (!released && attempt == owner && submission == submissionRevision) {
+                        if (repository.isCurrent(session.origin)) {
+                            completedOrigin = session.origin
+                            _screenState.value = LoginScreenState.Success(LoginAccountUiModel(session.accountName,
+                                session.accountEmail, session.accountChannelHandle, session.authState.dataSyncId.orEmpty()))
+                        } else {
+                            // IO may have committed before logout/switch won, while Main still
+                            // awaited this result. The mounted submission still needs Retry.
+                            _screenState.value = LoginScreenState.Error(LoginError.LoginFailed)
+                        }
+                    }
+                }.onFailure { error ->
+                    if (!released && attempt == owner && submission == submissionRevision) {
+                        _screenState.value = LoginScreenState.Error(if (error is MissingYouTubeDataSyncIdException) LoginError.MissingDataSyncId else LoginError.LoginFailed)
                     }
                 }
         }
     }
 
-private fun String?.normalizeAuthValue(): String? {
-    val trimmed = this?.trim()
-    return trimmed?.takeIf { it.isNotEmpty() && !it.equals("null", ignoreCase = true) }
-}
+    fun release() {
+        released = true
+        ++submissionRevision
+        repository.cancel(attempt)
+        attempt = null
+        beginJob?.cancel()
+        loginJob?.cancel()
+        candidate = null
+        submitted = null
+        completedOrigin = null
+    }
 
-private fun String?.normalizeDataSyncId(): String? = PlaybackAuthState(dataSyncId = this).normalized().dataSyncId
+    override fun onCleared() { release() }
+}

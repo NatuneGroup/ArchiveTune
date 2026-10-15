@@ -42,12 +42,12 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -68,6 +68,8 @@ import androidx.media3.exoplayer.offline.Download
 import androidx.media3.exoplayer.offline.DownloadService
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -91,6 +93,8 @@ import moe.rukamori.archivetune.models.MediaMetadata
 import moe.rukamori.archivetune.models.toMediaMetadata
 import moe.rukamori.archivetune.playback.ExoDownloadService
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.playback.queues.loadCompleteYouTubePlaylist
+import moe.rukamori.archivetune.playback.queues.isFiniteYouTubePlaylist
 import moe.rukamori.archivetune.ui.component.MenuHeaderCard
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.ListDialog
@@ -126,6 +130,127 @@ fun YouTubePlaylistMenu(
     val downloadUtil = LocalDownloadUtil.current
     val playerConnection = LocalPlayerConnection.current ?: return
     val syncUtils = LocalSyncUtils.current
+    fun insertWholePlaylist(playNext: Boolean) {
+        if (isFiniteYouTubePlaylist(playlist.id)) {
+            playerConnection.service.wholeYouTubePlaylist(playlist.id, playNext = playNext)
+        } else {
+            coroutineScope.launch {
+                val items = songs.ifEmpty {
+                    withContext(Dispatchers.IO) { YouTube.playlist(playlist.id).completed().getOrThrow().songs }
+                }.map { it.toMediaItem() }
+                if (playNext) playerConnection.playNext(items) else playerConnection.addToQueue(items)
+                onDismiss()
+            }
+        }
+    }
+    YouTubePlaylistLoadDialog()
+    var bookmarkJob by remember(playlist.id) { mutableStateOf<Job?>(null) }
+    var bookmarkError by remember(playlist.id) { mutableStateOf(false) }
+    var bookmarkGeneration by remember(playlist.id) { mutableStateOf(0) }
+    fun bookmarkPlaylist() {
+        if (bookmarkJob?.isActive == true) return
+        val generation = ++bookmarkGeneration
+        bookmarkJob = coroutineScope.launch(Dispatchers.IO) {
+            try {
+                val fetchedSongs = loadCompleteYouTubePlaylist(playlist.id).songs
+                database.withTransaction {
+                    val existingPlaylist = playlistEntityByBrowseId(playlist.id)
+                    val targetPlaylistId =
+                        if (existingPlaylist == null) {
+                            val playlistEntity =
+                                PlaylistEntity(
+                                    name = playlist.title,
+                                    browseId = playlist.id,
+                                    thumbnailUrl = playlist.thumbnail,
+                                    isEditable = false,
+                                    remoteSongCount =
+                                        playlist.songCountText?.let {
+                                            Regex("""\d+""").find(it)?.value?.toIntOrNull()
+                                        },
+                                    playEndpointParams = playlist.playEndpoint?.params,
+                                    shuffleEndpointParams = playlist.shuffleEndpoint?.params,
+                                    radioEndpointParams = playlist.radioEndpoint?.params,
+                                ).toggleLike()
+                            insert(playlistEntity)
+                            playlistEntityByBrowseId(playlist.id)?.id ?: playlistEntity.id
+                        } else {
+                            val refreshedPlaylist =
+                                existingPlaylist.copy(
+                                    name = playlist.title,
+                                    browseId = playlist.id,
+                                    thumbnailUrl = playlist.thumbnail,
+                                    isEditable = playlist.isEditable,
+                                    remoteSongCount =
+                                        playlist.songCountText?.let {
+                                            Regex("""\d+""").find(it)?.value?.toIntOrNull()
+                                        },
+                                    playEndpointParams = playlist.playEndpoint?.params,
+                                    shuffleEndpointParams = playlist.shuffleEndpoint?.params,
+                                    radioEndpointParams = playlist.radioEndpoint?.params,
+                                )
+                            update(
+                                if (existingPlaylist.bookmarkedAt == null) {
+                                    refreshedPlaylist.toggleLike()
+                                } else {
+                                    refreshedPlaylist
+                                },
+                            )
+                            existingPlaylist.id
+                        }
+                    clearPlaylist(targetPlaylistId)
+                    fetchedSongs.forEach { song -> insert(song.toMediaMetadata()) }
+                    fetchedSongs
+                        .mapIndexed { index, song ->
+                            PlaylistSongMap(
+                                songId = song.id,
+                                playlistId = targetPlaylistId,
+                                position = index,
+                                setVideoId = song.setVideoId,
+                            )
+                        }.forEach(::insert)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                withContext(Dispatchers.Main) { if (generation == bookmarkGeneration) bookmarkError = true }
+            } finally {
+                withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
+                    if (generation == bookmarkGeneration) bookmarkJob = null
+                }
+            }
+        }
+    }
+    fun cancelBookmark() {
+        bookmarkGeneration++
+        bookmarkJob?.cancel()
+        bookmarkJob = null
+    }
+    DisposableEffect(playlist.id) {
+        onDispose { cancelBookmark() }
+    }
+    if (bookmarkError) {
+        DefaultDialog(
+            onDismiss = { bookmarkError = false },
+            content = { Text(stringResource(R.string.youtube_playlist_incomplete)) },
+            buttons = {
+                TextButton(onClick = { bookmarkError = false; bookmarkPlaylist() }) {
+                    Text(stringResource(R.string.youtube_playlist_retry))
+                }
+                TextButton(onClick = { bookmarkError = false }) { Text(stringResource(android.R.string.cancel)) }
+            },
+        )
+    }
+    if (bookmarkJob?.isActive == true) {
+        DefaultDialog(
+            onDismiss = { cancelBookmark() },
+            content = { Text(stringResource(R.string.youtube_playlist_loading)) },
+            buttons = {
+                TextButton(onClick = { cancelBookmark() }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
     val dbPlaylist by database.playlistByBrowseId(playlist.id).collectAsStateWithLifecycle(initialValue = null)
     val (speedDialSongIds, onSpeedDialSongIdsChange) = rememberPreference(SpeedDialSongIdsKey, "")
     val speedDialPins = remember(speedDialSongIds) { parseSpeedDialPins(speedDialSongIds) }
@@ -148,19 +273,10 @@ fun YouTubePlaylistMenu(
 
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
+        operationKey = playlist.id,
         onGetSong = {
             val allSongs =
-                songs
-                    .ifEmpty {
-                        YouTube
-                            .playlist(playlist.id)
-                            .completed()
-                            .getOrNull()
-                            ?.songs
-                            .orEmpty()
-                    }.map {
-                        it.toMediaMetadata()
-                    }
+                loadCompleteYouTubePlaylist(playlist.id).songs.map { it.toMediaMetadata() }
             database.withTransaction {
                 allSongs.forEach(::insert)
             }
@@ -203,75 +319,7 @@ fun YouTubePlaylistMenu(
                     IconButton(
                         onClick = {
                             if (dbPlaylist?.playlist == null) {
-                                coroutineScope.launch(Dispatchers.IO) {
-                                    val fetchedSongs =
-                                        songs.ifEmpty {
-                                            YouTube
-                                                .playlist(playlist.id)
-                                                .completed()
-                                                .getOrNull()
-                                                ?.songs
-                                                .orEmpty()
-                                        }
-                                    database.withTransaction {
-                                        val existingPlaylist = playlistEntityByBrowseId(playlist.id)
-                                        val targetPlaylistId =
-                                            if (existingPlaylist == null) {
-                                                val playlistEntity =
-                                                    PlaylistEntity(
-                                                        name = playlist.title,
-                                                        browseId = playlist.id,
-                                                        thumbnailUrl = playlist.thumbnail,
-                                                        isEditable = false,
-                                                        remoteSongCount =
-                                                            playlist.songCountText?.let {
-                                                                Regex("""\d+""").find(it)?.value?.toIntOrNull()
-                                                            },
-                                                        playEndpointParams = playlist.playEndpoint?.params,
-                                                        shuffleEndpointParams = playlist.shuffleEndpoint?.params,
-                                                        radioEndpointParams = playlist.radioEndpoint?.params,
-                                                    ).toggleLike()
-                                                insert(playlistEntity)
-                                                playlistEntityByBrowseId(playlist.id)?.id ?: playlistEntity.id
-                                            } else {
-                                                val refreshedPlaylist =
-                                                    existingPlaylist.copy(
-                                                        name = playlist.title,
-                                                        browseId = playlist.id,
-                                                        thumbnailUrl = playlist.thumbnail,
-                                                        isEditable = playlist.isEditable,
-                                                        remoteSongCount =
-                                                            playlist.songCountText?.let {
-                                                                Regex("""\d+""").find(it)?.value?.toIntOrNull()
-                                                            },
-                                                        playEndpointParams = playlist.playEndpoint?.params,
-                                                        shuffleEndpointParams = playlist.shuffleEndpoint?.params,
-                                                        radioEndpointParams = playlist.radioEndpoint?.params,
-                                                    )
-                                                update(
-                                                    if (existingPlaylist.bookmarkedAt == null) {
-                                                        refreshedPlaylist.toggleLike()
-                                                    } else {
-                                                        refreshedPlaylist
-                                                    },
-                                                )
-                                                existingPlaylist.id
-                                            }
-                                        if (fetchedSongs.isNotEmpty()) {
-                                            clearPlaylist(targetPlaylistId)
-                                            fetchedSongs.forEach { song -> insert(song.toMediaMetadata()) }
-                                            fetchedSongs
-                                                .mapIndexed { index, song ->
-                                                    PlaylistSongMap(
-                                                        songId = song.id,
-                                                        playlistId = targetPlaylistId,
-                                                        position = index,
-                                                        setVideoId = song.setVideoId,
-                                                    )
-                                                }.forEach(::insert)
-                                        }
-                                    }
-                                }
+                                bookmarkPlaylist()
                             } else {
                                 database.transaction {
                                     val currentPlaylist = dbPlaylist!!.playlist
@@ -382,17 +430,7 @@ fun YouTubePlaylistMenu(
         isVisible = showImportPlaylistDialog,
         onGetSong = {
             val allSongs =
-                songs
-                    .ifEmpty {
-                        YouTube
-                            .playlist(playlist.id)
-                            .completed()
-                            .getOrNull()
-                            ?.songs
-                            .orEmpty()
-                    }.map {
-                        it.toMediaMetadata()
-                    }
+                loadCompleteYouTubePlaylist(playlist.id).songs.map { it.toMediaMetadata() }
             database.withTransaction {
                 allSongs.forEach(::insert)
             }
@@ -495,8 +533,13 @@ fun YouTubePlaylistMenu(
                             },
                             text = playText,
                             onClick = {
-                                playerConnection.playQueue(YouTubeQueue.playlist(playEndpoint))
-                                onDismiss()
+                                playerConnection.playQueue(
+                                    YouTubeQueue.playlist(
+                                        playEndpoint.copy(playlistId = playlist.id),
+                                        startFromBeginning = true,
+                                    ),
+                                )
+                                if (!isFiniteYouTubePlaylist(playlist.id)) onDismiss()
                             },
                         ),
                     )
@@ -514,8 +557,12 @@ fun YouTubePlaylistMenu(
                             },
                             text = shuffleText,
                             onClick = {
-                                playerConnection.playQueue(YouTubeQueue.playlist(shuffleEndpoint))
-                                onDismiss()
+                                if (isFiniteYouTubePlaylist(playlist.id)) {
+                                    playerConnection.service.wholeYouTubePlaylist(playlist.id, shuffle = true)
+                                } else {
+                                    playerConnection.playQueue(YouTubeQueue.playlist(shuffleEndpoint))
+                                    onDismiss()
+                                }
                             },
                         ),
                     )
@@ -552,6 +599,7 @@ fun YouTubePlaylistMenu(
                 bottom = 8.dp + WindowInsets.systemBars.asPaddingValues().calculateBottomPadding(),
             ),
     ) {
+        item { YouTubePlaylistRecoveryActions() }
         item {
             Spacer(modifier = Modifier.height(8.dp))
         }
@@ -582,22 +630,7 @@ fun YouTubePlaylistMenu(
                         },
                         modifier =
                             Modifier.clickable {
-                                coroutineScope.launch {
-                                    songs
-                                        .ifEmpty {
-                                            withContext(Dispatchers.IO) {
-                                                YouTube
-                                                    .playlist(playlist.id)
-                                                    .completed()
-                                                    .getOrNull()
-                                                    ?.songs
-                                                    .orEmpty()
-                                            }
-                                        }.let { list ->
-                                            playerConnection.playNext(list.map { it.toMediaItem() })
-                                        }
-                                }
-                                onDismiss()
+                                insertWholePlaylist(playNext = true)
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
@@ -617,22 +650,7 @@ fun YouTubePlaylistMenu(
                         },
                         modifier =
                             Modifier.clickable {
-                                coroutineScope.launch {
-                                    songs
-                                        .ifEmpty {
-                                            withContext(Dispatchers.IO) {
-                                                YouTube
-                                                    .playlist(playlist.id)
-                                                    .completed()
-                                                    .getOrNull()
-                                                    ?.songs
-                                                    .orEmpty()
-                                            }
-                                        }.let { list ->
-                                            playerConnection.addToQueue(list.map { it.toMediaItem() })
-                                        }
-                                }
-                                onDismiss()
+                                insertWholePlaylist(playNext = false)
                             },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
@@ -1023,6 +1041,63 @@ fun YouTubePlaylistMenu(
                             colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                         )
                     }
+                }
+            }
+        }
+    }
+}
+
+/** The same owned operation is reachable from header, playlist menu and player recovery. */
+@Composable
+internal fun YouTubePlaylistLoadDialog() {
+    val connection = LocalPlayerConnection.current ?: return
+    val state by connection.service.playlistLoadState.collectAsStateWithLifecycle()
+    if (!state.showDialog || (!state.loading && !state.incomplete)) return
+    DefaultDialog(
+        onDismiss = {
+            if (state.loading) connection.service.cancelPlaylistLoading()
+            connection.service.dismissPlaylistLoadError()
+        },
+        content = {
+            Text(stringResource(if (state.loading) R.string.youtube_playlist_loading else R.string.youtube_playlist_incomplete))
+        },
+        buttons = {
+            if (state.incomplete) {
+                TextButton(onClick = { connection.service.retryPlaylistLoading() }) {
+                    Text(stringResource(R.string.youtube_playlist_retry))
+                }
+                if (!state.wholeAction) {
+                    TextButton(onClick = { connection.service.reloadFinitePlaylist() }) {
+                        Text(stringResource(R.string.youtube_playlist_reload))
+                    }
+                }
+            }
+            TextButton(onClick = {
+                if (state.loading) connection.service.cancelPlaylistLoading()
+                connection.service.dismissPlaylistLoadError()
+            }) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+internal fun YouTubePlaylistRecoveryActions() {
+    val connection = LocalPlayerConnection.current ?: return
+    val state by connection.service.playlistLoadState.collectAsStateWithLifecycle()
+    if (!state.loading && !state.incomplete) return
+    Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+        Text(stringResource(if (state.loading) R.string.youtube_playlist_loading else R.string.youtube_playlist_incomplete))
+        if (state.loading) {
+            TextButton(onClick = { connection.service.cancelPlaylistLoading() }) {
+                Text(stringResource(R.string.youtube_playlist_cancel))
+            }
+        } else {
+            TextButton(onClick = { connection.service.retryPlaylistLoading() }) {
+                Text(stringResource(R.string.youtube_playlist_retry))
+            }
+            if (!state.wholeAction) {
+                TextButton(onClick = { connection.service.reloadFinitePlaylist() }) {
+                    Text(stringResource(R.string.youtube_playlist_reload))
                 }
             }
         }

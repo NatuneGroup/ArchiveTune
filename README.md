@@ -261,7 +261,13 @@ The former Canary channel (`C`-tagged pre-releases from the `canary` branch) has
 
 The in-app updater first reads a small update manifest (`stable.json` or `nightly.json`) that CI publishes on the `update-feed` release. That download needs no GitHub key and does not count against GitHub's API rate limit; the updater only falls back to the GitHub API when the manifest is unavailable.
 
-### Current development follow-up (not yet released)
+### Delivered in Nightly N202610151104
+
+PR #198 merged at `643a35fd09888769a4a2d588324398d68f0d6fb5` and shipped
+Nightly **N202610151104 / build 6833**. Its separate exact-head build and unit-test
+gates succeeded: **835 passed, 0 failed, 0 skipped**. These are historical results,
+not validation of the new YouTube follow-up below. Lint ran under the inherited
+permissive policy (318 Error / 745 Warning / 43 Hint), not a lint-clean result.
 
 - Stable and Nightly remain explicit user choices on every build; build identity supplies only the unset default. Offers retain channel association and require a known newer version code.
 - Visible overflowing settings descriptions scroll automatically for finite passes, respecting lifecycle and reduced motion. Restart-scoped edits keep the running values until restart and share one **Restart now / Later** dialog after persistence; Later never restarts automatically.
@@ -271,14 +277,48 @@ The in-app updater first reads a small update manifest (`stable.json` or `nightl
 - AI translation accepts complete validated results, keeps failures retryable and binds caches/results to settings and the current lyrics target. DeepL has explicit target codes and does not claim romanization support. All active translation surfaces invalidate changed targets; automatic calls retain exclusion gates. Downloader requests own separate staging/latches; Listen Together retries retain connection/request identity; Spotify refresh/sign-in/sign-out serialize account mutation.
 - Japanese dictionary automation uses primary system-device locale region JP, never IP geolocation. One persisted best-effort foreground consideration may download over Wi-Fi or cellular; offline consumes that consideration, with manual retry still available. Explicit off/removal prevents automatic installation. Download/checksum/tokenizer work stays off the startup/render thread, and the pinned 13,343,016-byte IPADIC pack is optional offline-romaji data, not UI translation or a universal language engine.
 
-Implementation, separate bounded final cleanup, three independent source reviews and their
-confirmed fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods
-(including real pinned IPADIC/production-tokenizer coverage) were integrated but not yet executed.
-For actual exact-head build/lint and unit-test outcomes, consult the candidate PR and
-[GitHub Actions](https://github.com/NatuneGroup/ArchiveTune/actions); source review is not a CI pass.
-The new dev draft PR must pass both separate parallel gates before history-preserving merge
-and Nightly/manifest verification.
+The delivered release includes the focused production-tokenizer/IPADIC fixtures.
 No device, visual, USB or all-language validation is claimed.
+
+### YouTube follow-up (local source; uncompiled and unreleased)
+
+- Ordinary playlists now use an app-owned **finite browse queue**, separate from RD/Mix
+  and explicit radio. Paging preserves entry occurrences (including repeated videos),
+  selected-track position, manual additions and existing filtering/repeat policies.
+  Recommendations require confirmed finite exhaustion and the existing autoplay policy;
+  missing legacy state or a failed page cannot silently become radio.
+- New queue snapshots retain finite paging/occurrence state. Legacy queues keep saved
+  items and position; only unambiguous order-preserving alignment permits recovery.
+  Otherwise **Retry / Cancel / Reload** remains explicit instead of guessing order or completion.
+- Whole-playlist **Add to queue / Play next / import / sync** requires strict complete
+  loading before insertion or saved-playlist replacement. Failed, stalled or bounded loading
+  is incomplete, never partial success. Ordinary **Shuffle** loads the complete finite list
+  and uses client-side shuffle, not the exact server shuffle sequence. No fixed 80-track
+  server limit has been established.
+- Login recovery addresses the observed embedded **`net::ERR_UNKNOWN_URL_SCHEME`**
+  for a Music store intent, not a proven renderer crash. Narrow official install targets
+  get one guarded HTTPS Music return in the **same WebView**, with visible loading/errors
+  and Retry/Cancel. Normal DOM storage and the cookie jar survive entry/return/retry;
+  logout expires YouTube scopes rather than wiping unrelated provider storage.
+- Candidate cookie/visitor/account context stays private in memory until final-context
+  account verification on a reusable private client succeeds. Only a current verified
+  attempt commits identity/context together; failure/cancel preserves the previous account,
+  and obsolete callbacks/refreshes cannot overwrite a newer session.
+- Existing anonymous **MetrolistGroup/innertubex v0.9.2** is pinned at
+  `c19d4860b0bc8afa0b1b3cc717abeb8119bbb605` (GPL-3.0 unchanged).
+  This library update is not the playlist or login fix. Manual primary-client choice,
+  terminal login errors and **YTPlayerUtils → InnerTubeX → NewPipe → Echo** remain;
+  no personal/pool cookie bridge or new HLS/SABR/bounded-range transport is enabled.
+
+At the 2026-10-15 review-fix integration checkpoint, **134 focused test methods**
+are authored and integrated (the original 121 plus 13 regressions), locally unexecuted.
+The five confirmed source-review corrections await targeted recheck and separate
+exact-head remote BUILD/TESTS; actual final results belong in the candidate PR/Actions,
+not this pre-CI checkpoint. No local compilation/test execution or live Google login,
+YouTube page-envelope, rendered WebView or audible playback validation is claimed. Historical green results do
+not establish new success. See [login boundaries](docs/source-logins.md),
+[extraction provenance](docs/extraction.md) and [release gates](docs/claude/RELEASES.md);
+actual later results belong in the candidate PR/[Actions](https://github.com/NatuneGroup/ArchiveTune/actions).
 
 > [!WARNING]  
 > **Notes:** The trusted download source is listed above; we are not responsible for any risks you may encounter from downloading from other sources.

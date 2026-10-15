@@ -10,6 +10,45 @@ Crossfade and automix hand-offs are decided by `CrossfadeHandoffPolicy` (`CONTIN
 
 Stream errors are handled through bounded URL/cache invalidation, source re-resolution, codec recovery, and optional next-item skipping. Do not turn a terminal error into an unbounded retry loop.
 
+## Finite YouTube playlists (local source; validation pending)
+
+Ordinary playlist entry points use `YouTubePlaylistQueue` and `FinitePlaylistLoader`
+over the existing core browse playlist/continuation APIs. RD/Mix and explicit radio
+stay on `YouTubeQueue`. MusicService owns one generation-checked finite load; accepted
+items and continuation state move together. Occurrence keys preserve repeated videos;
+filtered display indexes are not source locators. Selected preloads retain playback
+position while the resolved prefix is integrated. Manual additions, actual shuffle
+traversal, filtering and repeat remain independent of finite paging.
+
+Persistence retains finite origin, occurrence and completion/token state. Legacy records
+restore saved items/position with unknown completion; only unique order-preserving
+alignment permits automatic rehydration. Failure/ambiguity keeps that timeline with
+explicit retry/reload, never guessed exhaustion or radio.
+
+Strict completion gates whole-list insertion, import/sync and ordinary Shuffle.
+Shuffle uses the complete finite list and existing client shuffle, not server ordering.
+No target is partially replaced/inserted on failed completion; old playback remains
+until complete shuffle success. Work is bounded to 200 browse requests / 120 seconds
+per operation, including selected-occurrence resolution. Ambiguous empty terminal
+envelopes fail incomplete; only explicit numeric-zero initial counts prove empty.
+No live envelope test or fixed 80-track server limit is established.
+
+## YouTube login ownership (local source; validation pending)
+
+Login-only official Music install recognition makes one owned fixed same-WebView
+HTTPS return; the observed `net::ERR_UNKNOWN_URL_SCHEME` is not proof of renderer loss.
+Normal DOM storage/current jar remain; logout expires YouTube scopes only.
+Candidates stay memory-only through a private reusable core client, serialized
+validation and final-context account verification. Atomic repository mutation checks
+attempt/base revision before committing identity/context. App collectors reconcile
+latest persistence; delayed refresh/repair/logout/switch writers share ownership.
+See [source logins](../source-logins.md) for navigation/security boundaries.
+
+Existing anonymous MetrolistGroup InnerTubeX `v0.9.2` is separate maintenance, not
+the login or pager implementation. Primary/manual client, terminal auth errors,
+YTPlayerUtils → InnerTubeX → NewPipe → Echo and direct-audio guards remain intact.
+Focused tests, independent review and remote compilation/execution remain pending.
+
 ## Sources
 
 The shared `audiosource` contract resolves Tidal, Qobuz (plus its backup), Deezer, Apple Music,
@@ -108,8 +147,9 @@ opaque and configuration-bound, and obsolete work cannot publish to a changed ly
 Primary system-device region JP, no usable pack and no off/removal/prior-attempt flag permit
 one persisted foreground consideration; offline consumes it, while manual retry remains.
 No geolocation, startup wait or background watcher is added. The pinned IPADIC JAR is data,
-not executable downloaded code. The real pinned-data/production-tokenizer fixture is integrated;
-at the 2026-10-15 pre-CI checkpoint it was unexecuted. Consult candidate PR/Actions for actual execution.
+not executable downloaded code. The real pinned-data/production-tokenizer fixture executed
+in PR #198's green 835-test run and shipped in Nightly N202610151104 / build 6833.
+That historical result does not validate the newer YouTube source above.
 
 Downloader requests own UUID staging directories, latches and transport/probe cleanup.
 Spotify refresh, sign-in and sign-out serialize credential persistence and session invalidation

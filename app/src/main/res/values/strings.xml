@@ -1,5 +1,13 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
+    <string name="youtube_login_working">Loading sign-in or verifying your selected account…</string>
+    <string name="youtube_login_missing_context">The selected YouTube account context is missing. Retry after the Music page finishes loading.</string>
+    <string name="youtube_login_validation_failed">The selected YouTube account could not be verified. Your previous account has not been changed. Retry or cancel.</string>
+    <string name="youtube_login_network_error">The sign-in page could not connect. Check your connection, then retry.</string>
+    <string name="youtube_login_http_error">The sign-in page returned an error. Retry or cancel.</string>
+    <string name="youtube_login_unsupported_navigation">This sign-in destination cannot open here. Retry to continue on the web, or cancel.</string>
+    <string name="youtube_login_redirect_loop">YouTube Music keeps requesting its app. Automatic redirects have stopped. Retry or cancel.</string>
+    <string name="youtube_login_renderer_lost">The sign-in web page stopped running. Retry to reopen it without clearing your cookies.</string>
     <string name="home">Home</string>
     <string name="songs">Songs</string>
     <string name="artists">Artists</string>

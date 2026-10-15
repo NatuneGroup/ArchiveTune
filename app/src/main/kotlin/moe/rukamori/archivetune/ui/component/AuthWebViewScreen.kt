@@ -63,6 +63,9 @@ fun AuthWebViewScreen(
     subtitle: String,
     modifier: Modifier = Modifier,
     onRelease: ((WebView) -> Unit)? = null,
+    onDismiss: (() -> Unit)? = null,
+    navigateBackInWebView: Boolean = true,
+    statusContent: (@Composable () -> Unit)? = null,
     factory: (Context) -> WebView,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -72,7 +75,7 @@ fun AuthWebViewScreen(
 
     ModalBottomSheet(
         modifier = modifier.fillMaxHeight(),
-        onDismissRequest = navController::navigateUp,
+        onDismissRequest = { onDismiss?.invoke() ?: run { navController.navigateUp() } },
         sheetState = sheetState,
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
         containerColor = MaterialTheme.colorScheme.surface,
@@ -96,6 +99,7 @@ fun AuthWebViewScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            statusContent?.invoke()
             AndroidView(
                 modifier =
                     Modifier
@@ -115,10 +119,10 @@ fun AuthWebViewScreen(
     // in-page navigation without recomposing.
     BackHandler(enabled = webView != null) {
         val view = webView
-        if (view != null && view.canGoBack()) {
+        if (navigateBackInWebView && view != null && view.canGoBack()) {
             view.goBack()
         } else {
-            navController.navigateUp()
+            onDismiss?.invoke() ?: run { navController.navigateUp() }
         }
     }
 }

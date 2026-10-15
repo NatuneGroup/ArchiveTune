@@ -10,7 +10,6 @@ package moe.rukamori.archivetune.viewmodels
 
 import android.content.Context
 import androidx.compose.runtime.Immutable
-import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.common.collect.ImmutableList
@@ -29,6 +28,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.auth.YouTubeLoginRepository
 import moe.rukamori.archivetune.aicontentfilter.FilterAiContentUseCase
 import moe.rukamori.archivetune.aicontentfilter.LoadAiContentFilterPolicyUseCase
 import moe.rukamori.archivetune.aicontentfilter.ObserveAiContentFilterUseCase
@@ -39,7 +39,6 @@ import moe.rukamori.archivetune.constants.ContentLanguageKey
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
 import moe.rukamori.archivetune.constants.HiddenHomeItemsKey
-import moe.rukamori.archivetune.constants.InnerTubeCookieKey
 import moe.rukamori.archivetune.constants.QuickPicks
 import moe.rukamori.archivetune.constants.QuickPicksKey
 import moe.rukamori.archivetune.constants.SpeedDialSongIdsKey
@@ -72,6 +71,7 @@ import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.parseSpeedDialPins
 import moe.rukamori.archivetune.utils.reportException
+import moe.rukamori.archivetune.utils.toPlaybackAuthState
 import timber.log.Timber
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicLong
@@ -259,6 +259,7 @@ class HomeViewModel
         @ApplicationContext private val context: Context,
         private val database: MusicDatabase,
         private val syncUtils: SyncUtils,
+        private val loginRepository: YouTubeLoginRepository,
         observeHomePresentationPreferences: ObserveHomePresentationPreferencesUseCase,
         observeAiContentFilter: ObserveAiContentFilterUseCase,
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
@@ -904,68 +905,30 @@ class HomeViewModel
             _accountChannelsState.value = AccountChannelsState.Empty
         }
 
-        private fun prepareYouTubeAccount(cookie: String): Boolean =
-            try {
-                YouTube.cookie = cookie
-                true
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to set YouTube cookie")
-                false
-            }
-
         private suspend fun refreshAccountIdentity() {
-            // Seed from the identity persisted at login before touching the network.
-            // accountInfo() is a live call and is allowed to fail: blanking the name or
-            // avatar here (or on failure) would report no account connected even though
-            // the session is intact.
-            context.dataStore.data.first().let { prefs ->
-                prefs[AccountNameKey]?.takeIf { it.isNotBlank() }?.let { _accountName.value = it }
-                // The avatar, unlike the name, is assigned rather than merged. It is cleared
-                // whenever the account changes — switchSavedAccount removes the key, because a
-                // SavedAccount carries no picture of its own — so an absent key here means
-                // "this account's avatar is not known yet", never "keep the last one". Merging
-                // would leave the previous account's picture on screen after a switch, and if
-                // the live call below failed it would stay there for the rest of the session.
-                // The name is still kept, so a failed refresh still reports a connected account.
-                _accountImageUrl.value = prefs[AccountImageUrlKey]?.takeIf { it.isNotBlank() }
-            }
+            val origin = loginRepository.origin()
+            val prefs = context.dataStore.data.first()
+            if (!loginRepository.isCurrent(origin)) return
+            _accountName.value = prefs[AccountNameKey].orEmpty()
+            _accountImageUrl.value = prefs[AccountImageUrlKey]
             _accountChannelsState.value = AccountChannelsState.Loading
-
-            try {
-                YouTube
-                    .accountInfo()
-                    .onSuccess { info ->
-                        _accountName.value = info.name
-                        _accountImageUrl.value = info.thumbnailUrl
-                        context.dataStore.edit { preferences ->
-                            preferences[AccountNameKey] = info.name
-                            info.thumbnailUrl?.let { preferences[AccountImageUrlKey] = it }
-                        }
-                    }.onFailure { error ->
-                        // A failed refresh is not a logout: keep whatever was seeded above.
-                        Timber.w(error, "Failed to fetch account info")
-                    }
-
-                YouTube
-                    .accountChannels()
-                    .onSuccess { channels ->
-                        _accountChannelsState.value = channels
-                            .map { it.toUiModel() }
-                            .takeIf { it.size > 1 }
-                            ?.let { AccountChannelsState.Success(AccountChannelCollection(it)) }
-                            ?: AccountChannelsState.Empty
-                    }.onFailure { error ->
-                        Timber.w(error, "Failed to fetch account channels")
-                        reportException(error)
-                        _accountChannelsState.value = AccountChannelsState.Error(error.message.orEmpty())
-                    }
-            } catch (e: CancellationException) {
-                _accountChannelsState.value = AccountChannelsState.Empty
-                throw e
-            } catch (e: Exception) {
-                Timber.e(e, "Exception fetching account info")
-                reportException(e)
-                _accountChannelsState.value = AccountChannelsState.Error(e.message.orEmpty())
+            loginRepository.refreshIdentity(origin).onSuccess { info ->
+                if (loginRepository.isCurrent(origin)) {
+                    _accountName.value = info.name
+                    _accountImageUrl.value = info.thumbnailUrl
+                }
+            }
+            if (!loginRepository.isCurrent(origin)) return
+            YouTube.accountChannels().onSuccess { channels ->
+                if (loginRepository.isCurrent(origin)) {
+                    _accountChannelsState.value = channels.map { it.toUiModel() }.takeIf { it.size > 1 }
+                        ?.let { AccountChannelsState.Success(AccountChannelCollection(it)) } ?: AccountChannelsState.Empty
+                }
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                if (loginRepository.isCurrent(origin)) {
+                    _accountChannelsState.value = AccountChannelsState.Error(context.getString(R.string.youtube_login_validation_failed))
+                }
             }
         }
 
@@ -980,6 +943,7 @@ class HomeViewModel
             )
 
         private suspend fun refreshAccountPlaylistsInternal() {
+            val origin = loginRepository.origin()
             try {
                 YouTube
                     .library("FEmusic_liked_playlists")
@@ -989,7 +953,7 @@ class HomeViewModel
                             it.items.filterIsInstance<PlaylistItem>().filterNot { playlist ->
                                 playlist.id == "SE"
                             }
-                        accountPlaylists.value = lists
+                        if (loginRepository.isCurrent(origin)) accountPlaylists.value = lists
                     }.onFailure { error ->
                         if (error is CancellationException) throw error
                         Timber.w(error, "Failed to fetch account playlists")
@@ -1246,20 +1210,16 @@ class HomeViewModel
 
             viewModelScope.launch(Dispatchers.IO) {
                 context.dataStore.data
-                    .map { it[InnerTubeCookieKey] }
+                    .map { it.toPlaybackAuthState() }
                     .distinctUntilChanged()
-                    .collect { cookie ->
+                    .collectLatest {
+                        val cookie = loginRepository.reconcilePersisted().cookie
                         try {
                             val isLoggedIn = hasYouTubeLoginCookie(cookie)
                             val loginTransition = isLoggedIn && !wasLoggedIn
                             wasLoggedIn = isLoggedIn
 
                             if (isLoggedIn && cookie != null && cookie.isNotEmpty()) {
-                                if (!prepareYouTubeAccount(cookie)) {
-                                    clearAccountData()
-                                    return@collect
-                                }
-
                                 supervisorScope {
                                     kotlinx.coroutines.delay(100)
                                     launch { refreshAccountIdentity() }

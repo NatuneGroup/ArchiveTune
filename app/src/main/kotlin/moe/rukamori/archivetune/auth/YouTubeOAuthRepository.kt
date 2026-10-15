@@ -11,7 +11,7 @@
 package moe.rukamori.archivetune.auth
 
 import android.content.Context
-import androidx.datastore.preferences.core.edit
+import moe.rukamori.archivetune.App
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -119,6 +119,9 @@ object YouTubeOAuthRepository {
      */
     suspend fun pollForToken(context: Context, code: DeviceCode): PollResult =
         withContext(Dispatchers.IO) {
+            val owner = App.instance.youTubeLoginRepository
+            owner.reconcilePersisted()
+            val origin = owner.origin()
             val deadline = System.currentTimeMillis() + code.expiresInSeconds * 1000L
             var interval = code.intervalSeconds * 1000L
             while (System.currentTimeMillis() < deadline) {
@@ -136,12 +139,13 @@ object YouTubeOAuthRepository {
                     "" -> {
                         val access = json.optString("access_token").takeIf { it.isNotBlank() }
                             ?: return@withContext PollResult.Failed("no access token")
-                        persist(
-                            context = context,
+                        val committed = persist(
+                            origin = origin,
                             accessToken = access,
                             refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() },
                             expiresInSeconds = json.optInt("expires_in", 3600),
                         )
+                        if (!committed) return@withContext PollResult.Failed("session changed")
                         return@withContext PollResult.Success(access)
                     }
                     // The user has not finished yet; keep waiting.
@@ -162,7 +166,9 @@ object YouTubeOAuthRepository {
      */
     suspend fun validAccessToken(context: Context): String? =
         withContext(Dispatchers.IO) {
-            val prefs = context.dataStore.data
+            val owner = App.instance.youTubeLoginRepository
+            owner.reconcilePersisted()
+            val origin = owner.origin()
             val expiresAt = context.dataStore.get(InnerTubeOAuthExpiresAtKey, 0L)
             val current = context.dataStore.get(InnerTubeOAuthTokenKey, "")
             if (current.isNotBlank() && expiresAt - REFRESH_SKEW_MS > System.currentTimeMillis()) {
@@ -183,45 +189,46 @@ object YouTubeOAuthRepository {
             val access = json?.optString("access_token")?.takeIf { it.isNotBlank() }
             if (access == null) {
                 Timber.tag(TAG).w("Refresh rejected — clearing the OAuth session")
-                clear(context)
+                clear(origin)
                 return@withContext null
             }
-            persist(
-                context = context,
+            val committed = persist(
+                origin = origin,
                 accessToken = access,
                 // Google usually omits a new refresh token here; keep the existing one.
                 refreshToken = json.optString("refresh_token").takeIf { it.isNotBlank() },
                 expiresInSeconds = json.optInt("expires_in", 3600),
             )
-            access
+            access.takeIf { committed }
         }
 
     private suspend fun persist(
-        context: Context,
+        origin: YouTubeSessionOrigin,
         accessToken: String,
         refreshToken: String?,
         expiresInSeconds: Int,
-    ) {
-        context.dataStore.edit { prefs ->
+    ): Boolean = App.instance.youTubeLoginRepository.editOwned(origin) { prefs ->
             prefs[InnerTubeOAuthTokenKey] = accessToken
             prefs[InnerTubeOAuthExpiresAtKey] = System.currentTimeMillis() + expiresInSeconds * 1000L
             refreshToken?.let { prefs[InnerTubeOAuthRefreshTokenKey] = it }
-        }
     }
 
     /** Signs out: revokes the grant server-side (best effort) and drops the local session. */
     suspend fun signOut(context: Context) {
         withContext(Dispatchers.IO) {
+            val owner = App.instance.youTubeLoginRepository
+            owner.reconcilePersisted()
+            val origin = owner.origin()
             val refresh = context.dataStore.get(InnerTubeOAuthRefreshTokenKey, "")
+            clear(origin)
             if (refresh.isNotBlank()) {
                 post(REVOKE_URL, FormBody.Builder().add("token", refresh).build())
             }
-            clear(context)
         }
     }
 
-    private suspend fun clear(context: Context) {
-        context.dataStore.edit { prefs ->
+    private suspend fun clear(origin: YouTubeSessionOrigin) {
+        App.instance.youTubeLoginRepository.editOwned(origin) { prefs ->
             prefs.remove(InnerTubeOAuthTokenKey)
             prefs.remove(InnerTubeOAuthRefreshTokenKey)
             prefs.remove(InnerTubeOAuthExpiresAtKey)

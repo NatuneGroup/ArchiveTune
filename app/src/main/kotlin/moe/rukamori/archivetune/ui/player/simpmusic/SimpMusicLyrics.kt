@@ -92,6 +92,7 @@ import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.AiLyricsRomanization
 import moe.rukamori.archivetune.lyrics.LyricsEntry
 import moe.rukamori.archivetune.lyrics.LyricsPhonetics
+import moe.rukamori.archivetune.lyrics.timedLyricsPresentation
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.lyrics.LyricsUtils.phoneticsForEntry
 import moe.rukamori.archivetune.lyrics.LyricsUtils.isRtlText
@@ -505,26 +506,18 @@ private fun TimedLyricsText(
     pendingColor: Color,
     modifier: Modifier = Modifier,
 ) {
-    val words = remember(entry) { entry.words.orEmpty().filter { !it.isBackground } }
-    val aligned = phonetics.words?.takeIf { it.size == words.size }
-    val text = if (aligned != null) aligned.mapIndexed { index, reading -> reading ?: words[index].text }.joinToString(" ")
-        else phonetics.line ?: entry.text
-    val annotated = remember(text, words, aligned, phonetics.line, sungThrough, sungColor, pendingColor) {
+    val presentation = remember(entry, phonetics) {
+        timedLyricsPresentation(entry, phonetics)
+    }
+    val annotated = remember(presentation, sungThrough, sungColor, pendingColor) {
         buildAnnotatedString {
-            append(text)
-            // A line-only reading is not a timed phonetic alignment.
-            if (aligned != null || phonetics.line == null) {
-                var offset = 0
-                words.forEachIndexed { index, word ->
-                    val fragment = if (aligned != null) aligned[index] ?: word.text else word.text
-                    val start = text.indexOf(fragment, offset)
-                    if (start >= 0 && fragment.isNotEmpty()) {
-                        addStyle(SpanStyle(color = if (index <= sungThrough) sungColor else pendingColor), start, start + fragment.length)
-                        offset = start + fragment.length
-                    }
+            append(presentation.text)
+            presentation.ranges.forEachIndexed { index, range ->
+                if (range != null) {
+                    addStyle(SpanStyle(color = if (index <= sungThrough) sungColor else pendingColor), range.first, range.last + 1)
                 }
             }
         }
     }
-    Text(text = annotated, style = style.forLyricsText(text), color = sungColor, modifier = modifier)
+    Text(text = annotated, style = style.forLyricsText(presentation.text), color = sungColor, modifier = modifier)
 }

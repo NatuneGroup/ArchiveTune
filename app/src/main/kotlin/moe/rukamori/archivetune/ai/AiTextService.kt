@@ -217,12 +217,7 @@ object AiTextService {
                 }
                 throw t
             }
-        val array = extractJsonArray(response)
-        require(array.length() == lines.size) { "AI response changed the lyric segment count" }
-        return List(array.length()) { index ->
-            (array.get(index) as? String)?.takeIf { it.isNotBlank() }
-                ?: throw AiServiceException("AI returned an invalid lyric segment")
-        }
+        return parseAiLyricSegments(response, lines.size)
     }
 
     /** Transliterates [lines] into the Latin alphabet, one output string per input string. */
@@ -290,12 +285,7 @@ object AiTextService {
                 }
                 throw t
             }
-        val array = extractJsonArray(response)
-        require(array.length() == lines.size) { "AI response changed the lyric segment count" }
-        return List(array.length()) { index ->
-            (array.get(index) as? String)?.takeIf { it.isNotBlank() }
-                ?: throw AiServiceException("AI returned an invalid lyric segment")
-        }
+        return parseAiLyricSegments(response, lines.size)
     }
 
     suspend fun complete(

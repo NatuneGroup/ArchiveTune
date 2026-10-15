@@ -83,6 +83,7 @@ class YouTubePlaylistQueue(
         val snapshot: FinitePlaylistSnapshot,
         val entries: List<FinitePlaylistEntry>,
         val selectedIndex: Int = 0,
+        val requestsUsed: Int = 1,
     )
 
     internal fun accept(proposal: Proposal) { snapshot = proposal.snapshot }
@@ -108,7 +109,7 @@ class YouTubePlaylistQueue(
         source: FinitePlaylistSource = YouTubeFinitePlaylistSource,
     ): Proposal = FinitePlaylistLoader.bounded {
         if (snapshot.phase == FinitePlaylistPhase.EXHAUSTED || snapshot.phase == FinitePlaylistPhase.PAGEABLE) {
-            return@bounded Proposal(snapshot, snapshot.entries, selectedIndex(snapshot.entries) ?: 0)
+            return@bounded Proposal(snapshot, snapshot.entries, selectedIndex(snapshot.entries) ?: 0, requestsUsed = 0)
         }
         val first = source.initial(playlistId)
         FinitePlaylistLoader.requireConfirmedInitial(first)
@@ -141,6 +142,7 @@ class YouTubePlaylistQueue(
             ),
             entries,
             selected ?: 0,
+            requestsUsed = requests,
         )
     }
 

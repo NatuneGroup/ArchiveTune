@@ -5792,10 +5792,11 @@ class MusicService :
                 var first = needsInitial
                 FinitePlaylistLoader.bounded {
                     do {
-                        if (++requests > FinitePlaylistLoader.MAX_REQUESTS) throw IncompleteYouTubePlaylistException()
+                        if (requests >= FinitePlaylistLoader.MAX_REQUESTS) throw IncompleteYouTubePlaylistException()
                         val proposal = withContext(Dispatchers.IO) {
                             if (first) queue.proposeInitial() else queue.proposeNext()
                         }
+                        requests += proposal.requestsUsed
                         val status = queue.status(proposal).filterPlaybackContent(hideExplicit, hideVideo)
                         if (generation != initialQueueLoadGeneration || currentQueue !== queue) return@bounded
                         finiteMutationInProgress = true

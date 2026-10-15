@@ -1170,4 +1170,5 @@
     <string name="youtube_playlist_retry">Retry playlist loading</string>
     <string name="youtube_playlist_reload">Reload playlist from beginning</string>
     <string name="youtube_playlist_cancel">Cancel playlist loading</string>
+    <string name="playlist_add_incomplete">Could not finish adding songs. Retry or cancel. Songs already added are kept.</string>
 </resources>

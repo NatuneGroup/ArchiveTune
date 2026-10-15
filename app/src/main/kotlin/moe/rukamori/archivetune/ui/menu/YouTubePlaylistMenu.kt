@@ -273,6 +273,7 @@ fun YouTubePlaylistMenu(
 
     AddToPlaylistDialog(
         isVisible = showChoosePlaylistDialog,
+        operationKey = playlist.id,
         onGetSong = {
             val allSongs =
                 loadCompleteYouTubePlaylist(playlist.id).songs.map { it.toMediaMetadata() }

@@ -37,6 +37,13 @@ data class AiServiceConfig(
     val model: String,
     val deeplFormality: String = "default",
 ) {
+    val supportsRomanization: Boolean
+        get() = canCallApi && provider != AiProvider.DEEPL
+
+    /** Opaque, process-local identity; neither credentials nor signed endpoint URLs are retained in keys. */
+    val cacheIdentity: String
+        get() = aiCacheIdentity(provider.name, apiKey, customEndpoint, model, deeplFormality)
+
     val canCallApi: Boolean
         get() =
             provider != AiProvider.NONE &&
@@ -65,4 +72,16 @@ fun Preferences.toAiServiceConfig(): AiServiceConfig {
             },
         deeplFormality = this[DeeplFormalityKey].orEmpty().ifBlank { "default" },
     )
+}
+
+private val aiIdentitySalt = java.util.UUID.randomUUID().toString()
+
+internal fun aiCacheIdentity(vararg parts: String): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-256")
+    (listOf(aiIdentitySalt) + parts).forEach { part ->
+        val bytes = part.toByteArray(Charsets.UTF_8)
+        digest.update(java.nio.ByteBuffer.allocate(4).putInt(bytes.size).array())
+        digest.update(bytes)
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
 }

@@ -16,6 +16,9 @@
 package moe.rukamori.archivetune.api
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -97,22 +100,17 @@ object MistralService {
                             .post(jsonBody.toString().toRequestBody(JSON))
                             .build()
 
+                    currentCoroutineContext().ensureActive()
                     val response = client.newCall(request).execute()
-                    val responseBody = response.body?.string()
+                    val responseBody = response.use { it.body?.string() }
+                    currentCoroutineContext().ensureActive()
                     if (!response.isSuccessful) {
                         if (response.code >= 500) {
                             currentAttempt++
                             kotlinx.coroutines.delay(1000L * currentAttempt)
                             continue
                         }
-                        val msg =
-                            try {
-                                JSONObject(responseBody ?: "").optString("message")
-                                    ?: "HTTP ${response.code}"
-                            } catch (e: Exception) {
-                                "HTTP ${response.code}"
-                            }
-                        return@withContext Result.failure(Exception("Mistral translation failed: $msg"))
+                        return@withContext Result.failure(Exception("Mistral HTTP ${response.code}"))
                     }
                     if (responseBody == null) {
                         currentAttempt++
@@ -120,16 +118,21 @@ object MistralService {
                     }
 
                     val content =
-                        JSONObject(responseBody)
+                        (JSONObject(responseBody)
                             .optJSONArray("choices")
                             ?.optJSONObject(0)
                             ?.optJSONObject("message")
-                            ?.optString("content")
+                            ?.opt("content") as? String)
                             .orEmpty()
                             .trim()
 
                     val translatedLines = content.split("\n").map { it.trim() }
-                    return@withContext Result.success(alignLines(translatedLines, lineCount))
+                    if (translatedLines.size != lineCount || translatedLines.any { it.isBlank() }) {
+                        return@withContext Result.failure(Exception("Incomplete Mistral response"))
+                    }
+                    return@withContext Result.success(translatedLines)
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     if (currentAttempt == maxRetries - 1) return@withContext Result.failure(e)
                 }
@@ -139,13 +142,4 @@ object MistralService {
             return@withContext Result.failure(Exception("Max retries exceeded"))
         }
 
-    private fun alignLines(
-        translated: List<String>,
-        expected: Int,
-    ): List<String> =
-        when {
-            translated.size == expected -> translated
-            translated.size > expected -> translated.take(expected)
-            else -> translated.toMutableList().apply { while (size < expected) add("") }
-        }
 }

@@ -487,9 +487,16 @@ class ListenTogetherClient @Inject constructor(
     // Pending actions to execute when connected
     private var pendingAction: PendingAction? = null
 
-    private var lastRoomAction: PendingAction? = null
-    private var lastRoomActionFormat: MessageFormat? = null
-    private var lastRoomActionSentAtMs: Long = 0
+    private data class SentRoomAction(
+        val action: PendingAction,
+        val format: MessageFormat,
+        val sentAtMs: Long,
+        val connection: Long,
+        val roomRequest: Long,
+        val socket: WebSocket?,
+    )
+
+    @Volatile private var lastRoomAction: SentRoomAction? = null
 
     // Wake lock to keep connection alive when in a room
     private var wakeLock: PowerManager.WakeLock? = null
@@ -549,7 +556,7 @@ class ListenTogetherClient @Inject constructor(
 
     private fun getServerUrl(): String {
         val savedUrl = context.dataStore.get(ListenTogetherServerUrlKey, DEFAULT_SERVER_URL)
-        // If the saved URL is no longer in our list (e.g. Meowery was removed), revert to ViviMusic default
+        // Retired or unrecognized saved endpoints fall back to the supported default.
         return if (ListenTogetherServers.findByUrl(savedUrl) != null) {
             savedUrl
         } else {
@@ -690,19 +697,15 @@ class ListenTogetherClient @Inject constructor(
 
     private fun executeRoomAction(action: PendingAction) {
         val avatarIndex = context.dataStore.get(ListenTogetherAvatarIndexKey, 0)
+        lastRoomAction = SentRoomAction(action, codec.format, System.currentTimeMillis(),
+            connectionDeadline.currentAttempt(), roomActionDeadline.currentAttempt(), webSocket)
         when (action) {
             is PendingAction.CreateRoom -> {
                 log(LogLevel.INFO, "Executing pending create room", action.username)
-                lastRoomAction = action
-                lastRoomActionFormat = codec.format
-                lastRoomActionSentAtMs = System.currentTimeMillis()
                 sendMessage(MessageTypes.CREATE_ROOM, CreateRoomPayload(action.username, avatarIndex))
             }
             is PendingAction.JoinRoom -> {
                 log(LogLevel.INFO, "Executing pending join room", "${action.roomCode} as ${action.username}")
-                lastRoomAction = action
-                lastRoomActionFormat = codec.format
-                lastRoomActionSentAtMs = System.currentTimeMillis()
                 sendMessage(MessageTypes.JOIN_ROOM, JoinRoomPayload(action.roomCode.uppercase(), action.username, avatarIndex))
             }
         }
@@ -715,18 +718,26 @@ class ListenTogetherClient @Inject constructor(
      * same action once in protobuf so the room code still arrives.
      */
     private fun maybeRetryRoomActionAfterProtocolUpgrade() {
-        val action = lastRoomAction ?: return
+        val sent = lastRoomAction ?: return
         lastRoomAction = null
 
-        val sentAsJson = lastRoomActionFormat == MessageFormat.JSON
+        val sentAsJson = sent.format == MessageFormat.JSON
         val nowUpgraded = codec.format == MessageFormat.PROTOBUF
-        val recent = System.currentTimeMillis() - lastRoomActionSentAtMs < ROOM_ACTION_RETRY_WINDOW_MS
+        val recent = System.currentTimeMillis() - sent.sentAtMs < ROOM_ACTION_RETRY_WINDOW_MS
         if (!sentAsJson || !nowUpgraded || !recent) return
 
+        val socket = sent.socket ?: return
         log(LogLevel.WARNING, "Create/join was rejected as JSON after a protobuf upgrade", "Retrying in protobuf")
         scope.launch {
             delay(ROOM_ACTION_RETRY_DELAY_MS)
-            executeRoomAction(action)
+            connectionDeadline.runIfCurrent(sent.connection) {
+                roomActionDeadline.runIfCurrent(sent.roomRequest, requirePending = true) {
+                    if (webSocket === socket && _connectionState.value == ConnectionState.CONNECTED &&
+                        codec.format == MessageFormat.PROTOBUF) {
+                        executeRoomAction(sent.action)
+                    }
+                }
+            }
         }
     }
 

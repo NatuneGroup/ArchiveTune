@@ -10,6 +10,7 @@ package moe.rukamori.archivetune.ui.component
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.*
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.utils.PreferenceSnapshot
@@ -19,6 +20,11 @@ val navigationTreatmentKeys = setOf(
     NavigationBarFrostedBlurKey, NavigationBarTintFrostedBlurKey, LiquidGlassNavBarEnabledKey,
 )
 
+internal fun MutablePreferences.applyNavigationTreatment(key: Preferences.Key<Boolean>, enabled: Boolean) {
+    this[key] = enabled
+    if (enabled) navigationTreatmentKeys.filterNot { it == key }.forEach { this[it] = false }
+}
+
 fun setNavigationTreatment(
     controller: RestartPromptViewModel,
     preferences: PreferenceSnapshot,
@@ -26,8 +32,7 @@ fun setNavigationTreatment(
     enabled: Boolean,
 ) {
     controller.edit(preferences) {
-        this[key] = enabled
-        if (enabled) navigationTreatmentKeys.filterNot { it == key }.forEach { this[it] = false }
+        applyNavigationTreatment(key, enabled)
     }
 }
 

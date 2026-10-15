@@ -9,9 +9,16 @@
 package moe.rukamori.archivetune.utils
 
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.*
 
 enum class RestartReason { UI_SCALE, FONT, TABLET_MODE, GLASS, NAVIGATION_GLASS, USB_OUTPUT, STORAGE, REGION }
+
+internal fun MutablePreferences.setCustomFont(uri: String, name: String) {
+    this[CustomFontUriKey] = uri
+    this[CustomFontNameKey] = name
+    this[FontPreferenceKey] = AppFontPreference.CUSTOM.name
+}
 
 /** Effective values, not raw-key existence: writing a default or migrating a font is not an edit. */
 fun restartSettingValues(preferences: Preferences, bitPerfectSupported: Boolean): Map<RestartReason, String> {
@@ -64,5 +71,12 @@ class RestartPromptPolicy {
 
     fun later() {
         dismissed.putAll(pending)
+    }
+
+    /** Consume before invoking the platform restart so duplicate confirms cannot relaunch twice. */
+    fun consumeRestart(busy: Boolean): Boolean {
+        if (!visible || busy) return false
+        later()
+        return true
     }
 }

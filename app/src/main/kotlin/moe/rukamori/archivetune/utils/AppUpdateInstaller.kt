@@ -20,17 +20,12 @@ import io.ktor.http.contentLength
 import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.BuildConfig
 import okhttp3.ConnectionPool
@@ -99,10 +94,8 @@ object AppUpdateInstaller {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private var downloadJob: Job? = null
-
-    private val _downloadState = MutableStateFlow<DownloadState>(DownloadState.Idle)
-    val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
+    private val attempts = UpdateAttemptOwner<DownloadState>(scope, DownloadState.Idle)
+    val downloadState: StateFlow<DownloadState> = attempts.state
 
     /**
      * Runs the update the reader asked for, unless one is already running — two taps must not race
@@ -117,41 +110,25 @@ object AppUpdateInstaller {
         context: Context,
         offer: UpdateOffer,
     ) {
-        // A cancelled job is not active, but still owns staging until its cleanup completes.
-        if (downloadJob?.isCompleted == false ||
-            updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER
-        ) return
+        if (updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER) return
         val appContext = context.applicationContext
-        _downloadState.value = DownloadState.Downloading(null, offer)
-        downloadJob =
-            scope.launch(start = CoroutineStart.LAZY) {
-                val result = download(appContext, offer)
-                synchronized(AppUpdateInstaller) {
-                    if (downloadJob?.isActive == true) {
-                        _downloadState.value =
-                            result.fold(
-                                onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
-                                onFailure = { DownloadState.Failed(it.message, offer) },
-                            )
-                    }
-                }
-            }
-        // Publish ownership before IO can report progress or finish.
-        downloadJob?.start()
+        attempts.start(DownloadState.Downloading(null, offer)) {
+            download(appContext, offer).fold(
+                onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
+                onFailure = { DownloadState.Failed(it.message, offer) },
+            )
+        }
     }
 
     @Synchronized
     fun cancelDownload() {
-        downloadJob?.cancel()
-        // Do not join on the UI thread or release ownership ahead of NonCancellable cleanup.
-        _downloadState.value = DownloadState.Idle
+        attempts.cancel()
     }
 
     /** Clears a terminal state the caller has already acted on, so a returning screen does not repeat it. */
     @Synchronized
     fun acknowledgeResult() {
-        if (_downloadState.value is DownloadState.Downloading) return
-        _downloadState.value = DownloadState.Idle
+        attempts.acknowledge { it !is DownloadState.Downloading }
     }
 
     /**
@@ -339,9 +316,11 @@ object AppUpdateInstaller {
         downloadedBytes: Long,
         totalBytes: Long,
     ) {
-        if (downloadJob?.isActive != true) return
-        val active = _downloadState.value as? DownloadState.Downloading ?: return
-        _downloadState.value = active.copy(fraction = fractionOrNull(downloadedBytes, totalBytes))
+        attempts.update { active ->
+            if (active is DownloadState.Downloading) {
+                active.copy(fraction = fractionOrNull(downloadedBytes, totalBytes))
+            } else active
+        }
     }
 
     private fun fractionOrNull(

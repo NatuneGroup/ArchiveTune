@@ -8,6 +8,7 @@
 package moe.rukamori.archivetune.utils
 
 import androidx.compose.runtime.MutableState
+import androidx.datastore.preferences.core.MutablePreferences
 import moe.rukamori.archivetune.constants.FlamingoShowVolumeBarKey
 import moe.rukamori.archivetune.constants.PlayerDesignStyle
 import moe.rukamori.archivetune.constants.ShowPlayerVolumeBarKey
@@ -22,6 +23,11 @@ fun effectivePlayerVolumeVisibility(
     canonical ?: true
 }
 
+internal fun MutablePreferences.setPlayerVolumeVisibility(visible: Boolean) {
+    this[ShowPlayerVolumeBarKey] = visible
+    remove(FlamingoShowVolumeBarKey)
+}
+
 /** Only an explicit edit consolidates the old per-style choice; reads are non-destructive. */
 fun PreferenceSnapshot.playerVolumeVisibility(style: PlayerDesignStyle): MutableState<Boolean> =
     SnapshotPreferenceState(
@@ -34,8 +40,7 @@ fun PreferenceSnapshot.playerVolumeVisibility(style: PlayerDesignStyle): Mutable
         },
         write = { value ->
             PreferenceStore.launchEdit(dataStore) {
-                this[ShowPlayerVolumeBarKey] = value
-                remove(FlamingoShowVolumeBarKey)
+                setPlayerVolumeVisibility(value)
             }
         },
     )

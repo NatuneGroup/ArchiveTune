@@ -49,6 +49,9 @@ class PlayerDesignStyleCapabilitiesTest {
         assertEquals(PlayerBackgroundStyle.GLOW_ANIMATED, PlayerDesignStyle.BITCHORD.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertEquals(PlayerBackgroundStyle.GRADIENT, PlayerDesignStyle.SIMPMUSIC.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertEquals(PlayerBackgroundStyle.DEFAULT, PlayerDesignStyle.LOOPER.resolveBackground(PlayerBackgroundStyle.DEFAULT))
+        assertEquals(PlayerBackgroundStyle.GLOW_ANIMATED, PlayerDesignStyle.TIKTOK.resolveBackground(PlayerBackgroundStyle.DEFAULT))
+        assertEquals(PlayerBackgroundStyle.BLUR, PlayerDesignStyle.SPATIALFLOW.resolveBackground(PlayerBackgroundStyle.DEFAULT))
+        assertEquals(PlayerBackgroundStyle.BLUR, PlayerDesignStyle.FLAMINGO.resolveBackground(PlayerBackgroundStyle.DEFAULT))
         assertFalse(PlayerDesignStyle.FLAMINGO.usesSharedBackground(PlayerBackgroundStyle.DEFAULT))
     }
 
@@ -107,5 +110,23 @@ class PlayerDesignStyleCapabilitiesTest {
         assertTrue(PlayerDesignStyle.BITCHORD.hasOrdinarySleeve)
         assertTrue(PlayerDesignStyle.LOOPER.hasHorizontalArtworkSkip)
         assertFalse(PlayerDesignStyle.FLAMINGO.hasHorizontalArtworkSkip)
+    }
+
+    @Test
+    fun canvasCapability_isExactlyExistingFourAndDefaultPlayerIsUnchanged() {
+        assertEquals(
+            setOf(PlayerDesignStyle.APPLE_MUSIC, PlayerDesignStyle.FLAMINGO, PlayerDesignStyle.SPATIALFLOW, PlayerDesignStyle.LOOPER),
+            PlayerDesignStyle.entries.filter { it.hasArtworkCanvasSurface }.toSet(),
+        )
+        assertEquals(PlayerDesignStyle.V4, PlayerDesignStyle.Default)
+        assertFalse(PlayerDesignStyle.LOOPER.supportsSharedButtons)
+        assertFalse(PlayerDesignStyle.LOOPER.supportsSharedSeekStyle)
+    }
+
+    @Test
+    fun everyExplicitBackdrop_survivesNativeStyleSwitchesWithoutRewritingChoice() {
+        for (stored in PlayerBackgroundStyle.entries.filter { it != PlayerBackgroundStyle.DEFAULT }) {
+            nativeStyles.forEach { style -> assertEquals(stored, style.resolveBackground(stored)) }
+        }
     }
 }

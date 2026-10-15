@@ -41,7 +41,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetState
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -87,6 +86,7 @@ import moe.rukamori.archivetune.ui.component.ActionPromptDialog
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.ListPreference
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
@@ -112,6 +112,7 @@ fun StorageSettings(
     scrollTo: String? = null,
 ) {
     val context = LocalContext.current
+    val restartPrompt = LocalRestartPrompt.current
     val imageDiskCache = context.imageLoader.diskCache ?: return
     val playerCache = LocalPlayerConnection.current?.service?.playerCache ?: return
     val downloadCache = LocalPlayerConnection.current?.service?.downloadCache ?: return
@@ -122,14 +123,7 @@ fun StorageSettings(
     LaunchedEffect(viewModel, context) {
         viewModel.effects.collect { effect ->
             snackbarHostState.currentSnackbarData?.dismiss()
-            if (effect.restartApp) {
-                snackbarHostState.showSnackbar(
-                    message = context.getString(effect.messageResId),
-                    duration = SnackbarDuration.Indefinite,
-                )
-            } else {
-                snackbarHostState.showSnackbar(context.getString(effect.messageResId))
-            }
+            snackbarHostState.showSnackbar(context.getString(effect.messageResId))
         }
     }
 
@@ -600,7 +594,12 @@ fun StorageSettings(
             sheetState = storagePickerSheetState,
             onOptionSelected = viewModel::chooseStorageLocation,
             onDismiss = viewModel::dismissStorageLocationPicker,
-            onConfirm = viewModel::applyStorageLocationSelection,
+            onConfirm = {
+                val token = restartPrompt.beginStorageOperation()
+                viewModel.applyStorageLocationSelection { succeeded ->
+                    restartPrompt.finishStorageOperation(token, succeeded)
+                }
+            },
         )
     }
     successState?.model?.migration?.let { migration ->

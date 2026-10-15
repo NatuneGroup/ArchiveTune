@@ -534,7 +534,7 @@
     <string name="storage_folder_pick">Ordner auswählen</string>
     <string name="storage_location_sheet_title">Speicherort</string>
     <string name="storage_location_apply">Diesen Speicher verwenden</string>
-    <string name="storage_folder_selected_restart">Speicherordner gespeichert. App startet in 3 Sekunden neu.</string>
+    <string name="storage_folder_selected_restart">Speicherordner gespeichert.</string>
     <string name="storage_folder_not_writable">ArchiveTune kann keine Cachedateien in diesen Ordner schreiben.</string>
     <string name="storage_clear_song_cache_progress">Leere Songcache...%1$d%%</string>
     <string name="storage_clear_downloads_progress">Lösche Downloads...%1$d%%</string>

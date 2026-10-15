@@ -452,7 +452,7 @@
     <string name="storage_migration_cache_progress">Đang di chuyển Cache…%1$d%%</string>
     <string name="storage_migration_downloads_progress">Đang di chuyển Tải xuống…%1$d%%</string>
     <string name="storage_migration_warning">Cảnh báo: Không đóng ứng dụng hoặc tắt thiết bị trong quá trình này. Làm như vậy có thể gây mất dữ liệu.</string>
-    <string name="storage_folder_selected_restart">Đã lưu thư mục lưu trữ. Ứng dụng sẽ khởi động lại sau 3 giây.</string>
+    <string name="storage_folder_selected_restart">Đã lưu thư mục lưu trữ.</string>
     <string name="storage_folder_invalid">Chọn một thư mục hợp lệ.</string>
     <string name="storage_folder_unsupported">Thư mục này không thể được sử dụng bởi bộ nhớ đệm phương tiện dựa trên tệp.</string>
     <string name="storage_folder_not_writable">ArchiveTune không thể ghi tệp cache trong thư mục này.</string>

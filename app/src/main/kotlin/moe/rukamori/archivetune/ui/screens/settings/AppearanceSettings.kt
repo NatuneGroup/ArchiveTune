@@ -147,6 +147,9 @@ import moe.rukamori.archivetune.constants.TabletModeEnabledKey
 import moe.rukamori.archivetune.constants.TikTokMainLyricsEnabledKey
 import moe.rukamori.archivetune.constants.WallpaperExtractionFailedKey
 import moe.rukamori.archivetune.constants.UiScaleFactorKey
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
+import moe.rukamori.archivetune.ui.component.restartState
+import moe.rukamori.archivetune.ui.component.restartEnumState
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -328,6 +331,7 @@ private fun AppearanceThemeSection(
 ) {
     val context = LocalContext.current
     val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
     val defaultDisableAnimations = remember(context) { context.isLowRamDevice() }
     val (wallpaperExtractionFailed) = prefs.state(WallpaperExtractionFailedKey, defaultValue = false)
     val (dynamicTheme, onDynamicThemeChange) = prefs.state(DynamicThemeKey, defaultValue = true)
@@ -335,7 +339,7 @@ private fun AppearanceThemeSection(
         prefs.state(RandomThemeOnStartupKey, defaultValue = false)
     val (darkMode, onDarkModeChange) = prefs.enumState(DarkModeKey, defaultValue = DarkMode.AUTO)
     val (liquidGlassEnabled, onLiquidGlassEnabledChange) =
-        prefs.state(LiquidGlassEnabledKey, defaultValue = false)
+        prefs.restartState(restartPrompt, LiquidGlassEnabledKey, defaultValue = false)
     val (interfaceStyle, onInterfaceStyleChange) = rememberInterfaceStyle(prefs)
     val (pureBlack, onPureBlackChange) = prefs.state(PureBlackKey, defaultValue = false)
     val (disableBlur, onDisableBlurChange) = prefs.state(DisableBlurKey, defaultValue = false)
@@ -344,14 +348,14 @@ private fun AppearanceThemeSection(
     val (splashOverlayEnabled, onSplashOverlayEnabledChange) =
         prefs.state(SplashOverlayEnabledKey, defaultValue = true)
     val (hideStatusBar, onHideStatusBarChange) = prefs.state(HideStatusBarKey, defaultValue = false)
-    val (uiScale, onUiScaleChange) = prefs.state(UiScaleFactorKey, defaultValue = 1.0f)
+    val (uiScale, onUiScaleChange) = prefs.restartState(restartPrompt, UiScaleFactorKey, defaultValue = 1.0f)
     val (blurRadius, onBlurRadiusChange) = prefs.state(BlurRadiusKey, defaultValue = 48f)
     val (backdropEnabled, onBackdropEnabledChange) = prefs.state(BackdropEnabledKey, defaultValue = true)
     val (backdropBlurAmount, onBackdropBlurAmountChange) = prefs.state(BackdropBlurAmountKey, defaultValue = 60)
     val (fontPreference, onFontPreferenceChange) =
-        prefs.enumState(FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
-    val (customFontUri, onCustomFontUriChange) = prefs.state(CustomFontUriKey, defaultValue = "")
-    val (customFontName, onCustomFontNameChange) = prefs.state(CustomFontNameKey, defaultValue = "")
+        prefs.restartEnumState(restartPrompt, FontPreferenceKey, defaultValue = AppFontPreference.DEFAULT)
+    val customFontUri = prefs[CustomFontUriKey, ""]
+    val customFontName = prefs[CustomFontNameKey, ""]
     val pendingRestart = StartupSettings.pending(prefs.current)
 
     val customFontPickerLauncher =
@@ -368,22 +372,25 @@ private fun AppearanceThemeSection(
                     Intent.FLAG_GRANT_READ_URI_PERMISSION,
                 )
             }
-            // The running process still renders with the font it started with, so its permission
-            // has to outlive this change until the restart.
-            if (customFontUri.isNotBlank() && customFontUri != uri.toString() &&
-                customFontUri != StartupSettings.customFontUri
-            ) {
-                runCatching {
-                    context.contentResolver.releasePersistableUriPermission(
-                        Uri.parse(customFontUri),
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION,
-                    )
+            restartPrompt.edit(prefs, onCommitted = { result ->
+                // Only release a replaced pending font after the atomic save. The running font
+                // must stay readable through Later, even if another custom file was selected.
+                val previousUri = result.before[CustomFontUriKey].orEmpty()
+                if (previousUri.isNotBlank() && previousUri != uri.toString() &&
+                    previousUri != StartupSettings.customFontUri
+                ) {
+                    runCatching {
+                        context.contentResolver.releasePersistableUriPermission(
+                            Uri.parse(previousUri),
+                            Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                        )
+                    }
                 }
+            }) {
+                this[CustomFontUriKey] = uri.toString()
+                this[CustomFontNameKey] = CustomFontLoader.displayName(context, uri)
+                this[FontPreferenceKey] = AppFontPreference.CUSTOM.name
             }
-
-            onCustomFontUriChange(uri.toString())
-            onCustomFontNameChange(CustomFontLoader.displayName(context, uri))
-            onFontPreferenceChange(AppFontPreference.CUSTOM)
         }
     val pickCustomFont =
         remember(customFontPickerLauncher) {
@@ -394,9 +401,10 @@ private fun AppearanceThemeSection(
     val onFontPreferenceSelected =
         remember(customFontUri, onFontPreferenceChange, pickCustomFont) {
             { value: AppFontPreference ->
-                onFontPreferenceChange(value)
                 if (value == AppFontPreference.CUSTOM && customFontUri.isBlank()) {
                     pickCustomFont()
+                } else {
+                    onFontPreferenceChange(value)
                 }
             }
         }
@@ -1417,6 +1425,7 @@ private fun AppearanceInterfaceSection(
     scrollTo: String?,
 ) {
     val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
     val (searchBarPosition, onSearchBarPositionChange) =
         prefs.enumState(SearchBarPositionKey, defaultValue = SearchBarPosition.TOP)
     val (hideSearchBarWhileScrolling, onHideSearchBarWhileScrollingChange) =
@@ -1424,7 +1433,7 @@ private fun AppearanceInterfaceSection(
     val (backAnimationStyle, onBackAnimationStyleChange) =
         prefs.enumState(BackAnimationStyleKey, defaultValue = BackAnimationStyle.PREDICTIVE)
     val (tabletModeEnabled, onTabletModeEnabledChange) =
-        prefs.state(TabletModeEnabledKey, defaultValue = false)
+        prefs.restartState(restartPrompt, TabletModeEnabledKey, defaultValue = false)
     val (defaultOpenTab, onDefaultOpenTabChange) =
         prefs.enumState(DefaultOpenTabKey, defaultValue = NavigationTab.HOME)
     val (hideScrollbar, onHideScrollbarChange) = prefs.state(HideScrollbarKey, defaultValue = false)

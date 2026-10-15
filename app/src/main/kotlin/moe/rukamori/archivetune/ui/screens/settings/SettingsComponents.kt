@@ -10,6 +10,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -65,8 +67,12 @@ import moe.rukamori.archivetune.ui.theme.yumaSegmentPosition
 import moe.rukamori.archivetune.ui.component.RestartToApplyNotice
 import moe.rukamori.archivetune.constants.DisableBlurKey
 import moe.rukamori.archivetune.utils.StartupSettings
-import moe.rukamori.archivetune.utils.rememberPreference
-import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+import moe.rukamori.archivetune.utils.PreferenceSnapshot
+import androidx.compose.runtime.staticCompositionLocalOf
+
+val LocalSettingsPreferenceSnapshot = staticCompositionLocalOf<PreferenceSnapshot> {
+    error("SettingsScreen must provide its single preference snapshot")
+}
 
 @Composable
 fun SettingsPermissionBanner(
@@ -344,12 +350,10 @@ fun SettingsSegmentedItem(
                 )
                 item.subtitle?.let { subtitle ->
                     Spacer(modifier = Modifier.height(SettingsDimensions.RowTextSpacing))
-                    Text(
+                    SettingsDescriptionText(
                         text = subtitle,
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
                     )
                 }
             }
@@ -508,12 +512,10 @@ fun SettingsSearchResultItem(
                         overflow = TextOverflow.Ellipsis,
                     )
                     if (result.parentTitle.isNotBlank()) {
-                        Text(
+                        SettingsDescriptionText(
                             text = result.parentTitle,
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
@@ -523,11 +525,11 @@ fun SettingsSearchResultItem(
                 }
             }
             result.restartPending?.let { restartPending ->
-                val prefs = rememberPreferenceSnapshot()
+                val prefs = LocalSettingsPreferenceSnapshot.current
                 RestartToApplyNotice(visible = restartPending(StartupSettings.pending(prefs.current)))
             }
             if (result.blurOverridden) {
-                val (blurDisabled) = rememberPreference(DisableBlurKey, defaultValue = false)
+                val blurDisabled = LocalSettingsPreferenceSnapshot.current[DisableBlurKey, false]
                 if (blurDisabled) {
                     Text(
                         text = stringResource(R.string.blur_setting_overridden),

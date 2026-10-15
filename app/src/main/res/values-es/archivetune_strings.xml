@@ -471,7 +471,7 @@
     <string name="storage_migration_cache_progress">Moviendo caché... %1$d %%</string>
     <string name="storage_migration_downloads_progress">Moviendo las descargas…%1$d %%</string>
     <string name="storage_migration_warning">Advertencia: No cierre la aplicación ni apague el dispositivo durante este proceso. Si lo hace, podría perder datos.</string>
-    <string name="storage_folder_selected_restart">Carpeta de almacenamiento guardada. La aplicación se reiniciará en 3 segundos.</string>
+    <string name="storage_folder_selected_restart">Carpeta de almacenamiento guardada.</string>
     <string name="storage_folder_invalid">Seleccione una carpeta válida.</string>
     <string name="storage_folder_unsupported">Esta carpeta no puede ser utilizada por la caché de medios basada en archivos.</string>
     <string name="storage_folder_not_writable">ArchiveTune no puede escribir archivos de caché en esta carpeta.</string>

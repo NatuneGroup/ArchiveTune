@@ -1126,6 +1126,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val restartPrompt: moe.rukamori.archivetune.viewmodels.RestartPromptViewModel = hiltViewModel()
             ArchiveTuneTheme(
                 darkTheme = useDarkTheme,
                 pureBlack = pureBlack,
@@ -2436,6 +2437,7 @@ class MainActivity : ComponentActivity() {
                         }
 
                     CompositionLocalProvider(
+                        moe.rukamori.archivetune.ui.component.LocalRestartPrompt provides restartPrompt,
                         LocalHapticFeedback provides customHaptic,
                         LocalAnimationsDisabled provides animationsOff,
                         moe.rukamori.archivetune.LocalBlurPolicy provides remember(disableBlur) { moe.rukamori.archivetune.BlurPolicy(userEnabled = !disableBlur) },
@@ -2463,6 +2465,7 @@ class MainActivity : ComponentActivity() {
                         moe.rukamori.archivetune.ui.player.LocalPlayerLyricsFullScreen provides isPlayerLyricsFullScreen,
                         LocalItemPreferences provides itemPreferences,
                     ) {
+                        moe.rukamori.archivetune.ui.component.RestartPromptHost(restartPrompt)
                         // The opening animation sits under the content and over the background,
                         // so the home screen rises through the particles as the burst lands
                         // rather than wiping them away. Composed only when it is this launch's

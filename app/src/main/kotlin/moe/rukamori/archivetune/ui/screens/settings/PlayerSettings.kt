@@ -8,6 +8,9 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
+import moe.rukamori.archivetune.ui.component.setPlaybackOutputPreference
+
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.compose.runtime.produceState
@@ -132,6 +135,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 @Composable
 fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
     val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
     // snapshot paints the stored value on the first frame instead of a default flash.
     val (persistentQueue, onPersistentQueueChange) =
         prefs.state(
@@ -180,17 +184,13 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         prefs.state(SwipeUpToOpenQueueKey, defaultValue = true)
     val (queueAddAfterManual, onQueueAddAfterManualChange) =
         prefs.state(QueueAddAfterManualKey, defaultValue = true)
-    val (bitPerfectUsb, onBitPerfectUsbChange) =
+    val (bitPerfectUsb) =
         prefs.state(
             BitPerfectUsbOutputKey,
             defaultValue = false,
         )
     val bitPerfectStatus by BitPerfectUsbOutput.status.collectAsState()
     val bitPerfectContext = LocalContext.current
-    val releaseBitPerfectUsb = {
-        onBitPerfectUsbChange(false)
-        if (BitPerfectUsbOutput.sinkActive) BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
-    }
     val (tryptifyEngine, onTryptifyEngineChange) =
         prefs.state(TryptifyAudioProcessingKey, defaultValue = false)
     val (lastwaveEngine, onLastwaveEngineChange) =
@@ -199,7 +199,7 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
         prefs.state(FloatDspEnabledKey, defaultValue = false)
     // The engines ride the standard sink only; the bit-perfect sink skips every processor.
     val audioEnginesBlocked = bitPerfectUsb || BitPerfectUsbOutput.sinkActive
-    val (usbExclusive, onUsbExclusiveChange) =
+    val (usbExclusive) =
         prefs.state(UsbExclusiveAudioKey, defaultValue = false)
     // FloatDsp.available loads libarchivetune_dsp on first touch; never on the main thread.
     // Unknown (null) counts as supported until the background check says otherwise.
@@ -258,12 +258,12 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
             defaultValue = HISTORY_DURATION_DEFAULT,
         )
 
-    val (crossfadeEnabled, onCrossfadeEnabledChange) =
+    val (crossfadeEnabled) =
         prefs.state(
             CrossfadeEnabledKey,
             defaultValue = false,
         )
-    val (automixEnabled, onAutomixEnabledChange) =
+    val (automixEnabled) =
         prefs.state(
             AutomixEnabledKey,
             defaultValue = false,
@@ -512,18 +512,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             icon = { Icon(painterResource(R.drawable.animation), null) },
                             checked = crossfadeEnabled,
                             onCheckedChange = { enabled ->
-                                if (enabled) {
-                                    onAudioOffloadChange(false)
-                                    // Crossfade and automix are mutually exclusive: at most one
-                                    // engine shapes a given track boundary.
-                                    onAutomixEnabledChange(false)
-                                    // A fade needs a second player and gain changes, neither of
-                                    // which a bit-perfect path allows.
-                                    releaseBitPerfectUsb()
-                                    // The second player would contend for the exclusive stream.
-                                    onUsbExclusiveChange(false)
-                                }
-                                onCrossfadeEnabledChange(enabled)
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, CrossfadeEnabledKey, enabled,
+                                )
                             },
                         )
                     }
@@ -540,15 +531,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             icon = { Icon(painterResource(R.drawable.auto_awesome), null) },
                             checked = automixEnabled,
                             onCheckedChange = { enabled ->
-                                if (enabled) {
-                                    onAudioOffloadChange(false)
-                                    // Automix hands every transition to the analysis engine; the
-                                    // manual crossfade slider stops applying.
-                                    onCrossfadeEnabledChange(false)
-                                    releaseBitPerfectUsb()
-                                    onUsbExclusiveChange(false)
-                                }
-                                onAutomixEnabledChange(enabled)
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, AutomixEnabledKey, enabled,
+                                )
                             },
                         )
                     }
@@ -691,17 +676,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                         icon = { Icon(painterResource(R.drawable.speed), null) },
                         checked = audioOffload,
                         onCheckedChange = { enabled ->
-                            onAudioOffloadChange(enabled)
-                            if (enabled) {
-                                onSkipSilenceChange(false)
-                                onCrossfadeEnabledChange(false)
-                                onAutomixEnabledChange(false)
-                                releaseBitPerfectUsb()
-                                onUsbExclusiveChange(false)
-                                onTryptifyEngineChange(false)
-                                onLastwaveEngineChange(false)
-                                onFloatDspChange(false)
-                            }
+                            setPlaybackOutputPreference(
+                                restartPrompt, prefs, bitPerfectContext, AudioOffload, enabled,
+                            )
                         },
                     )
                 }
@@ -742,17 +719,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             checked = bitPerfectUsb && BitPerfectUsbOutput.isPlatformSupported,
                             isEnabled = BitPerfectUsbOutput.isPlatformSupported,
                             onCheckedChange = { enabled ->
-                                onBitPerfectUsbChange(enabled)
-                                if (enabled) {
-                                    onAudioOffloadChange(false)
-                                    onCrossfadeEnabledChange(false)
-                                    onAutomixEnabledChange(false)
-                                    onUsbExclusiveChange(false)
-                                } else if (BitPerfectUsbOutput.sinkActive) {
-                                    // Release the DAC now; the players keep their float sink until
-                                    // the service restarts, which plays normally without a preference.
-                                    BitPerfectUsbOutput.setEnabled(bitPerfectContext, false)
-                                }
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, BitPerfectUsbOutputKey, enabled,
+                                )
                             },
                         )
                     }
@@ -781,13 +750,9 @@ fun PlayerSettings(navController: NavController, scrollTo: String? = null) {
                             checked = usbExclusive && usbExclusiveSupported,
                             isEnabled = usbExclusiveSupported,
                             onCheckedChange = { enabled ->
-                                onUsbExclusiveChange(enabled)
-                                if (enabled) {
-                                    onAudioOffloadChange(false)
-                                    onCrossfadeEnabledChange(false)
-                                    onAutomixEnabledChange(false)
-                                    releaseBitPerfectUsb()
-                                }
+                                setPlaybackOutputPreference(
+                                    restartPrompt, prefs, bitPerfectContext, UsbExclusiveAudioKey, enabled,
+                                )
                             },
                         )
                     }

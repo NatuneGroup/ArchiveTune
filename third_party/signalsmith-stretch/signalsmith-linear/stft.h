@@ -87,8 +87,8 @@ struct DynamicSTFT {
 		for (auto &v : output.buffer) v = 0;
 		for (auto &v : spectrumBuffer) v = 0;
 		for (auto &v : output.windowProducts) v = 0;
-		addWindowProduct();
 		if (norm != normNone) {
+			addWindowProduct();
 			for (int i = int(_blockSamples) - int(_defaultInterval) - 1; i >= 0; --i) {
 				output.windowProducts[i] += output.windowProducts[i + _defaultInterval];
 			}
@@ -519,7 +519,7 @@ struct DynamicSTFT {
 	Output output;
 
 protected:
-	void *hookContext;
+	void *hookContext = nullptr;
 	
 	/* 0 .... postEnd, ____, preStart .... preEnd  */
 	typedef void (*TimeHook)(void *, size_t channel, Sample *timeBuffer, size_t preStart, size_t preEnd, size_t postEnd);
@@ -579,11 +579,11 @@ private:
 		} else {
 			for (size_t i = wMin; i < chunk1; ++i) {
 				size_t bi = output.pos + i;
-				windowProduct[bi] += scaling;
+				windowProduct[bi] = scaling;
 			}
 			for (size_t i = chunk1; i < wMax; ++i) {
 				size_t bi = i + output.pos - _blockSamples;
-				windowProduct[bi] += scaling;
+				windowProduct[bi] = scaling;
 			}
 		}
 	}

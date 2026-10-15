@@ -1,5 +1,16 @@
 # libusb
 
+ArchiveTune's retained Android sources are normalized to stable libusb 1.0.30,
+tag `v1.0.30`, commit `87a55632db62c9bdc58cd31d3ccfa673f1bb017f`
+(https://github.com/libusb/libusb/tree/v1.0.30), verified on 2026-10-14.
+The previous vendor tree was an untagged pre-final snapshot, not a clean rc1.
+`libusb/descriptor.c`, `io.c`, `libusbi.h`, `version.h` and `version_nano.h`
+were refreshed together with the upstream ChangeLog; the other selected
+Linux/POSIX sources and public header already matched stable. ArchiveTune's
+Android configuration and explicit application CMake source selection are retained.
+This is retained-source provenance, not a claim that every upstream platform or
+build file was replaced.
+
 libusb is a library for USB device access from Linux, macOS,
 Windows, OpenBSD/NetBSD, Haiku, Solaris userspace, and WebAssembly
 via WebUSB.

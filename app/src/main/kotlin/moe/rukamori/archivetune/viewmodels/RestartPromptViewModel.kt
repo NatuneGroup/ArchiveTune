@@ -103,8 +103,7 @@ class RestartPromptViewModel @Inject constructor(
     }
 
     fun restartIfReady(restart: () -> Unit) {
-        if (_state.value.visible && !_state.value.busy) {
-            policy.later()
+        if (policy.consumeRestart(_state.value.busy)) {
             publish()
             restart()
         }

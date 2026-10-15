@@ -14,6 +14,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.runtime.mutableIntStateOf
 import moe.rukamori.archivetune.utils.playerVolumeVisibility
+import moe.rukamori.archivetune.utils.setCustomFont
 import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
 import moe.rukamori.archivetune.utils.StartupSettings
 import moe.rukamori.archivetune.utils.RestartScopedSettings
@@ -387,9 +388,7 @@ private fun AppearanceThemeSection(
                     }
                 }
             }) {
-                this[CustomFontUriKey] = uri.toString()
-                this[CustomFontNameKey] = CustomFontLoader.displayName(context, uri)
-                this[FontPreferenceKey] = AppFontPreference.CUSTOM.name
+                setCustomFont(uri.toString(), CustomFontLoader.displayName(context, uri))
             }
         }
     val pickCustomFont =

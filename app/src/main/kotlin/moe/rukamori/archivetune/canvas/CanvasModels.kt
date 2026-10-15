@@ -11,6 +11,17 @@
 package moe.rukamori.archivetune.canvas
 
 import androidx.compose.runtime.Immutable
+import androidx.datastore.preferences.core.Preferences
+import moe.rukamori.archivetune.constants.*
+
+internal fun canvasConfigurationFrom(preferences: Preferences): CanvasConfiguration =
+    CanvasConfiguration(
+        enabled = preferences[ArchiveTuneCanvasKey] ?: false,
+        source = CanvasSource.fromPreference(preferences[CanvasSourceKey]),
+        wifiOnly = preferences[CanvasWifiOnlyKey] ?: false,
+        cacheLimitMb = (preferences[MaxCanvasCacheSizeKey] ?: 256).coerceAtLeast(-1),
+        lowDataMode = preferences[LowDataModeKey] ?: true,
+    )
 
 @Immutable
 data class CanvasConfiguration(

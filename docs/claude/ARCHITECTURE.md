@@ -36,4 +36,52 @@ SpatialFlow's player (a second Media3 player, 50–60 s buffering, a 250 ms prog
 
 Spotify history synchronization is read-only and uses the existing authenticated Recently Played request. It is opt-in, appears in the History source list only when enabled, and never launches Spotify playback or a background WebView.
 
-Community Source Pool credentials (the pool's accounts, plus the user's own Tidal/Qobuz/Deezer tokens) live in ordinary Preferences DataStore, not Android Keystore, and the backup rules exclude only the ExoPlayer cache, the download directory and `exoplayer_internal.db` — so preferences, pool tokens included, are eligible for cloud backup and device transfer. The pool's `POOL_CLIENT_KEY` ships in the APK, so it stops accidental disclosure of the feed, not a determined user; the security control that matters is server-side (independent 32-byte keys and `READ_KEYS_ENFORCED` on the pool deployment).
+Pool account payloads use an Android-Keystore-encrypted cache (`PoolCacheCrypto`),
+separate from personal sign-in preferences, not plaintext Pool storage. Cached payloads are not portable
+credentials across reinstall/device transfer; the feed repopulates them. Personal credential
+preferences and legacy migration are separate concerns: do not infer their encryption or backup
+policy from Pool encryption. The Playback Pool toggle gates feeds/discovery/reports and
+provider-local caches without overwriting personal accounts. An APK-delivery/read key is
+extractable, not a server administrator/session/database secret; server-side authorization
+remains essential.
+
+## Bounded acoustic graph (local, uncompiled follow-up)
+
+`acoustics/` owns read-only input resolution, bounded decoding/FFT and memory-only results.
+`AcousticQualitySection` and `AcousticQualityDialog` share the Developer and player/song-menu
+surfaces. Opening is idle; Run/Cancel/Retry owns work. Ordinary seekable file/content and
+supported clear current-source snapshots or complete contiguous source-bound cache are usable;
+unsupported/nonseekable/DRM inputs remain honestly unavailable. Cancellation releases owned
+resources; target/generation checks reject stale results. No playback resolver, queue,
+source-rejection setting or persistent quality badge is mutated.
+
+Heat, cutoff and decoded format describe the sampled rendition, not studio provenance or
+physical DAC output. Silence/short/uncertain samples remain inconclusive. The graph adds no
+Oboe route or native engine.
+
+## DSP and retained native source
+
+Maintenance pins: Oboe 1.11.0, Signalsmith Linear 0.6.5, libusb 1.0.30; Stretch 1.4.0
+and soxr 0.1.3 remain. Existing Media3/AAudio/LastWave/Tryptify/float-DSP switches,
+defaults, presets, source policy and bit-perfect bypass remain separate. libusb/soxr retain
+Android runtime/header/build/license closure, not complete standalone upstream tooling/tests:
+see [libusb subset](../../third_party/libusb/README) and [soxr subset](../../third_party/soxr/README).
+The removed unreachable decent USB island is not the active USB output; its
+[MIT license](../../audio/decent-usb-audio-driver/LICENSE), credit and app optional USB-host
+feature remain. Persisted preset/state formats are not dead with an unused builder.
+
+## Listen Together recovery and design references
+
+Connection and pending room requests have bounded deadlines (historical design: 60/90 seconds);
+decoded responses, cancellation and connection generations guard completion. Keep manual recovery,
+protobuf-only Meowery (no JSON/client-capabilities frame), JSON-only chat and server-side host
+restrictions. Historical 2026-10-06 synthetic checks received `room_created` from Hugging Face
+and `host_not_allowed` from Meowery; these were not Android synchronized-playback validation.
+Further delayed-retry/generation work is pending independent implementation/review.
+
+Spotify Home's Yuma-derived geometry was recorded at fork `04ef0f333`, reference YumaPlayer
+`28aef61`: two track rows, 240dp track tiles, 150dp artwork cards, 16dp gutters, reference
+8dp quick-grid corners and 0.5dp border. The historical correction used a low-alpha 0.5dp
+highlight, fixed 2dp refraction and no default shadow rather than the generic 24dp control
+effect. Shared Suki material has since evolved; these pins preserve design provenance, not
+current pixel parity. Preserve independent glass/blur/older-Android fallbacks and source routing.

@@ -22,7 +22,7 @@
   <p align="center">
     <a href="https://github.com/NatuneGroup/ArchiveTune"><b>公式サイト</b></a> •
     <a href="#features"><b>機能</b></a> •
-    <a href="https://github.com/NatuneGroup/ArchiveTune"><b>プライバシー</b></a> •
+    <a href="PRIVACY.md"><b>プライバシー</b></a> •
     <a href="#download-now"><b>ダウンロード</b></a> •
     <a href="#screenshots"><b>スクリーンショット</b></a> •
     <a href="https://github.com/NatuneGroup/ArchiveTune/issues/new/choose"><b>サポート</b></a>
@@ -163,7 +163,35 @@
 
 ## 📥 ダウンロード
 
-（ダウンロードセクションはリンク構造維持のためそのまま）
+- [Stable リリース](https://github.com/NatuneGroup/ArchiveTune/releases/latest)：`main`。
+- [Nightly プレリリース](https://github.com/NatuneGroup/ArchiveTune/releases)：`dev`、`N` タグ。
+
+更新チャンネルは Stable と Nightly の2種類です。同じ署名鍵を使うため上書き更新できます。
+旧 Canary の最終版 `C202610141722`（`a1a04ea02`）は公開済みで、`canary` ブランチは凍結されています。
+保存済みの Canary 選択は Nightly に移行します。更新確認はまず `update-feed` リリースの
+`stable.json` / `nightly.json` を認証キーなしで読み、取得できない場合に GitHub API を使用します。
+
+### 開発中の変更（未リリース）
+
+- どのビルドでも Stable / Nightly を明示的に選べます。ビルド種別は未設定時の既定値だけを決め、
+  更新候補はチャンネルと既知の新しいバージョンコードで確認します。
+- 表示中の長い設定説明は有限回だけ自動スクロールし、画面の状態とアニメーション無効設定を尊重します。
+  再起動が必要な変更は保存後に共通の「今すぐ再起動 / 後で」ダイアログで通知し、「後で」では自動再起動しません。
+- 開発者設定と共通のプレイヤー・曲メニューに音響ヒートグラフを追加しています。
+  開くだけでは解析せず、実行・キャンセル・再試行で時間と量を制限した音声を解析します。
+  シーク可能なローカル file/content、対応する暗号化されていない現在のストリーム、完全な同一ソースのキャッシュが対象です。
+  DRM やアクセス不能な入力は利用不可になり得ます。結果は推測であり、原音のロスレス性や実際の DAC 出力を証明しません。
+- 既存 DSP の Oboe は 1.11.0、Signalsmith Linear は 0.6.5、libusb は 1.0.30 に更新。
+  Stretch は 1.4.0、soxr は 0.1.3 のままです。エンジンや既定の音声方針は変更しません。
+  libusb/soxr はアプリの CMake/Gradle で再ビルドする Android 用部分ツリーです。
+  使用中の USB 出力は維持し、到達不能な旧 USB モジュールだけを削除し MIT ライセンスを保存しています。
+- 歌詞の Unicode・読み、AI・キャッシュ・ライフサイクル、日本語辞書の自動取得は実装・統合待ちです。
+  承認済みの方針は端末の主ロケールの地域 JP のみを使い、IP 位置情報は取得しません。
+  Wi-Fi / モバイル回線でフォアグラウンドから一度だけ試行し、明示的な無効化・削除を尊重し、起動を待たせません。
+  辞書はオフラインのローマ字歌詞用 IPADIC データであり、UI 翻訳や全言語用エンジンではありません。
+
+これらはローカルの未コンパイル変更です。最終整理、独立レビュー、テスト、同一コミットの並列 CI、
+新しい dev PR のマージと Nightly の確認は未完了です。実機・表示・USB・全言語の動作確認は行っていません。
 
 ---
 
@@ -209,6 +237,8 @@ ArchiveTuneは無料かつオープンソースです。気に入ったら開発
 - **Material Color Utilities**  
 - **Read You / Seal** – UIコンポーネント  
 - 翻訳者およびベータテスターの皆様  
+
+[詳細な帰属・ライセンスと未解決の来歴に関する判断](docs/CREDITS.md)も参照してください。
 
 ---
 

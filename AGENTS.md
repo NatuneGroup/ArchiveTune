@@ -30,9 +30,20 @@ must preserve the invariants below.
 ## Build & test
 
 - JDK 21, Android SDK (compileSdk 37), Gradle wrapper 9.6.1.
-- Flavor matrix: gms/foss × mobile/tv × universal/arm64/x86_64. Debug check: `./gradlew assembleGmsMobileUniversalDebug`.
-- Fork contract tests (palette/crossfade/artwork/multi-source/presence/telegram — sources in `app/src/test/`): `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. Run after any merge or feature change.
+- Flavors include gms/foss, mobile/tv and ABI choices; not every combination ships. PR coverage is GMS/mobile/universal Debug assembly (arm64-v8a + x86_64) plus lint. Nightly retains six shipping variants; Stable retains seven and its existing reproducibility job.
+- Fork contract tests (`app/src/test/`): `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. Keep `Build Pull Request` / `build` separate from `Unit tests` / `Compile and run unit tests`, running concurrently on the exact integrated head. Do not substitute APK assembly for test compilation. In constrained continuations, no local Gradle/JVM/LSP or per-feature CI: focused tests follow integration.
+- Preserve GitHub-hosted PR runners, PR read-only caches and trusted cache producers. Use plain streaming diagnostics and local profiles/reports, not external build scans; do not change heap/KSP/configuration-cache policies without evidence.
 - Keep the GPL header banner on new `.kt` files. No formatter task — match surrounding style.
+
+## Current local follow-up boundaries
+
+- Stable/Nightly are explicit choices on every build; build identity supplies only the unset default. Migrate stored Canary once without overriding a later Stable choice. Keep channel-bound candidates and no-downgrade checks.
+- Settings descriptions use finite automatic marquee only for visible/resumed overflowing text with motion enabled. Keep page snapshots and running startup latches; one shared post-commit Restart now/Later modal owns restart actions, not per-row effects or timers.
+- The acoustic graph in Developer (`settings/misc`, `acoustic_quality`) and shared player/song menus runs only after Run. Keep bounded, cancellable, source-bound memory-only results, ordinary seekable file/content and clear current-source support, stale-result rejection and heuristic/unknown language. Never mutate playback resolution, queue or source rejection settings for an audit.
+- Existing DSP maintenance pins are Oboe 1.11.0, Signalsmith Linear 0.6.5 and retained libusb 1.0.30; Stretch remains 1.4.0 and soxr 0.1.3. No new output engine/default/preset policy. libusb/soxr are documented Android subsets; retained licenses/headers and Android build closure matter more than standalone upstream tooling.
+- The unreachable decent USB module is removed, not the active bit-perfect/AAudio/LastWave routes. Keep its MIT license/credit, optional app USB-host feature and persisted DSP/preset formats.
+- Japanese automation, Unicode/phonetics and AI/cache/lifecycle corrections are still in independent implementation lanes. Approved Japanese policy is one best-effort foreground attempt for primary device locale region JP, Wi-Fi/cellular allowed, explicit off/removal respected, no IP lookup or startup wait. Do not describe pending work as shipped or universally correct.
+- These follow-ups are local and uncompiled at this checkpoint. Final cleanup, independent review, focused tests, exact-head parallel CI, new dev PR/merge and Nightly verification remain pending. No device QA is claimed. Canary stays frozen.
 
 ## Dependency gotchas
 

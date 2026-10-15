@@ -101,7 +101,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "ArchiveTune"
 include(":app")
-include(":audio:decent-usb-audio-driver")
 include(":core")
 include(":lyrics:kugou")
 include(":lyrics:lrclib")

@@ -305,7 +305,7 @@ ArchiveTune is made possible by the work of many open-source projects and commun
 - **rukamori** [ArchiveTune](https://github.com/rukamori/ArchiveTune) for the original ArchiveTune project this fork builds on.
 - **tryptz** [Tryptify](https://github.com/tryptz/Tryptify) and [tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) for the audio engine this app's DSP chain, parametric/AutoEq, USB audio output and pitch/time stretch are ported from.
 - **Clash-Projects** [LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) for the native audio engine, bit-perfect USB output and Last.fm dashboard.
-- **Marcelo Silva** for the [decent-usb-audio-driver](audio/decent-usb-audio-driver) exclusive USB audio output module (MIT).
+- **Marcelo Silva** for the previously vendored decent-usb-audio-driver (MIT). Its unreachable implementation was removed; the [license and attribution](audio/decent-usb-audio-driver/LICENSE) are retained.
 - [libusb](https://libusb.info), [SoX Resampler](https://sourceforge.net/projects/soxr/) and [Signalsmith Stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) for USB access, resampling and pitch shifting.
 - [brahmkshatriya/echo-spotify-extension](https://github.com/brahmkshatriya/echo-spotify-extension) for how Spotify's web player reads its recently played list.
 

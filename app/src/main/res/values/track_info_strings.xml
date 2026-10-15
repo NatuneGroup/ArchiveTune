@@ -39,7 +39,6 @@
     <string name="track_info_decoded_pcm_integer_format">%1$d-bit PCM</string>
     <string name="track_info_decoded_pcm_float_format">%1$d-bit float PCM</string>
     <string name="track_info_unknown">Unknown</string>
-    <string name="track_info_actual_output">Device output</string>
     <string name="track_info_output_sample_format">Sample format</string>
     <string name="track_info_not_measured">Not measured by this screen</string>
     <string name="track_info_output_note">Physical device, DAC, and Bluetooth output are not measured here. Source metadata, decoded PCM, and Android output configuration cannot establish the signal reaching hardware. Bypass paths may have no observation.</string>

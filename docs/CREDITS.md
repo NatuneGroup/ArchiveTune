@@ -38,7 +38,7 @@ kept). Per-file lines read `Portions © <author>`.
 | [tryptz/tryptify-audio-core](https://github.com/tryptz/tryptify-audio-core) | tryptz | GPL-3.0 | The native side under `app/src/main/cpp/tryptify` (`dsp_engine`, snapins, `libusb_uac_driver`, WSOLA stretch). |
 | [Clash-Projects/LastWave-Native](https://github.com/Clash-Projects/LastWave-Native) | Clash-Projects | GPL-3.0 | `com.lastwave.*` Kotlin (9 files) and `app/src/main/cpp/lastwave`. |
 | [4nx3b/ArchiveTune](https://github.com/4nx3b/ArchiveTune) | 4nx3b | GPL-3.0 | `playback/dsp/*`, `di/LastwaveModule.kt`, `EqModels.kt`. |
-| decent-usb-audio-driver (`audio/decent-usb-audio-driver`) | Marcelo Silva | MIT (own `LICENSE`) | The exclusive USB audio output module. |
+| decent-usb-audio-driver | Marcelo Silva | MIT ([retained LICENSE](../audio/decent-usb-audio-driver/LICENSE)) | Previously vendored USB audio module; unreachable implementation removed, license and attribution retained. |
 | [libusb](https://libusb.info) · [SoX Resampler](https://sourceforge.net/projects/soxr/) | libusb / soxr authors | LGPL-2.1 (`COPYING`, `COPYING.LGPL`) | Vendored in `third_party/`, built into the native library. |
 | [signalsmith-stretch](https://github.com/Signalsmith-Audio/signalsmith-stretch) · [linear](https://github.com/Signalsmith-Audio/linear) | Signalsmith Audio | MIT (`LICENSE-*.txt`) | Vendored headers for independent pitch shift. |
 

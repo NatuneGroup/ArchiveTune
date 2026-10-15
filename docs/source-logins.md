@@ -1,8 +1,8 @@
 # Source sign-in screens
 
-Four sources sign in through a WebView because none of them offers a usable device flow:
-Tidal, Qobuz, Deezer and Apple Music. Each screen's job is the same — get a credential the
-provider will accept, prove it before saving, and never look idle.
+The provider-specific WebView screens below cover Tidal, Qobuz, Deezer and Apple Music.
+YouTube's separate embedded sign-in is described afterward. Screens should capture
+credentials, verify access where supported, and show loading/recovery rather than look idle.
 
 | Source | Credential | How it is captured | Proof before saving |
 |---|---|---|---|
@@ -11,7 +11,7 @@ provider will accept, prove it before saving, and never look idle.
 | Deezer | `arl` cookie | `CookieManager` (the cookie is HttpOnly) | `DeezerAudioProvider.verifyArl` |
 | Apple Music | Music User Token (+ developer token) | MusicKit instance poll, localStorage fallback | none available — the token shape is the only check |
 
-## Why nothing saves unverified
+## Why credential presence is not proof
 
 Three of the four hand out a credential that *looks* right before anyone has signed in:
 
@@ -20,8 +20,48 @@ Three of the four hand out a credential that *looks* right before anyone has sig
 - Qobuz's bundle contains dozens of 32-character hex strings, and the app secret is one of them.
 
 So presence is not proof, and a screen that saves on presence produces an account that looks
-connected and fails on the first play. Each screen calls the provider's own health check and
-only writes to DataStore once it comes back positive.
+connected and fails on the first play. Tidal, Qobuz and Deezer check with the provider and
+only write to DataStore once that succeeds. Apple Music's token-shape check,
+listed above, is not equivalent to verified account access.
+
+## YouTube embedded login and committed sessions
+
+The reported post-sign-in screen showed embedded `net::ERR_UNKNOWN_URL_SCHEME` for
+a YouTube Music `intent://play.google.com` install target. It did not establish a
+renderer crash or a successful live login.
+
+`YouTubeLoginNavigationPolicy` recognizes narrowly validated official Music install
+targets. A trusted main-frame GET may make one owned return to fixed
+`https://music.youtube.com/` in the same WebView; repeated redirects stop with
+Retry/Cancel. Subframes, POSTs and legacy callbacks without frame/method metadata
+cannot trigger that top-level return. No external store Activity, supplied fallback
+URL, copied intent headers/extras, universal rewrite or Google challenge/SSL bypass
+is used. Normal DOM storage and cookies survive entry, return and retry.
+
+`LoginScreen` owns document/view-bound extraction and sanitized main-frame/validation
+errors, loading, Retry and Cancel. Subresource errors alone do not fail sign-in.
+Preferred trusted origins contribute the first nonblank cookie value, preserving `=`
+inside values. An explicit retry may resubmit unchanged context; duplicate callbacks
+do not create parallel validation. Renderer-loss recovery exists, but is not the
+observed recording's established failure.
+
+`LoginViewModel` keeps candidate cookie, visitor and DataSyncId in memory.
+`YouTubeLoginRepository` serializes validation on one private reusable core `InnerTube`,
+clearing its auth in `finally`; it never stages a candidate on playback's singleton.
+It verifies the selected account context through the account list, then obtains
+identity from the final-context account menu. Display-name equality or a default
+account is not proof of the requested context. Unsupported/ambiguous contexts fail visibly.
+
+Only a still-owned verified attempt persists cookie/context/identity together.
+Failed/cancelled attempts preserve the prior committed session. Attempt generations
+and committed revisions also guard App publication, logout, account switches and delayed
+visitor/identity/OAuth/repair writers. YouTube logout expires only YouTube cookie scopes,
+not application-global cookies/WebStorage. Pool and Spotify accounts remain separate.
+
+This follow-up is local uncompiled source. Synthetic regression fixtures, independent
+changed-path review and exact-head hosted build/tests are pending; no live Google,
+rendered WebView or device success is claimed. The separate anonymous InnerTubeX
+[library pin](extraction.md#innertubex-version-and-scope) is not this login fix.
 
 ## The Qobuz app secret
 

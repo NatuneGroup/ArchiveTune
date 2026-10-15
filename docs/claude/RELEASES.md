@@ -17,26 +17,32 @@ Note what gates a release: the unit-test workflow is separate and the publishing
 
 The Canary channel (`canary` branch, `C`-tagged prereleases) is retired, and `canary.yml` has been deleted. The app has no Canary channel any more: a stored `CANARY` choice migrates to Nightly and the Canary-only preference keys are cleared, and the Stable filter ignores leftover `C` tags.
 
-- Final `C202610141722` shipped at `a1a04ea023192d8de03332e5a933bafc3224f8cc`; PR #196 merged into Canary. That historical build used a Nightly lock. The current local fix honors explicit Stable/Nightly choices instead; only an unset choice uses the build default.
+- Final `C202610141722` shipped at `a1a04ea023192d8de03332e5a933bafc3224f8cc`; PR #196 merged into Canary. That historical build used a Nightly lock. The fix shipped in N202610151104 honors explicit Stable/Nightly choices instead; only an unset choice uses the build default.
 - `8011d6556` retired the workflow. Earlier continuation `e0ada1758` was green (build 38599097324, tests 38599123903). Those runs do not validate later local follow-ups.
 - The `canary` branch is frozen as history. Do not push to it again.
 - Never delete the last `C` release or the `update-feed` release and its manifests by hand.
 
-## Current follow-up gate
+## Delivered baseline and current YouTube follow-up gate
 
-The channel/settings/graph/DSP/native/USB follow-ups above `8011d6556`, including the
-language/AI/lifecycle wave based on `966570f01`, are implemented and source-reviewed, with
-separate bounded final cleanup, three independent reviews and confirmed fixes complete.
-At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods were integrated but unexecuted,
-including pinned IPADIC artifact/production-tokenizer tests. Read the candidate PR and
-[Actions](https://github.com/NatuneGroup/ArchiveTune/actions) for actual results, not older green runs.
-Required exact-head parallel gates:
+PR #198 delivered the channel/settings/graph/DSP/native/USB and language/AI/lifecycle
+follow-ups. Its final head `e857f7131ee269ff5d60e4c156aa5bf90e100c3f` passed separate
+Build Pull Request run 38715736467 and Unit tests run 38715865943:
+835 passed, 0 failed, 0 skipped, including pinned IPADIC/production-tokenizer coverage.
+History-preserving dev merge `643a35fd09888769a4a2d588324398d68f0d6fb5` published automatic
+Nightly N202610151104 / build 6833 with six shipping APKs and the keyless manifest.
+Inherited lint reported 318 Error / 745 Warning / 43 Hint under `abortOnError=false`;
+this is not lint-clean or device evidence.
+
+The new finite-playlist/login/InnerTubeX follow-up is local uncompiled source based on
+that released merge. Focused tests, independent changed-path review and final remote
+execution are pending; historical 835 passes cannot be reused as new validation.
+Required new exact-head parallel gates:
 `Build Pull Request` / `build` (GMS mobile universal Debug assembly + lint) and
 `Unit tests` / `Compile and run unit tests` (exact `:app:testGmsMobileUniversalDebugUnitTest`).
 Keep PR read-only caches and trusted test-cache writes; local profiles/reports are artifacts,
 not external build-scan uploads. Task discovery is unnecessary.
 
-Create/reuse a new open draft PR into **dev**, never merged PR #196. After green final-head
+Create a new open draft PR into **dev**, never reuse merged PR #198 or #196. After green final-head
 checks, use the approved history-preserving dev merge, then verify Nightly assets and keyless
 manifest/version/source URLs. Do not push main/canary or repeat the already-completed secret
 deletions. Preserve actual Release shrinking/signing/native ABI checks and existing matrices:

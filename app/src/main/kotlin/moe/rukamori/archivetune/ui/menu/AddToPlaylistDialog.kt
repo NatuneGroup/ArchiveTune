@@ -59,6 +59,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,7 +86,6 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalDatabase
 import moe.rukamori.archivetune.R
@@ -204,10 +204,14 @@ fun AddToPlaylistDialog(
     initialTextFieldValue: String? = null,
     onGetSong: suspend () -> List<String>,
     onDismiss: () -> Unit,
+    operationKey: Any? = Unit,
     onAddComplete: ((songCount: Int, playlistNames: List<String>) -> Unit)? = null,
 ) {
     val database = LocalDatabase.current
     val coroutineScope = rememberCoroutineScope()
+    val operation = remember(coroutineScope) { AddToPlaylistOperation(coroutineScope) }
+    val addState by operation.state.collectAsStateWithLifecycle()
+    val isAddingToPlaylist = addState.loading
     val allPlaylists by database.playlistsByCreateDateAsc().collectAsStateWithLifecycle(initialValue = emptyList())
     val playlistPlayCounts by database.playlistPlayCounts().collectAsStateWithLifecycle(initialValue = emptyList())
     val (innerTubeCookie) = rememberPreference(InnerTubeCookieKey, "")
@@ -232,13 +236,14 @@ fun AddToPlaylistDialog(
     var showDuplicateDialog by remember { mutableStateOf(false) }
     var playlistsWithDuplicates by remember { mutableStateOf<List<Playlist>>(emptyList()) }
     var duplicateSongsMap by remember { mutableStateOf<Map<String, List<String>>>(emptyMap()) }
+    var duplicateRetrySkips by remember { mutableStateOf(false) }
     var songIds by remember { mutableStateOf<List<String>?>(null) }
     var selectedPlaylistIds by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var isAddingToPlaylist by remember { mutableStateOf(false) }
 
     suspend fun addSongsToPlaylistSafely(
         playlist: Playlist,
         requestedSongIds: List<String>,
+        ensureCurrent: suspend () -> Unit,
     ): Int {
         if (requestedSongIds.isEmpty()) return 0
 
@@ -249,6 +254,7 @@ fun AddToPlaylistDialog(
                 var remoteAdded = false
                 var addedSetVideoId: String? = null
                 for (attempt in 0 until 3) {
+                    ensureCurrent()
                     val result = YouTube.addToPlaylist(browseId, songId)
                     if (result.isSuccess) {
                         remoteAdded = true
@@ -262,20 +268,33 @@ fun AddToPlaylistDialog(
                 }
             }
             if (acceptedSongEntries.isNotEmpty()) {
+                ensureCurrent()
                 database.addSongEntriesToPlaylist(playlist, acceptedSongEntries)
             }
             return acceptedSongEntries.size
         }
 
+        ensureCurrent()
         database.addSongToPlaylist(playlist, requestedSongIds)
         return requestedSongIds.size
     }
 
-    LaunchedEffect(isVisible) {
+    fun dismiss() {
+        operation.cancel()
+        showDuplicateDialog = false
+        onDismiss()
+    }
+
+    DisposableEffect(isVisible, operationKey, operation) {
+        // Hiding the Dialog does not dispose rememberCoroutineScope. Invalidate its work here too.
+        onDispose { operation.cancel() }
+    }
+
+    LaunchedEffect(isVisible, operationKey) {
+        operation.cancel()
         if (isVisible) {
             songIds = null
             selectedPlaylistIds = emptySet()
-            isAddingToPlaylist = false
             showDuplicateDialog = false
             playlistsWithDuplicates = emptyList()
             duplicateSongsMap = emptyMap()
@@ -295,9 +314,9 @@ fun AddToPlaylistDialog(
         }
     }
 
-    if (isVisible) {
+    if (isVisible && !showDuplicateDialog) {
         Dialog(
-            onDismissRequest = onDismiss,
+            onDismissRequest = ::dismiss,
             properties = DialogProperties(usePlatformDefaultWidth = false),
         ) {
             BoxWithConstraints(
@@ -588,6 +607,14 @@ fun AddToPlaylistDialog(
 
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
 
+                        if (addState.failed) {
+                            Text(
+                                text = stringResource(R.string.playlist_add_incomplete),
+                                color = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                            )
+                        }
+
                         FlowRow(
                             modifier =
                                 Modifier
@@ -596,77 +623,53 @@ fun AddToPlaylistDialog(
                             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            TextButton(onClick = onDismiss, shapes = ButtonDefaults.shapes()) {
+                            TextButton(onClick = ::dismiss, shapes = ButtonDefaults.shapes()) {
                                 Text(stringResource(android.R.string.cancel))
                             }
 
                             Button(
                                 enabled = selectedPlaylistIds.isNotEmpty() && !isAddingToPlaylist,
                                 onClick = {
-                                    val selectedPlaylistIdsSnapshot = selectedPlaylistIds
-                                    isAddingToPlaylist = true
-                                    coroutineScope.launch {
-                                        val currentSongIds =
-                                            withContext(Dispatchers.IO) {
-                                                songIds ?: onGetSong()
-                                            }
-
-                                        if (currentSongIds.isNullOrEmpty()) {
-                                            isAddingToPlaylist = false
-                                            onDismiss()
-                                            return@launch
-                                        }
-                                        songIds = currentSongIds
-
-                                        val selectedPlaylists = availablePlaylists.filter { it.id in selectedPlaylistIdsSnapshot }
-                                        if (selectedPlaylists.isEmpty()) {
-                                            isAddingToPlaylist = false
-                                            onDismiss()
-                                            return@launch
-                                        }
-
-                                        val (withDuplicates, duplicatesMap, successfullyAddedPlaylistIds) =
-                                            withContext(Dispatchers.IO) {
+                                    val targets = availablePlaylists.filter { it.id in selectedPlaylistIds }
+                                    val cachedSongs = songIds
+                                    operation.start(
+                                        targets = targets,
+                                        load = { withContext(Dispatchers.IO) { cachedSongs ?: onGetSong() } },
+                                        insert = { selectedPlaylists, currentSongIds ->
+                                            val result = withContext(Dispatchers.IO) {
                                                 val tempDuplicatesMap = mutableMapOf<String, List<String>>()
                                                 val addedPlaylistIds = mutableSetOf<String>()
-
-                                                val (playlistsWithDups, playlistsWithoutDups) =
-                                                    selectedPlaylists.partition { playlist ->
+                                                val targetsToCheck = if (currentSongIds.isEmpty()) emptyList() else selectedPlaylists
+                                                val (withDuplicates, withoutDuplicates) =
+                                                    targetsToCheck.partition { playlist ->
+                                                        ensureCurrent()
                                                         val dups = database.playlistDuplicates(playlist.id, currentSongIds)
                                                         if (dups.isNotEmpty()) {
                                                             tempDuplicatesMap[playlist.id] = dups
                                                             true
-                                                        } else {
-                                                            false
-                                                        }
+                                                        } else false
                                                     }
-
-                                                playlistsWithoutDups.forEach { playlist ->
-                                                    val addedCount = addSongsToPlaylistSafely(playlist, currentSongIds)
-                                                    if (addedCount > 0) {
-                                                        addedPlaylistIds += playlist.id
-                                                    }
+                                                withoutDuplicates.forEach { playlist ->
+                                                    ensureCurrent()
+                                                    val addedCount = addSongsToPlaylistSafely(playlist, currentSongIds) { ensureCurrent() }
+                                                    if (addedCount > 0) addedPlaylistIds += playlist.id
                                                 }
-                                                Triple(playlistsWithDups, tempDuplicatesMap, addedPlaylistIds)
+                                                Triple(withDuplicates, tempDuplicatesMap, addedPlaylistIds)
                                             }
-
-                                        isAddingToPlaylist = false
-
-                                        val addedPlaylistNames =
-                                            selectedPlaylists
-                                                .filter { successfullyAddedPlaylistIds.contains(it.id) }
-                                                .map { it.playlist.name }
-                                        if (addedPlaylistNames.isNotEmpty()) {
-                                            onAddComplete?.invoke(currentSongIds.size, addedPlaylistNames)
-                                        }
-
-                                        if (withDuplicates.isNotEmpty()) {
-                                            playlistsWithDuplicates = withDuplicates
-                                            duplicateSongsMap = duplicatesMap
-                                            showDuplicateDialog = true
-                                        }
-                                        onDismiss()
-                                    }
+                                            Triple(currentSongIds, selectedPlaylists, result)
+                                        },
+                                        onSuccess = { (currentSongIds, selectedPlaylists, result) ->
+                                            songIds = currentSongIds
+                                            val (withDuplicates, duplicatesMap, addedIds) = result
+                                            val names = selectedPlaylists.filter { it.id in addedIds }.map { it.playlist.name }
+                                            if (names.isNotEmpty()) onAddComplete?.invoke(currentSongIds.size, names)
+                                            if (withDuplicates.isNotEmpty()) {
+                                                playlistsWithDuplicates = withDuplicates
+                                                duplicateSongsMap = duplicatesMap
+                                                showDuplicateDialog = true
+                                            } else dismiss()
+                                        },
+                                    )
                                 },
                                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
                                 shapes = ButtonDefaults.shapes(),
@@ -685,7 +688,9 @@ fun AddToPlaylistDialog(
                                     Spacer(modifier = Modifier.width(ButtonDefaults.IconSpacing))
                                     Text(
                                         text =
-                                            if (selectedPlaylistIds.size > 1) {
+                                            if (addState.failed) {
+                                                stringResource(R.string.retry)
+                                            } else if (selectedPlaylistIds.size > 1) {
                                                 stringResource(R.string.add_to_n_playlists, selectedPlaylistIds.size)
                                             } else {
                                                 stringResource(R.string.add)
@@ -710,75 +715,82 @@ fun AddToPlaylistDialog(
         )
     }
 
-    if (showDuplicateDialog) {
+    if (isVisible && showDuplicateDialog) {
         val totalDuplicates =
             duplicateSongsMap.values
                 .flatten()
                 .distinct()
                 .size
+        fun addDuplicates(skipDuplicates: Boolean) {
+            duplicateRetrySkips = skipDuplicates
+            val targets = playlistsWithDuplicates.toList()
+            val duplicates = duplicateSongsMap.toMap()
+            val songs = songIds.orEmpty().toList()
+            operation.start(
+                targets = targets,
+                load = { songs },
+                insert = { selectedPlaylists, currentSongIds ->
+                    withContext(Dispatchers.IO) {
+                        var totalAdded = 0
+                        val names = mutableListOf<String>()
+                        selectedPlaylists.forEach { playlist ->
+                            ensureCurrent()
+                            val songsToAdd = if (skipDuplicates) {
+                                currentSongIds.filter { it !in duplicates[playlist.id].orEmpty() }
+                            } else currentSongIds
+                            val count = addSongsToPlaylistSafely(playlist, songsToAdd) { ensureCurrent() }
+                            if (count > 0) {
+                                totalAdded += count
+                                names += playlist.playlist.name
+                            }
+                        }
+                        totalAdded to names
+                    }
+                },
+                onSuccess = { (count, names) ->
+                    if (count > 0) onAddComplete?.invoke(count, names)
+                    dismiss()
+                },
+            )
+        }
+
         DefaultDialog(
             title = { Text(stringResource(R.string.duplicates)) },
             buttons = {
+                if (addState.failed) {
+                    TextButton(
+                        enabled = !isAddingToPlaylist,
+                        onClick = { addDuplicates(duplicateRetrySkips) },
+                        shapes = ButtonDefaults.shapes(),
+                    ) {
+                        Text(stringResource(R.string.retry))
+                    }
+                }
                 TextButton(
-                    onClick = {
-                        coroutineScope.launch(Dispatchers.IO) {
-                            var totalAdded = 0
-                            val names = mutableListOf<String>()
-                            playlistsWithDuplicates.forEach { playlist ->
-                                val duplicatesForThisPlaylist = duplicateSongsMap[playlist.id] ?: emptyList()
-                                val songsToAdd = songIds!!.filter { it !in duplicatesForThisPlaylist }
-                                val addedCount = addSongsToPlaylistSafely(playlist, songsToAdd)
-                                if (addedCount > 0) {
-                                    totalAdded += addedCount
-                                    names += playlist.playlist.name
-                                }
-                            }
-                            if (totalAdded > 0) {
-                                withContext(Dispatchers.Main) {
-                                    onAddComplete?.invoke(totalAdded, names)
-                                }
-                            }
-                        }
-                        showDuplicateDialog = false
-                        onDismiss()
-                    },
+                    enabled = !isAddingToPlaylist,
+                    onClick = { addDuplicates(skipDuplicates = true) },
                     shapes = ButtonDefaults.shapes(),
                 ) {
                     Text(stringResource(R.string.skip_duplicates))
                 }
 
                 TextButton(
-                    onClick = {
-                        coroutineScope.launch(Dispatchers.IO) {
-                            var totalAdded = 0
-                            val names = mutableListOf<String>()
-                            playlistsWithDuplicates.forEach { playlist ->
-                                val addedCount = addSongsToPlaylistSafely(playlist, songIds!!)
-                                if (addedCount > 0) {
-                                    totalAdded += addedCount
-                                    names += playlist.playlist.name
-                                }
-                            }
-                            if (totalAdded > 0) {
-                                withContext(Dispatchers.Main) {
-                                    onAddComplete?.invoke(totalAdded, names)
-                                }
-                            }
-                        }
-                        showDuplicateDialog = false
-                        onDismiss()
-                    },
+                    enabled = !isAddingToPlaylist,
+                    onClick = { addDuplicates(skipDuplicates = false) },
                     shapes = ButtonDefaults.shapes(),
                 ) {
                     Text(stringResource(R.string.add_anyway))
                 }
 
-                TextButton(onClick = { showDuplicateDialog = false }, shapes = ButtonDefaults.shapes()) {
+                TextButton(onClick = ::dismiss, shapes = ButtonDefaults.shapes()) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },
-            onDismiss = { showDuplicateDialog = false },
+            onDismiss = ::dismiss,
         ) {
+            if (addState.failed) {
+                Text(stringResource(R.string.playlist_add_incomplete), color = MaterialTheme.colorScheme.error)
+            }
             Text(
                 text =
                     if (totalDuplicates == 1) {

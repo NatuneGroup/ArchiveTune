@@ -9,11 +9,14 @@
 package moe.rukamori.archivetune.auth
 
 import android.content.Context
+import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.call.body
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -60,7 +63,27 @@ data class YouTubeLoginAttempt internal constructor(val generation: Long, val ba
 data class YouTubeSessionOrigin internal constructor(val revision: Long, val authState: PlaybackAuthState)
 
 @Singleton
-class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val context: Context) {
+class YouTubeLoginRepository internal constructor(
+    private val store: DataStore<Preferences>,
+    private val currentAuth: () -> PlaybackAuthState,
+    private val publishAuth: (PlaybackAuthState) -> Unit,
+    private val validateCandidate: suspend (PlaybackAuthState) -> AccountInfo,
+    private val ioDispatcher: CoroutineDispatcher,
+    private val publishRuntimeRepair: (PlaybackAuthState) -> Unit = publishAuth,
+) {
+    @Inject
+    constructor(@ApplicationContext context: Context) : this(
+        context.dataStore,
+        { YouTube.currentPlaybackAuthState() },
+        { auth ->
+            val changed = YouTube.currentPlaybackAuthState().fingerprint != auth.fingerprint
+            YouTube.authState = auth
+            if (changed) YTPlayerUtils.clearPlaybackAuthCaches()
+        },
+        PrivateYouTubeValidator()::validate,
+        Dispatchers.IO,
+        { YouTube.authState = it },
+    )
     private val mutationMutex = Mutex()
     private val ownershipLock = Any()
     private var generation = 0L
@@ -70,11 +93,6 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
     private var lastPersistedAuth: PlaybackAuthState? = null
     private val ownershipChanges = MutableStateFlow(0L)
     val changes = ownershipChanges.asStateFlow()
-
-    // Core has no public close. This single process-lifetime client is exclusively validation-owned.
-    private val validationInnerTube = InnerTube()
-    private val validationMutex = Mutex()
-
     suspend fun beginAttempt(): YouTubeLoginAttempt = mutationMutex.withLock {
         reconcileLocked()
         synchronized(ownershipLock) {
@@ -97,17 +115,17 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
     }
 
     fun origin(): YouTubeSessionOrigin = synchronized(ownershipLock) {
-        YouTubeSessionOrigin(revision, YouTube.currentPlaybackAuthState())
+        YouTubeSessionOrigin(revision, currentAuth())
     }
 
     fun isCurrent(origin: YouTubeSessionOrigin): Boolean = synchronized(ownershipLock) {
-        !writing && pendingLogouts == 0 && origin.revision == revision && sameAccount(origin.authState, YouTube.currentPlaybackAuthState())
+        !writing && pendingLogouts == 0 && origin.revision == revision && sameAccount(origin.authState, currentAuth())
     }
 
     /** Non-suspending token/repair publication must not race a persisted account transition. */
     fun publishRepair(origin: YouTubeSessionOrigin, authState: PlaybackAuthState): Boolean = synchronized(ownershipLock) {
         if (!isCurrent(origin) || !sameAccount(origin.authState, authState)) return@synchronized false
-        YouTube.authState = authState
+        publishRuntimeRepair(authState)
         true
     }
 
@@ -115,7 +133,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
 
     private suspend fun reconcileLocked(): PlaybackAuthState {
         // Deliberately ignore collector payloads: an older queued emission cannot restore an old account.
-        val latest = context.dataStore.data.first().toPlaybackAuthState()
+        val latest = store.data.first().toPlaybackAuthState()
         synchronized(ownershipLock) {
             if (lastPersistedAuth != latest) {
                 ++revision
@@ -135,38 +153,18 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
         dataSyncId: String?,
         savedAccount: SavedAccount? = null,
         legacyPoToken: String? = null,
-    ): Result<YouTubeLoginSession> = withContext(Dispatchers.IO) {
+    ): Result<YouTubeLoginSession> = withContext(ioDispatcher) {
         runCatchingPreservingCancellation {
             check(isCurrent(attempt)) { "YouTube attempt expired" }
             val candidate = PlaybackAuthState(cookie = cookie, visitorData = visitorData, dataSyncId = dataSyncId).normalized()
             check(hasYouTubeLoginCookie(candidate.cookie)) { "YouTube signing cookie is missing" }
             if (candidate.dataSyncId == null) throw MissingYouTubeDataSyncIdException()
-            val identity = validate(candidate)
+            val identity = validateCandidate(candidate)
             currentCoroutineContext().ensureActive()
             val committed = commit(attempt, candidate, identity, savedAccount, legacyPoToken)
             YouTubeLoginSession(committed.authState, identity.name, identity.email.orEmpty(), identity.channelHandle.orEmpty(), committed)
         }
     }
-
-    private suspend fun validate(candidate: PlaybackAuthState): AccountInfo =
-        withPrivateYouTubeCandidate(validationInnerTube, validationMutex, candidate) { client ->
-            client.locale = YouTube.locale
-            if (client.proxy != YouTube.proxy) client.proxy = YouTube.proxy
-            if (client.proxyUsername != YouTube.proxyUsername) client.proxyUsername = YouTube.proxyUsername
-            if (client.proxyPassword != YouTube.proxyPassword) client.proxyPassword = YouTube.proxyPassword
-            if (client.dns != YouTube.dns) client.dns = YouTube.dns
-            val channels = client.accountChannels(WEB.copy(loginSupported = true, supportsCookieAuthentication = true))
-            check(channels.status.value in 200..299) { "YouTube context request failed" }
-            verifySelectedYouTubeContext(Json.parseToJsonElement(channels.bodyAsText()), requireNotNull(candidate.dataSyncId))
-            // Never clear/substitute the candidate context to make this request succeed.
-            val response = client.accountMenu(WEB_REMIX)
-            check(response.status.value in 200..299) { "YouTube account request failed" }
-            val menu = response.body<AccountMenuResponse>()
-            val identities = menu.actions.mapNotNull {
-                it.openPopupAction?.popup?.multiPageMenuRenderer?.header?.activeAccountHeaderRenderer?.toAccountInfo()
-            }
-            identities.singleOrNull() ?: throw UnverifiedYouTubeContextException()
-        }
 
     private suspend fun commit(
         attempt: YouTubeLoginAttempt,
@@ -189,7 +187,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
             }
             try {
                 withContext(NonCancellable) {
-                    val persisted = context.dataStore.edit { prefs ->
+                    val persisted = store.edit { prefs ->
                         prefs.clearPlaybackAuthSession()
                         prefs[InnerTubeCookieKey] = requireNotNull(auth.cookie)
                         auth.visitorData?.let { prefs[VisitorDataKey] = it }
@@ -222,7 +220,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
     suspend fun switchChannel(dataSyncId: String): Result<PlaybackAuthState> =
         runCatchingPreservingCancellation {
             val attempt = beginAttempt()
-            val auth = context.dataStore.data.first().toPlaybackAuthState()
+            val auth = store.data.first().toPlaybackAuthState()
             completeLogin(attempt, auth.cookie.orEmpty(), auth.visitorData, dataSyncId).getOrThrow().authState
         }
 
@@ -238,7 +236,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
                 mutationMutex.withLock {
                     synchronized(ownershipLock) { writing = true; ++generation; ++revision }
                     try {
-                        val auth = context.dataStore.edit { it.clearPlaybackAuthSession() }.toPlaybackAuthState()
+                        val auth = store.edit { it.clearPlaybackAuthSession() }.toPlaybackAuthState()
                         synchronized(ownershipLock) {
                             lastPersistedAuth = auth
                             publishLocked(auth)
@@ -266,10 +264,10 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
         }
     }
 
-    suspend fun refreshIdentity(origin: YouTubeSessionOrigin): Result<AccountInfo> = withContext(Dispatchers.IO) {
+    suspend fun refreshIdentity(origin: YouTubeSessionOrigin): Result<AccountInfo> = withContext(ioDispatcher) {
         runCatchingPreservingCancellation {
             if (!isCurrent(origin)) throw StaleYouTubeLoginException()
-            val info = validate(origin.authState)
+            val info = validateCandidate(origin.authState)
             if (!persistIdentity(origin, info)) throw StaleYouTubeLoginException()
             info
         }
@@ -292,7 +290,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
         }
         try {
             withContext(NonCancellable) {
-                val auth = context.dataStore.edit { edit(it) }.toPlaybackAuthState()
+                val auth = store.edit { edit(it) }.toPlaybackAuthState()
                 synchronized(ownershipLock) {
                     if (lastPersistedAuth != auth) { ++revision; ++generation }
                     lastPersistedAuth = auth
@@ -306,11 +304,7 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
         }
     }
 
-    private fun publishLocked(auth: PlaybackAuthState) {
-        val changed = YouTube.currentPlaybackAuthState().fingerprint != auth.fingerprint
-        YouTube.authState = auth
-        if (changed) YTPlayerUtils.clearPlaybackAuthCaches()
-    }
+    private fun publishLocked(auth: PlaybackAuthState) { publishAuth(auth) }
 
     private fun putIdentity(prefs: MutablePreferences, info: AccountInfo) {
         prefs[AccountNameKey] = info.name
@@ -320,18 +314,63 @@ class YouTubeLoginRepository @Inject constructor(@ApplicationContext private val
     }
 }
 
+// Core has no public close: one reusable client belongs to this repository-lifetime validator.
+private class PrivateYouTubeValidator {
+    private val validationInnerTube = InnerTube()
+    private val validationMutex = Mutex()
+
+    suspend fun validate(candidate: PlaybackAuthState): AccountInfo =
+        withPrivateYouTubeCandidate(validationInnerTube, validationMutex, candidate) { client ->
+            client.locale = YouTube.locale
+            if (client.proxy != YouTube.proxy) client.proxy = YouTube.proxy
+            if (client.proxyUsername != YouTube.proxyUsername) client.proxyUsername = YouTube.proxyUsername
+            if (client.proxyPassword != YouTube.proxyPassword) client.proxyPassword = YouTube.proxyPassword
+            if (client.dns != YouTube.dns) client.dns = YouTube.dns
+            validateYouTubeCandidateContext(candidate, accountChannels = {
+                val channels = client.accountChannels(WEB.copy(loginSupported = true, supportsCookieAuthentication = true))
+                check(channels.status.value in 200..299) { "YouTube context request failed" }
+                Json.parseToJsonElement(channels.bodyAsText())
+            }, accountMenu = {
+                val response = client.accountMenu(WEB_REMIX)
+                check(response.status.value in 200..299) { "YouTube account request failed" }
+                response.body<AccountMenuResponse>()
+            })
+        }
+}
+
+/** Both endpoint reads run under the same private lease, with no default-context substitution. */
+internal suspend fun validateYouTubeCandidateContext(
+    candidate: PlaybackAuthState,
+    accountChannels: suspend () -> JsonElement,
+    accountMenu: suspend () -> AccountMenuResponse,
+): AccountInfo {
+    verifySelectedYouTubeContext(accountChannels(), candidate.dataSyncId ?: throw MissingYouTubeDataSyncIdException())
+    val identities = accountMenu().actions.mapNotNull {
+        it.openPopupAction.popup.multiPageMenuRenderer.header?.activeAccountHeaderRenderer?.toAccountInfo()
+    }
+    return identities.singleOrNull() ?: throw UnverifiedYouTubeContextException()
+}
+
 /** The production validation lease: serialization and cleanup also cover cancellation/configuration failure. */
 internal suspend fun <T> withPrivateYouTubeCandidate(
     client: InnerTube,
     mutex: Mutex,
     candidate: PlaybackAuthState,
     block: suspend (InnerTube) -> T,
+): T = withPrivateYouTubeCandidate(client, mutex, candidate, { target, state -> target.applyAuthState(state) }, block)
+
+internal suspend fun <C, T> withPrivateYouTubeCandidate(
+    client: C,
+    mutex: Mutex,
+    candidate: PlaybackAuthState,
+    applyAuthState: (C, PlaybackAuthState) -> Unit,
+    block: suspend (C) -> T,
 ): T = mutex.withLock {
     try {
-        client.applyAuthState(candidate)
+        applyAuthState(client, candidate)
         block(client)
     } finally {
-        client.applyAuthState(PlaybackAuthState.EMPTY)
+        applyAuthState(client, PlaybackAuthState.EMPTY)
     }
 }
 

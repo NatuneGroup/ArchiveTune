@@ -322,7 +322,7 @@
     <string name="storage_migration_cache_progress">キャッシュを移動中...%1$d%%</string>
     <string name="storage_migration_downloads_progress">ダウンロードを移動中...%1$d%%</string>
     <string name="storage_migration_warning">警告: この処理中はアプリを閉じたり端末の電源を切ったりしないでね。データ損失の原因になることがある。</string>
-    <string name="storage_folder_selected_restart">保存フォルダを保存した。アプリは3秒後に再起動する。</string>
+    <string name="storage_folder_selected_restart">保存フォルダを保存した。</string>
     <string name="storage_folder_invalid">有効なフォルダを選んでね。</string>
     <string name="storage_folder_unsupported">このフォルダはファイルベースのメディアキャッシュに使用できない。</string>
     <string name="storage_folder_not_writable">ArchiveTuneはこのフォルダにキャッシュファイルを書き込めない。</string>

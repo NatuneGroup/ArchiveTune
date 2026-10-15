@@ -596,7 +596,7 @@
     <string name="internet">Internet</string>
     <string name="youtube_music_region">YouTube Music region</string>
     <string name="youtube_music_region_desc">Spoof your country for the home feed, search and radio. Also bypasses geo-blocks.</string>
-    <string name="youtube_music_region_restarting">Applying new region… restarting app</string>
+    <string name="youtube_music_region_restarting">Region saved. Restart to fully apply.</string>
     <string name="internet_warning_title">Security &amp; Usage Warning</string>
     <string name="internet_warning_doh">DNS over HTTPS only works if your country blocks YouTube. If YouTube actively blocks your region, consider using a Proxy or VPN.</string>
     <string name="internet_warning_proxy">Please only use Proxies that you are sure are safe. Free Proxies are convenient but not always safe, so be careful. You have been warned, and we are not responsible for your security.</string>

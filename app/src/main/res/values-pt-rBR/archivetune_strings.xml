@@ -323,7 +323,7 @@
     <string name="storage_migration_cache_progress">Movendo cache...%1$d%%</string>
     <string name="storage_migration_downloads_progress">Movendo downloads...%1$d%%</string>
     <string name="storage_migration_warning">Aviso: não feche o app nem desligue o dispositivo durante este processo. Fazer isso pode causar perda de dados.</string>
-    <string name="storage_folder_selected_restart">Pasta de armazenamento salva. O app será reiniciado em 3 segundos.</string>
+    <string name="storage_folder_selected_restart">Pasta de armazenamento salva.</string>
     <string name="storage_folder_invalid">Selecione uma pasta válida.</string>
     <string name="storage_folder_unsupported">Esta pasta não pode ser usada pelo cache de mídia baseado em arquivos.</string>
     <string name="storage_folder_not_writable">O ArchiveTune não pode gravar arquivos de cache nesta pasta.</string>

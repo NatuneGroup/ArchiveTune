@@ -10,6 +10,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.utils.rememberPreferenceSnapshot
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -246,6 +248,7 @@ fun SettingsScreen(
     latestVersionName: String,
     onClearUpdateBadge: () -> Unit = {},
 ) {
+    val prefs = rememberPreferenceSnapshot()
     val context = LocalContext.current
     val isAndroid12OrLater = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val listState = rememberLazyListState()
@@ -327,7 +330,10 @@ fun SettingsScreen(
     // dialog composables signal show/dismiss via LocalSettingsDialogShowing.
     val settingsDialogShowing = rememberSettingsDialogHostState()
 
-    CompositionLocalProvider(LocalSettingsDialogShowing provides settingsDialogShowing) {
+    CompositionLocalProvider(
+        LocalSettingsDialogShowing provides settingsDialogShowing,
+        LocalSettingsPreferenceSnapshot provides prefs,
+    ) {
         Scaffold(
             modifier =
                 Modifier

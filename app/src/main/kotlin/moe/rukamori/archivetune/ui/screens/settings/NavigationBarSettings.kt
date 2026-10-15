@@ -91,6 +91,8 @@ import moe.rukamori.archivetune.constants.NavigationBarStyleKey
 import moe.rukamori.archivetune.constants.CompactLayoutChoice
 import moe.rukamori.archivetune.constants.NavigationBarTransparencyKey
 import moe.rukamori.archivetune.constants.NavigationBarWidthKey
+import moe.rukamori.archivetune.ui.component.LocalRestartPrompt
+import moe.rukamori.archivetune.ui.component.setNavigationTreatment
 import moe.rukamori.archivetune.ui.component.DefaultDialog
 import moe.rukamori.archivetune.ui.component.EnumListPreference
 import moe.rukamori.archivetune.ui.component.IconButton
@@ -108,6 +110,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 @Composable
 fun NavigationBarSettings(navController: NavController, scrollTo: String? = null) {
     val prefs = rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
     val (navigationBarStyle, onNavigationBarStyleChange) =
         prefs.enumState(
             NavigationBarStyleKey,
@@ -120,41 +123,27 @@ fun NavigationBarSettings(navController: NavController, scrollTo: String? = null
     val (navigationBarCompactBehavior, onNavigationBarCompactBehaviorChange) =
         prefs.navigationBarCompactBehavior()
     val appleMusicExperience = prefs[AppleMusicExperienceKey, false]
-    val (navigationBarFrostedBlur, onNavigationBarFrostedBlurChange) =
+    val (navigationBarFrostedBlur) =
         prefs.state(NavigationBarFrostedBlurKey, defaultValue = false)
-    val (navigationBarTintFrostedBlur, onNavigationBarTintFrostedBlurChange) =
+    val (navigationBarTintFrostedBlur) =
         prefs.state(NavigationBarTintFrostedBlurKey, defaultValue = false)
     // Liquid Glass master toggle (Appearance) + nav-bar sub-toggle. The sub-toggle
     // is only effective when the master is on AND on Android 12+; otherwise the
     // FloatingNavigationToolbar falls back to its non-glass style.
     val (liquidGlassEnabled) =
         prefs.state(LiquidGlassEnabledKey, defaultValue = false)
-    val (liquidGlassNavBarEnabled, onLiquidGlassNavBarEnabledChange) =
+    val (liquidGlassNavBarEnabled) =
         prefs.state(LiquidGlassNavBarEnabledKey, defaultValue = false)
     val blurDisabled = !moe.rukamori.archivetune.LocalBlurPolicy.current.any
     val pendingRestart = StartupSettings.pending(prefs.current)
-    // Turning on any nav treatment turns the other treatments off.
-    // Mutual-exclusivity wrappers: turning one frosted variant on turns the other off.
-    val onFrostedBlurChange: (Boolean) -> Unit = { checked ->
-        onNavigationBarFrostedBlurChange(checked)
-        if (checked) {
-            if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
-            if (liquidGlassNavBarEnabled) onLiquidGlassNavBarEnabledChange(false)
-        }
+    val onFrostedBlurChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, NavigationBarFrostedBlurKey, it)
     }
-    val onTintFrostedBlurChange: (Boolean) -> Unit = { checked ->
-        onNavigationBarTintFrostedBlurChange(checked)
-        if (checked) {
-            if (navigationBarFrostedBlur) onNavigationBarFrostedBlurChange(false)
-            if (liquidGlassNavBarEnabled) onLiquidGlassNavBarEnabledChange(false)
-        }
+    val onTintFrostedBlurChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, NavigationBarTintFrostedBlurKey, it)
     }
-    val onLiquidGlassNavBarChange: (Boolean) -> Unit = { checked ->
-        onLiquidGlassNavBarEnabledChange(checked)
-        if (checked) {
-            if (navigationBarFrostedBlur) onNavigationBarFrostedBlurChange(false)
-            if (navigationBarTintFrostedBlur) onNavigationBarTintFrostedBlurChange(false)
-        }
+    val onLiquidGlassNavBarChange: (Boolean) -> Unit = {
+        setNavigationTreatment(restartPrompt, prefs, LiquidGlassNavBarEnabledKey, it)
     }
     val (navigationBarGlassGlow, onNavigationBarGlassGlowChange) =
         prefs.state(NavigationBarGlassGlowKey, defaultValue = true)

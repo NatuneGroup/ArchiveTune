@@ -9,7 +9,6 @@
 package moe.rukamori.archivetune.ui.screens.settings
 
 import android.content.Context
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -62,14 +61,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.*
@@ -78,9 +74,6 @@ import moe.rukamori.archivetune.ui.component.*
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.ProxyUtils
-import moe.rukamori.archivetune.utils.dataStore
-import moe.rukamori.archivetune.utils.rememberEnumPreference
-import moe.rukamori.archivetune.utils.rememberPreference
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.InterruptedIOException
@@ -91,7 +84,6 @@ import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.util.Locale
 import java.util.concurrent.TimeUnit
-import kotlin.system.exitProcess
 import androidx.compose.foundation.layout.asPaddingValues
 
 @Composable
@@ -162,25 +154,27 @@ fun InternetWarningBox(modifier: Modifier = Modifier) {
 fun InternetSettings(navController: NavController, scrollTo: String? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val prefs = moe.rukamori.archivetune.utils.rememberPreferenceSnapshot()
+    val restartPrompt = LocalRestartPrompt.current
 
-    val (dnsOverHttpsEnabled, onDnsOverHttpsEnabledChange) = rememberPreference(key = EnableDnsOverHttpsKey, defaultValue = false)
-    val (dnsProvider, onDnsProviderChange) = rememberPreference(key = DnsOverHttpsProviderKey, defaultValue = "Cloudflare")
-    val (customDnsUrl, onCustomDnsUrlChange) = rememberPreference(key = stringPreferencesKey("customDnsUrl"), defaultValue = "https://")
-    val (proxyEnabled, onProxyEnabledChange) = rememberPreference(key = ProxyEnabledKey, defaultValue = false)
-    val (proxyType, onProxyTypeChange) = rememberEnumPreference(key = ProxyTypeKey, defaultValue = Proxy.Type.HTTP)
-    val (proxyHost, onProxyHostChange) = rememberPreference(key = ProxyHostKey, defaultValue = "")
-    val (proxyPort, onProxyPortChange) = rememberPreference(key = ProxyPortKey, defaultValue = 8080)
-    val (proxyUsername, onProxyUsernameChange) = rememberPreference(key = ProxyUsernameKey, defaultValue = "")
-    val (proxyPassword, onProxyPasswordChange) = rememberPreference(key = ProxyPasswordKey, defaultValue = "")
-    val (streamBypassProxy, onStreamBypassProxyChange) = rememberPreference(key = StreamBypassProxyKey, defaultValue = false)
+    val (dnsOverHttpsEnabled, onDnsOverHttpsEnabledChange) = prefs.state(key = EnableDnsOverHttpsKey, defaultValue = false)
+    val (dnsProvider, onDnsProviderChange) = prefs.state(key = DnsOverHttpsProviderKey, defaultValue = "Cloudflare")
+    val (customDnsUrl, onCustomDnsUrlChange) = prefs.state(key = stringPreferencesKey("customDnsUrl"), defaultValue = "https://")
+    val (proxyEnabled, onProxyEnabledChange) = prefs.state(key = ProxyEnabledKey, defaultValue = false)
+    val (proxyType, onProxyTypeChange) = prefs.enumState(key = ProxyTypeKey, defaultValue = Proxy.Type.HTTP)
+    val (proxyHost, onProxyHostChange) = prefs.state(key = ProxyHostKey, defaultValue = "")
+    val (proxyPort, onProxyPortChange) = prefs.state(key = ProxyPortKey, defaultValue = 8080)
+    val (proxyUsername, onProxyUsernameChange) = prefs.state(key = ProxyUsernameKey, defaultValue = "")
+    val (proxyPassword, onProxyPasswordChange) = prefs.state(key = ProxyPasswordKey, defaultValue = "")
+    val (streamBypassProxy, onStreamBypassProxyChange) = prefs.state(key = StreamBypassProxyKey, defaultValue = false)
 
-    val (ipRotationEnabled, onIpRotationEnabledChange) = rememberPreference(key = IpRotationEnabledKey, defaultValue = false)
+    val (ipRotationEnabled, onIpRotationEnabledChange) = prefs.state(key = IpRotationEnabledKey, defaultValue = false)
     var loadingIpRotation by remember { mutableStateOf(false) }
     var refreshingIpRotation by remember { mutableStateOf(false) }
     val activeProxyCount by YouTube.ipRotationActiveCount.collectAsStateWithLifecycle()
 
-    val (ytMusicRegion, onYtMusicRegionChange) =
-        rememberPreference(key = YouTubeMusicRegionKey, defaultValue = SYSTEM_DEFAULT)
+    val (ytMusicRegion) =
+        prefs.state(key = YouTubeMusicRegionKey, defaultValue = SYSTEM_DEFAULT)
     val ytRegionValues = remember { listOf(SYSTEM_DEFAULT) + CountryCodeToName.keys.toList() }
 
     var testingProxy by remember { mutableStateOf(false) }
@@ -256,53 +250,19 @@ fun InternetSettings(navController: NavController, scrollTo: String? = null) {
                             }
                         },
                         onValueSelected = { newValue ->
-                            // Apply immediately — `gl` is in the JSON body of every YT Music
-                            // request (browse/search/player/next/suggestions/queue), so the next
-                            // call will use the new region.
-                            val deviceLocale = Locale.getDefault()
-                            val resolvedGl =
-                                newValue.takeIf { it != SYSTEM_DEFAULT }
-                                    ?: deviceLocale.country.takeIf { it in CountryCodeToName }
-                                    ?: "US"
-                            val spooferActive = newValue != SYSTEM_DEFAULT
-                            YouTube.regionSpooferActive = spooferActive
-                            YouTube.visitorData = null
-                            YouTube.locale = YouTube.locale.copy(gl = resolvedGl)
-                            onYtMusicRegionChange(newValue)
-
-                            // Schedule a process restart on a background coroutine so the
-                            // preference write (above) and the Toast land before we kill
-                            // the process. 400ms is enough for DataStore to flush and for
-                            // the Toast to animate in.
-                            scope.launch {
-                                // Drop the persisted visitorData too, not just the in-memory copy
-                                // above: App.kt restores YouTube.authState from DataStore on every
-                                // start, so an in-memory null was undone by the very restart this
-                                // handler schedules and the old region-pinned token came straight
-                                // back. Removing the key makes App.kt mint a fresh one against the
-                                // new region. The login cookie and dataSyncId are untouched.
-                                withContext(Dispatchers.IO) {
-                                    context.dataStore.edit { it.remove(VisitorDataKey) }
-                                }
-                                withContext(Dispatchers.Main) {
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.youtube_music_region_restarting),
-                                        Toast.LENGTH_SHORT,
-                                    ).show()
-                                }
-                                delay(400)
-                                withContext(Dispatchers.IO) {
-                                    val launchIntent =
-                                        context.packageManager.getLaunchIntentForPackage(context.packageName)
-                                    if (launchIntent != null) {
-                                        launchIntent.addFlags(
-                                            Intent.FLAG_ACTIVITY_NEW_TASK or
-                                                Intent.FLAG_ACTIVITY_CLEAR_TASK,
-                                        )
-                                        context.startActivity(launchIntent)
-                                    }
-                                    exitProcess(0)
+                            if (newValue != ytMusicRegion) {
+                                restartPrompt.edit(prefs, onCommitted = {
+                                    val deviceLocale = Locale.getDefault()
+                                    val resolvedGl = newValue.takeIf { it != SYSTEM_DEFAULT }
+                                        ?: deviceLocale.country.takeIf { it in CountryCodeToName }
+                                        ?: "US"
+                                    YouTube.regionSpooferActive = newValue != SYSTEM_DEFAULT
+                                    YouTube.visitorData = null
+                                    YouTube.locale = YouTube.locale.copy(gl = resolvedGl)
+                                }) {
+                                    this[YouTubeMusicRegionKey] = newValue
+                                    // Keep login/dataSyncId; only the region-pinned visitor is invalid.
+                                    remove(VisitorDataKey)
                                 }
                             }
                         },

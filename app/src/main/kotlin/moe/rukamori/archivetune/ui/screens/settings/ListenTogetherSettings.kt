@@ -12,6 +12,8 @@
 
 package moe.rukamori.archivetune.ui.screens.settings
 
+import moe.rukamori.archivetune.ui.component.SettingsDescriptionText
+
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Image
@@ -463,7 +465,7 @@ fun ListenTogetherSettings(
                     },
                     title = { Text(stringResource(R.string.listen_together_username)) },
                     description = {
-                        Text(username.ifEmpty { stringResource(R.string.not_set) })
+                        SettingsDescriptionText(username.ifEmpty { stringResource(R.string.not_set) })
                     },
                     onClick = if (roomState == null) {
                         { showUsernameDialog = true }
@@ -475,12 +477,10 @@ fun ListenTogetherSettings(
                     icon = painterResource(R.drawable.cloud),
                     title = { Text(stringResource(R.string.listen_together_server_url)) },
                     description = {
-                        Text(
+                        SettingsDescriptionText(
                             selectedServer?.let { server ->
                                 "${server.name} - ${server.location}"
                             } ?: serverUrl,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
                         )
                     },
                     onClick = { showServerUrlDialog = true }
@@ -819,12 +819,10 @@ private fun ServerChooserDialog(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Text(
+                            SettingsDescriptionText(
                                 text = server.url,
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         if (isSelected) {

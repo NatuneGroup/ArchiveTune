@@ -16,6 +16,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.extensions.toEnum
@@ -32,6 +34,16 @@ class PreferenceSnapshot(
     @PublishedApi internal val dataStore: DataStore<Preferences>,
 ) {
     val current: Preferences get() = preferences.value
+
+    /** Opt-in transaction for explicit actions that must finish saving before requesting restart. */
+    suspend fun editAndAwait(change: MutablePreferences.() -> Unit): PreferenceEditResult {
+        lateinit var before: Preferences
+        val after = dataStore.edit {
+            before = it.toPreferences()
+            it.change()
+        }
+        return PreferenceEditResult(before, after)
+    }
 
     operator fun <T> get(
         key: Preferences.Key<T>,
@@ -56,6 +68,8 @@ class PreferenceSnapshot(
             write = { value -> PreferenceStore.launchEdit(dataStore) { this[key] = value.name } },
         )
 }
+
+data class PreferenceEditResult(val before: Preferences, val after: Preferences)
 
 @PublishedApi
 internal class SnapshotPreferenceState<T>(

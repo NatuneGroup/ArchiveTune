@@ -501,7 +501,7 @@
     <string name="storage_migration_cache_progress">Moving Cache...%1$d%%</string>
     <string name="storage_migration_downloads_progress">Moving Downloads...%1$d%%</string>
     <string name="storage_migration_warning">Warning: Dont close the app or turn off your device during this process. Doing so may cause data loss.</string>
-    <string name="storage_folder_selected_restart">Storage folder saved. App will restart in 3 seconds.</string>
+    <string name="storage_folder_selected_restart">Storage folder saved.</string>
     <string name="storage_folder_invalid">Select a valid folder.</string>
     <string name="storage_folder_unsupported">This folder cannot be used by the file-backed media cache.</string>
     <string name="storage_folder_not_writable">ArchiveTune cannot write cache files in this folder.</string>
@@ -1161,5 +1161,8 @@
     <string name="back_animation_style_predictive">Predictive</string>
     <string name="restart_to_apply">Restart to apply</string>
     <string name="restart_to_apply_desc">Saved. This setting takes effect the next time the app starts.</string>
-    <string name="restart_now">Restart</string>
+    <string name="restart_now">Restart now</string>
+    <string name="restart_prompt_description">Your changes are saved. Restart now to apply them, or choose Later to keep using the current settings. Restarting stops playback.</string>
+    <string name="restart_reason_usb">USB audio output</string>
+    <string name="settings_save_failed">Could not save the setting. Please try again.</string>
 </resources>

@@ -133,7 +133,9 @@ the playing song; SpatialFlow uses the shared player menu. Opening is idle; coll
 target changes deactivate work even during exit animation. See [architecture](ARCHITECTURE.md)
 for bounded-source and heuristic-result limits.
 
-These local changes are integrated but uncompiled/unreleased. Japanese pack automation uses
+Implementation and independent source review are complete; the 113 new focused test methods
+were integrated but unexecuted at the 2026-10-15 pre-CI checkpoint. Actual build/test evidence is
+in candidate PR/Actions, not a source-review claim. Japanese pack automation uses
 primary system-device locale region JP only, one persisted best-effort foreground consideration
 on Wi-Fi/cellular, no startup block/IP lookup, and explicit off/removal refusal. Offline consumes
 the consideration without a retry loop. Keep manual download/cancel,

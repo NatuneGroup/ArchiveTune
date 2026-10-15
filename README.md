@@ -271,9 +271,13 @@ The in-app updater first reads a small update manifest (`stable.json` or `nightl
 - AI translation accepts complete validated results, keeps failures retryable and binds caches/results to settings and the current lyrics target. DeepL has explicit target codes and does not claim romanization support. All active translation surfaces invalidate changed targets; automatic calls retain exclusion gates. Downloader requests own separate staging/latches; Listen Together retries retain connection/request identity; Spotify refresh/sign-in/sign-out serialize account mutation.
 - Japanese dictionary automation uses primary system-device locale region JP, never IP geolocation. One persisted best-effort foreground consideration may download over Wi-Fi or cellular; offline consumes that consideration, with manual retry still available. Explicit off/removal prevents automatic installation. Download/checksum/tokenizer work stays off the startup/render thread, and the pinned 13,343,016-byte IPADIC pack is optional offline-romaji data, not UI translation or a universal language engine.
 
-These follow-ups are locally integrated, uncompiled and unreleased. A separate bounded final
-cleanup has been applied; independent review, focused tests,
-parallel exact-head CI and the new dev PR/merge/Nightly verification are still pending.
+Implementation, separate bounded final cleanup, three independent source reviews and their
+confirmed fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused test methods
+(including real pinned IPADIC/production-tokenizer coverage) were integrated but not yet executed.
+For actual exact-head build/lint and unit-test outcomes, consult the candidate PR and
+[GitHub Actions](https://github.com/NatuneGroup/ArchiveTune/actions); source review is not a CI pass.
+The new dev draft PR must pass both separate parallel gates before history-preserving merge
+and Nightly/manifest verification.
 No device, visual, USB or all-language validation is claimed.
 
 > [!WARNING]  

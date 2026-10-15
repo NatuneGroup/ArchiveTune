@@ -11,7 +11,7 @@ Word-level timing only exists where the provider supplies it (TTML and the
 rich-sync providers). Everything else is line-synced, and a renderer must degrade
 to whole-line highlighting rather than pretending.
 
-## Language and AI follow-up (locally integrated, uncompiled/unreleased)
+## Language and AI follow-up (implemented and source-reviewed)
 
 Preserve raw Unicode, semantic ZWJ/ZWNJ, combining marks and source spacing. Korean
 phonetic conversion uses an NFC working copy, not rewritten lyrics. Japanese routing
@@ -33,8 +33,10 @@ One persisted foreground consideration for primary system-device locale region J
 download over Wi-Fi/cellular when there is no usable pack and no explicit off/removal or prior attempt.
 Offline consumes the consideration; manual retry remains. No IP lookup, UI-language change,
 startup wait or continuous watcher is added. The 13,343,016-byte pinned data/digest and
-off-main tokenizer readiness check are retained. Real artifact/tokenizer execution and
-focused regression fixtures are deferred to remote CI; no all-language or device QA is claimed.
+off-main tokenizer readiness check are retained. Focused regression fixtures, including real
+pinned-data/production-tokenizer coverage, are integrated. At the 2026-10-15 pre-CI checkpoint
+they were unexecuted; consult candidate PR/Actions for actual execution. Independent source
+review and confirmed fixes are complete; no all-language or device QA is claimed.
 
 ## Renderers
 

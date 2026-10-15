@@ -21,8 +21,10 @@
 
 ## Release
 
-- Current local follow-ups are integrated with separate bounded final cleanup; they need independent review, focused tests,
-  exact-head parallel build/tests, a new dev draft PR and history-preserving merge, then Nightly/
+- Implementation, separate bounded final cleanup, three independent source reviews and confirmed
+  fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new focused tests were integrated
+  but unexecuted. Check candidate PR/Actions for exact-head parallel build/tests before the
+  new dev draft PR can be history-preservingly merged, followed by Nightly/
   manifest verification. Final Canary already shipped; never publish another or reuse merged #196.
 - Device/thermal/USB/visual checks are unrun and explicitly waived for this continuation; keep
   that limitation visible. Stable promotion remains separate.
@@ -49,9 +51,9 @@ snapshots are historical, not current service or feature status. In particular:
   not by deleting unrelated app secrets or claiming a rotation. Historical ArchivePool follow-up/
   WAF/deployment work is a separate delivery, not proof it was published.
 - Japanese/Unicode/AI/provider/cache and Listen Together/Spotify-account lifecycle changes are
-  integrated locally, uncompiled and unreleased. Focused fixtures, the real pinned IPADIC
-  artifact/tokenizer seam on remote CI and independent review remain required; source checks
-  are not service, all-language or device validation.
+  implemented and source-reviewed with focused fixtures, including real pinned IPADIC data and
+  the production tokenizer. Actual execution must be established by candidate PR/Actions;
+  source checks are not service, all-language or device validation.
 
 The superseded appearance and Home/Listen Together review notes were consolidated into
 [SETTINGS](SETTINGS.md), [ARCHITECTURE](ARCHITECTURE.md) and [RELEASES](RELEASES.md).

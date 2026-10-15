@@ -45,7 +45,7 @@ provider-local caches without overwriting personal accounts. An APK-delivery/rea
 extractable, not a server administrator/session/database secret; server-side authorization
 remains essential.
 
-## Bounded acoustic graph (local, uncompiled follow-up)
+## Bounded acoustic graph (implemented; execution evidence in PR/Actions)
 
 `acoustics/` owns read-only input resolution, bounded decoding/FFT and memory-only results.
 `AcousticQualitySection` and `AcousticQualityDialog` share the Developer and player/song-menu
@@ -78,8 +78,9 @@ protobuf-only Meowery (no JSON/client-capabilities frame), JSON-only chat and se
 restrictions. Historical 2026-10-06 synthetic checks received `room_created` from Hugging Face
 and `host_not_allowed` from Meowery; these were not Android synchronized-playback validation.
 The local delayed-retry fix snapshots socket, connection and room-request generations,
-then checks the still-pending deadline before sending. Independent review and CI remain
-pending; this does not establish synchronized playback or host eligibility.
+then checks the still-pending deadline before sending. Independent source review and confirmed
+fixes are complete; actual CI is recorded in the candidate PR/Actions. This does not establish
+synchronized playback or host eligibility.
 
 Spotify Home's Yuma-derived geometry was recorded at fork `04ef0f333`, reference YumaPlayer
 `28aef61`: two track rows, 240dp track tiles, 150dp artwork cards, 16dp gutters, reference
@@ -88,7 +89,7 @@ highlight, fixed 2dp refraction and no default shadow rather than the generic 24
 effect. Shared Suki material has since evolved; these pins preserve design provenance, not
 current pixel parity. Preserve independent glass/blur/older-Android fallbacks and source routing.
 
-## Integrated language, AI and request ownership (local, uncompiled)
+## Integrated language, AI and request ownership
 
 The shared lyrics path preserves semantic Unicode joiners and source spacing. Japanese
 phonetics prefer provider language metadata or kana context; ambiguous Han is not assumed
@@ -107,7 +108,8 @@ opaque and configuration-bound, and obsolete work cannot publish to a changed ly
 Primary system-device region JP, no usable pack and no off/removal/prior-attempt flag permit
 one persisted foreground consideration; offline consumes it, while manual retry remains.
 No geolocation, startup wait or background watcher is added. The pinned IPADIC JAR is data,
-not executable downloaded code; production tokenizer/artifact execution is deferred to CI.
+not executable downloaded code. The real pinned-data/production-tokenizer fixture is integrated;
+at the 2026-10-15 pre-CI checkpoint it was unexecuted. Consult candidate PR/Actions for actual execution.
 
 Downloader requests own UUID staging directories, latches and transport/probe cleanup.
 Spotify refresh, sign-in and sign-out serialize credential persistence and session invalidation

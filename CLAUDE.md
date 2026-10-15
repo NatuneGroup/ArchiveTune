@@ -61,11 +61,12 @@ history, and the app migrates a stored Canary channel to Nightly — see
 ## Task state
 
 The channel/default, settings text/shared restart modal, bounded acoustic graph,
-existing DSP pin updates and audited native/USB cleanup are local, uncompiled
-follow-ups, now including Unicode/phonetics, SimpMusic parity, optional JP-region dictionary
+existing DSP pin updates and audited native/USB cleanup are implemented follow-ups, including Unicode/phonetics, SimpMusic parity, optional JP-region dictionary
 automation, settings/target-bound AI results and downloader/room/account lifecycle repairs.
-A separate bounded final cleanup is applied; independent review, focused tests and final
-exact-head CI/delivery are still pending. The no-local-JVM/build policy is scoped to this
+Implementation, separate bounded final cleanup, three independent source reviews and confirmed
+fixes are complete. At the 2026-10-15 pre-CI checkpoint, 113 new test methods were integrated,
+not executed. Actual exact-head CI results belong to the candidate PR/Actions; dev merge and
+Nightly verification follow both separate green gates. The no-local-JVM/build policy is scoped to this
 constrained mission, not ordinary contributor setup. See the maintained docs below
 for boundaries and the already-shipped final Canary; do not publish another Canary.
 

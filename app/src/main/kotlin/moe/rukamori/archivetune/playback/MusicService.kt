@@ -4013,29 +4013,21 @@ class MusicService :
                             Timber.tag(TAG).w("Crossfade failed with %s", error::class.java.simpleName)
                         }
                     }
-                    val handedOff =
-                        runCatching {
-                            handleCrossfadeHandoff(reason = "fade_loop_error", fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING)
-                        }.isSuccess ||
-                            // The first hand-off threw (typically mid-promotion). Ask the policy
-                            // again with the incoming player treated as unusable: a committed fade
-                            // still carries the heard incoming position to the primary player
-                            // instead of restoring the outgoing song and discarding it.
-                            runCatching {
-                                handleCrossfadeHandoff(
-                                    reason = "fade_loop_error_cleanup_failed",
-                                    fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING,
-                                    incomingUnusable = true,
-                                )
-                            }.isSuccess
-                    if (!handedOff) {
-                        runCatching { cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "fade_loop_error_cleanup_failed") }
-                        runCatching { isCrossfading = false }
-                        runCatching { localPlayer.pauseAtEndOfMediaItems = false }
-                    }
-                    // The blend disabled skip-silence on both players; whichever path above ran
-                    // (or threw part-way), the surviving player gets the user's setting back.
-                    runCatching { localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled }
+                    cleanupCrossfadeLoopFailure(
+                        handoff = { incomingUnusable ->
+                            handleCrossfadeHandoff(
+                                reason = if (incomingUnusable) "fade_loop_error_cleanup_failed" else "fade_loop_error",
+                                fallbackAction = CrossfadeHandoffAction.RESTORE_OUTGOING,
+                                incomingUnusable = incomingUnusable,
+                            )
+                        },
+                        cancel = {
+                            cancelCrossfade(resetVolume = true, resetPauseAtEnd = true, reason = "fade_loop_error_cleanup_failed")
+                        },
+                        clearMixing = { isCrossfading = false },
+                        clearPauseAtEnd = { localPlayer.pauseAtEndOfMediaItems = false },
+                        restoreSkipSilence = { localPlayer.skipSilenceEnabled = skipSilencePreferenceEnabled },
+                    )
                 }
             }
     }

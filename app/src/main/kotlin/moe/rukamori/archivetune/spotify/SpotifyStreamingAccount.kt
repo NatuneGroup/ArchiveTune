@@ -23,8 +23,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.constants.SpotifyAccessTokenExpiresAtKey
 import moe.rukamori.archivetune.constants.SpotifyAccessTokenKey
@@ -75,7 +73,7 @@ object SpotifyStreamingAccount {
             .build()
 
     // Refresh, account replacement and sign-out share one commit boundary, including identity caches.
-    private val tokenMutex = Mutex()
+    private val tokenMutex = StreamingAccountMutationLock()
 
     // The catalog sp_dc whose account was last compared with the streaming account, and whether
     // the two turned out to be the same person. Checked once per catalog session, not per play.

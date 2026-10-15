@@ -26,11 +26,8 @@ import okhttp3.Protocol
 import okhttp3.Request
 import java.io.File
 import java.io.IOException
-import java.util.UUID
 import okhttp3.Call
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicReference
 import timber.log.Timber
 import moe.rukamori.archivetune.utils.withAppProxy
 
@@ -44,10 +41,7 @@ internal class PRDownloaderDataSource private constructor(
     private val userAgent: String,
 ) : BaseDataSource(true) {
 
-    private class RequestState(val directory: File) {
-        val latch = CountDownLatch(1)
-        val error = AtomicReference<Error?>(null)
-        @Volatile var cancelled = false
+    private class RequestState(directory: File) : DownloadRequestLifetime<Error>(directory) {
         var downloadId = -1
         var probe: Call? = null
         var source: FileDataSource? = null
@@ -62,16 +56,13 @@ internal class PRDownloaderDataSource private constructor(
     }
 
     private fun cleanup(state: RequestState) {
-        // This directory belongs only to this request, including PRDownloader's partial file.
-        state.directory.listFiles()?.forEach { it.delete() }
-        state.directory.delete()
+        state.cleanup()
     }
 
     private fun release(state: RequestState) {
         synchronized(requestLock) {
-            state.cancelled = true
+            state.cancel()
             if (active === state) active = null
-            state.latch.countDown()
             state.probe?.cancel()
             state.probe = null
             if (state.downloadId != -1) runCatching { PRDownloader.cancel(state.downloadId) }
@@ -100,9 +91,7 @@ internal class PRDownloaderDataSource private constructor(
         // PRDownloader is initialized once at app start (see App.kt).
         // If it isn't initialized, we fail fast — there's no graceful
         // degradation possible without a fetcher.
-        val tempDir = File(context.cacheDir, "prd_tmp").apply { mkdirs() }
-        val requestDir = File(tempDir, "request_${UUID.randomUUID()}")
-        if (!requestDir.mkdir()) throw IOException("Cannot create download staging directory")
+        val requestDir = DownloadRequestLifetime.createDirectory(File(context.cacheDir, "prd_tmp"))
         val safeName = "content"
         val target = File(requestDir, safeName)
         val state = RequestState(requestDir)
@@ -173,22 +162,18 @@ internal class PRDownloaderDataSource private constructor(
             val builder: DownloadRequest = requestBuilder.build()
 
             builder.setOnCancelListener {
-                state.cancelled = true
-                state.latch.countDown()
-                cleanup(state)
+                state.cancel()
+                state.cleanup()
             }
             synchronized(requestLock) {
                 checkCurrent(state)
                 state.downloadId = builder.start(object : OnDownloadListener {
                     override fun onDownloadComplete() {
-                        state.latch.countDown()
-                        if (state.cancelled) cleanup(state)
+                        state.completed()
                     }
 
                     override fun onError(error: Error) {
-                        state.error.set(error)
-                        state.latch.countDown()
-                        if (state.cancelled) cleanup(state)
+                        state.failed(error)
                     }
                 })
             }
@@ -251,12 +236,9 @@ internal class PRDownloaderDataSource private constructor(
                 val fs = FileDataSource()
                 state.source = fs
                 val reportedLength = fs.open(fileSpec)
-                val totalRemaining = if (reportedLength < 0) target.length() - dataSpec.position else reportedLength
-                state.bytesRemaining = if (dataSpec.length != C.LENGTH_UNSET.toLong()) {
-                    minOf(dataSpec.length, totalRemaining)
-                } else {
-                    totalRemaining
-                }
+                state.bytesRemaining = downloadedBytesRemaining(
+                    dataSpec.length, reportedLength, target.length(), dataSpec.position,
+                )
                 transferStarted(dataSpec)
                 return state.bytesRemaining
             }
@@ -275,7 +257,7 @@ internal class PRDownloaderDataSource private constructor(
         val state = active ?: return@synchronized C.RESULT_END_OF_INPUT
         val fs = state.source ?: return@synchronized C.RESULT_END_OF_INPUT
         if (state.bytesRemaining <= 0) return@synchronized C.RESULT_END_OF_INPUT
-        val toRead = minOf(length.toLong(), state.bytesRemaining).toInt()
+        val toRead = downloadedReadLength(length, state.bytesRemaining)
         val read = fs.read(buffer, offset, toRead)
         if (read > 0) {
             state.bytesRemaining -= read

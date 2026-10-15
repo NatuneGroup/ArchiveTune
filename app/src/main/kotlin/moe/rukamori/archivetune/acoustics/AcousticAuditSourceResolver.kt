@@ -110,7 +110,9 @@ internal class AcousticAuditSourceResolver(
             throw AcousticUnavailable("provider_input_unsupported")
         }
         if (uri.scheme == "telegram") throw AcousticUnavailable("telegram_unsupported")
-        val current = withContext(Dispatchers.Main.immediate) { snapshot(target.mediaId) }
+        val current = withContext(Dispatchers.Main.immediate) {
+            AcousticSourcePolicy.selectedSnapshot(target.mediaId, snapshot(target.mediaId))
+        }
         val prefs = context.dataStore.data.first()
         work.check()
         val enabled = setOfNotNull(
@@ -154,25 +156,18 @@ internal class AcousticAuditSourceResolver(
         val metadata = cache.getContentMetadata(key)
         val audio = CachedAudioMetadata.read(metadata, source) ?: return null
         val length = metadata.get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
-        if (length <= 0) return null
-        if (current != null &&
-            (current.contentLength?.let { it != length } == true ||
-                current.advertisedSampleRate?.let { it != audio.sampleRateHz } == true ||
-                current.claimedLossless != audio.claimedLossless)
-        ) return null
+        if (!AcousticSourcePolicy.cacheMatches(source, length, audio.sampleRateHz, audio.claimedLossless, current)) return null
         val spans = cache.getCachedSpans(key)
         if (spans.size > 2048) return null
-        var end = 0L
-        for (span in spans) {
+        val extents = spans.map { span ->
             work.check()
             val file = span.file ?: return null
-            if (!span.isCached || span.position != end || span.length <= 0 ||
-                span.length > length - end || file.length() != span.length ||
-                !OsConstants.S_ISREG(Os.stat(file.absolutePath).st_mode)
-            ) return null
-            end += span.length
+            AcousticCacheExtent(
+                span.position, span.length, file.length(),
+                { OsConstants.S_ISREG(Os.stat(file.absolutePath).st_mode) }, span.isCached,
+            )
         }
-        if (end != length) return null
+        if (!AcousticSourcePolicy.completeExtents(length, extents, work::check)) return null
         val segments = spans.map { Segment(it.position, it.length, it.file ?: return null) }
         return CacheInput(
             source.name, length, segments, current, audio.sampleRateHz, audio.claimedLossless, work,

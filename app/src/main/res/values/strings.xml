@@ -1222,7 +1222,6 @@
     <string name="update_channel_desc">Choose between tested releases and development snapshots.</string>
     <string name="channel_stable">Stable</string>
     <string name="channel_nightly">Nightly</string>
-    <string name="updates_stable_locked_on_nightly">Nightly builds always follow the Nightly channel, so the Stable channel is unavailable.</string>
     <string name="recent_commits">Recent Commits</string>
     <string name="updates_nightly_hosting_description">Nightly releases are published automatically from the development branch.</string>
     <string name="updates_channel_warning_intro">ArchiveTune provides two download channels for builds:</string>

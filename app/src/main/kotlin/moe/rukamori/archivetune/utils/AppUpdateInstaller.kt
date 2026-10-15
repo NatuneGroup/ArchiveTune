@@ -55,12 +55,15 @@ import java.util.zip.ZipFile
  */
 object AppUpdateInstaller {
     sealed interface DownloadState {
+        val offer: UpdateOffer? get() = null
+
         /** Nothing staged and nothing in flight. */
         object Idle : DownloadState
 
         /** Bytes are being streamed into the staging file. [fraction] is null until the length is known. */
         data class Downloading(
             val fraction: Float?,
+            override val offer: UpdateOffer,
         ) : DownloadState
 
         /**
@@ -69,11 +72,13 @@ object AppUpdateInstaller {
          */
         data class ReadyToInstall(
             val reused: Boolean,
+            override val offer: UpdateOffer,
         ) : DownloadState
 
         /** The attempt failed before anything could be installed. [message] is safe to display. */
         data class Failed(
             val message: String?,
+            override val offer: UpdateOffer,
         ) : DownloadState
     }
 
@@ -108,18 +113,20 @@ object AppUpdateInstaller {
      */
     fun startDownload(
         context: Context,
-        url: String,
+        offer: UpdateOffer,
     ) {
-        if (downloadJob?.isActive == true) return
+        if (downloadJob?.isActive == true ||
+            updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER
+        ) return
         val appContext = context.applicationContext
-        _downloadState.value = DownloadState.Downloading(null)
+        _downloadState.value = DownloadState.Downloading(null, offer)
         downloadJob =
             scope.launch {
-                val result = download(appContext, url)
+                val result = download(appContext, offer)
                 _downloadState.value =
                     result.fold(
-                        onSuccess = { reused -> DownloadState.ReadyToInstall(reused) },
-                        onFailure = { DownloadState.Failed(it.message) },
+                        onSuccess = { reused -> DownloadState.ReadyToInstall(reused, offer) },
+                        onFailure = { DownloadState.Failed(it.message, offer) },
                     )
             }
     }
@@ -141,9 +148,9 @@ object AppUpdateInstaller {
      * left to hand over — the reader may have swiped the app away long enough for the cache to be
      * evicted, and re-downloading is the only honest answer at that point.
      */
-    fun installStagedUpdate(context: Context): Boolean {
+    fun installStagedUpdate(context: Context, offer: UpdateOffer): Boolean {
         val stagedFile = File(updateDirectory(context), ApkFileName)
-        if (!stagedFile.isFile || !stagedFile.containsApkManifest()) return false
+        if (!isValidStagedOffer(context, offer)) return false
         installApk(context, stagedFile)
         return true
     }
@@ -175,15 +182,18 @@ object AppUpdateInstaller {
 
     private suspend fun download(
         context: Context,
-        url: String,
+        offer: UpdateOffer,
     ): Result<Boolean> {
         if (BuildConfig.DISTRIBUTION != "gms") {
             return Result.failure(IllegalStateException("In-app updates are only available for GMS builds"))
         }
 
         return try {
-            val reused = withContext(Dispatchers.IO) { reuseStagedUpdate(context, url) }
-            if (!reused) withContext(Dispatchers.IO) { downloadApk(context, url) }
+            val reused = withContext(Dispatchers.IO) { reuseStagedUpdate(context, offer.downloadUrl) }
+            if (!reused) withContext(Dispatchers.IO) { downloadApk(context, offer.downloadUrl) }
+            if (!isValidStagedOffer(context, offer)) {
+                throw IOException(context.getString(moe.rukamori.archivetune.R.string.update_archive_not_newer))
+            }
             Result.success(reused)
         } catch (e: CancellationException) {
             // Half a file is worse than none: it cannot be validated or installed, and it would sit
@@ -219,6 +229,16 @@ object AppUpdateInstaller {
         if (sourceUrl != url) return false
 
         return (stagedVersionCode(context, apkFile) ?: 0L) > BuildConfig.VERSION_CODE.toLong()
+    }
+
+    private fun isValidStagedOffer(context: Context, offer: UpdateOffer): Boolean {
+        if (updateEligibility(offer.versionCode, BuildConfig.VERSION_CODE) != UpdateEligibility.NEWER) return false
+        val directory = updateDirectory(context)
+        val apk = File(directory, ApkFileName)
+        if (!apk.isFile || !apk.containsApkManifest()) return false
+        val source = runCatching { File(directory, SourceFileName).readText().trim() }.getOrNull()
+        val code = stagedVersionCode(context, apk) ?: return false
+        return archiveMatchesOffer(offer.versionCode, code, BuildConfig.VERSION_CODE, source == offer.downloadUrl)
     }
 
     private suspend fun clearStagedUpdate(context: Context) {
@@ -307,7 +327,8 @@ object AppUpdateInstaller {
         downloadedBytes: Long,
         totalBytes: Long,
     ) {
-        _downloadState.value = DownloadState.Downloading(fractionOrNull(downloadedBytes, totalBytes))
+        val active = _downloadState.value as? DownloadState.Downloading ?: return
+        _downloadState.value = active.copy(fraction = fractionOrNull(downloadedBytes, totalBytes))
     }
 
     private fun fractionOrNull(

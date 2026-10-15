@@ -11,14 +11,11 @@ package moe.rukamori.archivetune.utils
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.constants.EnableUpdateNotificationKey
-import moe.rukamori.archivetune.constants.UpdateChannel
-import moe.rukamori.archivetune.constants.UpdateChannelKey
-import moe.rukamori.archivetune.defaultUpdateChannel
-import moe.rukamori.archivetune.effectiveUpdateChannel
 
 class UpdateCheckWorker(
     context: Context,
@@ -35,37 +32,17 @@ class UpdateCheckWorker(
             val isEnabled = dataStore.data.map { it[EnableUpdateNotificationKey] ?: false }.first()
             if (!isEnabled) return Result.success()
 
-            val updateChannel =
-                dataStore.data
-                    .map {
-                        effectiveUpdateChannel(
-                            UpdateChannel.fromStoredName(it[UpdateChannelKey], defaultUpdateChannel),
-                        )
-                    }.first()
-
-            when (updateChannel) {
-                UpdateChannel.NIGHTLY -> {
-                    Updater.getLatestNightlyVersionName().onSuccess { latestVersion ->
-                        if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                            UpdateNotificationManager.notifyIfNewVersion(
-                                applicationContext,
-                                latestVersion,
-                                updateChannel,
-                            )
-                        }
-                    }
-                }
-
-                UpdateChannel.STABLE -> {
-                    Updater.getLatestVersionName().onSuccess { latestVersion ->
-                        if (Updater.isUpdateAvailable(latestVersion, BuildConfig.VERSION_NAME)) {
-                            UpdateNotificationManager.notifyIfNewVersion(applicationContext, latestVersion)
-                        }
-                    }
+            val revision = Updater.selectionRevision
+            val updateChannel = Updater.selectedChannel(dataStore.data.first())
+            Updater.getLatestRelease(updateChannel).onSuccess { release ->
+                Updater.eligibleOffer(release, updateChannel)?.let { offer ->
+                    UpdateNotificationManager.notifyIfNewVersion(applicationContext, offer, revision)
                 }
             }
 
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Result.retry()
         }

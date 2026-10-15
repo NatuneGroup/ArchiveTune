@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.utils
 
+import android.content.Context
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import io.ktor.client.HttpClient
@@ -18,6 +19,9 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -28,6 +32,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import moe.rukamori.archivetune.App
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.defaultUpdateChannel
+import moe.rukamori.archivetune.effectiveUpdateChannel
+import moe.rukamori.archivetune.constants.UpdateChannelKey
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.constants.GitHubCommitsBranchKey
 import moe.rukamori.archivetune.constants.GitHubCommitsEtagKey
@@ -126,15 +133,7 @@ object Updater {
         val tagRegex: Regex get() = Regex("""$tagPrefix\d{8}(?:\d{4})?""")
     }
 
-    var lastCheckTime = -1L
-        private set
-    private var latestReleaseTag: String? = null
-    private var latestReleaseDownloadUrl: String? = null
-
-    // Per-channel so a channel switch never serves the other feed's cached tag/url from a
-    // previous resolve.
-    private val latestPreReleaseTag = mutableMapOf<PreChannel, String?>()
-    private val latestPreReleaseDownloadUrl = mutableMapOf<PreChannel, String?>()
+    private val latestOffers = java.util.concurrent.ConcurrentHashMap<UpdateChannel, UpdateOffer>()
 
     private val isUpdaterDistribution: Boolean
         get() =
@@ -269,38 +268,92 @@ object Updater {
 
     internal fun buildNumberOrNull(version: String): Int? = buildNumberRegex.find(version)?.groupValues?.get(1)?.toIntOrNull()
 
-    internal fun isSameVersion(
-        a: String,
-        b: String,
-    ): Boolean {
-        buildNumberOrNull(a)?.let { return it == BuildConfig.VERSION_CODE }
-        buildNumberOrNull(b)?.let { return it == BuildConfig.VERSION_CODE }
-        val aSemVer = parseSemVerOrNull(a)
-        val bSemVer = parseSemVerOrNull(b)
-        return if (aSemVer != null && bSemVer != null) {
-            aSemVer.major == bSemVer.major &&
-                aSemVer.minor == bSemVer.minor &&
-                aSemVer.patch == bSemVer.patch &&
-                aSemVer.preRelease == bSemVer.preRelease
-        } else {
-            a.trim() == b.trim()
-        }
-    }
-
+    @Suppress("UNUSED_PARAMETER")
     internal fun isUpdateAvailable(
         latestVersion: String,
         currentVersion: String,
     ): Boolean {
-        // Nightly build-number comparison takes priority: a newer build number means an update is
-        // available even though the display versionName is unchanged.
-        buildNumberOrNull(latestVersion)?.let { return it > BuildConfig.VERSION_CODE }
-        val latestSemVer = parseSemVerOrNull(latestVersion)
-        val currentSemVer = parseSemVerOrNull(currentVersion)
-        return if (latestSemVer != null && currentSemVer != null) {
-            latestSemVer > currentSemVer
-        } else {
-            !isSameVersion(latestVersion, currentVersion)
+        // Display names and SemVer are not evidence that Android can install this build.
+        return buildNumberOrNull(latestVersion)?.let { it > BuildConfig.VERSION_CODE } ?: false
+    }
+
+    suspend fun getLatestRelease(channel: UpdateChannel, forceRefresh: Boolean = false): Result<ReleaseInfo> {
+        val revision = selectionRevision
+        val result = when (channel) {
+            UpdateChannel.STABLE -> getLatestReleaseInfo(forceRefresh)
+            UpdateChannel.NIGHTLY -> getLatestNightlyReleaseInfo(forceRefresh)
         }
+        if (isCurrentSelection(channel, revision)) {
+            result.onSuccess { release -> publishIfCurrent(revision) { rememberOffer(release, channel) } }
+        }
+        return result
+    }
+
+    fun releaseVersionName(release: ReleaseInfo, channel: UpdateChannel): String =
+        when (channel) {
+            UpdateChannel.STABLE -> getReleaseVersionName(release)
+            UpdateChannel.NIGHTLY -> getNightlyReleaseVersionName(release)
+        }
+
+    internal fun releaseBuildCode(release: ReleaseInfo, channel: UpdateChannel): Int? =
+        when (channel) {
+            UpdateChannel.STABLE -> release.versionCode
+                ?: release.body?.let { nightlyBuildMarkerRegex.find(it)?.groupValues?.get(1)?.toIntOrNull() }
+            UpdateChannel.NIGHTLY -> nightlyBuildNumber(release)
+        }
+
+    fun eligibleOffer(
+        release: ReleaseInfo,
+        channel: UpdateChannel,
+        installedCode: Int = BuildConfig.VERSION_CODE,
+    ): UpdateOffer? {
+        val code = releaseBuildCode(release, channel)
+        if (!isUpdaterDistribution || updateEligibility(code, installedCode) != UpdateEligibility.NEWER) return null
+        val url = if (canDownloadUpdatesDirectly) release.downloadUrl else release.htmlUrl
+        if (url.isNullOrBlank()) return null
+        return UpdateOffer(channel, release.tagName, code!!, releaseVersionName(release, channel), release.body, url)
+    }
+
+    private val channelCheckTimes = java.util.concurrent.ConcurrentHashMap<UpdateChannel, Long>()
+    fun lastCheckTime(channel: UpdateChannel): Long = channelCheckTimes[channel] ?: -1L
+    fun cachedOffer(channel: UpdateChannel): UpdateOffer? = latestOffers[channel]
+
+    // A revision rejects delayed A results even after an A → B → A switch.
+    private val selectionLock = Any()
+    private val selectionEpoch = MutableStateFlow(0L)
+    val selectionChanges = selectionEpoch.asStateFlow()
+    val selectionRevision: Long get() = selectionEpoch.value
+
+    fun selectedChannel(preferences: Preferences): UpdateChannel =
+        effectiveUpdateChannel(UpdateChannel.fromStoredName(preferences[UpdateChannelKey], defaultUpdateChannel))
+
+    suspend fun isCurrentSelection(channel: UpdateChannel, revision: Long): Boolean =
+        runCatchingCancellable {
+            val current = selectedChannel(App.instance.dataStore.data.first())
+            updateRequestIsCurrent(channel, revision, current, selectionRevision)
+        }.getOrDefault(false)
+
+    internal fun publishIfCurrent(revision: Long, publish: () -> Unit) {
+        synchronized(selectionLock) {
+            if (revision == selectionRevision) publish()
+        }
+    }
+
+    suspend fun selectChannel(context: Context, channel: UpdateChannel) {
+        context.dataStore.edit { preferences ->
+            if (selectedChannel(preferences) != channel) {
+                synchronized(selectionLock) {
+                    selectionEpoch.value += 1
+                    UpdateNotificationManager.cancelUpdateNotification(context)
+                }
+                preferences[UpdateChannelKey] = channel.name
+            }
+        }
+    }
+
+    private fun rememberOffer(release: ReleaseInfo, channel: UpdateChannel) {
+        val offer = eligibleOffer(release, channel)
+        if (offer == null) latestOffers.remove(channel) else latestOffers[channel] = offer
     }
 
     internal fun findLatestRelease(releases: List<ReleaseInfo>): ReleaseInfo? {
@@ -349,7 +402,7 @@ object Updater {
     // same-SemVer rebuild is still offered and a SemVer bump with a non-greater code is not.
     internal fun getReleaseVersionName(release: ReleaseInfo): String {
         val name = preferredReleaseVersionNameOrNull(release) ?: release.name.ifBlank { release.tagName }
-        return release.versionCode?.let { "$name (build $it)" } ?: name
+        return releaseBuildCode(release, UpdateChannel.STABLE)?.let { "$name (build $it)" } ?: name
     }
 
     private fun parseReleasesJson(
@@ -471,10 +524,6 @@ object Updater {
             ?: emptyList()
     }
 
-    suspend fun getLatestVersionName(): Result<String> = getLatestReleaseInfo().map(::getReleaseVersionName)
-
-    suspend fun getLatestReleaseNotes(): Result<String?> = getLatestReleaseInfo().map { it.body }
-
     suspend fun getLatestReleaseInfo(forceRefresh: Boolean = false): Result<ReleaseInfo> =
         runCatchingCancellable {
             if (!isUpdaterDistribution) {
@@ -485,9 +534,7 @@ object Updater {
             val latest =
                 findLatestRelease(releases)
                     ?: throw IllegalStateException("No releases found")
-            lastCheckTime = System.currentTimeMillis()
-            latestReleaseTag = latest.tagName
-            latestReleaseDownloadUrl = latest.downloadUrl
+            channelCheckTimes[UpdateChannel.STABLE] = System.currentTimeMillis()
             latest
         }
 
@@ -629,23 +676,8 @@ object Updater {
             commits
         }
 
-    fun getLatestDownloadUrl(): String {
-        if (!isUpdaterDistribution) {
-            return ""
-        }
-
-        if (!canDownloadUpdatesDirectly) {
-            return "$StableReleaseBaseUrl/latest"
-        }
-
-        val artifactName = stableReleaseArtifactName()
-        latestReleaseDownloadUrl?.let { return it }
-        val tag = latestReleaseTag
-        if (tag != null) {
-            return "$StableReleaseBaseUrl/download/$tag/$artifactName"
-        }
-        return "$StableReleaseBaseUrl/latest/download/$artifactName"
-    }
+    // The legacy account link is browse-only. Install actions carry an immutable UpdateOffer.
+    fun getLatestDownloadUrl(): String = StableReleaseBaseUrl
 
     // The nightly workflow embeds the build's monotonic versionCode in the release notes as
     // "at-build:<n>". Fall back to the numeric patch segment of the release name ("Nightly 13.7.<n>")
@@ -675,12 +707,6 @@ object Updater {
     // Public wrappers over the shared pre-release resolution below. Nightly tracks `dev`.
     fun getNightlyReleaseVersionName(release: ReleaseInfo): String = getPreReleaseVersionName(release)
 
-    suspend fun getLatestNightlyVersionName(): Result<String> =
-        getLatestPreReleaseInfo(PreChannel.NIGHTLY).map(::getPreReleaseVersionName)
-
-    suspend fun getLatestNightlyReleaseNotes(): Result<String?> =
-        getLatestPreReleaseInfo(PreChannel.NIGHTLY).map { it.body }
-
     suspend fun getLatestNightlyReleaseInfo(forceRefresh: Boolean = false): Result<ReleaseInfo> =
         getLatestPreReleaseInfo(PreChannel.NIGHTLY, forceRefresh)
 
@@ -688,8 +714,6 @@ object Updater {
 
     suspend fun getAllNightlyReleases(perPage: Int = 30, forceRefresh: Boolean = false): Result<List<ReleaseInfo>> =
         getAllPreReleases(PreChannel.NIGHTLY, perPage, forceRefresh)
-
-    fun getLatestNightlyDownloadUrl(): String = getLatestPreReleaseDownloadUrl(PreChannel.NIGHTLY)
 
     private suspend fun getLatestPreReleaseInfo(
         channel: PreChannel,
@@ -704,9 +728,7 @@ object Updater {
             val latest =
                 findLatestPreRelease(releases, channel)
                     ?: throw IllegalStateException("No ${channel.name.lowercase()} releases found")
-            lastCheckTime = System.currentTimeMillis()
-            latestPreReleaseTag[channel] = latest.tagName
-            latestPreReleaseDownloadUrl[channel] = latest.downloadUrl
+            channelCheckTimes[UpdateChannel.NIGHTLY] = System.currentTimeMillis()
             latest
         }
 
@@ -750,7 +772,7 @@ object Updater {
             val releasesFresh = !cachedJson.isNullOrBlank() && (now - lastCheckedAt) < NightlyCacheCheckIntervalMs
 
             if (!forceRefresh && (manifestFresh || releasesFresh)) {
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
             }
 
@@ -767,14 +789,14 @@ object Updater {
                     settings[NightlyReleasesJsonKey] = encodeReleasesJson(merged)
                     settings[NightlyReleasesFingerprintKey] = getPreReleaseTopFingerprint(merged, channel)
                 }
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 return@runCatchingCancellable merged
             }
 
             // Manifest miss. api.github.com is the fallback, and while the rate-limit backoff is
             // active it is off limits entirely: serve whatever cache exists until the reset passes.
             if (rateLimitBackoffActive(now)) {
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
                 if (cached.isNotEmpty()) {
                     return@runCatchingCancellable cached
@@ -801,7 +823,7 @@ object Updater {
                         settings[NightlyReleasesLastCheckedAtKey] = now
                         networkResult.etag?.let { settings[NightlyReleasesEtagKey] = it }
                     }
-                    lastCheckTime = now
+                    channelCheckTimes[feedChannel] = now
                     return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
                 }
 
@@ -824,7 +846,7 @@ object Updater {
                                 settings[NightlyReleasesFingerprintKey] = newFingerprint
                             }
                         }
-                        lastCheckTime = now
+                        channelCheckTimes[feedChannel] = now
                         return@runCatchingCancellable releases
                     }
                 }
@@ -832,7 +854,7 @@ object Updater {
 
             val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
             if (cached.isNotEmpty()) {
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 return@runCatchingCancellable cached
             }
             throw IllegalStateException("No ${channel.name.lowercase()} update source is currently available")
@@ -856,24 +878,6 @@ object Updater {
             latest.body.orEmpty(),
             latest.htmlUrl,
         ).joinToString("||")
-    }
-
-    // The manifest/API resolve wins for every distribution: it is the asset the last resolve
-    // actually found (GMS installs it in place, FOSS opens it in a browser), so a pre-release
-    // channel never sends users to /releases/latest — that page resolves to the Stable release,
-    // which is exactly what a pre-release user must not land on.
-    private fun getLatestPreReleaseDownloadUrl(channel: PreChannel): String {
-        if (!isUpdaterDistribution) {
-            return ""
-        }
-
-        latestPreReleaseDownloadUrl[channel]?.let { return it }
-        val tag = latestPreReleaseTag[channel] ?: return NightlyReleaseBaseUrl
-        return if (canDownloadUpdatesDirectly) {
-            "$NightlyReleaseBaseUrl/download/$tag/${preReleaseArtifactName(channel)}"
-        } else {
-            "$NightlyReleaseBaseUrl/tag/$tag"
-        }
     }
 
     // ── Keyless update feed (schema-v1 manifest) ──────────────────────────────────────────
@@ -1044,7 +1048,7 @@ object Updater {
             val releasesFresh = !cachedJson.isNullOrBlank() && (now - lastCheckedAt) < ReleaseCacheCheckIntervalMs
 
             if (!forceRefresh && (manifestFresh || releasesFresh)) {
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 return@runCatchingCancellable mergeManifestRelease(cachedReleases, cachedManifestRelease)
             }
 
@@ -1059,12 +1063,12 @@ object Updater {
                     settings[GitHubReleasesJsonKey] = encodeReleasesJson(merged)
                     settings[GitHubReleasesFingerprintKey] = getTopReleaseFingerprint(merged)
                 }
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 return@runCatchingCancellable merged
             }
 
             if (rateLimitBackoffActive(now)) {
-                lastCheckTime = now
+                channelCheckTimes[feedChannel] = now
                 val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
                 if (cached.isNotEmpty()) {
                     return@runCatchingCancellable cached
@@ -1088,7 +1092,7 @@ object Updater {
             if (networkResult == null) {
                 val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
                 if (cached.isNotEmpty()) {
-                    lastCheckTime = now
+                    channelCheckTimes[feedChannel] = now
                     return@runCatchingCancellable cached
                 }
                 throw IllegalStateException("Failed to fetch releases")
@@ -1102,7 +1106,7 @@ object Updater {
                     }
                     val cached = mergeManifestRelease(cachedReleases, cachedManifestRelease)
                     if (cached.isNotEmpty()) {
-                        lastCheckTime = now
+                        channelCheckTimes[feedChannel] = now
                         return@runCatchingCancellable cached
                     }
                     throw IllegalStateException("Release cache is empty")
@@ -1123,14 +1127,14 @@ object Updater {
                             settings[GitHubReleasesFingerprintKey] = newFingerprint
                         }
                     }
-                    lastCheckTime = now
+                    channelCheckTimes[feedChannel] = now
                     releases
                 }
 
                 else -> {
                     val fallback = cachedReleases
                     if (fallback != null) {
-                        lastCheckTime = now
+                        channelCheckTimes[feedChannel] = now
                         fallback
                     } else {
                         throw IllegalStateException("Failed to fetch releases: HTTP ${networkResult.status.value}")

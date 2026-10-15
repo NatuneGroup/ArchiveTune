@@ -33,6 +33,8 @@ import moe.rukamori.archivetune.constants.HomeScreenStyle
 import moe.rukamori.archivetune.constants.HomeScreenStyleKey
 import moe.rukamori.archivetune.constants.HomeSource
 import moe.rukamori.archivetune.constants.LibraryStyle
+import moe.rukamori.archivetune.constants.UpdateChannelKey
+import moe.rukamori.archivetune.effectiveUpdateChannel
 import moe.rukamori.archivetune.constants.UpdateChannel
 import moe.rukamori.archivetune.defaultUpdateChannel
 import moe.rukamori.archivetune.musicrecognition.MusicRecognitionRoute
@@ -810,7 +812,12 @@ fun NavGraphBuilder.navigationBuilder(
             ),
     ) { backStackEntry ->
         val channelName = backStackEntry.arguments?.getString("channel")
-        val channel = UpdateChannel.fromStoredName(channelName, defaultUpdateChannel)
+        val storedChannel by rememberEnumPreference(UpdateChannelKey, defaultUpdateChannel)
+        val channel = if (channelName == null) {
+            effectiveUpdateChannel(storedChannel)
+        } else {
+            UpdateChannel.fromStoredName(channelName, effectiveUpdateChannel(storedChannel))
+        }
         ChangelogScreen(navController, channel = channel)
     }
     composable("settings/about") {

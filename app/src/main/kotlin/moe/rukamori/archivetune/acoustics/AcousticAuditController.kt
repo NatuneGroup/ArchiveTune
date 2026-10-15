@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 
-internal class AcousticWork : Closeable {
+internal class AcousticWork(private val nanoTime: () -> Long = System::nanoTime) : Closeable {
     companion object {
         private val deadlines = ScheduledThreadPoolExecutor(1) { task ->
             Thread(task, "AcousticAuditDeadline").apply { isDaemon = true }
@@ -41,14 +41,14 @@ internal class AcousticWork : Closeable {
     }
     private val cancelled = AtomicBoolean(false)
     private val source = AtomicReference<Closeable?>(null)
-    private val deadline = System.nanoTime() + AcousticAuditLimits.DEADLINE_MS * 1_000_000
+    private val deadline = nanoTime() + AcousticAuditLimits.DEADLINE_MS * 1_000_000
     private val watchdog = deadlines.schedule({
         runCatching { source.getAndSet(null)?.close() }
     }, AcousticAuditLimits.DEADLINE_MS, TimeUnit.MILLISECONDS)
 
     fun check() {
         if (cancelled.get()) throw CancellationException()
-        if (System.nanoTime() >= deadline) throw AcousticUnavailable("deadline_exceeded")
+        if (nanoTime() >= deadline) throw AcousticUnavailable("deadline_exceeded")
     }
 
     fun own(value: Closeable) {
@@ -86,23 +86,21 @@ class AcousticAuditController internal constructor(
     private val scope = CoroutineScope(SupervisorJob() + AcousticWorkers.dispatcher)
     private val mutableState = MutableStateFlow(AcousticAuditState())
     val state: StateFlow<AcousticAuditState> = mutableState.asStateFlow()
-    private var generation = 0L
-    private var closed = false
-    private var active = true
+    private val generation = AcousticRunGeneration()
     private var job: Job? = null
     private var work: AcousticWork? = null
 
     fun start() {
         synchronized(lock) {
             // A cancelled decoder must finish unwinding before another run can own resources.
-            if (closed || !active || job?.isCompleted == false) return
+            if (!generation.canStart || job?.isCompleted == false) return
             if (!AcousticWorkers.permits.tryAcquire()) {
                 mutableState.value = AcousticAuditState(
                     AcousticAuditStatus.UNAVAILABLE, message = "analysis_busy",
                 )
                 return
             }
-            val token = ++generation
+            val token = generation.begin()
             val ownedWork = AcousticWork()
             val entered = AtomicBoolean(false)
             work = ownedWork
@@ -165,13 +163,13 @@ class AcousticAuditController internal constructor(
 
     private fun publish(token: Long, value: AcousticAuditState) {
         synchronized(lock) {
-            if (!closed && active && token == generation) mutableState.value = value
+            if (generation.accepts(token)) mutableState.value = value
         }
     }
 
     fun cancel() {
         synchronized(lock) {
-            generation++
+            generation.cancel()
             work?.close()
             work = null
             job?.cancel()
@@ -181,15 +179,15 @@ class AcousticAuditController internal constructor(
 
     internal fun setActive(value: Boolean) {
         synchronized(lock) {
-            active = value
+            generation.setActive(value)
             if (!value) cancel()
         }
     }
 
     override fun close() {
         synchronized(lock) {
-            if (closed) return
-            closed = true
+            if (generation.closed) return
+            generation.close()
             cancel()
             scope.cancel()
         }

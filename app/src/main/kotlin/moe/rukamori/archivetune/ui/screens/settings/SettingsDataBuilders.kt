@@ -1221,7 +1221,7 @@ fun buildSettingsGroups(
 
 @Composable
 private fun SearchPlayerVolumeVisibilitySwitch() {
-    val prefs = rememberPreferenceSnapshot()
+    val prefs = LocalSettingsPreferenceSnapshot.current
     val (style) = prefs.enumState(PlayerDesignStyleKey, PlayerDesignStyle.Default)
     val (visible, setVisible) = prefs.playerVolumeVisibility(style)
     Switch(checked = visible, onCheckedChange = setVisible, enabled = style.hasVolumeRow)

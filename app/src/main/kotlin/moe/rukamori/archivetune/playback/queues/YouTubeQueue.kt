@@ -66,11 +66,24 @@ class YouTubeQueue(
         fun playlist(
             endpoint: WatchEndpoint,
             preloadItem: MediaMetadata? = null,
-        ) = YouTubeQueue(
-            endpoint = endpoint,
-            preloadItem = preloadItem,
-            expandToFullQueueWhenAutoLoadMoreDisabled = true,
-        )
+            shuffle: Boolean = false,
+            startFromBeginning: Boolean = false,
+        ): Queue =
+            if (isFiniteYouTubePlaylist(endpoint.playlistId)) {
+                YouTubePlaylistQueue(
+                    endpoint = if (startFromBeginning) {
+                        endpoint.copy(videoId = null, index = null, playlistSetVideoId = null)
+                    } else endpoint,
+                    preloadItem = preloadItem,
+                    shuffleAfterCompletion = shuffle,
+                )
+            } else {
+                YouTubeQueue(
+                    endpoint = endpoint,
+                    preloadItem = preloadItem,
+                    expandToFullQueueWhenAutoLoadMoreDisabled = true,
+                )
+            }
 
         fun radio(song: MediaMetadata) =
             YouTubeQueue(

@@ -8,6 +8,8 @@
 
 package moe.rukamori.archivetune.utils
 
+import moe.rukamori.archivetune.playback.queues.loadCompleteYouTubePlaylist
+
 import android.content.Context
 import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -403,9 +405,7 @@ class SyncUtils
                     return@coroutineScope
                 }
                 val gen = syncGeneration.get()
-                YouTube
-                    .playlist("LM")
-                    .completed()
+                runCatching { loadCompleteYouTubePlaylist("LM") }
                     .onSuccess { page ->
                         if (!isSyncStillEnabled(gen)) return@onSuccess
                         val rawRemoteSongs = page.songs.orEmpty().distinctBy { song -> song.id }
@@ -949,20 +949,18 @@ class SyncUtils
             Timber.d("syncPlaylist: Starting sync for browseId=$browseId, playlistId=$playlistId")
 
             val page =
-                YouTube.playlist(browseId).completed().getOrElse { e ->
-                    if (e is CancellationException) throw e
-                    Timber.e(e, "syncPlaylist: Failed to fetch playlist from YouTube")
-                    if (propagateFailures) {
-                        throw e
-                    }
+                try {
+                    loadCompleteYouTubePlaylist(browseId)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Timber.e(e, "syncPlaylist: Remote playlist is incomplete; local playlist retained")
+                    if (propagateFailures) throw e
                     return@coroutineScope
                 }
             if (!isSyncStillEnabled(gen)) return@coroutineScope
             val songs =
-                page.songs
-                    .orEmpty()
-                    .filter { song -> song.setVideoId?.isNotBlank() == true }
-                    .map(SongItem::toMediaMetadata)
+                page.songs.map(SongItem::toMediaMetadata)
             Timber.d("syncPlaylist: Fetched ${songs.size} songs from remote")
 
             if (songs.isEmpty()) {
@@ -970,6 +968,7 @@ class SyncUtils
                     database.withTransaction {
                         if (!isSyncStillEnabled(gen)) return@withTransaction
                         database.clearPlaylist(playlistId)
+                        if (!isSyncStillEnabled(gen)) throw CancellationException("Playlist sync cancelled")
                     }
                 }
                 Timber.w("syncPlaylist: Remote playlist is empty, skipping sync")
@@ -1021,7 +1020,7 @@ class SyncUtils
                     database.clearPlaylist(playlistId)
                     var completedSongs = 0
                     songs.forEachIndexed { idx, song ->
-                        if (!isSyncStillEnabled(gen)) return@withTransaction
+                        if (!isSyncStillEnabled(gen)) throw CancellationException("Playlist sync cancelled")
                         val songId = song.id ?: return@forEachIndexed
                         val existingSong = getSongByIdBlocking(songId)
                         if (existingSong == null) {
@@ -1040,6 +1039,7 @@ class SyncUtils
                         completedSongs += 1
                         onProgress(completedSongs, remoteIds.size)
                     }
+                    if (!isSyncStillEnabled(gen)) throw CancellationException("Playlist sync cancelled")
                 }
                 Timber.d("syncPlaylist: Successfully synced playlist")
             } catch (e: CancellationException) {

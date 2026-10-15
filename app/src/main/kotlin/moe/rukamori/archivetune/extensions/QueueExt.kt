@@ -18,12 +18,17 @@ import moe.rukamori.archivetune.playback.queues.LocalAlbumRadio
 import moe.rukamori.archivetune.playback.queues.Queue
 import moe.rukamori.archivetune.playback.queues.YouTubeAlbumRadio
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
+import moe.rukamori.archivetune.playback.queues.YouTubePlaylistQueue
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistSnapshot
+import moe.rukamori.archivetune.playback.queues.FinitePlaylistPhase
+import moe.rukamori.archivetune.playback.queues.isFiniteYouTubePlaylist
 
 fun Queue.toPersistQueue(
     title: String?,
     items: List<MediaMetadata>,
     mediaItemIndex: Int,
     position: Long,
+    timelineOccurrences: List<String?> = emptyList(),
 ): PersistQueue =
     when (this) {
         is ListQueue -> {
@@ -33,6 +38,22 @@ fun Queue.toPersistQueue(
                 mediaItemIndex = mediaItemIndex,
                 position = position,
                 queueType = QueueType.LIST,
+            )
+        }
+
+        is YouTubePlaylistQueue -> {
+            PersistQueue(
+                title, items, mediaItemIndex, position, QueueType.YOUTUBE_PLAYLIST,
+                QueueData.YouTubePlaylistData(
+                    playlistId = playlistId,
+                    videoId = endpoint.videoId,
+                    endpointParams = endpoint.params,
+                    endpointIndex = endpoint.index,
+                    playlistSetVideoId = endpoint.playlistSetVideoId,
+                    snapshot = snapshot,
+                    timelineOccurrences = timelineOccurrences,
+                    needsReconciliation = snapshot.entries.isEmpty() && !confirmedExhausted,
+                ),
             )
         }
 
@@ -96,14 +117,6 @@ fun Queue.toPersistQueue(
         }
     }
 
-fun PersistQueue.toQueue(): Queue =
-    ListQueue(
-        title = title,
-        items = items.map { it.toMediaItem() },
-        startIndex = mediaItemIndex,
-        position = position,
-    )
-
 fun PersistQueue.toContinuationQueue(): Queue =
     when (queueType) {
         is QueueType.LIST -> {
@@ -119,7 +132,13 @@ fun PersistQueue.toContinuationQueue(): Queue =
             val data =
                 queueData as? QueueData.YouTubeData
                     ?: return ListQueue(title, items.map { it.toMediaItem() }, mediaItemIndex, position)
-            YouTubeQueue(
+            if (isFiniteYouTubePlaylist(data.playlistId) && !data.followAutomixPreview) {
+                YouTubePlaylistQueue(
+                    endpoint = WatchEndpoint(playlistId = data.playlistId),
+                    snapshot = FinitePlaylistSnapshot(title = title, phase = FinitePlaylistPhase.UNKNOWN),
+                    legacyItems = items,
+                )
+            } else YouTubeQueue(
                 endpoint =
                     WatchEndpoint(
                         videoId = data.videoId,
@@ -127,6 +146,23 @@ fun PersistQueue.toContinuationQueue(): Queue =
                         params = data.endpointParams,
                     ),
                 followAutomixPreview = data.followAutomixPreview,
+            )
+        }
+
+        is QueueType.YOUTUBE_PLAYLIST -> {
+            val data = queueData as? QueueData.YouTubePlaylistData
+                ?: return ListQueue(title, items.map { it.toMediaItem() }, mediaItemIndex, position)
+            YouTubePlaylistQueue(
+                endpoint = WatchEndpoint(
+                    videoId = data.videoId,
+                    playlistId = data.playlistId,
+                    params = data.endpointParams,
+                    index = data.endpointIndex,
+                    playlistSetVideoId = data.playlistSetVideoId,
+                ),
+                snapshot = data.snapshot,
+                restoredTimelineKeys = data.timelineOccurrences,
+                legacyItems = if (data.needsReconciliation) items else null,
             )
         }
 

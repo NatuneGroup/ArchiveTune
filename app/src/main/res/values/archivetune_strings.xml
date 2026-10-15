@@ -1165,4 +1165,9 @@
     <string name="restart_prompt_description">Your changes are saved. Restart now to apply them, or choose Later to keep using the current settings. Restarting stops playback.</string>
     <string name="restart_reason_usb">USB audio output</string>
     <string name="settings_save_failed">Could not save the setting. Please try again.</string>
+    <string name="youtube_playlist_loading">Loading the finite YouTube playlist…</string>
+    <string name="youtube_playlist_incomplete">The playlist could not be loaded completely. Known tracks are kept. Retry, or reload the playlist from the beginning.</string>
+    <string name="youtube_playlist_retry">Retry playlist loading</string>
+    <string name="youtube_playlist_reload">Reload playlist from beginning</string>
+    <string name="youtube_playlist_cancel">Cancel playlist loading</string>
 </resources>

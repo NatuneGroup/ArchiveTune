@@ -127,6 +127,8 @@ import moe.rukamori.archivetune.ui.component.shimmer.ShimmerHost
 import moe.rukamori.archivetune.ui.component.shimmer.TextPlaceholder
 import moe.rukamori.archivetune.ui.menu.SelectionMediaMetadataMenu
 import moe.rukamori.archivetune.ui.menu.YouTubePlaylistMenu
+import moe.rukamori.archivetune.ui.menu.YouTubePlaylistLoadDialog
+import moe.rukamori.archivetune.playback.queues.isFiniteYouTubePlaylist
 import moe.rukamori.archivetune.ui.menu.YouTubeSongMenu
 import moe.rukamori.archivetune.ui.utils.HeaderDownloadItem
 import moe.rukamori.archivetune.ui.utils.HeaderDownloadProgressIndicator
@@ -153,6 +155,7 @@ fun OnlinePlaylistScreen(
     val database = LocalDatabase.current
     val haptic = LocalHapticFeedback.current
     val playerConnection = LocalPlayerConnection.current ?: return
+    if (!menuState.isVisible) YouTubePlaylistLoadDialog()
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
 
@@ -497,16 +500,21 @@ fun OnlinePlaylistScreen(
                                 onShuffle =
                                     playlist.shuffleEndpoint?.let { shuffleEndpoint ->
                                         {
-                                            playerConnection.playQueue(
-                                                YouTubeQueue.playlist(shuffleEndpoint),
-                                            )
+                                            if (isFiniteYouTubePlaylist(playlist.id)) {
+                                                playerConnection.service.wholeYouTubePlaylist(playlist.id, shuffle = true)
+                                            } else {
+                                                playerConnection.playQueue(YouTubeQueue.playlist(shuffleEndpoint))
+                                            }
                                         }
                                     },
                                 onPlay =
                                     playlist.playEndpoint?.let { playEndpoint ->
                                         {
                                             playerConnection.playQueue(
-                                                YouTubeQueue.playlist(playEndpoint),
+                                                YouTubeQueue.playlist(
+                                                    playEndpoint.copy(playlistId = playlist.id),
+                                                    startFromBeginning = true,
+                                                ),
                                             )
                                         }
                                     } ?: fallbackPlaySong?.let { firstSong ->
@@ -670,7 +678,10 @@ fun OnlinePlaylistScreen(
                                         enabled = !hideExplicit || !song.item.second.explicit,
                                         onClick = {
                                             if (!selection) {
-                                                if (song.item.second.id == mediaMetadata?.id) {
+                                                if (song.item.second.id == mediaMetadata?.id &&
+                                                    !song.item.second.setVideoId.isNullOrBlank() &&
+                                                    song.item.second.setVideoId == mediaMetadata?.setVideoId
+                                                ) {
                                                     playerConnection.player.togglePlayPause()
                                                 } else {
                                                     playerConnection.playQueue(
@@ -1060,7 +1071,10 @@ private fun SongItem.toPlaylistPlaybackEndpoint(
     val baseEndpoint = endpoint ?: WatchEndpoint(videoId = id)
     return baseEndpoint.copy(
         videoId = baseEndpoint.videoId ?: id,
-        playlistId = baseEndpoint.playlistId ?: playlistId,
+        playlistId = playlistId,
+        index = baseEndpoint.index.takeIf {
+            baseEndpoint.playlistId?.removePrefix("VL") == playlistId.removePrefix("VL")
+        },
         playlistSetVideoId = baseEndpoint.playlistSetVideoId ?: setVideoId,
         params = baseEndpoint.params ?: playlistPlayParams,
     )

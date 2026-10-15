@@ -4185,7 +4185,11 @@ class MainActivity : ComponentActivity() {
                                     }
 
                                 endpoint?.let {
-                                    pendingDeepLinkQueue = YouTubeQueue.playlist(it)
+                                    pendingDeepLinkQueue = YouTubeQueue.playlist(
+                                        it.copy(playlistId = playlistId),
+                                        shuffle = shouldShufflePlaylist,
+                                        startFromBeginning = true,
+                                    )
                                     startMusicServiceSafely()
                                     playPendingDeepLinkQueueIfReady()
                                 } ?: navController.navigate("online_playlist/$playlistId")

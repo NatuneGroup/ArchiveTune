@@ -129,6 +129,11 @@ internal object LyricsPayload {
         }
         if (value.isBlank()) return null
         val element = LyricsProviderHttp.parseJson(value) ?: return value
+        // The lenient provider parser also accepts an unquoted plain lyric as a primitive.
+        // Only real JSON scalars should be discarded, not single-token Unicode/entity text.
+        if (element is JsonPrimitive && element !is JsonNull && !element.isString &&
+            element.content !in setOf("true", "false") && element.content.toDoubleOrNull() == null
+        ) return value
         return extract(element)?.trim()?.takeIf { it.isNotEmpty() }
     }
 

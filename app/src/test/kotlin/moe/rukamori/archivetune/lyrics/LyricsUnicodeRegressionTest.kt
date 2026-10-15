@@ -109,5 +109,10 @@ class LyricsUnicodeRegressionTest {
         assertEquals(62_345L, entry.time)
         assertEquals(text, entry.text)
         assertEquals(text, LyricsPayload.toLyrics(raw.substringAfter(']')))
+        assertEquals(text, LyricsPayload.toLyrics(text))
+        assertEquals(text, LyricsPayload.toLyrics("""{"lyrics":"${raw.substringAfter(']')}"}"""))
+        listOf("null", "true", "false", "42", """{"error":"not found"}""").forEach {
+            assertNull(LyricsPayload.toLyrics(it))
+        }
     }
 }

@@ -77,7 +77,9 @@ decoded responses, cancellation and connection generations guard completion. Kee
 protobuf-only Meowery (no JSON/client-capabilities frame), JSON-only chat and server-side host
 restrictions. Historical 2026-10-06 synthetic checks received `room_created` from Hugging Face
 and `host_not_allowed` from Meowery; these were not Android synchronized-playback validation.
-Further delayed-retry/generation work is pending independent implementation/review.
+The local delayed-retry fix snapshots socket, connection and room-request generations,
+then checks the still-pending deadline before sending. Independent review and CI remain
+pending; this does not establish synchronized playback or host eligibility.
 
 Spotify Home's Yuma-derived geometry was recorded at fork `04ef0f333`, reference YumaPlayer
 `28aef61`: two track rows, 240dp track tiles, 150dp artwork cards, 16dp gutters, reference
@@ -85,3 +87,29 @@ Spotify Home's Yuma-derived geometry was recorded at fork `04ef0f333`, reference
 highlight, fixed 2dp refraction and no default shadow rather than the generic 24dp control
 effect. Shared Suki material has since evolved; these pins preserve design provenance, not
 current pixel parity. Preserve independent glass/blur/older-Android fallbacks and source routing.
+
+## Integrated language, AI and request ownership (local, uncompiled)
+
+The shared lyrics path preserves semantic Unicode joiners and source spacing. Japanese
+phonetics prefer provider language metadata or kana context; ambiguous Han is not assumed
+Japanese just because a pack is installed. Korean phonetic working copies use NFC without
+rewriting source lyrics. Provider-aligned words win; unaligned readings fall back to a line.
+SimpMusic shares the built-in/provider/AI policy and shapes timed text as one source-spaced
+layout. Script-family exclusions are conservative, not exact language identification.
+
+Enhanced/V2/SimpMusic use full-settings/text AI eligibility before suppressing fallback.
+Every active translation surface signals target changes even with automation off; automatic
+calls retain exclusion gates. DeepL target mapping is explicit and romanization is unsupported.
+Only complete validated AI output is accepted; failures remain retryable, cache identities are
+opaque and configuration-bound, and obsolete work cannot publish to a changed lyrics target.
+
+`JapaneseLanguagePackManager` owns IO validation and serialized install/cancel/remove.
+Primary system-device region JP, no usable pack and no off/removal/prior-attempt flag permit
+one persisted foreground consideration; offline consumes it, while manual retry remains.
+No geolocation, startup wait or background watcher is added. The pinned IPADIC JAR is data,
+not executable downloaded code; production tokenizer/artifact execution is deferred to CI.
+
+Downloader requests own UUID staging directories, latches and transport/probe cleanup.
+Spotify refresh, sign-in and sign-out serialize credential persistence and session invalidation
+under the same mutex; catalog/streaming separation and playback source policy remain intact.
+These source-level ownership changes are not proof of real-network or device behavior.

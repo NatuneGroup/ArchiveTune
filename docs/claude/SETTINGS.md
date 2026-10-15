@@ -133,12 +133,16 @@ the playing song; SpatialFlow uses the shared player menu. Opening is idle; coll
 target changes deactivate work even during exit animation. See [architecture](ARCHITECTURE.md)
 for bounded-source and heuristic-result limits.
 
-These local changes are uncompiled. Japanese pack automation and language/AI lifecycle repairs
-remain pending: primary device locale region JP only, one best-effort foreground attempt on
-Wi-Fi/cellular, no startup block/IP lookup, explicit off/removal respected. Keep manual download,
+These local changes are integrated but uncompiled/unreleased. Japanese pack automation uses
+primary system-device locale region JP only, one persisted best-effort foreground consideration
+on Wi-Fi/cellular, no startup block/IP lookup, and explicit off/removal refusal. Offline consumes
+the consideration without a retry loop. Keep manual download/cancel,
 retry/remove and absent-pack fallback. IPADIC data (13,343,016 bytes) supplies offline romaji,
 not UI language, lyrics, fonts or translation models. Built-in Korean/Devanagari/ICU conversions
 are best-effort, not validated language identification or complete pronunciation support.
+SimpMusic now shares built-in/provider/AI phonetic policy. AI settings/endpoint/exclusion
+changes invalidate result ownership; DeepL is translation-only and unsupported targets fail
+honestly. See [lyrics](../lyrics.md) for source-text and alignment boundaries.
 
 ## Preserved appearance-port provenance
 

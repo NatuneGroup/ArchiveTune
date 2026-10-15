@@ -21,7 +21,7 @@
 
 ## Release
 
-- Current local follow-ups need final integration, cleanup, independent review, focused tests,
+- Current local follow-ups are integrated with separate bounded final cleanup; they need independent review, focused tests,
   exact-head parallel build/tests, a new dev draft PR and history-preserving merge, then Nightly/
   manifest verification. Final Canary already shipped; never publish another or reuse merged #196.
 - Device/thermal/USB/visual checks are unrun and explicitly waived for this continuation; keep
@@ -36,7 +36,7 @@ reference pins and sibling ArchivePool delivery remain unresolved. Their dated b
 snapshots are historical, not current service or feature status. In particular:
 
 - Half-silent downloads/seek-background silence need affected-source evidence; current
-  downloader/lifecycle fixes are pending their owning lane, not established root-cause closure.
+  request-owned downloader staging/latch fixes are integrated locally, not established root-cause closure.
 - Preserve per-style seek, codec/Track Info, playlist/Spotify routing, lyrics offset/rendering,
   pill/BitChord/Yuma geometry and Looper requirements until actual current implementation is reviewed.
   Looper now exists; the old “not restored” snapshot is not current status.
@@ -48,8 +48,10 @@ snapshots are historical, not current service or feature status. In particular:
 - A historical Pool read-key exposure was reported; resolve with the owner in the Pool repository,
   not by deleting unrelated app secrets or claiming a rotation. Historical ArchivePool follow-up/
   WAF/deployment work is a separate delivery, not proof it was published.
-- Japanese/Unicode/AI/provider/cache and Listen Together/Spotify-account lifecycle lanes are
-  pending; update final docs only after their actual integrated code is reviewed.
+- Japanese/Unicode/AI/provider/cache and Listen Together/Spotify-account lifecycle changes are
+  integrated locally, uncompiled and unreleased. Focused fixtures, the real pinned IPADIC
+  artifact/tokenizer seam on remote CI and independent review remain required; source checks
+  are not service, all-language or device validation.
 
 The superseded appearance and Home/Listen Together review notes were consolidated into
 [SETTINGS](SETTINGS.md), [ARCHITECTURE](ARCHITECTURE.md) and [RELEASES](RELEASES.md).

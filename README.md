@@ -267,9 +267,12 @@ The in-app updater first reads a small update manifest (`stable.json` or `nightl
 - Visible overflowing settings descriptions scroll automatically for finite passes, respecting lifecycle and reduced motion. Restart-scoped edits keep the running values until restart and share one **Restart now / Later** dialog after persistence; Later never restarts automatically.
 - The acoustic heat graph is available in Developer settings and shared player/song menus. Opening it does not analyze: **Run / Cancel / Retry** owns a bounded, source-bound excerpt. Seekable local file/content, supported clear current streams and complete source-bound cache are supported; DRM/inaccessible inputs can be unavailable. Spectral suspicion is heuristic, not proof of original losslessness or physical DAC output.
 - Existing DSP maintenance updates Oboe to 1.11.0, Signalsmith Linear to 0.6.5 and retained libusb to 1.0.30; Stretch stays 1.4.0 and soxr 0.1.3. No new engine or default audio policy. libusb/soxr are trimmed Android subsets, rebuilt through the app's CMake/Gradle path, not full standalone upstream test distributions. Active USB output remains; only an unreachable older USB module was removed, with its MIT license retained.
-- Lyrics Unicode/phonetics, AI/provider/cache/lifecycle fixes and Japanese dictionary automation are **pending implementation/integration**. The approved dictionary policy uses primary device locale region JP, never IP geolocation; one best-effort foreground attempt may use Wi-Fi or cellular, respects explicit off/removal and does not block startup. This is optional IPADIC data for offline romaji, not UI translation or a universal language engine.
+- Integrated lyrics changes preserve semantic Unicode, use conservative script-family exclusions and metadata/kana-aware phonetics, and give SimpMusic the shared built-in/provider/AI policy with shaped, source-spaced timed text. Unaligned readings fall back to a line instead of invented word timing; this is not exact language detection or universal pronunciation.
+- AI translation accepts complete validated results, keeps failures retryable and binds caches/results to settings and the current lyrics target. DeepL has explicit target codes and does not claim romanization support. All active translation surfaces invalidate changed targets; automatic calls retain exclusion gates. Downloader requests own separate staging/latches; Listen Together retries retain connection/request identity; Spotify refresh/sign-in/sign-out serialize account mutation.
+- Japanese dictionary automation uses primary system-device locale region JP, never IP geolocation. One persisted best-effort foreground consideration may download over Wi-Fi or cellular; offline consumes that consideration, with manual retry still available. Explicit off/removal prevents automatic installation. Download/checksum/tokenizer work stays off the startup/render thread, and the pinned 13,343,016-byte IPADIC pack is optional offline-romaji data, not UI translation or a universal language engine.
 
-These follow-ups are local and uncompiled. Final cleanup, independent review, focused tests,
+These follow-ups are locally integrated, uncompiled and unreleased. A separate bounded final
+cleanup has been applied; independent review, focused tests,
 parallel exact-head CI and the new dev PR/merge/Nightly verification are still pending.
 No device, visual, USB or all-language validation is claimed.
 
@@ -304,6 +307,13 @@ ArchiveTune belongs to everyone. Help us localize the experience for your region
 ### 🛠️ Development & Engineering
 Interested in building the project or contributing? ArchiveTune is built on a high-performance Kotlin stack.
 <a href="CONTRIBUTING.md"><b>Read the Build & Contribution Guide →</b></a>
+
+Use JDK 21, Android compile SDK 37 and NDK `30.0.16248370`, the checked-in Gradle
+9.6.1 wrapper and recursive submodules. The debug app runs on Android 8.0/API 26+.
+Build/lint with `./gradlew assembleGmsMobileUniversalDebug lintGmsMobileUniversalDebug`;
+tests use `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. The current constrained
+mission defers JVM/build/test execution to final remote CI; that is not a general ban on
+local contributor builds. See [release gates](docs/claude/RELEASES.md) before publishing.
 
 ---
 

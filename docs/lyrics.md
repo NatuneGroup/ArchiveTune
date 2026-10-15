@@ -11,6 +11,31 @@ Word-level timing only exists where the provider supplies it (TTML and the
 rich-sync providers). Everything else is line-synced, and a renderer must degrade
 to whole-line highlighting rather than pretending.
 
+## Language and AI follow-up (locally integrated, uncompiled/unreleased)
+
+Preserve raw Unicode, semantic ZWJ/ZWNJ, combining marks and source spacing. Korean
+phonetic conversion uses an NFC working copy, not rewritten lyrics. Japanese routing
+uses provider metadata or kana context, not pack presence as proof that Han is Japanese.
+Provider-aligned phonetic words take precedence; AI or unaligned/split-token readings
+fall back to line phonetics rather than proportional or duplicated word readings.
+SimpMusic shares the built-in/provider/AI policy and uses one shaped, source-spaced
+timed-text layout. Script-family exclusions are conservative, not exact detection.
+
+Enhanced/V2/SimpMusic check full-settings/text AI eligibility before suppressing fallback.
+All six translation surfaces invalidate changed lyrics targets even when auto-translation
+is off; automatic calls keep exclusion checks. DeepL maps supported targets explicitly
+and never owns romanization. Complete validated output alone can be saved/cached;
+failed/partial output is retryable, with settings-bound opaque cache identities and stale
+target/configuration guards.
+
+Optional Japanese IPADIC data remains manually installable/cancellable/removable.
+One persisted foreground consideration for primary system-device locale region JP may
+download over Wi-Fi/cellular when there is no usable pack and no explicit off/removal or prior attempt.
+Offline consumes the consideration; manual retry remains. No IP lookup, UI-language change,
+startup wait or continuous watcher is added. The 13,343,016-byte pinned data/digest and
+off-main tokenizer readiness check are retained. Real artifact/tokenizer execution and
+focused regression fixtures are deferred to remote CI; no all-language or device QA is claimed.
+
 ## Renderers
 
 | Renderer | Where |

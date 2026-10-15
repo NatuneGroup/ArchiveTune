@@ -24,9 +24,11 @@ The Canary channel (`canary` branch, `C`-tagged prereleases) is retired, and `ca
 
 ## Current follow-up gate
 
-The channel/settings/graph/DSP/native/USB follow-ups at local baseline `966570f01` are
-uncompiled/unpushed. Language/AI/lifecycle work is still pending integration. Complete the final
-cleanup and independent review, focused tests, then one exact-head parallel batch:
+The channel/settings/graph/DSP/native/USB follow-ups above `8011d6556`, including the
+language/AI/lifecycle wave based on `966570f01`, are locally integrated, uncompiled and
+unreleased. Separate bounded final cleanup is applied. Complete independent review and
+focused tests (including the pinned IPADIC artifact/production-tokenizer seam on remote CI),
+then one exact-head parallel batch:
 `Build Pull Request` / `build` (GMS mobile universal Debug assembly + lint) and
 `Unit tests` / `Compile and run unit tests` (exact `:app:testGmsMobileUniversalDebugUnitTest`).
 Keep PR read-only caches and trusted test-cache writes; local profiles/reports are artifacts,

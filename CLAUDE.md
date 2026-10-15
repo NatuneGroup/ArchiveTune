@@ -73,7 +73,8 @@ Strict complete-list actions/sync and client shuffle do not claim exact server s
 Login-only recovery addresses an embedded `net::ERR_UNKNOWN_URL_SCHEME` Music store intent
 with one same-WebView return, private verified candidates and YouTube-scoped logout.
 The anonymous MetrolistGroup InnerTubeX `v0.9.2` pin is separate from those app fixes.
-Focused tests, independent changed-path review and exact-head remote BUILD/TESTS remain pending.
+The 121 focused test methods are authored and integrated, UNEXECUTED.
+Independent changed-path review and exact-head remote BUILD/TESTS remain pending.
 Historical results do not validate new code or live login/UI/audio behavior. The no-local-JVM/build
 policy is scoped to this constrained mission, not ordinary contributor setup. Keep gitlinks
 uninitialized/unchanged here and never publish another Canary.

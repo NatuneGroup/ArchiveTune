@@ -1053,6 +1053,11 @@ fun buildSettingsGroups(
                 SettingsChild("Display codec on player", "display_codec_on_player", listOf("display codec", "show codec", "codec on player", "bitrate on player")),
                 SettingsChild("Show Discord debug UI", "show_discord_debug_ui", listOf("discord debug", "show debug ui", "discord debug ui")),
                 SettingsChild("Debug logs", "debug_logs", listOf("debug logs", "verbose logs", "diagnostic logs")),
+                SettingsChild(
+                    context.getString(R.string.acoustic_quality_title),
+                    "acoustic_quality",
+                    listOf("acoustic", "quality graph", "spectrogram", "spectrum", "cutoff", "analysis"),
+                ),
             ),
         )
     val defaultLinks =

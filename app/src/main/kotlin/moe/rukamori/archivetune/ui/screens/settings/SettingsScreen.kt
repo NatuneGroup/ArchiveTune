@@ -226,7 +226,10 @@ private fun searchableSettingsRoute(parentKey: String, scrollKey: String?): Stri
             "po_token" -> PO_TOKEN_ROUTE
             else -> return null
         }
-    // About / developer-options screens intentionally don't participate in auto-scroll
+    if (ownerKey == "developer_options" && scrollKey == "acoustic_quality") {
+        return "$route?scrollTo=acoustic_quality"
+    }
+    // Other developer-options children and About intentionally don't auto-scroll
     // (their contents are mostly static links). All other screens honor ?scrollTo=.
     val supportsScroll =
         ownerKey !in

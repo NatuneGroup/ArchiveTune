@@ -789,8 +789,11 @@ fun NavGraphBuilder.navigationBuilder(
         moe.rukamori.archivetune.ui.screens.settings
             .DiscordExperimental(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
-    composable("settings/misc") {
-        DebugSettings(navController)
+    composable(
+        route = "settings/misc?scrollTo={scrollTo}",
+        arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
+    ) {
+        DebugSettings(navController, scrollTo = it.savedStateHandle["scrollTo"])
     }
     composable("settings/logcat") {
         LogcatScreen(navController)

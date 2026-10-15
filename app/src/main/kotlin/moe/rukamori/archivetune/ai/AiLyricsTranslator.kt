@@ -8,22 +8,24 @@
 
 package moe.rukamori.archivetune.ai
 
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 class AiLyricsTranslator {
     suspend fun translate(
         config: AiServiceConfig,
         lyrics: String,
         targetLanguage: String,
+        isCurrent: () -> Boolean = { true },
     ): String {
         val normalizedLanguage = normalizeTargetLanguage(targetLanguage)
-        // Token-budget protector: translating the same lyrics to the same language with the same
-        // model is deterministic enough to reuse — repeat requests cost zero tokens.
-        val cacheKey = "${config.provider}|${config.model}|$normalizedLanguage|${lyrics.length}|${lyrics.hashCode()}"
+        currentCoroutineContext().ensureActive()
+        check(isCurrent()) { "Obsolete AI request" }
+        val cacheKey = aiCacheIdentity(config.cacheIdentity, normalizedLanguage, lyrics)
         synchronized(resultCache) { resultCache[cacheKey] }?.let { return it }
 
         val document = AiLyricsDocumentParser.parse(lyrics)
-        if (document.segments.isEmpty()) return lyrics
+        if (document.segments.isEmpty()) throw AiServiceException("No translatable lyric segments")
         val translated = mutableMapOf<Int, String>()
         document.segments.chunkedByBudget().forEach { batch ->
             val batchTranslations =
@@ -34,9 +36,11 @@ class AiLyricsTranslator {
                     formatName = document.formatName,
                 )
             batch.forEachIndexed { index, segment ->
-                translated[segment.id] = batchTranslations.getOrNull(index) ?: segment.text
+                translated[segment.id] = batchTranslations[index]
             }
         }
+        currentCoroutineContext().ensureActive()
+        check(isCurrent()) { "Obsolete AI request" }
         return document.rebuild(translated).also { result ->
             synchronized(resultCache) { resultCache[cacheKey] = result }
         }
@@ -49,43 +53,18 @@ class AiLyricsTranslator {
         formatName: String,
     ): List<String> {
         if (batch.isEmpty()) return emptyList()
-        return try {
-            val result =
-                AiTextService.translateLines(
-                    config = config,
-                    targetLanguage = targetLanguage,
-                    lines = batch.map { it.text },
-                    formatName = formatName,
-                )
-            if (result.size == batch.size) {
-                result
-            } else {
-                throw AiServiceException("AI response changed the lyric segment count")
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            if (batch.size <= 1) {
-                batch.map { it.text }
-            } else {
-                val mid = batch.size / 2
-                val left =
-                    translateBatchResilient(
-                        config = config,
-                        targetLanguage = targetLanguage,
-                        batch = batch.subList(0, mid),
-                        formatName = formatName,
-                    )
-                val right =
-                    translateBatchResilient(
-                        config = config,
-                        targetLanguage = targetLanguage,
-                        batch = batch.subList(mid, batch.size),
-                        formatName = formatName,
-                    )
-                left + right
-            }
+        // Fail the operation atomically: locally substituted originals are not translations.
+        // Transport/auth/quota failures cannot be repaired by recursively splitting lyric lines.
+        val result = AiTextService.translateLines(
+            config = config,
+            targetLanguage = targetLanguage,
+            lines = batch.map { it.text },
+            formatName = formatName,
+        )
+        if (result.size != batch.size || result.any { it.isBlank() }) {
+            throw AiServiceException("AI returned incomplete lyric segments")
         }
+        return result
     }
 
     private fun List<AiLyricsSegment>.chunkedByBudget(): List<List<AiLyricsSegment>> {

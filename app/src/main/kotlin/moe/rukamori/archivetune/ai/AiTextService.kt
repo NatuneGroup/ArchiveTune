@@ -19,7 +19,6 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.CancellationException
-import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.api.DeepLService
 import moe.rukamori.archivetune.api.MistralService
 import moe.rukamori.archivetune.constants.AiProvider
@@ -100,7 +99,7 @@ object AiTextService {
      */
     private fun recreateClientOnFailure(t: Throwable) {
         val oldClient = clientHolder.getAndSet(createClient())
-        Log.w(TAG, "Recreated HttpClient after connection failure: ${t.javaClass.simpleName}: ${t.message}")
+        Log.w(TAG, "Recreated HttpClient after connection failure: ${t.javaClass.simpleName}")
         // Close the old client asynchronously — close() is blocking because it evicts
         // the connection pool. We don't want to stall the translation coroutine.
         Thread {
@@ -220,7 +219,10 @@ object AiTextService {
             }
         val array = extractJsonArray(response)
         require(array.length() == lines.size) { "AI response changed the lyric segment count" }
-        return List(array.length()) { index -> array.optString(index) }
+        return List(array.length()) { index ->
+            (array.get(index) as? String)?.takeIf { it.isNotBlank() }
+                ?: throw AiServiceException("AI returned an invalid lyric segment")
+        }
     }
 
     /** Transliterates [lines] into the Latin alphabet, one output string per input string. */
@@ -230,8 +232,8 @@ object AiTextService {
         formatName: String,
     ): List<String> {
         if (lines.isEmpty()) return emptyList()
-        if (config.provider == AiProvider.DEEPL) {
-            throw AiServiceException("DeepL does not support lyrics romanization")
+        if (!config.supportsRomanization) {
+            throw AiServiceException("Provider does not support lyrics romanization")
         }
         if (config.provider == AiProvider.MISTRAL) {
             return AiRateLimiter.withLimit(AiRateLimiter.Feature.LYRICS_ROMANIZATION) {
@@ -290,7 +292,10 @@ object AiTextService {
             }
         val array = extractJsonArray(response)
         require(array.length() == lines.size) { "AI response changed the lyric segment count" }
-        return List(array.length()) { index -> array.optString(index) }
+        return List(array.length()) { index ->
+            (array.get(index) as? String)?.takeIf { it.isNotBlank() }
+                ?: throw AiServiceException("AI returned an invalid lyric segment")
+        }
     }
 
     suspend fun complete(
@@ -408,7 +413,7 @@ object AiTextService {
                 setBody(body)
             }
         val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
+        if (response.status.value !in 200..299) throw apiException(response.status.value)
         val json = JSONObject(raw)
         val content =
             json
@@ -464,7 +469,7 @@ object AiTextService {
                 setBody(body)
             }
         val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
+        if (response.status.value !in 200..299) throw apiException(response.status.value)
         val content =
             JSONObject(raw)
                 .optJSONArray("candidates")
@@ -497,7 +502,7 @@ object AiTextService {
                 header("Authorization", "Bearer ${apiKey.trim()}")
             }
         val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
+        if (response.status.value !in 200..299) throw apiException(response.status.value)
         val data = JSONObject(raw).optJSONArray("data") ?: return emptyList()
         return buildList {
             for (i in 0 until data.length()) {
@@ -511,7 +516,7 @@ object AiTextService {
     private suspend fun fetchGeminiModels(apiKey: String): List<AiModelOption> {
         val response = client.get("$GeminiBaseEndpoint/models?key=${apiKey.trim()}")
         val raw = response.bodyAsText()
-        if (response.status.value !in 200..299) throw apiException(response.status.value, raw)
+        if (response.status.value !in 200..299) throw apiException(response.status.value)
         val models = JSONObject(raw).optJSONArray("models") ?: return emptyList()
         return buildList {
             for (i in 0 until models.length()) {
@@ -530,13 +535,6 @@ object AiTextService {
     }
 
 
-    private fun apiException(
-        status: Int,
-        raw: String,
-    ): AiServiceException {
-        val message =
-            runCatching { JSONObject(raw).readErrorMessage() }.getOrNull()
-                ?: raw.take(240).ifBlank { "HTTP $status" }
-        return AiServiceException("AI API failed ($status): $message")
-    }
+    private fun apiException(status: Int): AiServiceException =
+        AiServiceException("AI API failed (HTTP $status)")
 }

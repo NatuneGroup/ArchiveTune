@@ -46,6 +46,37 @@ YTDLnis does) after NewPipe; the plugin is optional, so it is not part of the li
 `ResolvedAudioStream.source` records which tier won (`NATIVE_INNERTUBE`, `INNERTUBE_X`,
 `NEWPIPE`, `YT_DLP`).
 
+## InnerTubeX version and scope
+
+The existing dependency is pinned to
+`com.github.MetrolistGroup.innertubex:innertubex:v0.9.2`, released from
+`MetrolistGroup/innertubex` tag `v0.9.2` at
+`c19d4860b0bc8afa0b1b3cc717abeb8119bbb605`. Its GPL-3.0 license is unchanged.
+The existing JitPack group scope, app dependency and Hilt construction are retained;
+this is not a replacement of the separate `:core` client or its gitlink.
+
+The saved source/publication inspection compared the actual Android AARs and found matching
+public descriptors for all ten adapter-facing contracts. The downloaded target sources match
+the pinned source. No mandatory adapter API change was found. The Android dependency requests
+are unchanged from 0.8.4; no SDK/JDK, Media3 or compiler bump is part of this update.
+Target Gradle resolution, compilation, aligned dependencies/native packaging and focused
+regression execution still await the final exact-head remote BUILD and TESTS gates.
+Source compatibility inspection is not a successful build or live playback test.
+
+At the recorded upstream comparison, v0.9.2 is the latest stable **library** release, while
+`MetrolistGroup/Metrolist` at `76fa5a78b5110674442884b6f21c0cef51cdb782` still pins
+v0.8.4. This does not copy Metrolist's authenticated facade or token-provider integration.
+Our fallback keeps its own anonymous client, disabled remote player-config repository and no
+personal/pool cookie or token-provider bridge. It requests `wantVideo=false` with HLS, SABR
+and bounded-range capabilities disabled, and independently rejects prohibited results.
+LOW/HIGH quality mapping, MP4-first non-LOW downloads, cancellation and retryable failed
+prewarm remain unchanged.
+
+This adapter resolves an already-selected media ID. The pin bump does not fix playlist
+metadata, queue paging/order or Login WebView navigation/cookie capture; those are separate
+app-owned responsibilities. Upstream explicit/kids-client and SABR-video changes do not imply
+those features or benchmark gains are enabled in this direct-audio fallback.
+
 ## The cipher seam
 
 `StreamUrlExtractor` (`playback/stream/`) is the app-side contract for the cipher step:

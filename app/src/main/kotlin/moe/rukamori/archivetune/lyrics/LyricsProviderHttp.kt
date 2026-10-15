@@ -344,8 +344,8 @@ internal object LyricsPayload {
     private val NOT_FOUND_HINT =
         Regex("""(?i)\b(?:lyrics?\s+(?:not\s+found|unavailable|not\s+available))\b""")
 
-    private val HEX_ENTITY = Regex("""&#x([0-9a-fA-F]{1,5});""")
-    private val DEC_ENTITY = Regex("""&#(\d{1,5});""")
+    private val HEX_ENTITY = Regex("""&#x([0-9a-fA-F]+);""")
+    private val DEC_ENTITY = Regex("""&#([0-9]+);""")
 }
 
 internal fun String.forLyricsSearch(): String {

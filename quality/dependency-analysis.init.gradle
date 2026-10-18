@@ -10,17 +10,11 @@ import org.gradle.api.tasks.OutputFile
 import org.gradle.api.tasks.TaskAction
 import org.gradle.work.DisableCachingByDefault
 
-initscript {
-    repositories {
-        google()
-        maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
-        mavenCentral()
-        gradlePluginPortal()
-    }
-    dependencies {
-        classpath 'com.autonomousapps:dependency-analysis-gradle-plugin:3.19.2'
-    }
-}
+// DAGP must share a classloader scope with AGP, or a parent of it. An initscript classloader is a sibling of
+// the root project's scope, where the root plugins block exports AGP, so DAGP cannot load from there. The
+// pinned DAGP is declared on the root buildscript instead; subprojects inherit that scope.
+final String DAGP_ID = 'com.autonomousapps.dependency-analysis'
+final String DAGP_COORDINATES = 'com.autonomousapps:dependency-analysis-gradle-plugin:3.19.2'
 
 @DisableCachingByDefault(because = 'Reports are small and contain host-specific compiler paths.')
 abstract class QualityInputs extends DefaultTask {
@@ -56,18 +50,22 @@ abstract class QualityInputs extends DefaultTask {
     }
 }
 
-gradle.rootProject { root ->
-    if (gradle.parent == null) {
-        root.pluginManager.apply(com.autonomousapps.DependencyAnalysisPlugin)
-    }
-}
-
 gradle.beforeProject { project ->
     if (gradle.parent != null) return
-    // Applying the plugin to the root does not create analysis tasks in its children.
-    if (project != project.rootProject) {
-        project.pluginManager.apply(com.autonomousapps.DependencyAnalysisPlugin)
+    if (project == project.rootProject) {
+        project.buildscript.repositories {
+            google()
+            maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
+            mavenCentral()
+            gradlePluginPortal()
+        }
+        project.buildscript.dependencies.add('classpath', DAGP_COORDINATES)
+        // The root project is not analysed. Its buildscript scope is exported only while the root script applies,
+        // after this hook, so the plugin cannot be applied here. A later apply would register afterEvaluate after
+        // evaluation, which Gradle rejects. Only :app:projectHealth is consumed, and it needs no root aggregate.
+        return
     }
+    project.pluginManager.apply(DAGP_ID)
     if (project.path != ':app') return
     project.plugins.withId('com.android.application') {
         def android = project.extensions.getByName('androidComponents')

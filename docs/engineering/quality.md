@@ -83,15 +83,22 @@ python3 scripts/check_code_quality.py --base <base-commit> \
 ```
 
 The optional init script exports the actual variant compiler/Android boot
-classpath, activates dependency-analysis 3.19.2 only for that invocation and
-reports resolved runtime artifact weights. Artifacts over 20 MiB are flagged for
-review; weight alone is not proof that a dependency is unnecessary. Review the
-generated dependency advice for runtime/reflection use before removing anything.
+classpath, adds dependency-analysis 3.19.2 to the root buildscript classpath only
+for that invocation, and reports resolved runtime artifact weights. Artifacts over
+20 MiB are flagged for review; weight alone is not proof that a dependency is
+unnecessary. Review the generated dependency advice for runtime/reflection use
+before removing anything.
 Compiler-backed analysis is manual/weekly in `dependency_health.yml`, not added to
 ordinary pushes or release packaging. Host-specific classpath manifests stay
 under ignored `quality/build/` and are not uploaded.
 Only the documented GMS/mobile/universal Debug app variant is enabled during this
 optional analysis invocation; normal build and release variant matrices are unchanged.
+The plugin is applied to subprojects, which inherit the root classloader scope that
+also holds AGP; the root project's aggregate report is not part of this analysis.
+In `dependency_health.yml`, manual and reusable runs compare with the `semantic_base`
+input (default `origin/dev`, through its merge-base with HEAD). Scheduled runs compare
+with the parent commit. A base equal to HEAD is rejected because it compares a tree
+with itself.
 
 ## Development container and environment
 

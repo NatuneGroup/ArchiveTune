@@ -2,7 +2,19 @@ name: Dependency and semantic health
 
 on:
   workflow_dispatch:
+    inputs:
+      semantic_base:
+        description: Integration revision compared with HEAD; its merge-base with HEAD is used
+        required: false
+        default: origin/dev
+        type: string
   workflow_call:
+    inputs:
+      semantic_base:
+        description: Integration revision compared with HEAD; its merge-base with HEAD is used
+        required: false
+        default: origin/dev
+        type: string
   schedule:
     - cron: '20 4 * * 2'
 
@@ -34,9 +46,20 @@ jobs:
         run: |
           ./gradlew --console=plain --stacktrace --profile \
             -I quality/dependency-analysis.init.gradle qualityInputs :app:projectHealth
-      - name: Compare semantic findings against the parent revision
+      - name: Compare semantic findings against the integration base
+        env:
+          # Manual and reusable runs compare with the integration branch, so commits made earlier on this
+          # branch are not treated as inherited debt. Scheduled default-branch runs keep the parent commit.
+          SEMANTIC_BASE: "${{ inputs.semantic_base || (github.event_name == 'schedule' && 'HEAD~1') || 'origin/dev' }}"
         run: |
-          python3 scripts/check_code_quality.py --base HEAD~1 \
+          set -euo pipefail
+          base=$(git rev-parse --verify --end-of-options "${SEMANTIC_BASE}^{commit}")
+          if [ "$(git merge-base "$base" HEAD)" = "$(git rev-parse HEAD)" ]; then
+            echo "::error::HEAD is not after the semantic base ${SEMANTIC_BASE}; pass an earlier semantic_base" >&2
+            exit 1
+          fi
+          echo "Semantic base commit: ${base} (from ${SEMANTIC_BASE})"
+          python3 scripts/check_code_quality.py --base "$base" \
             --classpath-file quality/build/analysis-classpath.txt
       - name: Retain findings, artifact weights and local profiles
         if: always()

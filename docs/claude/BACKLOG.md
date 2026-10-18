@@ -31,6 +31,24 @@
 - Device/thermal/USB/visual checks are unrun and explicitly waived for this continuation; keep
   that limitation visible. Stable promotion remains separate.
 
+## Engineering quality
+
+- Validate the isolated Kotlin analysis project and optional compiler-backed
+  dependency/dead-code reports on a complete build host; see
+  [quality gates](../engineering/quality.md). Source configuration and Python
+  checker tests do not establish Gradle/plugin compatibility.
+- Validate the authored critical-policy coverage threshold, repeated-test runner
+  and class-level process isolation without weakening assertions or masking failures.
+- Run the [synthetic playback check and bounded Perfetto capture](../android-qa.md)
+  on the exact supplied APK. The test harness is not device-execution evidence.
+- Publish and verify security/issue workflows, activate dependency updates and
+  confirm branch/review rules against actual check names. Do not claim automation
+  is active merely because its configuration exists in a local checkout.
+- Runtime request tracing, production alerting, rollout/rollback policy and
+  product analytics need a concrete privacy/product design. Do not reintroduce
+  removed services, upload diagnostics by default or bypass the updater's
+  no-downgrade/data-compatibility rules to satisfy an audit signal.
+
 ## Unresolved review evidence
 
 Retain the detailed [2026-10-09 audit](../maintenance-review-2026-10-09.md),

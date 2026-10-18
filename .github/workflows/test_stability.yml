@@ -1,0 +1,56 @@
+name: Unit-test stability
+
+on:
+  workflow_call:
+    inputs:
+      test_filter:
+        required: false
+        type: string
+        default: '*'
+  workflow_dispatch:
+    inputs:
+      test_filter:
+        description: Gradle test filter, or * for the complete fork suite
+        required: true
+        type: string
+        default: '*'
+  schedule:
+    - cron: '20 4 * * 4'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-stability-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  repeat-tests:
+    name: Repeated isolated test execution
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - name: Detect intermittent failures without hiding the first failure
+        env:
+          TEST_FILTER: ${{ inputs.test_filter || '*' }}
+        run: python3 scripts/check_test_stability.py --repeat 3 --tests "$TEST_FILTER"
+      - name: Retain each iteration and timing evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-stability-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .factory/reports/test-stability/
+            build/reports/profile/
+          if-no-files-found: error
+          retention-days: 14

@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a reproducible ArchiveTune bug
-labels: [BUG]
+labels: [bug, needs-triage]
 body:
   - type: markdown
     attributes:
@@ -15,7 +15,7 @@ body:
       label: Required pre-submission checklist
       description: Reports that skip these checks are difficult to triage and may be closed.
       options:
-        - label: I have tested this bug on the [latest nightly version](https://github.com/rukamori/ArchiveTune/actions).
+        - label: I have tested this bug on the [latest fork nightly version](https://github.com/NatuneGroup/ArchiveTune/releases).
           required: true
         - label: This report describes one specific bug, not multiple unrelated problems.
           required: true
@@ -67,7 +67,7 @@ body:
     attributes:
       label: ArchiveTune version
       description: Found in Settings -> About, or from the APK/build artifact name.
-      placeholder: "Example: 13.4.0, debug build, or nightly hash abc1234"
+      placeholder: "Example: 15.0.0, N-tagged Nightly, or exact debug build hash"
     validations:
       required: true
 

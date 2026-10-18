@@ -8,6 +8,8 @@
     "dev"
   ],
   "ignoreUnstable": true,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
   "respectLatest": true,
   "separateMajorMinor": false,
   "packageRules": [

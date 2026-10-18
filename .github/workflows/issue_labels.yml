@@ -1,0 +1,47 @@
+name: Issue triage labels
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  labels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const definitions = require('./.github/labels.json');
+            const { labelsForIssue } = require('./.github/scripts/issue-labels.cjs');
+            const { owner, repo } = context.repo;
+            for (const label of definitions) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                try {
+                  await github.rest.issues.createLabel({ owner, repo, ...label });
+                } catch (created) {
+                  if (created.status !== 422) throw created;
+                  // Another issue event may have created the same missing label.
+                  await github.rest.issues.getLabel({ owner, repo, name: label.name });
+                }
+              }
+            }
+            if (context.payload.issue) {
+              const labels = labelsForIssue(context.payload.issue, context.payload.action);
+              if (labels.length) {
+                await github.rest.issues.addLabels({
+                  owner, repo, issue_number: context.payload.issue.number, labels,
+                });
+              }
+            }

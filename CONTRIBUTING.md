@@ -86,7 +86,20 @@ Before promotion, obtain both exact-head gates:
 
 * **Build and lint:** `Build Pull Request` / `build`, using the explicit assembly/lint tasks above.
 * **Logic verification:** `Unit tests` / `Compile and run unit tests`, dispatched separately and run concurrently with the build.
-* **Style:** match surrounding code; there is no formatter task.
+  Its init script also isolates test classes and verifies critical-policy coverage;
+  see [coverage and instability checks](docs/engineering/quality.md#unit-test-coverage-isolation-and-intermittent-failures).
+* **Style:** match surrounding code. The isolated quality project runs Spotless/ktfmt
+  through `python3 scripts/check_code_quality.py --base <base-commit>` on a build host.
+
+Run `python3 scripts/check_repository.py --worktree` for lightweight documentation,
+architecture, dependency-version, file-budget and attribution checks. Install the
+staged-content pre-commit hook and follow the concrete naming conventions in
+[quality gates](docs/engineering/quality.md). These checks do not start a JVM.
+Use the [incident runbook](docs/engineering/incident-runbook.md) for reported failures.
+The [generated toolchain reference](docs/engineering/toolchain.md) tracks current
+versions and CI commands; [Android QA](docs/android-qa.md) includes an auth-free
+synthetic playback check. A [remote devcontainer](.devcontainer/devcontainer.json)
+and optional [.env.example](.env.example) document reproducible development setup.
 
 The current constrained mission prohibits local JVM/Gradle/LSP execution and defers focused
 tests/execution to final remote CI. This is mission-scoped, not a general contributor rule.

@@ -1,0 +1,16 @@
+[
+  {"name":"bug","color":"d73a4a","description":"Reported behavior differs from the intended behavior."},
+  {"name":"enhancement","color":"a2eeef","description":"A requested product improvement."},
+  {"name":"needs-triage","color":"fbca04","description":"Needs maintainer reproduction, scope and priority review."},
+  {"name":"area:playback","color":"1d76db","description":"Player, source resolution or queue behavior."},
+  {"name":"area:library","color":"1d76db","description":"Library, playlists or local media."},
+  {"name":"area:ui","color":"1d76db","description":"UI, rendering, preferences or navigation."},
+  {"name":"area:lyrics","color":"1d76db","description":"Lyrics, translation or romanization."},
+  {"name":"area:downloads","color":"1d76db","description":"Download lifecycle or file export."},
+  {"name":"area:accounts","color":"1d76db","description":"Login, account isolation or provider credentials."},
+  {"name":"area:crash","color":"b60205","description":"Crash, ANR, startup or installation failure."},
+  {"name":"priority:critical","color":"b60205","description":"Maintainer-confirmed security, data-loss or broad playback outage."},
+  {"name":"priority:high","color":"d93f0b","description":"Confirmed regression requiring the next corrective release."},
+  {"name":"priority:normal","color":"0e8a16","description":"Triaged issue without an urgent impact."},
+  {"name":"blocked","color":"5319e7","description":"Waiting on a specific dependency, evidence or owner decision."}
+]

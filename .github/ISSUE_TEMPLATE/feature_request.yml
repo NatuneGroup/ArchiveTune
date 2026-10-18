@@ -1,6 +1,6 @@
 name: Feature Request
 description: Share an idea to improve ArchiveTune
-labels: [ENHANCEMENT]
+labels: [enhancement, needs-triage]
 body:
   - type: checkboxes
     id: pre-submission-checklist

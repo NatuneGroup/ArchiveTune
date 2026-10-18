@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+root="$(git rev-parse --show-toplevel)"
+if ! command -v python3 >/dev/null 2>&1; then
+    printf '%s\n' 'Python 3.11+ is required for the lightweight commit checks.' >&2
+    exit 1
+fi
+exec python3 "$root/scripts/check_repository.py" --staged

@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 vossgraves
+// Optional build-host analysis. Ordinary APK/test builds do not load this plugin.
+import groovy.json.JsonOutput
+import org.gradle.api.DefaultTask
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
+
+initscript {
+    repositories {
+        google()
+        maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
+        mavenCentral()
+        gradlePluginPortal()
+    }
+    dependencies {
+        classpath 'com.autonomousapps:dependency-analysis-gradle-plugin:3.19.2'
+    }
+}
+
+@DisableCachingByDefault(because = 'Reports are small and contain host-specific compiler paths.')
+abstract class QualityInputs extends DefaultTask {
+    @Classpath
+    abstract ConfigurableFileCollection getCompilerClasspath()
+
+    @Classpath
+    abstract ConfigurableFileCollection getRuntimeArtifacts()
+
+    @OutputFile
+    abstract RegularFileProperty getClasspathManifest()
+
+    @OutputFile
+    abstract RegularFileProperty getWeightReport()
+
+    @TaskAction
+    void report() {
+        def manifest = classpathManifest.get().asFile
+        manifest.parentFile.mkdirs()
+        manifest.text = compilerClasspath.files.collect { it.absolutePath }.sort().join('\n') + '\n'
+        def weights = runtimeArtifacts.files.findAll { it.isFile() }
+            .sort { left, right -> right.length() <=> left.length() }
+            .collect { [artifact: it.name, bytes: it.length()] }
+        def report = weightReport.get().asFile
+        report.parentFile.mkdirs()
+        report.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+            reviewThresholdBytes: 20 * 1024 * 1024,
+            artifacts: weights,
+        ])) + '\n'
+        weights.findAll { it.bytes > 20 * 1024 * 1024 }.each {
+            logger.warn("Heavy dependency requires review: ${it.artifact} (${it.bytes} bytes)")
+        }
+    }
+}
+
+gradle.rootProject { root ->
+    if (gradle.parent == null) {
+        root.pluginManager.apply(com.autonomousapps.DependencyAnalysisPlugin)
+    }
+}
+
+gradle.beforeProject { project ->
+    if (gradle.parent != null || project.path != ':app') return
+    project.plugins.withId('com.android.application') {
+        def android = project.extensions.getByName('androidComponents')
+        android.beforeVariants(android.selector().all()) { variant ->
+            // Dependency advice must not compile every store/device/ABI/release combination.
+            variant.enable = variant.name == 'gmsMobileUniversalDebug'
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    if (gradle.parent != null) return
+    def root = gradle.rootProject
+    def app = root.project(':app')
+    def compile = app.tasks.named('compileGmsMobileUniversalDebugKotlin')
+    def android = app.extensions.getByName('androidComponents')
+    root.tasks.register('qualityInputs', QualityInputs) {
+        compilerClasspath.from(compile.map { it.libraries })
+        compilerClasspath.from(android.sdkComponents.bootClasspath)
+        runtimeArtifacts.from(app.configurations.named('gmsMobileUniversalDebugRuntimeClasspath'))
+        classpathManifest.set(root.layout.projectDirectory.file('quality/build/analysis-classpath.txt'))
+        weightReport.set(root.layout.buildDirectory.file('reports/dependencies/weights.json'))
+    }
+}

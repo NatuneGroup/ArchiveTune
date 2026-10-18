@@ -764,7 +764,7 @@ dependencies {
     implementation(libs.accompanist.lyrics.ui)
     implementation(libs.accompanist.lyrics.core)
 
-    implementation("org.json:json:20240303")
+    implementation(libs.json)
 
     // PRDownloader — lightweight (~45 KB) file download library with
     // pause/resume, retry, and progress callbacks. Used as the HTTP

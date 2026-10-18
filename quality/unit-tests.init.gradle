@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 vossgraves
+import org.gradle.api.GradleException
+import org.gradle.api.tasks.testing.Test
+import org.gradle.testing.jacoco.plugins.JacocoPluginExtension
+import org.gradle.testing.jacoco.plugins.JacocoTaskExtension
+import org.gradle.testing.jacoco.tasks.JacocoCoverageVerification
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
+gradle.projectsEvaluated {
+    // Init scripts also run for buildSrc and included builds, which do not own this app.
+    if (gradle.parent != null) return
+    def app = gradle.rootProject.project(':app')
+    app.pluginManager.apply('jacoco')
+    app.extensions.getByType(JacocoPluginExtension).toolVersion = '0.8.15'
+    app.tasks.withType(Test).configureEach {
+        // A fresh worker per class prevents singleton/static state leaking between classes.
+        maxParallelForks = Math.max(1, Math.min(2, Runtime.runtime.availableProcessors()))
+        forkEvery = 1
+        def results = app.providers.gradleProperty('qualityTestResults')
+        if (results.isPresent()) {
+            reports.junitXml.outputLocation.set(app.file(results.get()))
+        }
+    }
+    def tests = app.tasks.named('testGmsMobileUniversalDebugUnitTest', Test)
+    def kotlin = app.tasks.named('compileGmsMobileUniversalDebugKotlin')
+    def java = app.tasks.named('compileGmsMobileUniversalDebugJavaWithJavac')
+    def production = app.files(
+        kotlin.flatMap { it.destinationDirectory },
+        java.flatMap { it.destinationDirectory },
+    )
+    def execution = tests.map { it.extensions.getByType(JacocoTaskExtension).destinationFile }
+    def coverage = app.tasks.register('policyCoverageReport', JacocoReport) {
+        dependsOn(tests)
+        executionData.from(execution)
+        classDirectories.from(production)
+        sourceDirectories.from(app.file('src/main/kotlin'), app.file('src/main/java'))
+        reports {
+            xml.required.set(true)
+            xml.outputLocation.set(app.layout.buildDirectory.file('reports/jacoco/policy-coverage.xml'))
+            html.required.set(true)
+            html.outputLocation.set(app.layout.buildDirectory.dir('reports/jacoco/html'))
+        }
+    }
+    def contracts = [
+        'DirectStream', 'TitleMatch', 'AudioSourceConfig',
+        'SongSourceOverride', 'SongSourceQobuzTrackId', 'SongSourceQobuzBackupVideoId', 'CurrentStreamInfo',
+        'PlaybackSourceSnapshot', 'PlaybackSourceChain', 'PlaybackSourceSelection',
+    ]
+    app.tasks.register('criticalPolicyCoverage', JacocoCoverageVerification) {
+        dependsOn(coverage)
+        executionData.from(execution)
+        classDirectories.from(production.asFileTree.matching {
+            contracts.each { include("moe/rukamori/archivetune/audiosource/${it}*.class") }
+        })
+        sourceDirectories.from(app.file('src/main/kotlin'))
+        violationRules {
+            rule {
+                element = 'BUNDLE'
+                limit { counter = 'LINE'; minimum = 0.80 }
+                limit { counter = 'BRANCH'; minimum = 0.70 }
+            }
+        }
+        doFirst {
+            contracts.each { name ->
+                if (!classDirectories.asFileTree.files.any { it.name.startsWith(name) }) {
+                    throw new GradleException("Missing critical policy bytecode: ${name}")
+                }
+            }
+            if (!executionData.files.any { it.isFile() && it.length() > 0 }) {
+                throw new GradleException('No executed-test coverage data was produced')
+            }
+        }
+    }
+}

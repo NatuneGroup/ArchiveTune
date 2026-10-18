@@ -63,7 +63,12 @@ gradle.rootProject { root ->
 }
 
 gradle.beforeProject { project ->
-    if (gradle.parent != null || project.path != ':app') return
+    if (gradle.parent != null) return
+    // Applying the plugin to the root does not create analysis tasks in its children.
+    if (project != project.rootProject) {
+        project.pluginManager.apply(com.autonomousapps.DependencyAnalysisPlugin)
+    }
+    if (project.path != ':app') return
     project.plugins.withId('com.android.application') {
         def android = project.extensions.getByName('androidComponents')
         android.beforeVariants(android.selector().all()) { variant ->

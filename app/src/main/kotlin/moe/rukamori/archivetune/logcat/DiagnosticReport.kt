@@ -25,6 +25,12 @@ internal suspend fun diagnosticReport(context: Context, capturedText: String): S
         emptyMap()
     }
     val persisted = parseCapturedLog(PersistentLogCapture.readForExport(context))
+    val errorMessages = if (persisted.any { !it.isMarker }) {
+        persisted.filter { it.level in "EFA" }.map { it.message }
+    } else {
+        GlobalLog.snapshot().filter { it.level >= android.util.Log.ERROR }.map { it.message }
+    }
+    val exceptionSummary = diagnosticExceptionSummary(errorMessages)
     return buildString {
         appendLine("ArchiveTune diagnostic report v2")
         appendLine("Fork: NatuneGroup/ArchiveTune")
@@ -40,6 +46,11 @@ internal suspend fun diagnosticReport(context: Context, capturedText: String): S
         appendLine("Stored playback and presentation settings (unset values use the app's defaults):")
         appendLine(diagnosticPreferences(values))
         appendLine()
+        if (exceptionSummary.isNotEmpty()) {
+            appendLine("Recognized exceptions (retained log records only):")
+            appendLine(exceptionSummary)
+            appendLine()
+        }
         appendLine("Retained playback diagnostics:")
         // The in-memory ring keeps this process's diagnostics even when a retry storm has
         // pushed them out of the capped file window; earlier processes only exist on disk.

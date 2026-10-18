@@ -20,6 +20,13 @@ queue transition, decoder and cache state. Preserve the original privately; publ
 only redacted extracts. Never upload cookies, authorization headers, provider URLs,
 account identifiers, private media, databases or signing material.
 
+Explicit diagnostic exports also summarize recognized exceptions from at most the
+500 most recent retained error calls, showing up to eight groups. The local signature
+uses the exception class and first app stack frame, not messages or line numbers.
+Use it to correlate reports across builds alongside their revision/variant context.
+Counts describe retained log calls, not crash rates or a root-cause diagnosis.
+Nothing is uploaded or turned into an issue automatically; review exports before sharing.
+
 - A single-provider failure: inspect its login validity, bounded timeout, rate-limit
   and cooldown state before changing source order or retry policy.
 - A YouTube login failure: follow [source-login boundaries](../source-logins.md).

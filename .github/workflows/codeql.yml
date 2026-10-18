@@ -40,6 +40,10 @@ jobs:
           queries: security-extended
       - name: Compile the documented debug variant without signing secrets
         run: ./gradlew --console=plain --stacktrace assembleGmsMobileUniversalDebug
+      - name: Release compiler memory before security queries
+        run: ./gradlew --stop
       - uses: github/codeql-action/analyze@v4
         with:
           category: /language:java-kotlin
+          ram: 6144
+          threads: 2

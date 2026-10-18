@@ -67,6 +67,11 @@ Formatting applies to whole changed files. Preview the report before applying a
 formatter to a legacy large file, and do not mix unrelated mass formatting with
 behavioral changes. No formatter runs from the pre-commit hook.
 
+On a formatting failure, CI retains a proposed `formatter.patch` generated from
+isolated copies. Review it before applying; the original checkout and failing
+gate are unchanged. In constrained missions, keep full app compilation and tests
+on GitHub-hosted runners.
+
 For semantic unused-private-code checks and resolved dependency analysis, use a
 complete SDK/submodule build checkout:
 

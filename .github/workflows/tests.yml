@@ -76,6 +76,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+      - name: Upload compact machine-readable test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-machine-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            app/build/reports/jacoco/*.xml
+            app/build/test-results/**/TEST-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
   dependency-health:
     if: ${{ inputs.extended_checks }}
     uses: ./.github/workflows/dependency_health.yml

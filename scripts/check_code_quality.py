@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from difflib import unified_diff
 from io import BytesIO
 import json
 from pathlib import Path
@@ -54,6 +55,21 @@ def relative_path(value: str, root: Path) -> str:
     if ".." in path.parts:
         raise ValueError("analysis report contains an escaping source path")
     return path.as_posix()
+
+
+def formatter_patch(root: Path, formatted_root: Path) -> str:
+    parts = []
+    for formatted in sorted(formatted_root.rglob("*.kt")):
+        relative = relative_path(formatted.relative_to(formatted_root).as_posix(), root)
+        source = root / relative
+        if formatted.is_symlink() or not source.resolve().is_relative_to(root.resolve()):
+            raise ValueError("formatter patch cannot reference unrelated source")
+        parts.extend(unified_diff(
+            source.read_text().splitlines(keepends=True),
+            formatted.read_text().splitlines(keepends=True),
+            fromfile=f"a/{relative}", tofile=f"b/{relative}",
+        ))
+    return "".join(parts)
 
 
 def detekt_findings(report: Path, root: Path) -> tuple[Counter, dict]:
@@ -163,7 +179,20 @@ def main() -> int:
     with tempfile.TemporaryDirectory(prefix="format-input-", dir=formatter_parent) as temporary:
         formatter_root = Path(temporary)
         formatted_files = prepare_formatter(ROOT, revision, formatter_root)
-        run([*wrapper, f"-PanalysisFormatRoot={formatter_root}", "spotlessCheck"], output=reports / "formatter.log")
+        formatting = [*wrapper, f"-PanalysisFormatRoot={formatter_root}"]
+        (reports / "formatter.patch").unlink(missing_ok=True)
+        try:
+            run([*formatting, "spotlessCheck"], output=reports / "formatter.log")
+        except ValueError as check_error:
+            # Format only the isolated copies, retain a reviewable fix, and keep the gate failed.
+            try:
+                run([*formatting, "spotlessApply"], output=reports / "formatter-fix.log")
+            except ValueError as fix_error:
+                raise ValueError(f"{check_error}; formatter patch unavailable: {fix_error}") from check_error
+            patch = formatter_patch(ROOT, formatter_root)
+            if patch:
+                (reports / "formatter.patch").write_text(patch)
+            raise ValueError(f"{check_error}; inspect formatter.patch and formatter-fix.log") from check_error
     with tempfile.TemporaryDirectory(prefix="archivetune-quality-") as temporary:
         base = Path(temporary)
         extract_sources(revision, base)

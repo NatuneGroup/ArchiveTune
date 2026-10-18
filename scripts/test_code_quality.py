@@ -6,7 +6,7 @@ import tempfile
 import unittest
 import subprocess
 
-from scripts.check_code_quality import cpd_findings, detekt_findings, prepare_formatter, regressions
+from scripts.check_code_quality import cpd_findings, detekt_findings, formatter_patch, prepare_formatter, regressions
 
 
 class CodeQualityTest(unittest.TestCase):
@@ -87,6 +87,26 @@ class CodeQualityTest(unittest.TestCase):
             (sources / "Alias.kt").symlink_to(outside)
             with self.assertRaisesRegex(ValueError, "regular file"):
                 prepare_formatter(root, revision, Path(temporary) / "formatter")
+
+    def test_formatter_patch_is_applicable_and_does_not_rewrite_the_checkout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            formatted = Path(temporary) / "formatter"
+            relative = Path("app/src/main/kotlin/Example.kt")
+            source = root / relative
+            target = formatted / relative
+            source.parent.mkdir(parents=True)
+            target.parent.mkdir(parents=True)
+            original = "/* Original attribution */\nfun example(){println(1)}\n"
+            expected = "/* Original attribution */\nfun example() {\n    println(1)\n}\n"
+            source.write_text(original)
+            target.write_text(expected)
+            subprocess.run(["git", "-C", str(root), "init", "--quiet"], check=True)
+            patch = formatter_patch(root, formatted)
+            self.assertEqual(original, source.read_text())
+            subprocess.run(["git", "-C", str(root), "apply", "--check", "-"], input=patch.encode(), check=True)
+            subprocess.run(["git", "-C", str(root), "apply", "-"], input=patch.encode(), check=True)
+            self.assertEqual(expected, source.read_text())
 
 
 if __name__ == "__main__":

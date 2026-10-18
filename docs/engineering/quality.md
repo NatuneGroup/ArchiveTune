@@ -84,10 +84,10 @@ python3 scripts/check_code_quality.py --base <base-commit> \
 
 The optional init script exports the actual variant compiler/Android boot
 classpath, adds dependency-analysis 3.19.2 to the root buildscript classpath only
-for that invocation, and reports resolved runtime artifact weights. Artifacts over
-20 MiB are flagged for review; weight alone is not proof that a dependency is
-unnecessary. Review the generated dependency advice for runtime/reflection use
-before removing anything.
+for that invocation, and reports resolved external runtime artifact weights. Artifacts
+over 20 MiB are flagged for review; project modules are not weighed. Weight alone is not
+proof that a dependency is unnecessary. Review the generated dependency advice for
+runtime/reflection use before removing anything.
 Compiler-backed analysis is manual/weekly in `dependency_health.yml`, not added to
 ordinary pushes or release packaging. Host-specific classpath manifests stay
 under ignored `quality/build/` and are not uploaded.

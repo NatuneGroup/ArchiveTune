@@ -83,7 +83,8 @@ python3 scripts/check_code_quality.py --base <base-commit> \
 ```
 
 The optional init script exports the actual variant compiler/Android boot
-classpath, adds dependency-analysis 3.19.2 to the root buildscript classpath only
+classpath, omitting entries absent on this host (they hold no classes; the count is
+logged), adds dependency-analysis 3.19.2 to the root buildscript classpath only
 for that invocation, and reports resolved external runtime artifact weights. Artifacts
 over 20 MiB are flagged for review; project modules are not weighed. Weight alone is not
 proof that a dependency is unnecessary. Review the generated dependency advice for

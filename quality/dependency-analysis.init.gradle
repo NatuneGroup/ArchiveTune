@@ -35,7 +35,11 @@ abstract class QualityInputs extends DefaultTask {
     void report() {
         def manifest = classpathManifest.get().asFile
         manifest.parentFile.mkdirs()
-        manifest.text = compilerClasspath.files.collect { it.absolutePath }.sort().join('\n') + '\n'
+        // Entries absent on this host contribute no classes to the compiler or Detekt, so they are omitted and counted.
+        def entries = compilerClasspath.files.toList()
+        def present = entries.findAll { it.exists() }
+        logger.lifecycle("Compiler classpath: ${present.size()} present, ${entries.size() - present.size()} absent and omitted")
+        manifest.text = present.collect { it.absolutePath }.sort().join('\n') + '\n'
         def weights = runtimeArtifacts.files.findAll { it.isFile() }
             .sort { left, right -> right.length() <=> left.length() }
             .collect { [artifact: it.name, bytes: it.length()] }
@@ -82,8 +86,11 @@ gradle.projectsEvaluated {
     def root = gradle.rootProject
     def app = root.project(':app')
     def compile = app.tasks.named('compileGmsMobileUniversalDebugKotlin')
+    def javaCompile = app.tasks.named('compileGmsMobileUniversalDebugJavaWithJavac')
     def android = app.extensions.getByName('androidComponents')
     root.tasks.register('qualityInputs', QualityInputs) {
+        // Written after the variant's Java compile, so entries that step produces are present when recorded.
+        dependsOn javaCompile
         compilerClasspath.from(compile.map { it.libraries })
         compilerClasspath.from(android.sdkComponents.bootClasspath)
         // A plain files view of an Android library's runtime configuration is ambiguous: its artifact-type variants

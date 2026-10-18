@@ -15,18 +15,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class StreamMetadataPolicyTest {
-    private val reference = DirectStream(
-        uri = "https://example.invalid/audio.flac",
-        mimeType = "audio/flac",
-        codecs = "flac",
-        contentLength = null,
-        label = "Qobuz HI_RES",
-        source = AudioSourceType.QOBUZ,
-        matchedTitle = "Known recording",
-        matchedArtist = "Known artist",
-        matchedAlbum = "Known album",
-        matchedDurationMs = 200_000,
-    )
+    private val reference =
+        DirectStream(
+            uri = "https://example.invalid/audio.flac",
+            mimeType = "audio/flac",
+            codecs = "flac",
+            contentLength = null,
+            label = "Qobuz HI_RES",
+            source = AudioSourceType.QOBUZ,
+            matchedTitle = "Known recording",
+            matchedArtist = "Known artist",
+            matchedAlbum = "Known album",
+            matchedDurationMs = 200_000,
+        )
 
     private fun evaluate(
         stream: DirectStream = reference,
@@ -34,7 +35,8 @@ class StreamMetadataPolicyTest {
         wantedTitle: String = "Known recording",
         wantedArtists: List<String> = listOf("Known artist"),
         wantedAlbum: String? = "Known album",
-    ): TitleMatch.Result = TitleMatch.evaluate(wantedTitle, wantedArtists, wantedAlbum, wantedDuration, stream)
+    ): TitleMatch.Result =
+        TitleMatch.evaluate(wantedTitle, wantedArtists, wantedAlbum, wantedDuration, stream)
 
     @Test
     fun pcmBitrateUsesReportedMetadataRatherThanTheQualityLabel() {
@@ -55,7 +57,10 @@ class StreamMetadataPolicyTest {
 
     @Test
     fun authoritativeCatalogIdsDoNotRequireGuessedMatchingMetadata() {
-        val result = evaluate(reference.copy(trustedDirectId = true, matchedTitle = null, matchedArtist = null))
+        val result =
+            evaluate(
+                reference.copy(trustedDirectId = true, matchedTitle = null, matchedArtist = null),
+            )
         assertTrue(result.accepted)
         assertEquals("trusted catalog id", result.reason)
     }
@@ -94,7 +99,8 @@ class StreamMetadataPolicyTest {
         val missingWanted = evaluate(wantedArtists = emptyList())
         assertTrue(missingWanted.accepted)
         assertNull(missingWanted.artist)
-        val differentTitle = evaluate(reference.copy(matchedTitle = "Unrelated", matchedArtist = null))
+        val differentTitle =
+            evaluate(reference.copy(matchedTitle = "Unrelated", matchedArtist = null))
         assertFalse(differentTitle.accepted)
         assertEquals("artist metadata unavailable", differentTitle.reason)
     }
@@ -107,7 +113,8 @@ class StreamMetadataPolicyTest {
 
     @Test
     fun topicArtistSuffixesAndFeaturedArtistListsDoNotHideTheMatchingArtist() {
-        val result = evaluate(reference.copy(matchedArtist = "Another artist; Known artist - Topic"))
+        val result =
+            evaluate(reference.copy(matchedArtist = "Another artist; Known artist - Topic"))
         assertTrue(result.accepted)
         assertEquals(1.0, result.artist!!, 0.000001)
     }
@@ -121,18 +128,24 @@ class StreamMetadataPolicyTest {
 
     @Test
     fun aShortSharedPrefixCannotOverrideAWeakCompositeScore() {
-        val result = evaluate(
-            reference.copy(matchedTitle = "abc" + "z".repeat(200), matchedDurationMs = null, matchedAlbum = null),
-            wantedTitle = "abc",
-            wantedAlbum = null,
-        )
+        val result =
+            evaluate(
+                reference.copy(
+                    matchedTitle = "abc" + "z".repeat(200),
+                    matchedDurationMs = null,
+                    matchedAlbum = null,
+                ),
+                wantedTitle = "abc",
+                wantedAlbum = null,
+            )
         assertFalse(result.accepted)
         assertEquals("composite score too low", result.reason)
     }
 
     @Test
     fun aTwoCharacterSubstringIsNotEnoughToBypassTheTitleGate() {
-        val result = evaluate(reference.copy(matchedTitle = "ab" + "z".repeat(200)), wantedTitle = "ab")
+        val result =
+            evaluate(reference.copy(matchedTitle = "ab" + "z".repeat(200)), wantedTitle = "ab")
         assertFalse(result.accepted)
         assertEquals("title mismatch", result.reason)
     }

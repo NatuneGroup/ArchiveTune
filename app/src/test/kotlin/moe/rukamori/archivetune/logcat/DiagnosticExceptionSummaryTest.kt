@@ -18,10 +18,12 @@ class DiagnosticExceptionSummaryTest {
         method: String = "resolve",
         line: Int = 12,
         detail: String = "unavailable",
-    ): String = """
+    ): String =
+        """
         $type: $detail
             at moe.rukamori.archivetune.playback.MusicService.$method(MusicService.kt:$line)
-    """.trimIndent()
+    """
+            .trimIndent()
 
     @Test
     fun messagesAndSourceLineNumbersDoNotChangeTheSignature() {
@@ -30,7 +32,9 @@ class DiagnosticExceptionSummaryTest {
         val summary = diagnosticExceptionSummary(listOf(first, second))
         assertEquals(1, summary.lines().size)
         assertTrue(summary.contains("records=2"))
-        assertTrue(summary.contains("origin=moe.rukamori.archivetune.playback.MusicService.resolve"))
+        assertTrue(
+            summary.contains("origin=moe.rukamori.archivetune.playback.MusicService.resolve"),
+        )
         assertFalse(summary.contains("private"))
         assertFalse(summary.contains("example.test"))
         assertFalse(summary.contains("MusicService.kt"))
@@ -38,14 +42,17 @@ class DiagnosticExceptionSummaryTest {
             diagnosticExceptionSummary(listOf(first)).substringBefore(" records="),
             diagnosticExceptionSummary(listOf(second)).substringBefore(" records="),
         )
-        assertTrue(summary.substringAfter("id=").substringBefore(' ').matches(Regex("[0-9a-f]{12}")))
+        assertTrue(
+            summary.substringAfter("id=").substringBefore(' ').matches(Regex("[0-9a-f]{12}")),
+        )
     }
 
     @Test
     fun differentTypesAndCallSitesRemainSeparate() {
-        val summary = diagnosticExceptionSummary(
-            listOf(error(), error(type = "java.io.IOException"), error(method = "prefetch")),
-        )
+        val summary =
+            diagnosticExceptionSummary(
+                listOf(error(), error(type = "java.io.IOException"), error(method = "prefetch")),
+            )
         assertEquals(3, summary.lines().size)
         assertEquals(3, summary.lines().map { it.substringBefore(' ') }.distinct().size)
     }
@@ -54,7 +61,9 @@ class DiagnosticExceptionSummaryTest {
     fun unrecognizedMessagesDoNotBecomeExceptionSummaries() {
         assertEquals(
             "",
-            diagnosticExceptionSummary(listOf("private provider response", "customer.account.SecretException: private")),
+            diagnosticExceptionSummary(
+                listOf("private provider response", "customer.account.SecretException: private"),
+            ),
         )
     }
 
@@ -68,16 +77,22 @@ class DiagnosticExceptionSummaryTest {
 
     @Test
     fun constructorFramesKeepTheirApplicationOrigin() {
-        val summary = diagnosticExceptionSummary(listOf(error(method = "<init>"), error(method = "<clinit>")))
+        val summary =
+            diagnosticExceptionSummary(listOf(error(method = "<init>"), error(method = "<clinit>")))
         assertEquals(2, summary.lines().size)
         assertTrue(summary.contains("origin=moe.rukamori.archivetune.playback.MusicService.<init>"))
-        assertTrue(summary.contains("origin=moe.rukamori.archivetune.playback.MusicService.<clinit>"))
+        assertTrue(
+            summary.contains("origin=moe.rukamori.archivetune.playback.MusicService.<clinit>"),
+        )
     }
 
     @Test
     fun recognizedCausesDoNotCopyTheSurroundingProviderMessage() {
         val cause = error(type = "java.io.IOException", detail = "private")
-        val summary = diagnosticExceptionSummary(listOf("Provider failed with private context\nCaused by: $cause"))
+        val summary =
+            diagnosticExceptionSummary(
+                listOf("Provider failed with private context\nCaused by: $cause"),
+            )
         assertTrue(summary.contains("exception=java.io.IOException"))
         assertFalse(summary.contains("private"))
         assertFalse(summary.contains("Provider failed"))
@@ -87,23 +102,27 @@ class DiagnosticExceptionSummaryTest {
     fun exceptionHeadersAndFramesBeyondTheRecordLimitAreNotScanned() {
         val outsideWindow = "x".repeat(32_768) + "\n" + error()
         assertEquals("", diagnosticExceptionSummary(listOf(outsideWindow)))
-        val missingFrame = "java.lang.Exception: " + "x".repeat(32_768) +
-            "\n at moe.rukamori.archivetune.playback.MusicService.resolve(MusicService.kt:12)"
+        val missingFrame =
+            "java.lang.Exception: " +
+                "x".repeat(32_768) +
+                "\n at moe.rukamori.archivetune.playback.MusicService.resolve(MusicService.kt:12)"
         assertTrue(diagnosticExceptionSummary(listOf(missingFrame)).endsWith("origin=unavailable"))
     }
 
     @Test
     fun onlyTheMostRecentFiveHundredErrorCallsAreCounted() {
-        val summary = diagnosticExceptionSummary(
-            listOf(error()) + List(500) { error(type = "java.io.IOException") },
-        )
+        val summary =
+            diagnosticExceptionSummary(
+                listOf(error()) + List(500) { error(type = "java.io.IOException") },
+            )
         assertTrue(summary.contains("records=500"))
         assertFalse(summary.contains("IllegalStateException"))
     }
 
     @Test
     fun theMostFrequentGroupsWinTheBoundedSummary() {
-        val messages = (0 until 20).map { error(method = "source$it") } + List(3) { error(method = "latest") }
+        val messages =
+            (0 until 20).map { error(method = "source$it") } + List(3) { error(method = "latest") }
         val summary = diagnosticExceptionSummary(messages)
         assertEquals(8, summary.lines().size)
         assertTrue(summary.lineSequence().first().contains("records=3"))

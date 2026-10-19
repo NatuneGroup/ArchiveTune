@@ -1351,13 +1351,9 @@ class MainActivity : ComponentActivity() {
                             intent?.action == ACTION_MUSIC_RECOGNITION
                         }
 
-                    val tabRoutes =
-                        remember(navigationItems) {
-                            navigationItems.map(Screens::route)
-                        }
                     val topLevelScreens =
-                        remember(tabRoutes) {
-                            tabRoutes + "settings"
+                        remember(navigationItems) {
+                            navigationItems.map(Screens::route) + "settings"
                         }
 
                     val (query, onQueryChange) =
@@ -3637,11 +3633,6 @@ class MainActivity : ComponentActivity() {
                                             (navBarFrosted || miniPlayerFrosted)
                                     }
                                 }
-                                // In predictive mode only real bottom-nav tabs fade; Settings and its
-                                // sub-pages are pushed screens and take the right-edge slides. The
-                                // original mode keeps Settings top-level with its fade/scale hop.
-                                val predictiveTransitions = backAnimationStyle == BackAnimationStyle.PREDICTIVE
-                                val transitionTabRoutes = if (predictiveTransitions) tabRoutes else topLevelScreens
                                 NavHost(
                                     navController = navController,
                                     startDestination =
@@ -3661,7 +3652,7 @@ class MainActivity : ComponentActivity() {
                                             fadeIn(tween(0))
                                         } else if (
                                             backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
-                                            targetState.destination.route !in transitionTabRoutes
+                                            targetState.destination.route !in topLevelScreens
                                         ) {
                                             // Predictive back: pushed screens arrive from the right
                                             // edge; navigation-compose 2.9 scrubs this slide with the
@@ -3670,10 +3661,10 @@ class MainActivity : ComponentActivity() {
                                                 animationSpec = tween(360, easing = FastOutSlowInEasing),
                                                 initialOffsetX = { it },
                                             ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
-                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopEnter
-                                        } else if (initialState.destination.route in transitionTabRoutes &&
-                                            targetState.destination.route in transitionTabRoutes
+                                        } else if (initialState.destination.route in topLevelScreens &&
+                                            targetState.destination.route in topLevelScreens
                                         ) {
                                             // Short, overlap-free fade-through for bottom-nav switches:
                                             // no delay and no scale. The delayed 220 ms scale-in left a
@@ -3690,7 +3681,7 @@ class MainActivity : ComponentActivity() {
                                             fadeOut(tween(0))
                                         } else if (
                                             backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
-                                            targetState.destination.route !in transitionTabRoutes
+                                            targetState.destination.route !in topLevelScreens
                                         ) {
                                             // The screen under a pushed one retreats a third of the
                                             // width (parallax) instead of only fading.
@@ -3698,10 +3689,10 @@ class MainActivity : ComponentActivity() {
                                                 animationSpec = tween(360, easing = FastOutSlowInEasing),
                                                 targetOffsetX = { -it / 3 },
                                             ) + fadeOut(tween(200, easing = LinearOutSlowInEasing))
-                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopExit
-                                        } else if (initialState.destination.route in transitionTabRoutes &&
-                                            targetState.destination.route in transitionTabRoutes
+                                        } else if (initialState.destination.route in topLevelScreens &&
+                                            targetState.destination.route in topLevelScreens
                                         ) {
                                             fadeOut(tween(90))
                                         } else {
@@ -3713,7 +3704,7 @@ class MainActivity : ComponentActivity() {
                                             fadeIn(tween(0))
                                         } else if (
                                             backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
-                                            targetState.destination.route !in transitionTabRoutes
+                                            targetState.destination.route !in topLevelScreens
                                         ) {
                                             // Revealed pushed screens return from their parallax
                                             // position; popping back to a tab keeps the fade below.
@@ -3721,13 +3712,13 @@ class MainActivity : ComponentActivity() {
                                                 animationSpec = tween(360, easing = FastOutSlowInEasing),
                                                 initialOffsetX = { -it / 3 },
                                             ) + fadeIn(tween(240, delayMillis = 40, easing = FastOutSlowInEasing))
-                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopEnter
                                         } else if ((
-                                                initialState.destination.route in transitionTabRoutes ||
+                                                initialState.destination.route in topLevelScreens ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
                                             ) &&
-                                            targetState.destination.route in transitionTabRoutes
+                                            targetState.destination.route in topLevelScreens
                                         ) {
                                             // Matches the enter spec: short fade, no delay, no scale.
                                             fadeIn(tween(150))
@@ -3740,7 +3731,7 @@ class MainActivity : ComponentActivity() {
                                             fadeOut(tween(0))
                                         } else if (
                                             backAnimationStyle == BackAnimationStyle.PREDICTIVE &&
-                                            initialState.destination.route !in transitionTabRoutes
+                                            initialState.destination.route !in topLevelScreens
                                         ) {
                                             // The pushed screen leaves through the right edge it came
                                             // from — the transition navigation scrubs with the finger.
@@ -3748,13 +3739,13 @@ class MainActivity : ComponentActivity() {
                                                 animationSpec = tween(360, easing = FastOutSlowInEasing),
                                                 targetOffsetX = { it },
                                             ) + fadeOut(tween(280, easing = LinearOutSlowInEasing))
-                                        } else if (!predictiveTransitions && isSettingsHop(initialState.destination.route, targetState.destination.route)) {
+                                        } else if (isSettingsHop(initialState.destination.route, targetState.destination.route)) {
                                             SettingsHopExit
                                         } else if ((
-                                                initialState.destination.route in transitionTabRoutes ||
+                                                initialState.destination.route in topLevelScreens ||
                                                     initialState.destination.route?.startsWith(OnlineSearchResultRoutePrefix) == true
                                             ) &&
-                                            targetState.destination.route in transitionTabRoutes
+                                            targetState.destination.route in topLevelScreens
                                         ) {
                                             fadeOut(tween(90))
                                         } else {

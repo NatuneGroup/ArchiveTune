@@ -72,14 +72,17 @@ rules; it rejects new findings, increased reported complexity and new duplicatio
 Source line movement and reductions of existing duplicated blocks do not create
 new debt. Tool failures or missing/malformed reports fail the gate.
 
-Formatting applies to whole changed files. Preview the report before applying a
-formatter to a legacy large file, and do not mix unrelated mass formatting with
-behavioral changes. No formatter runs from the pre-commit hook.
+The formatter runs on whole changed files, then on their base versions. The gate
+fails when a touched file needs more formatter rewrites than its base did, or when
+a new file is not fully formatted. Formatting debt a legacy file already had is
+inherited: the summary sets `inheritedFormattingDebt` and the patch is kept for
+review. Do not mix unrelated mass formatting with behavioral changes. No formatter
+runs from the pre-commit hook.
 
-On a formatting failure, CI retains a proposed `formatter.patch` generated from
-isolated copies. Review it before applying; the original checkout and failing
-gate are unchanged. In constrained missions, keep full app compilation and tests
-on GitHub-hosted runners.
+On any formatter rewrite, CI retains a proposed `formatter.patch` generated from
+isolated copies. Review it before applying; the original checkout is unchanged.
+In constrained missions, keep full app compilation and tests on GitHub-hosted
+runners.
 
 For semantic unused-private-code checks and resolved dependency analysis, use a
 complete SDK/submodule build checkout:

@@ -72,6 +72,59 @@ def formatter_patch(root: Path, formatted_root: Path) -> str:
     return "".join(parts)
 
 
+HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@", re.MULTILINE)
+
+
+def rewritten_lines(original: Path, formatted: Path) -> int:
+    """Source lines the formatter rewrites; a pure insertion counts both neighbours."""
+    result = subprocess.run(
+        ["git", "diff", "--no-index", "-U0", "--no-color", "--no-ext-diff", "--", str(original), str(formatted)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise ValueError(f"could not compare formatter output for {original.name}")
+    lines = set()
+    for match in HUNK.finditer(result.stdout.decode()):
+        start, length = int(match[1]), 1 if match[2] is None else int(match[2])
+        lines.update(range(start, start + length) if length else (start, start + 1))
+    return len(lines)
+
+
+def prepare_base_formatter(root: Path, revision: str, candidates: Path, original: Path, destination: Path) -> int:
+    """Copy the base version of each candidate file twice: one kept as is, one to format."""
+    count = 0
+    for candidate in sorted(candidates.rglob("*.kt")):
+        relative = candidate.relative_to(candidates).as_posix()
+        shown = subprocess.run(
+            ["git", "-C", str(root), "show", f"{revision}:{relative}"],
+            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+        )
+        if shown.returncode:
+            continue
+        for directory in (original, destination):
+            target = directory / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(shown.stdout)
+        count += 1
+    return count
+
+
+def formatting_regressions(root: Path, candidates: Path, base_original: Path, base_formatted: Path) -> list[str]:
+    """Files whose formatter rewrites grew against the base; new files must be fully formatted."""
+    findings = []
+    for formatted in sorted(candidates.rglob("*.kt")):
+        relative = relative_path(formatted.relative_to(candidates).as_posix(), root)
+        after = rewritten_lines(root / relative, formatted)
+        if not after:
+            continue
+        before = 0
+        if (base_formatted / relative).exists():
+            before = rewritten_lines(base_original / relative, base_formatted / relative)
+        if after > before:
+            findings.append(f"{relative}: formatter rewrites {after} lines, base {before}")
+    return findings
+
+
 def detekt_findings(report: Path, root: Path) -> tuple[Counter, dict]:
     document = ET.parse(report).getroot()
     if document.tag != "checkstyle":
@@ -181,10 +234,13 @@ def main() -> int:
         formatted_files = prepare_formatter(ROOT, revision, formatter_root)
         formatting = [*wrapper, f"-PanalysisFormatRoot={formatter_root}"]
         (reports / "formatter.patch").unlink(missing_ok=True)
+        inherited_formatting = False
         try:
             run([*formatting, "spotlessCheck"], output=reports / "formatter.log")
         except ValueError as check_error:
-            # Format only the isolated copies, retain a reviewable fix, and keep the gate failed.
+            # Format only the isolated copies and retain a reviewable fix. Fail only when the
+            # change adds formatting debt: a whole-file reformat of a legacy file would bury
+            # the real change and can break the Kotlin line budget.
             try:
                 run([*formatting, "spotlessApply"], output=reports / "formatter-fix.log")
             except ValueError as fix_error:
@@ -192,7 +248,22 @@ def main() -> int:
             patch = formatter_patch(ROOT, formatter_root)
             if patch:
                 (reports / "formatter.patch").write_text(patch)
-            raise ValueError(f"{check_error}; inspect formatter.patch and formatter-fix.log") from check_error
+            with tempfile.TemporaryDirectory(prefix="format-base-", dir=formatter_parent) as base_temporary:
+                base_original = Path(base_temporary) / "original"
+                base_formatted = Path(base_temporary) / "formatted"
+                if prepare_base_formatter(ROOT, revision, formatter_root, base_original, base_formatted):
+                    run(
+                        [*wrapper, f"-PanalysisFormatRoot={base_formatted}", "spotlessApply"],
+                        output=reports / "formatter-base.log",
+                    )
+                unformatted = formatting_regressions(ROOT, formatter_root, base_original, base_formatted)
+            if unformatted:
+                raise ValueError(
+                    "change adds formatting debt: " + "; ".join(unformatted)
+                    + "; inspect formatter.patch and formatter-fix.log",
+                ) from check_error
+            inherited_formatting = True
+            print("Touched files keep only inherited formatting debt; retained in formatter.patch")
     with tempfile.TemporaryDirectory(prefix="archivetune-quality-") as temporary:
         base = Path(temporary)
         extract_sources(revision, base)
@@ -222,6 +293,7 @@ def main() -> int:
             "base": revision,
             "semanticAnalysis": bool(args.classpath_file),
             "changedKotlinFilesChecked": formatted_files,
+            "inheritedFormattingDebt": inherited_formatting,
             "inheritedDetektFindings": before.total(),
             "candidateDetektFindings": after.total(),
             "newOrWorseDetektFindings": len(new_findings),

@@ -26,16 +26,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -128,95 +131,109 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
                         filterQuality = FilterQuality.Medium,
                     )
                 }
-                val maxKHz = result.nyquistHz / 1000f
-                if (maxKHz > 0f) {
-                    val step = AcousticHeatAxis.niceKHzStep(maxKHz)
-                    var khz = 0
-                    while (khz <= maxKHz) {
-                        val y = plotH * (1f - khz / maxKHz)
-                        drawLine(
-                            GridLine,
-                            Offset(originX, y),
-                            Offset(originX + plotW, y),
-                            strokeWidth = 1f,
-                        )
-                        val label =
-                            textMeasurer.measure(if (khz == 0) "0" else "${khz}k", labelStyle)
-                        drawText(
-                            label,
-                            topLeft =
-                                Offset(
-                                    originX - 5.dp.toPx() - label.size.width,
-                                    y - label.size.height / 2f,
-                                ),
-                        )
-                        khz += step
-                    }
-                }
-                val durationSeconds = result.durationMs / 1000.0
-                if (durationSeconds > 0.0) {
-                    val step = AcousticHeatAxis.niceSecondsStep(durationSeconds)
-                    var second = 0
-                    while (second <= durationSeconds) {
-                        val x = originX + plotW * (second / durationSeconds).toFloat()
-                        drawLine(GridLine, Offset(x, 0f), Offset(x, plotH), strokeWidth = 1f)
-                        val label =
-                            textMeasurer.measure(
-                                AcousticHeatAxis.formatClock(result.startMs / 1000.0 + second),
-                                labelStyle,
-                            )
-                        val left =
-                            (x - label.size.width / 2f)
-                                .coerceAtLeast(0f)
-                                .coerceAtMost(maxOf(0f, size.width - label.size.width))
-                        drawText(label, topLeft = Offset(left, plotH + 3.dp.toPx()))
-                        second += step
-                    }
-                }
+                val plot = Rect(originX, 0f, originX + plotW, plotH)
+                drawFrequencyGrid(result, textMeasurer, labelStyle, plot)
+                drawTimeGrid(result, textMeasurer, labelStyle, plot)
                 val cutoffHz = result.cutoffHz
                 if (cutoffLabel != null && cutoffHz != null) {
-                    val y = plotH * (1f - cutoffHz / result.nyquistHz)
-                    drawLine(
-                        CutoffLine,
-                        Offset(originX, y),
-                        Offset(originX + plotW, y),
-                        strokeWidth = 1.5.dp.toPx(),
-                        pathEffect =
-                            PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
-                    )
-                    val label =
-                        textMeasurer.measure(cutoffLabel, labelStyle.copy(color = CutoffLine))
-                    val gap = 2.dp.toPx()
-                    val top =
-                        if (y - label.size.height - gap >= 0f) y - label.size.height - gap
-                        else y + gap
-                    drawText(
-                        label,
-                        topLeft = Offset(originX + plotW - label.size.width - 4.dp.toPx(), top),
-                    )
+                    drawCutoff(cutoffHz / result.nyquistHz, cutoffLabel, textMeasurer, plot)
                 }
             }
-            Row(
-                Modifier.fillMaxWidth().padding(start = LeftGutter, top = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    stringResource(R.string.acoustic_quality_heat_legend_low),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AxisText,
-                )
-                Box(
-                    Modifier.weight(1f)
-                        .padding(horizontal = 6.dp)
-                        .height(8.dp)
-                        .background(legendBrush)
-                )
-                Text(
-                    stringResource(R.string.acoustic_quality_heat_legend_high),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = AxisText,
-                )
-            }
+            HeatKey(legendBrush)
         }
+    }
+}
+
+/** kHz gridlines from 0 Hz up to the top of the chart, which is half the sample rate. */
+private fun DrawScope.drawFrequencyGrid(
+    result: AcousticAuditResult,
+    textMeasurer: TextMeasurer,
+    labelStyle: TextStyle,
+    plot: Rect,
+) {
+    val maxKHz = result.nyquistHz / 1000f
+    if (maxKHz <= 0f) return
+    val step = AcousticHeatAxis.niceKHzStep(maxKHz)
+    var khz = 0
+    while (khz <= maxKHz) {
+        val y = plot.bottom * (1f - khz / maxKHz)
+        drawLine(GridLine, Offset(plot.left, y), Offset(plot.right, y), strokeWidth = 1f)
+        val label = textMeasurer.measure(if (khz == 0) "0" else "${khz}k", labelStyle)
+        drawText(
+            label,
+            topLeft =
+                Offset(plot.left - 5.dp.toPx() - label.size.width, y - label.size.height / 2f),
+        )
+        khz += step
+    }
+}
+
+/** m:ss gridlines across the analysed part of the song. */
+private fun DrawScope.drawTimeGrid(
+    result: AcousticAuditResult,
+    textMeasurer: TextMeasurer,
+    labelStyle: TextStyle,
+    plot: Rect,
+) {
+    val durationSeconds = result.durationMs / 1000.0
+    if (durationSeconds <= 0.0) return
+    val step = AcousticHeatAxis.niceSecondsStep(durationSeconds)
+    var second = 0
+    while (second <= durationSeconds) {
+        val x = plot.left + plot.width * (second / durationSeconds).toFloat()
+        drawLine(GridLine, Offset(x, 0f), Offset(x, plot.bottom), strokeWidth = 1f)
+        val label =
+            textMeasurer.measure(
+                AcousticHeatAxis.formatClock(result.startMs / 1000.0 + second),
+                labelStyle,
+            )
+        val left =
+            (x - label.size.width / 2f)
+                .coerceAtLeast(0f)
+                .coerceAtMost(maxOf(0f, size.width - label.size.width))
+        drawText(label, topLeft = Offset(left, plot.bottom + 3.dp.toPx()))
+        second += step
+    }
+}
+
+/** Dashed line where the sound stops, at [fraction] of the chart height, labelled at the right. */
+private fun DrawScope.drawCutoff(
+    fraction: Float,
+    text: String,
+    textMeasurer: TextMeasurer,
+    plot: Rect,
+) {
+    val y = plot.bottom * (1f - fraction)
+    drawLine(
+        CutoffLine,
+        Offset(plot.left, y),
+        Offset(plot.right, y),
+        strokeWidth = 1.5.dp.toPx(),
+        pathEffect = PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+    )
+    val label = textMeasurer.measure(text, TextStyle(color = CutoffLine, fontSize = 10.sp))
+    val gap = 2.dp.toPx()
+    val top = if (y - label.size.height - gap >= 0f) y - label.size.height - gap else y + gap
+    drawText(label, topLeft = Offset(plot.right - label.size.width - 4.dp.toPx(), top))
+}
+
+/** Colour key: the raster's palette from silent to loud. */
+@Composable
+private fun HeatKey(legendBrush: Brush) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = LeftGutter, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            stringResource(R.string.acoustic_quality_heat_legend_low),
+            style = MaterialTheme.typography.labelSmall,
+            color = AxisText,
+        )
+        Box(Modifier.weight(1f).padding(horizontal = 6.dp).height(8.dp).background(legendBrush))
+        Text(
+            stringResource(R.string.acoustic_quality_heat_legend_high),
+            style = MaterialTheme.typography.labelSmall,
+            color = AxisText,
+        )
     }
 }

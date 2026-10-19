@@ -41,7 +41,7 @@ class AcousticSpectrogramAnalyzerTest {
         assertEquals(1024, result.height)
         assertEquals(result.width * result.height, result.magnitudeDb.size)
         assertTrue(result.magnitudeDb.size <= AcousticAuditLimits.MAX_HEAT_CELLS)
-        assertTrue(result.magnitudeDb.all { it.isFinite() && it in -100f..0f })
+        assertTrue(result.magnitudeDb.all { it.isFinite() && it in -120f..0f })
         assertTrue("spectral_heuristic_not_provenance" in result.limitations)
         assertTrue("fixture_source" in result.limitations)
         assertTrue("pcm_budget_shortened_excerpt" in result.limitations)
@@ -98,7 +98,7 @@ class AcousticSpectrogramAnalyzerTest {
                 assertTrue("insufficient_active_evidence" in result.limitations)
                 assertTrue("unknown" in result.limitations)
             }
-            assertTrue(silence.magnitudeDb.all { it == -100f })
+            assertTrue(silence.magnitudeDb.all { it == -120f })
             assertEquals(1, short.width)
         }
     }

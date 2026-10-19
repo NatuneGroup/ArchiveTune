@@ -1938,6 +1938,18 @@ interface DatabaseDao {
         sampleRate: Int?,
     )
 
+    @Query(
+        "UPDATE format SET evidenceMimeType = :mimeType, evidenceCodecs = :codecs, " +
+            "evidenceSampleRate = :sampleRate, evidenceBitDepth = :bitDepth WHERE id = :id",
+    )
+    suspend fun updateFormatEvidence(
+        id: String,
+        mimeType: String?,
+        codecs: String?,
+        sampleRate: Int?,
+        bitDepth: Int?,
+    )
+
     @Query("SELECT * FROM format WHERE id IN (:ids)")
     suspend fun getFormatsByIds(ids: List<String>): List<FormatEntity>
 

@@ -217,6 +217,10 @@ class App :
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && imageLoaderCreated) {
             runCatching { SingletonImageLoader.get(this).memoryCache?.clear() }
         }
+        // BotGuard's WebView engine is recreated on the next mint, so release it once the UI is hidden.
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+            applicationScope.launch { BotGuardTokenGenerator.onAppBackgrounded() }
+        }
     }
 
     private fun initializeCriticalSync() {

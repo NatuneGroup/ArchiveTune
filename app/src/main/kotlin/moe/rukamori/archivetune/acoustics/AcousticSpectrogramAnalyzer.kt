@@ -17,7 +17,7 @@ import moe.rukamori.archivetune.utils.audioauthenticity.AudioAuthenticityVerdict
 internal object AcousticSpectrogramAnalyzer {
     private const val FFT_SIZE = 2048
     private const val BINS = FFT_SIZE / 2
-    private const val FLOOR_DB = -100f
+    private const val FLOOR_DB = AcousticHeatPalette.FLOOR_DB
 
     fun analyze(
         mediaId: String,
@@ -69,8 +69,10 @@ internal object AcousticSpectrogramAnalyzer {
             if (active) activeWindows++
             for (bin in 0 until BINS) {
                 val power = powers[bin]
-                heat[bin * width + column] = (10 * log10(power.coerceAtLeast(1e-10)))
-                    .toFloat().coerceIn(FLOOR_DB, 0f)
+                // 1e-30, not 1e-10: a 1e-10 power clamp would stop heat at -100 dB, so -120 would be unreachable.
+                heat[bin * width + column] =
+                    (10 * log10(power.coerceAtLeast(1e-30)) + AcousticHeatPalette.WINDOW_OFFSET_DB)
+                        .toFloat().coerceIn(FLOOR_DB, AcousticHeatPalette.CEILING_DB)
                 if (active) meanPower[bin] += power
             }
             progress((column + 1f) / width)

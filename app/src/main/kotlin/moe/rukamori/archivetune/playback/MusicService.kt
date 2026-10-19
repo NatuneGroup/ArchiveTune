@@ -666,7 +666,7 @@ class MusicService :
     // written by an older build stays unreadable after a model change, and the next save replaces
     // it, so this is routine rather than an error: it says so once, quietly, instead of repeating
     // a stack trace every time the restore path runs.
-    private val reportedPersistentReadFailures = mutableSetOf<String>()
+    private val reportedPersistentReadFailures = ConcurrentHashMap.newKeySet<String>()
 
     @Volatile
     private var isRestoringPersistentState = false
@@ -3174,6 +3174,7 @@ class MusicService :
                     // so a track that lands mid-song is picked up without a
                     // separate trigger.
                     val sm = analyzer()
+                    sm.setWanted(setOf(currentItem.mediaId, nextItem.mediaId))
                     sm.request(
                         trackId = currentItem.mediaId,
                         uri = currentItem.localConfiguration?.uri ?: android.net.Uri.EMPTY,
@@ -3189,21 +3190,32 @@ class MusicService :
                     val currentAnalysis = sm.analysisFor(currentItem.mediaId)
                     val nextAnalysis = sm.analysisFor(nextItem.mediaId)
 
+                    // planTransition is a pure function of these values (TransitionPlanner has no mutable
+                    // top-level state), so it runs off Main. Player state is read here, before the hop.
+                    val currentTrackInfo = currentItem.toTransitionInfo(duration)
+                    val nextTrackInfo = nextItem.toTransitionInfo(nextDurationMs)
+                    val currentTimeSec = player.currentPosition / 1000.0
+                    val fallbackFadeSec = smartFallbackFadeSeconds()
+                    val albumSequential = crossfadeGapless && isGaplessAlbumTransition(currentItem, nextItem)
                     val plan =
-                        planTransition(
-                            analysis = currentAnalysis,
-                            nextAnalysis = nextAnalysis,
-                            currentTrack = currentItem.toTransitionInfo(duration),
-                            nextTrack = nextItem.toTransitionInfo(nextDurationMs),
-                            currentTime = player.currentPosition / 1000.0,
-                            duration = duration / 1000.0,
-                            // Only used before analysis lands or when the
-                            // evidence supports no more than a plain fade.
-                            fadeSeconds = smartFallbackFadeSeconds(),
-                            minFadeSeconds = MIN_CROSSFADE_DURATION_MS / 1000.0,
-                            mode = CrossfadeMode.SMART,
-                            albumSequential = crossfadeGapless && isGaplessAlbumTransition(currentItem, nextItem),
-                        )
+                        withContext(Dispatchers.Default) {
+                            planTransition(
+                                analysis = currentAnalysis,
+                                nextAnalysis = nextAnalysis,
+                                currentTrack = currentTrackInfo,
+                                nextTrack = nextTrackInfo,
+                                currentTime = currentTimeSec,
+                                duration = duration / 1000.0,
+                                // Only used before analysis lands or when the
+                                // evidence supports no more than a plain fade.
+                                fadeSeconds = fallbackFadeSec,
+                                minFadeSeconds = MIN_CROSSFADE_DURATION_MS / 1000.0,
+                                mode = CrossfadeMode.SMART,
+                                albumSequential = albumSequential,
+                            )
+                        }
+                    // The switch above suspends: if the track changed meanwhile, this tick's plan is stale.
+                    if (player.currentMediaItem?.mediaId != currentItem.mediaId) continue
 
                     publishSmartAnalysisState(sm, currentItem.mediaId, nextItem.mediaId)
 
@@ -4436,6 +4448,7 @@ class MusicService :
                 // Promotion did not complete ownership transfer: the outgoing player remains
                 // authoritative; detach the incoming one quietly.
                 runCatching { incomingPlayer.stop() }
+                removeAudioAuthenticityContext(incomingPlayer)
                 runCatching { incomingPlayer.release() }
                 secondaryCrossfadePlayer = null
                 secondaryCrossfadeTarget = null
@@ -8965,6 +8978,7 @@ class MusicService :
             item.metadata?.let { queuedMetadataByMediaId[item.mediaId] = it }
         }
         queuedMetadataByMediaId.keys.retainAll(present)
+        appleDrmTrackInfo.keys.retainAll(present)
     }
 
     private val resolvedSourcesByMediaId = ConcurrentHashMap<String, MutableSet<AudioSourceType>>()
@@ -9483,7 +9497,7 @@ class MusicService :
                 publishDirectStreamInfo(mediaId, cached.stream)
                 selectedPlaybackSourceByMediaId[mediaId] = cached.stream.source
                 authenticityClaimedLosslessByMediaId[mediaId] =
-                    isClaimedLosslessFormat(cached.stream.mimeType, cached.stream.codecs, cached.stream.label)
+                    isClaimedLosslessFormat(cached.stream.mimeType, cached.stream.codecs)
                 resolveAudioAuthenticitySampleRateHz(cached.stream.sampleRate)
                     ?.let { authenticitySampleRateByMediaId[mediaId] = it }
                     ?: authenticitySampleRateByMediaId.remove(mediaId)
@@ -10222,7 +10236,7 @@ class MusicService :
                             matchedAlbum = query.album,
                             matchedDurationMs = match.durationMs,
                             trustedDirectId = trustedId,
-                            sampleRate = 44_100,
+                            sampleRate = null,
                             bitDepth = null,
                         )
                     }
@@ -10247,7 +10261,7 @@ class MusicService :
                     matchedAlbum = query.album,
                     matchedDurationMs = match.durationMs,
                     trustedDirectId = trustedId,
-                    sampleRate = 44_100,
+                    sampleRate = null,
                     bitDepth = null,
                 )
             }
@@ -10796,7 +10810,7 @@ class MusicService :
     ): DataSpec {
         Timber.tag("MusicService").i("Using %s stream for %s: %s", stream.source, mediaId, stream.label)
         selectedPlaybackSourceByMediaId[mediaId] = stream.source
-        authenticityClaimedLosslessByMediaId[mediaId] = isClaimedLosslessFormat(stream.mimeType, stream.codecs, stream.label)
+        authenticityClaimedLosslessByMediaId[mediaId] = isClaimedLosslessFormat(stream.mimeType, stream.codecs)
         resolveAudioAuthenticitySampleRateHz(stream.sampleRate)
             ?.let { authenticitySampleRateByMediaId[mediaId] = it }
             ?: authenticitySampleRateByMediaId.remove(mediaId)
@@ -11910,14 +11924,26 @@ class MusicService :
                         }
                     val source = selectedPlaybackSourceByMediaId[mediaId]
                     val rate = format.sampleRate.takeIf { it > 0 }
-                    val lossless = isClaimedLosslessFormat(format.sampleMimeType.orEmpty(), format.codecs.orEmpty(), "")
+                    val lossless = isClaimedLosslessFormat(format.sampleMimeType.orEmpty(), format.codecs.orEmpty())
                     val depth =
                         if (lossless) DecodedPcmFormat(mediaId, format.sampleRate, format.channelCount, format.pcmEncoding).bitsPerSample else null
-                    val previous = reportedAudioFormatsByMediaId[mediaId]?.takeIf { it.source == source }
                     reportedAudioFormatsByMediaId.put(
                         mediaId,
-                        ReportedAudioFormat(mediaId, source, rate ?: previous?.sampleRateHz, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 }),
+                        ReportedAudioFormat(mediaId, source, rate, depth, format.channelCount.takeIf { it > 0 }),
                     )
+                    // Evidence is what the decoder received, not what a source declared. It is the only input that
+                    // may earn a Lossless or Hi-Res label, so it is stored as observed, with no carry-over.
+                    scope.launch(Dispatchers.IO) {
+                        runCatching {
+                            database.updateFormatEvidence(
+                                id = mediaId,
+                                mimeType = format.sampleMimeType,
+                                codecs = format.codecs,
+                                sampleRate = rate,
+                                bitDepth = depth,
+                            )
+                        }.onFailure { it.rethrowIfAudioSourceCancelled() }
+                    }
                     audioPipelineMonitorPlayer = observedPlayer
                     audioPipelineMonitor.onStreamFormat(
                         tf.monochrome.android.audio.pipeline.DecodedStream(
@@ -11931,10 +11957,10 @@ class MusicService :
                     )
                     if (source != null && source != AudioSourceType.YOUTUBE && rate != null) {
                         authenticitySampleRateByMediaId[mediaId] = rate
-                        val claimedLossless = authenticityClaimedLosslessByMediaId[mediaId] == true || lossless
-                        authenticityClaimedLosslessByMediaId[mediaId] = claimedLossless
+                        // The observed decoder format is the only source of the claim: a declared or earlier claim never sticks.
+                        authenticityClaimedLosslessByMediaId[mediaId] = lossless
                         refreshAudioAuthenticityContexts(mediaId)
-                        val metadata = CachedAudioMetadata(source, rate, claimedLossless, depth ?: previous?.bitDepth, format.channelCount.takeIf { it > 0 })
+                        val metadata = CachedAudioMetadata(source, rate, lossless, depth, format.channelCount.takeIf { it > 0 })
                         scope.launch(Dispatchers.IO) {
                             val key = sourceCacheKey(source, mediaId)
                             runCatching {

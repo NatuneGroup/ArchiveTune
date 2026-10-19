@@ -15,7 +15,6 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.edit
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.ktor.client.call.body
-import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +33,6 @@ import moe.rukamori.archivetune.innertube.InnerTube
 import moe.rukamori.archivetune.innertube.PlaybackAuthState
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.models.AccountInfo
-import moe.rukamori.archivetune.innertube.models.YouTubeClient.Companion.WEB
 import moe.rukamori.archivetune.innertube.models.YouTubeClient.Companion.WEB_REMIX
 import moe.rukamori.archivetune.innertube.models.response.AccountMenuResponse
 import moe.rukamori.archivetune.innertube.utils.hasYouTubeLoginCookie
@@ -326,25 +324,16 @@ private class PrivateYouTubeValidator {
             if (client.proxyUsername != YouTube.proxyUsername) client.proxyUsername = YouTube.proxyUsername
             if (client.proxyPassword != YouTube.proxyPassword) client.proxyPassword = YouTube.proxyPassword
             if (client.dns != YouTube.dns) client.dns = YouTube.dns
-            validateYouTubeCandidateContext(candidate, accountChannels = {
-                val channels = client.accountChannels(WEB.copy(loginSupported = true, supportsCookieAuthentication = true))
-                check(channels.status.value in 200..299) { "YouTube context request failed" }
-                Json.parseToJsonElement(channels.bodyAsText())
-            }, accountMenu = {
+            validateYouTubeCandidateContext {
                 val response = client.accountMenu(WEB_REMIX)
                 check(response.status.value in 200..299) { "YouTube account request failed" }
                 response.body<AccountMenuResponse>()
-            })
+            }
         }
 }
 
-/** Both endpoint reads run under the same private lease, with no default-context substitution. */
-internal suspend fun validateYouTubeCandidateContext(
-    candidate: PlaybackAuthState,
-    accountChannels: suspend () -> JsonElement,
-    accountMenu: suspend () -> AccountMenuResponse,
-): AccountInfo {
-    verifySelectedYouTubeContext(accountChannels(), candidate.dataSyncId ?: throw MissingYouTubeDataSyncIdException())
+/** Identity is the single active account header of one account-menu read, under the private lease. */
+internal suspend fun validateYouTubeCandidateContext(accountMenu: suspend () -> AccountMenuResponse): AccountInfo {
     val identities = accountMenu().actions.mapNotNull {
         it.openPopupAction.popup.multiPageMenuRenderer.header?.activeAccountHeaderRenderer?.toAccountInfo()
     }
@@ -376,51 +365,6 @@ internal suspend fun <C, T> withPrivateYouTubeCandidate(
 
 private fun sameAccount(first: PlaybackAuthState, second: PlaybackAuthState): Boolean =
     first.cookie == second.cookie && first.dataSyncId == second.dataSyncId && first.oauthToken == second.oauthToken
-
-/** Only explicit context evidence is accepted; labels and first/default account position are not proof. */
-internal fun verifySelectedYouTubeContext(response: JsonElement, candidate: String) {
-    val normalized = PlaybackAuthState(dataSyncId = candidate).normalized().dataSyncId ?: throw MissingYouTubeDataSyncIdException()
-    val context = (response as? JsonObject)?.get("responseContext") as? JsonObject
-    val webContext = context?.get("mainAppWebResponseContext") as? JsonObject
-    val returned = (webContext?.get("dataSyncId") as? JsonPrimitive)?.contentOrNull
-        ?.let { PlaybackAuthState(dataSyncId = it).normalized().dataSyncId }
-    if (returned != normalized) throw UnverifiedYouTubeContextException()
-    val selected = response.objectsNamed("accountItemRenderer").filter {
-        (it["isSelected"] as? JsonPrimitive)?.booleanOrNull == true &&
-            (it["isDisabled"] as? JsonPrimitive)?.booleanOrNull != true &&
-            (it["hasChannel"] as? JsonPrimitive)?.booleanOrNull != false
-    }.toList()
-    val renderer = selected.singleOrNull() ?: throw UnverifiedYouTubeContextException()
-    val endpoint = renderer["serviceEndpoint"] ?: throw UnverifiedYouTubeContextException()
-    val delegated = endpoint.contextIds(setOf("onBehalfOfUser", "delegatedSessionId")).toSet()
-    val ids = if (delegated.isNotEmpty()) delegated else
-        endpoint.contextIds(setOf("obfuscatedSelectedGaiaId", "obfuscatedGaiaId", "accountId")).toSet()
-    // For compound brand||user, onBehalfOfUser identifies the delegated (brand) component.
-    if (ids != setOf(normalized) && ids != setOf(normalized.substringBefore("||"))) throw UnverifiedYouTubeContextException()
-}
-
-private fun JsonElement.objectsNamed(name: String): Sequence<JsonObject> = sequence {
-    when (val element = this@objectsNamed) {
-        is JsonObject -> {
-            (element[name] as? JsonObject)?.let { yield(it) }
-            element.values.forEach { yieldAll(it.objectsNamed(name)) }
-        }
-        is JsonArray -> element.forEach { yieldAll(it.objectsNamed(name)) }
-        else -> Unit
-    }
-}
-
-private fun JsonElement.contextIds(keys: Set<String>): Sequence<String> = sequence {
-    when (val element = this@contextIds) {
-        is JsonObject -> element.forEach { (key, value) ->
-            if (key in keys) {
-                (value as? JsonPrimitive)?.contentOrNull?.let { yield(it) }
-            } else yieldAll(value.contextIds(keys))
-        }
-        is JsonArray -> element.forEach { yieldAll(it.contextIds(keys)) }
-        else -> Unit
-    }
-}
 
 private suspend inline fun <T> runCatchingPreservingCancellation(crossinline block: suspend () -> T): Result<T> =
     try { Result.success(block()) } catch (error: Throwable) {

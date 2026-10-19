@@ -24,6 +24,12 @@ data class FormatEntity(
     val loudnessDb: Double?,
     val perceptualLoudnessDb: Double? = null,
     val playbackUrl: String?,
+    // Observed by the decoder during playback, or read from a container: the only input that may earn a
+    // Lossless or Hi-Res label. Declared metadata never writes these fields.
+    val evidenceMimeType: String? = null,
+    val evidenceCodecs: String? = null,
+    val evidenceSampleRate: Int? = null,
+    val evidenceBitDepth: Int? = null,
 )
 
 fun FormatEntity.containerLabel(): String = mimeType.substringAfter("/").substringBefore(";").uppercase()
@@ -74,13 +80,15 @@ fun FormatEntity.codecLabel(): String {
     val rawMime = mimeType.substringAfter("/").substringBefore(";").uppercase()
 
     return when {
-        rawCodec.contains("FLAC") || rawCodec.contains("ALAC") -> "Lossless"
+        rawCodec.contains("FLAC") -> "FLAC"
+        rawCodec.contains("ALAC") -> "ALAC"
         rawCodec.contains("OPUS") -> "OPUS"
         rawCodec.contains("AAC") || rawCodec.contains("MP4A") -> "AAC"
         rawCodec.contains("VORBIS") -> "VORBIS"
         rawMime.contains("OPUS") -> "OPUS"
         rawMime.contains("AAC") || rawMime.contains("MP4A") -> "AAC"
         rawMime.contains("VORBIS") -> "VORBIS"
+        rawMime == "RAW" -> "PCM"
         rawMime.isNotBlank() -> rawMime
         else -> rawCodec
     }

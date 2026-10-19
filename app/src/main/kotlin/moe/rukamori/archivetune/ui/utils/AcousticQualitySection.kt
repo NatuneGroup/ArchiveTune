@@ -8,31 +8,20 @@
 
 package moe.rukamori.archivetune.ui.utils
 
-import android.graphics.Bitmap
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.lerp
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
-import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.rukamori.archivetune.R
@@ -129,46 +118,6 @@ private fun AcousticQualityResult(result: AcousticAuditResult) {
     Text(stringResource(R.string.acoustic_quality_frequency_axis, result.nyquistHz / 1000f))
     Text(stringResource(R.string.acoustic_quality_heat_scale), style = MaterialTheme.typography.bodySmall)
     result.limitations.distinct().forEach { Text(acousticCodeText(it), style = MaterialTheme.typography.bodySmall) }
-}
-
-@Composable
-private fun AcousticHeatGraph(result: AcousticAuditResult, description: String) {
-    val low = MaterialTheme.colorScheme.surfaceVariant
-    val high = MaterialTheme.colorScheme.primary
-    val marker = MaterialTheme.colorScheme.onSurface
-    // A single bounded raster, not hundreds of thousands of Compose nodes or draw commands.
-    // Average actual cells into display pixels; frequency row zero belongs at the bottom.
-    val image = remember(result, low, high) {
-        if (result.width <= 0 || result.height <= 0 ||
-            result.width.toLong() * result.height != result.magnitudeDb.size.toLong()) null
-        else {
-            val width = minOf(result.width, 256)
-            val height = minOf(result.height, 256)
-            val colors = IntArray(width * height)
-            for (y in 0 until height) for (x in 0 until width) {
-                val row = height - 1 - y
-                var sum = 0f
-                var count = 0
-                for (r in row * result.height / height until (row + 1) * result.height / height) {
-                    for (c in x * result.width / width until (x + 1) * result.width / width) {
-                        val value = result.magnitudeDb[r * result.width + c]
-                        if (value.isFinite()) { sum += value; count++ }
-                    }
-                }
-                val db = if (count > 0) sum / count else -100f
-                colors[y * width + x] = lerp(low, high, ((db + 100f) / 100f).coerceIn(0f, 1f)).toArgb()
-            }
-            Bitmap.createBitmap(colors, width, height, Bitmap.Config.ARGB_8888).asImageBitmap()
-        }
-    }
-    Canvas(Modifier.fillMaxWidth().height(180.dp).semantics { contentDescription = description }) {
-        if (size.width < 1f || size.height < 1f) return@Canvas
-        image?.let { drawImage(it, dstSize = IntSize(size.width.roundToInt(), size.height.roundToInt())) }
-        result.cutoffHz?.takeIf { it.isFinite() && result.nyquistHz > 0 && it in 0f..result.nyquistHz }?.let {
-            val y = size.height * (1f - it / result.nyquistHz)
-            drawLine(marker, Offset(0f, y), Offset(size.width, y), strokeWidth = 2.dp.toPx())
-        }
-    }
 }
 
 @Composable

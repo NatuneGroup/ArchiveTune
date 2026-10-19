@@ -3,6 +3,12 @@ name: Repository quality
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      base:
+        description: Integration branch or revision compared with HEAD; its merge-base with HEAD is used
+        required: false
+        default: dev
+        type: string
 
 permissions:
   contents: read
@@ -21,19 +27,35 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve integration base
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.base || 'dev' }}
+        run: |
+          set -euo pipefail
+          if base=$(git rev-parse --verify --end-of-options "${BASE_REF}^{commit}"); then
+            true
+          else
+            git fetch --no-tags -- origin "${BASE_REF}" >&2
+            base=$(git rev-parse --verify --end-of-options "origin/${BASE_REF}^{commit}") ||
+              base=$(git rev-parse --verify --end-of-options "FETCH_HEAD^{commit}")
+          fi
+          merge_base=$(git merge-base "$base" HEAD)
+          if [ "$merge_base" = "$(git rev-parse HEAD)" ]; then
+            echo "::error::Integration base ${BASE_REF} is not after HEAD; pass an earlier base (for dev runs use the last validated revision)" >&2
+            exit 1
+          fi
+          echo "Integration base commit: $merge_base (from ${BASE_REF})"
+          echo "BASE_SHA=$merge_base" >> "$GITHUB_ENV"
       - name: Validate check behavior
         run: |
           python3 -m unittest discover -s scripts -p 'test_*.py'
           node --test .github/scripts/issue-labels.test.cjs
       - name: Validate candidate contracts
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ env.BASE_SHA }}
         run: |
-          if [ -n "$BASE_SHA" ]; then
-            python3 scripts/check_repository.py --base "$BASE_SHA"
-          else
-            python3 scripts/check_repository.py --worktree
-          fi
+          python3 scripts/check_repository.py --base "$BASE_SHA"
 
   kotlin-analysis:
     name: Kotlin quality regressions
@@ -44,6 +66,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           java-version: '21'
@@ -51,9 +74,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true
+      - name: Resolve integration base
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha || inputs.base || 'dev' }}
+        run: |
+          set -euo pipefail
+          if base=$(git rev-parse --verify --end-of-options "${BASE_REF}^{commit}"); then
+            true
+          else
+            git fetch --no-tags -- origin "${BASE_REF}" >&2
+            base=$(git rev-parse --verify --end-of-options "origin/${BASE_REF}^{commit}") ||
+              base=$(git rev-parse --verify --end-of-options "FETCH_HEAD^{commit}")
+          fi
+          merge_base=$(git merge-base "$base" HEAD)
+          if [ "$merge_base" = "$(git rev-parse HEAD)" ]; then
+            echo "::error::Integration base ${BASE_REF} is not after HEAD; pass an earlier base (for dev runs use the last validated revision)" >&2
+            exit 1
+          fi
+          echo "Integration base commit: $merge_base (from ${BASE_REF})"
+          echo "BASE_SHA=$merge_base" >> "$GITHUB_ENV"
       - name: Check formatting, structural complexity and duplication
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+          BASE_SHA: ${{ env.BASE_SHA }}
         run: python3 scripts/check_code_quality.py --base "$BASE_SHA"
       - name: Retain full findings and metrics, including inherited debt
         if: always()

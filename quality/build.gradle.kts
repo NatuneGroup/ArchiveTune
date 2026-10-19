@@ -16,6 +16,7 @@ val sourceRoot = providers.gradleProperty("analysisRoot").map(::file).getOrElse(
 val reportRoot = providers.gradleProperty("analysisReports").map(::file).getOrElse(layout.buildDirectory.dir("reports").get().asFile)
 val sourcePatterns = listOf(
     "app/src/main/kotlin/**/*.kt",
+    "app/src/gms/kotlin/**/*.kt",
     "canvas/src/**/*.kt",
     "jiosaavn/src/**/*.kt",
     "lastfm/src/**/*.kt",

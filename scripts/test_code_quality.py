@@ -2,11 +2,12 @@
 # Copyright (c) 2026 vossgraves
 from collections import Counter
 from pathlib import Path
+import re
 import tempfile
 import unittest
 import subprocess
 
-from scripts.check_code_quality import cpd_findings, detekt_findings, formatter_patch, prepare_formatter, regressions
+from scripts.check_code_quality import ROOT, FORMAT_ROOTS, SOURCE_ROOTS, cpd_findings, detekt_findings, formatter_patch, prepare_formatter, regressions
 
 
 class CodeQualityTest(unittest.TestCase):
@@ -71,6 +72,34 @@ class CodeQualityTest(unittest.TestCase):
                 (sources / "Changed.kt").read_bytes(),
                 (destination / "app/src/main/kotlin/Changed.kt").read_bytes(),
             )
+
+    def test_formatter_covers_the_selected_gms_flavor_source_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            root.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init", "--quiet")
+            flavor = root / "app/src/gms/kotlin"
+            flavor.mkdir(parents=True)
+            (flavor / "Gms.kt").write_text("class Gms\n")
+            git("add", ".")
+            revision = git("write-tree")
+            (flavor / "Gms.kt").write_text("class Gms(val source: String)\n")
+            destination = Path(temporary) / "formatter"
+            self.assertEqual(1, prepare_formatter(root, revision, destination))
+            self.assertEqual(
+                (flavor / "Gms.kt").read_bytes(),
+                (destination / "app/src/gms/kotlin/Gms.kt").read_bytes(),
+            )
+
+    def test_gradle_analysis_patterns_match_the_python_source_roots(self):
+        text = (ROOT / "quality/build.gradle.kts").read_text(encoding="utf-8")
+        block = text.split("val sourcePatterns = listOf(", 1)[1].split(")", 1)[0]
+        patterns = re.findall(r'"([^"]+)"', block)
+        self.assertEqual([f"{root}/**/*.kt" for root in SOURCE_ROOTS], patterns)
+        self.assertIn("app/src/gms/kotlin", FORMAT_ROOTS)
+        self.assertTrue((ROOT / "app/src/gms/kotlin").is_dir())
 
     def test_formatter_refuses_symlinks_instead_of_copying_unrelated_files(self):
         with tempfile.TemporaryDirectory() as temporary:

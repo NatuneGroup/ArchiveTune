@@ -20,8 +20,8 @@ import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOTS = (
-    "app/src/main/kotlin", "canvas/src", "jiosaavn/src", "lastfm/src",
-    "musixmatch/src", "shazamkit/src", "spotifycore/src",
+    "app/src/main/kotlin", "app/src/gms/kotlin", "canvas/src", "jiosaavn/src",
+    "lastfm/src", "musixmatch/src", "shazamkit/src", "spotifycore/src",
 )
 FORMAT_ROOTS = (*SOURCE_ROOTS, "app/src/test")
 

@@ -97,118 +97,21 @@ class YouTubeLoginValidationTest {
     }
 
     @Test
-    fun selectedCompoundBrandIsPreservedInsteadOfDifferentDefaultAccount() {
-        val response = response("brand-B||user-B", listOf(
-            item("default-A", selected = false), item("brand-B", selected = true),
-        ))
-        verifySelectedYouTubeContext(response, "brand-B||user-B")
-        verifySelectedYouTubeContext(response, "brand-B%7C%7Cuser-B")
-        assertUnverified(response, "default-A")
-    }
-
-    @Test
-    fun missingMismatchedAndAmbiguousReturnedContextFailClosed() {
-        val selected = listOf(item("brand-B"))
-        assertUnverified(response(null, selected), "brand-B||user-B")
-        assertUnverified(response("different-default", selected), "brand-B||user-B")
-        assertUnverified(response("brand-B||user-B", emptyList()), "brand-B||user-B")
-        assertUnverified(response("brand-B||user-B", listOf(item("brand-B"), item("brand-B"))), "brand-B||user-B")
-        assertUnverified(Json.parseToJsonElement("{}"), "brand-B||user-B")
-        try {
-            verifySelectedYouTubeContext(response("brand-B", selected), " ")
-            fail("blank context cannot verify")
-        } catch (_: MissingYouTubeDataSyncIdException) { }
-    }
-
-    @Test
-    fun selectedIdsNotDisplayNamesProveContextAndConflictingIdsFail() {
-        val sameName = "Identical synthetic display name"
-        val correct = item("brand-B", name = sameName)
-        val different = item("brand-C", name = sameName)
-        verifySelectedYouTubeContext(response("brand-B||user-B", listOf(correct)), "brand-B||user-B")
-        assertUnverified(response("brand-B||user-B", listOf(different)), "brand-B||user-B")
-        val conflicting = item("brand-B", extraId = "brand-C")
-        assertUnverified(response("brand-B||user-B", listOf(conflicting)), "brand-B||user-B")
-    }
-
-    @Test
-    fun disabledMissingChannelUnselectedAndUnsupportedSelectionAreNotDefaulted() {
-        val id = "brand-B||user-B"
-        for (renderer in listOf(item("brand-B", selected = false), item("brand-B", disabled = true),
-            item("brand-B", hasChannel = false), buildJsonObject { put("isSelected", true) })) {
-            assertUnverified(response(id, listOf(renderer)), id)
-        }
-        val unsupported = buildJsonObject {
-            put("isSelected", true)
-            putJsonObject("serviceEndpoint") { putJsonObject("selectActiveIdentityEndpoint") { put("unsupportedSlot", 1) } }
-        }
-        assertUnverified(response(id, listOf(unsupported)), id)
-    }
-
-    @Test
-    fun personalSelectedContextUsesExplicitAccountIdWhenNotDelegated() {
-        val renderer = buildJsonObject {
-            put("isSelected", true)
-            putJsonObject("serviceEndpoint") { putJsonObject("selectActiveIdentityEndpoint") { put("obfuscatedSelectedGaiaId", "user-B") } }
-        }
-        verifySelectedYouTubeContext(response("user-B", listOf(renderer)), "user-B")
-        assertUnverified(response("user-C", listOf(renderer)), "user-C")
-    }
-
-    @Test
-    fun finalPublicAccountMenuIdentityIsReadUnderUnchangedSelectedCandidateLease() = runTest {
-        val f = AuthFixture(StandardTestDispatcher(testScheduler))
-        val client = Client()
-        val mutex = Mutex()
-        val endpointOrder = mutableListOf<String>()
-        f.validate = { candidate ->
-            withPrivateYouTubeCandidate(client, mutex, candidate, Client::apply) {
-                validateYouTubeCandidateContext(candidate, accountChannels = {
-                    endpointOrder += "accountChannels"
-                    assertEquals(b, it.auth)
-                    f.assertAccount("A")
-                    response(b.dataSyncId, listOf(item("default-A", selected = false), item("brand-B")))
-                }, accountMenu = {
-                    endpointOrder += "accountMenu"
-                    assertEquals(b, it.auth)
-                    f.assertAccount("A")
-                    menu("Final selected B")
-                })
-            }
-        }
-        val session = f.repository.completeLogin(f.repository.beginAttempt(), b.cookie.orEmpty(), b.visitorData, b.dataSyncId).getOrThrow()
-        assertEquals(listOf("accountChannels", "accountMenu"), endpointOrder)
-        assertEquals(b.dataSyncId, session.authState.dataSyncId)
-        assertEquals(b.cookie, f.runtime.cookie)
-        assertEquals("Final selected B", session.accountName)
-        assertEquals("", session.accountEmail)
-        assertEquals("", session.accountChannelHandle)
-        assertEquals(listOf(b, PlaybackAuthState.EMPTY), client.applied)
-        assertEquals(1, f.store.transactions)
-    }
-
-    @Test
-    fun mismatchedContextNeverRequestsDefaultMenuOrCommitsSubstituteIdentity() = runTest {
-        val f = AuthFixture(StandardTestDispatcher(testScheduler))
+    fun identityComesFromOneAccountMenuReadWithoutAnyChannelRead() = runTest {
         var menuCalls = 0
-        f.validate = { candidate ->
-            validateYouTubeCandidateContext(candidate,
-                { response("different-default", listOf(item("different-default"))) },
-                { menuCalls++; menu("Same display name") })
+        val identity = validateYouTubeCandidateContext {
+            menuCalls++
+            menu("Synthetic B")
         }
-        assertTrue(f.login("B").exceptionOrNull() is UnverifiedYouTubeContextException)
-        assertEquals(0, menuCalls)
-        assertEquals(0, f.store.transactions)
-        f.assertAccount("A")
+        assertEquals(1, menuCalls)
+        assertEquals("Synthetic B", identity.name)
     }
 
     @Test
     fun missingAmbiguousOrNamelessFinalMenuFailsWithoutCommittingCandidate() = runTest {
         for (finalMenu in listOf(menu("Synthetic B", 0), menu("Synthetic B", 2), menu(null))) {
             val f = AuthFixture(StandardTestDispatcher(testScheduler))
-            f.validate = { candidate ->
-                validateYouTubeCandidateContext(candidate, { response("B", listOf(item("B"))) }, { finalMenu })
-            }
+            f.validate = { validateYouTubeCandidateContext { finalMenu } }
             assertTrue(f.login("B").exceptionOrNull() is UnverifiedYouTubeContextException)
             assertEquals(0, f.store.transactions)
             f.assertAccount("A")
@@ -252,16 +155,6 @@ class YouTubeLoginValidationTest {
         assertNull(f.store.values.value[moe.rukamori.archivetune.constants.VisitorDataKey])
     }
 
-    private fun assertUnverified(response: JsonElement, candidate: String) {
-        try { verifySelectedYouTubeContext(response, candidate); fail("unsupported or mismatched selection must fail") }
-        catch (_: UnverifiedYouTubeContextException) { }
-    }
-
-    private fun response(id: String?, items: List<JsonObject>): JsonObject = buildJsonObject {
-        putJsonObject("responseContext") { putJsonObject("mainAppWebResponseContext") { id?.let { put("dataSyncId", it) } } }
-        putJsonArray("actions") { items.forEach { renderer -> add(buildJsonObject { put("accountItemRenderer", renderer) }) } }
-    }
-
     // Exact public e2bf1df AccountMenuResponse/Runs/Run/Thumbnails serialization shape.
     private fun menu(name: String?, count: Int = 1): AccountMenuResponse {
         val activeHeader = buildJsonObject {
@@ -286,19 +179,5 @@ class YouTubeLoginValidationTest {
         return Json.decodeFromJsonElement<AccountMenuResponse>(buildJsonObject {
             putJsonArray("actions") { repeat(count) { add(action) } }
         })
-    }
-
-    private fun item(id: String, selected: Boolean = true, disabled: Boolean = false, hasChannel: Boolean = true,
-        name: String = "Synthetic account", extraId: String? = null): JsonObject = buildJsonObject {
-        put("isSelected", selected)
-        put("isDisabled", disabled)
-        put("hasChannel", hasChannel)
-        putJsonObject("accountName") { put("simpleText", name) }
-        putJsonObject("serviceEndpoint") {
-            putJsonObject("selectActiveIdentityEndpoint") {
-                put("onBehalfOfUser", id)
-                extraId?.let { put("delegatedSessionId", it) }
-            }
-        }
     }
 }

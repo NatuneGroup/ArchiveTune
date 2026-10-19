@@ -24,6 +24,12 @@ data class FormatEntity(
     val loudnessDb: Double?,
     val perceptualLoudnessDb: Double? = null,
     val playbackUrl: String?,
+    // Observed by the decoder during playback, or read from a container: the only input that may earn a
+    // Lossless or Hi-Res label. Declared metadata never writes these fields.
+    val evidenceMimeType: String? = null,
+    val evidenceCodecs: String? = null,
+    val evidenceSampleRate: Int? = null,
+    val evidenceBitDepth: Int? = null,
 )
 
 fun FormatEntity.containerLabel(): String = mimeType.substringAfter("/").substringBefore(";").uppercase()
@@ -69,22 +75,55 @@ fun FormatEntity.isLossless(): Boolean {
     return rawCodec.contains("FLAC") || rawCodec.contains("ALAC")
 }
 
-fun FormatEntity.codecLabel(): String {
+/**
+ * Codec display name for raw declared MIME and codec strings. Shared with the observed-evidence
+ * reader so declared and observed codecs are always named the same way, without copying a whole
+ * [FormatEntity] just to reuse the naming.
+ */
+fun codecLabel(
+    mimeType: String,
+    codecs: String,
+): String {
     val rawCodec = codecs.ifBlank { mimeType.substringAfter("/") }.uppercase()
     val rawMime = mimeType.substringAfter("/").substringBefore(";").uppercase()
 
     return when {
-        rawCodec.contains("FLAC") || rawCodec.contains("ALAC") -> "Lossless"
+        rawCodec.contains("FLAC") -> "FLAC"
+        rawCodec.contains("ALAC") -> "ALAC"
         rawCodec.contains("OPUS") -> "OPUS"
         rawCodec.contains("AAC") || rawCodec.contains("MP4A") -> "AAC"
         rawCodec.contains("VORBIS") -> "VORBIS"
         rawMime.contains("OPUS") -> "OPUS"
         rawMime.contains("AAC") || rawMime.contains("MP4A") -> "AAC"
         rawMime.contains("VORBIS") -> "VORBIS"
+        rawMime == "RAW" -> "PCM"
         rawMime.isNotBlank() -> rawMime
         else -> rawCodec
     }
 }
+
+fun FormatEntity.codecLabel(): String = codecLabel(mimeType, codecs)
+
+/**
+ * Whether evidence already observed on [row] survives a declared write that re-declares the row for
+ * [mimeType], [codecs] and [sampleRateHz]. Evidence belongs to the exact rendition it was observed
+ * on: re-declaring the same rendition keeps it, any other rendition of the media id drops it, so an
+ * AAC/MP3 re-declaration of a media id that once played FLAC can never keep the FLAC claim.
+ *
+ * The rendition identity is mimeType, codecs and sample rate, each compared exactly and null-safely:
+ * an unknown rate matches only an unknown rate, so a re-declaration that stops reporting a rate does
+ * not inherit evidence measured at a rate it no longer declares. Declared bitrate and itag are excluded
+ * on purpose: bitrate varies by writer and resolution of the same stream, and itag is the YouTube
+ * format number on some writes and 0 or -1 on others, so either would drop evidence on identical
+ * re-declarations. The observation write applies the same comparison in SQL (`IS`, null-safe), see
+ * `DatabaseDao.updateFormatEvidenceForRendition`; keep the two in step.
+ */
+internal fun evidenceSurvivesRedeclaration(
+    row: FormatEntity?,
+    mimeType: String,
+    codecs: String,
+    sampleRateHz: Int?,
+): Boolean = row != null && row.mimeType == mimeType && row.codecs == codecs && row.sampleRate == sampleRateHz
 
 fun FormatEntity.formattedBitrate(): String? = bitrate.takeIf { it > 0 }?.let { "${it / 1000} kbps" }
 

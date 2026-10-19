@@ -37,6 +37,7 @@ import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongAlbumMap
 import moe.rukamori.archivetune.db.entities.SongArtistMap
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.evidenceSurvivesRedeclaration
 import moe.rukamori.archivetune.lyrics.LyricsUtils
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.getAsync
@@ -218,18 +219,32 @@ class LocalSongScanner
                             existingFormat != null &&
                                 existingFormat.contentLength == track.sizeBytes &&
                                 (track.dateModified == null || existingSong?.dateModified == track.dateModified)
+                        val declaredCodecs = if (isFileUnchanged) existingFormat!!.codecs else ""
+                        val declaredSampleRate = if (isFileUnchanged) existingFormat!!.sampleRate else null
+                        val keepEvidence =
+                            isFileUnchanged &&
+                                evidenceSurvivesRedeclaration(
+                                    existingFormat,
+                                    track.mimeType,
+                                    declaredCodecs,
+                                    declaredSampleRate,
+                                )
                         upsert(
                             FormatEntity(
                                 id = track.id,
                                 itag = -1,
                                 mimeType = track.mimeType,
-                                codecs = if (isFileUnchanged) existingFormat!!.codecs else "",
+                                codecs = declaredCodecs,
                                 bitrate = if (isFileUnchanged && existingFormat!!.bitrate != 0) existingFormat.bitrate else 0,
-                                sampleRate = if (isFileUnchanged) existingFormat!!.sampleRate else null,
+                                sampleRate = declaredSampleRate,
                                 contentLength = track.sizeBytes,
                                 loudnessDb = if (isFileUnchanged) existingFormat!!.loudnessDb else null,
                                 perceptualLoudnessDb = if (isFileUnchanged) existingFormat!!.perceptualLoudnessDb else null,
                                 playbackUrl = null,
+                                evidenceMimeType = existingFormat?.evidenceMimeType.takeIf { keepEvidence },
+                                evidenceCodecs = existingFormat?.evidenceCodecs.takeIf { keepEvidence },
+                                evidenceSampleRate = existingFormat?.evidenceSampleRate.takeIf { keepEvidence },
+                                evidenceBitDepth = existingFormat?.evidenceBitDepth.takeIf { keepEvidence },
                             ),
                         )
                         deleteSongArtistMaps(track.id)

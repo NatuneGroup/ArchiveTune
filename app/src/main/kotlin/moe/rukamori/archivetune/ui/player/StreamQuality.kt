@@ -13,8 +13,16 @@ import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.codecLabel
 import moe.rukamori.archivetune.db.entities.isLossless
+import moe.rukamori.archivetune.playback.isClaimedLosslessFormat
 
-enum class StreamQualityTier { HI_RES_LOSSLESS, LOSSLESS, LOSSY }
+enum class StreamQualityTier {
+    HI_RES_LOSSLESS,
+    LOSSLESS,
+    LOSSY,
+
+    /** Declared lossless with no observed evidence yet; shown as declared, never as Lossless. */
+    UNVERIFIED,
+}
 
 /**
  * The one classification every quality badge draws from, so the lyrics page and the player page
@@ -22,26 +30,36 @@ enum class StreamQualityTier { HI_RES_LOSSLESS, LOSSLESS, LOSSY }
  */
 data class StreamQuality(
     val tier: StreamQualityTier,
-    /** The codec under its display name; what a lossy stream is labelled with. */
+    /** The codec under its display name; what a lossy or unverified stream is labelled with. */
     val codec: String,
 ) {
-    val isLossless: Boolean get() = tier != StreamQualityTier.LOSSY
+    val isLossless: Boolean get() = tier == StreamQualityTier.LOSSLESS || tier == StreamQualityTier.HI_RES_LOSSLESS
 }
 
+/**
+ * Lossless and Hi-Res need observed evidence: the decoder's input format during playback, stored in the
+ * evidence columns. A declared codec, MIME, bitrate, sample rate or tier name never earns either label.
+ * Hi-Res is lossless with an observed bit depth above 16 or an observed sample rate above 48 kHz.
+ */
 fun FormatEntity.streamQuality(): StreamQuality {
-    val musicBitrateKbps = bitrate / 1000
-    val musicSamplingRate = sampleRate ?: 0
-    // Some sources report lossless audio under a container MIME type without a FLAC/ALAC codec
-    // string, so a CD-or-better bitrate at a CD-or-better rate counts as lossless too.
-    val isLossless = isLossless() || (musicBitrateKbps >= 700 && musicSamplingRate >= 44100)
-    val isHiRes = musicBitrateKbps >= 2000 && musicSamplingRate >= 96000
+    val observedMime = evidenceMimeType.orEmpty()
+    val observedCodecs = evidenceCodecs.orEmpty()
+    if (observedMime.isBlank() && observedCodecs.isBlank()) {
+        return StreamQuality(
+            tier = if (isLossless()) StreamQualityTier.UNVERIFIED else StreamQualityTier.LOSSY,
+            codec = codecLabel(),
+        )
+    }
     val tier =
         when {
-            isHiRes -> StreamQualityTier.HI_RES_LOSSLESS
-            isLossless -> StreamQualityTier.LOSSLESS
-            else -> StreamQualityTier.LOSSY
+            !isClaimedLosslessFormat(observedMime, observedCodecs) -> StreamQualityTier.LOSSY
+            (evidenceBitDepth ?: 0) > 16 || (evidenceSampleRate ?: 0) > 48_000 -> StreamQualityTier.HI_RES_LOSSLESS
+            else -> StreamQualityTier.LOSSLESS
         }
-    return StreamQuality(tier = tier, codec = codecLabel())
+    return StreamQuality(
+        tier = tier,
+        codec = codecLabel(mimeType = observedMime, codecs = observedCodecs),
+    )
 }
 
 @Composable
@@ -50,4 +68,5 @@ fun StreamQuality.label(): String =
         StreamQualityTier.HI_RES_LOSSLESS -> stringResource(R.string.flamingo_quality_hires_lossless)
         StreamQualityTier.LOSSLESS -> stringResource(R.string.flamingo_quality_lossless)
         StreamQualityTier.LOSSY -> codec
+        StreamQualityTier.UNVERIFIED -> stringResource(R.string.flamingo_quality_unverified, codec)
     }

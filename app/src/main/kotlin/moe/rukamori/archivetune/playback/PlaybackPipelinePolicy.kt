@@ -29,15 +29,10 @@ internal fun resolveAudioAuthenticityProbeAvailability(
 internal fun isClaimedLosslessFormat(
     mimeType: String,
     codecs: String,
-    label: String,
 ): Boolean {
     val encodedFormat = "$mimeType $codecs".lowercase()
-    val normalizedLabel = label.lowercase().replace('-', '_').replace(' ', '_')
-    return listOf("flac", "alac", "wavpack", "pcm", "audio/wav", "audio/wave", "audio/aiff")
-        .any { marker -> encodedFormat.contains(marker) } ||
-        listOf("lossless", "hi_res", "hires", "high_res", "master", "mqa").any { marker ->
-            normalizedLabel.contains(marker)
-        } || normalizedLabel.endsWith("_max") || normalizedLabel == "max"
+    return listOf("flac", "alac", "wavpack", "pcm", "audio/raw", "audio/wav", "audio/wave", "audio/aiff")
+        .any { marker -> encodedFormat.contains(marker) }
 }
 
 internal fun resolveAudioAuthenticitySampleRateHz(

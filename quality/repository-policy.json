@@ -1,0 +1,47 @@
+{
+  "maxFileBytes": 1048576,
+  "maxKotlinLines": 1000,
+  "maintainedDocs": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "CONTRIBUTING.md",
+    "docs/claude/*.md",
+    "docs/engineering/*.md",
+    "docs/android-qa.md",
+    ".factory/README.md",
+    ".factory/skills/*/SKILL.md"
+  ],
+  "libraryModules": [
+    "canvas",
+    "jiosaavn",
+    "lastfm",
+    "musixmatch",
+    "shazamkit",
+    "spotifycore"
+  ],
+  "libraryForbiddenImports": [
+    "moe.rukamori.archivetune.ui",
+    "moe.rukamori.archivetune.playback",
+    "moe.rukamori.archivetune.viewmodels",
+    "moe.rukamori.archivetune.db",
+    "moe.rukamori.archivetune.auth",
+    "moe.rukamori.archivetune.audiosource"
+  ],
+  "contractSources": [
+    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/AudioSourceConfig.kt",
+    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/PlaybackSourceChain.kt",
+    "app/src/main/kotlin/moe/rukamori/archivetune/audiosource/PlaybackSourceSelection.kt"
+  ],
+  "contractForbiddenImports": [
+    "androidx.compose",
+    "moe.rukamori.archivetune.ui",
+    "moe.rukamori.archivetune.playback",
+    "moe.rukamori.archivetune.viewmodels",
+    "moe.rukamori.archivetune.db"
+  ],
+  "documentedTasks": {
+    "assembleGmsMobileUniversalDebug": ".github/workflows/build_pull_request.yml",
+    ":app:lintGmsMobileUniversalDebug": ".github/workflows/build_pull_request.yml",
+    ":app:testGmsMobileUniversalDebugUnitTest": ".github/workflows/tests.yml"
+  }
+}

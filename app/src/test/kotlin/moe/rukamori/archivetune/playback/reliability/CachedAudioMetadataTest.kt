@@ -62,18 +62,15 @@ class CachedAudioMetadataTest {
     }
 
     @Test
-    fun olderVersionOneMetadataDoesNotInventNewFormatFields() {
+    fun olderVersionOneMetadataIsIgnoredSoClaimsAreRecomputed() {
         val mutations = ContentMetadataMutations()
             .set("archivetune:audio:version", 1L)
             .set("archivetune:audio:source", AudioSourceType.TIDAL.name)
             .set("archivetune:audio:sample_rate", 96_000L)
             .set("archivetune:audio:claimed_lossless", 1L)
         val metadata = DefaultContentMetadata.EMPTY.copyWithMutationsApplied(mutations)
-        val restored = CachedAudioMetadata.read(metadata, AudioSourceType.TIDAL)
 
-        assertEquals(96_000, restored?.sampleRateHz)
-        assertNull(restored?.bitDepth)
-        assertNull(restored?.channelCount)
+        assertNull(CachedAudioMetadata.read(metadata, AudioSourceType.TIDAL))
     }
 
     private fun stream(sampleRate: Int?): DirectStream =

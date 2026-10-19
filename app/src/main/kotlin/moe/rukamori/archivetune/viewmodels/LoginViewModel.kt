@@ -155,6 +155,9 @@ class LoginViewModel @Inject constructor(private val repository: YouTubeLoginRep
 
     private fun submit(next: PlaybackAuthState) {
         val owner = attempt ?: return
+        // A committed attempt is terminal: a late extraction must not start a second commit,
+        // which would fail as "attempt expired" after the account was already saved.
+        if (completedOrigin != null) return
         if (submitted == next) return
         // A newly observed selected context supersedes the old candidate, not the committed
         // account. The repository's private validation mutex keeps cancelled/new work single-flight.

@@ -106,8 +106,9 @@ import androidx.compose.runtime.snapshotFlow
 import moe.rukamori.archivetune.constants.AudioSourceType
 import moe.rukamori.archivetune.audiosource.CurrentStreamInfo
 import moe.rukamori.archivetune.models.MediaMetadata
-import moe.rukamori.archivetune.db.entities.FormatEntity
-import moe.rukamori.archivetune.db.entities.codecLabel
+import moe.rukamori.archivetune.ui.player.StreamQualityTier
+import moe.rukamori.archivetune.ui.player.label
+import moe.rukamori.archivetune.ui.player.streamQuality
 import moe.rukamori.archivetune.playback.dsp.AudioEngineRouterProcessor
 import moe.rukamori.archivetune.playback.BitPerfectUsbOutput
 import moe.rukamori.archivetune.playback.dsp.BitPerfectRuntime
@@ -261,8 +262,13 @@ fun ShowMediaInfo(videoId: String) {
 
     val isLocal = videoId.isLocalMediaId() || videoId.isTelegramMediaId()
     val liveStreamInfo = streamInfo?.takeIf { it.mediaId == videoId }
-    val codec = currentFormat.codecName()
     val bitrateKbps = currentFormat?.bitrate?.takeIf { it > 0 }?.let { it / 1000 }
+    val qualityValue: String? =
+        currentFormat
+            ?.streamQuality()
+            ?.takeIf { it.tier != StreamQualityTier.LOSSY }
+            ?.label()
+            ?: qualityTierLabel(bitrateKbps, null)
     val liveSampleRateHz =
         liveStreamInfo?.sampleRate?.takeIf { it > 0 }
             ?: currentFormat?.sampleRate?.takeIf { it > 0 }
@@ -415,7 +421,7 @@ fun ShowMediaInfo(videoId: String) {
                     ),
                 )
             }
-            qualityTierLabel(codec, liveBitDepth, liveSampleRateHz, bitrateKbps, null)?.let {
+            qualityValue?.let {
                 add(
                     MediaInfoDetail(
                         iconRes = R.drawable.solar_wave,
@@ -763,7 +769,10 @@ fun ShowMediaInfo(videoId: String) {
                                                         bp.sourceEncoding == C.ENCODING_PCM_FLOAT -> "Float PCM"
                                                         bp.sourceBitDepth > 0 -> "${bp.sourceBitDepth}-bit Integer PCM"
                                                         factsHere?.decodedFloat == true -> "Float PCM"
-                                                        else -> "${factsHere?.decodedBits ?: 16}-bit Integer PCM"
+                                                        else ->
+                                                            factsHere?.decodedBits?.takeIf { it > 0 }
+                                                                ?.let { "$it-bit Integer PCM" }
+                                                                ?: "Integer PCM"
                                                     }
                                                     val outForm = when {
                                                         EngineRuntime.usbExclusiveActive -> {
@@ -1613,18 +1622,10 @@ internal fun channelsLabel(channels: Int?, unknown: String): String =
     }
 
 internal fun qualityTierLabel(
-    codec: String?,
-    bitDepth: Int?,
-    sampleRateHz: Int?,
     bitrateKbps: Int?,
     unknown: String?,
 ): String? =
     when {
-        codec.equals("flac", true) || codec.equals("alac", true) ->
-            when {
-                (bitDepth ?: 16) > 16 || (sampleRateHz ?: 44100) > 48000 -> "Hi-Res Lossless Audio"
-                else -> "CD Quality Audio ($bitDepth-bit / ${sampleRateHz?.let { formatHz(it) } ?: "44.1 kHz"} Lossless)"
-            }
         (bitrateKbps ?: 0) >= 320 -> "High Quality Audio (320 kbps+)"
         (bitrateKbps ?: 0) > 0 -> "Standard Quality Audio"
         else -> unknown
@@ -1665,11 +1666,6 @@ internal fun formatDuration(durationMs: Long, playbackMs: Long): String {
     val seconds = (total % 60000L) / 1000L
     return "$minutes min ${"%02d".format(Locale.ROOT, seconds)}s"
 }
-
-private fun FormatEntity?.codecName(): String? =
-    this?.codecLabel()?.takeIf { it.isNotBlank() && it != "—" }
-        ?: this?.codecs?.takeIf { it.isNotBlank() }?.substringBefore('.')
-        ?: this?.mimeType?.substringAfter("audio/", "")?.substringBefore(';')?.takeIf { it.isNotBlank() && it != "mpeg" }
 
 @Composable
 private fun MediaInfoSectionCard(

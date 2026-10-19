@@ -23,7 +23,7 @@ internal data class CachedAudioMetadata(
 ) {
     fun toMutations(): ContentMetadataMutations =
         ContentMetadataMutations()
-            .set(VERSION_KEY, 1L)
+            .set(VERSION_KEY, VERSION)
             .set(SOURCE_KEY, source.name)
             .set(SAMPLE_RATE_KEY, sampleRateHz?.toLong() ?: -1L)
             .set(LOSSLESS_KEY, if (claimedLossless) 1L else 0L)
@@ -32,6 +32,7 @@ internal data class CachedAudioMetadata(
 
     companion object {
         private const val VERSION_KEY = "archivetune:audio:version"
+        private const val VERSION = 2L
         private const val SOURCE_KEY = "archivetune:audio:source"
         private const val SAMPLE_RATE_KEY = "archivetune:audio:sample_rate"
         private const val LOSSLESS_KEY = "archivetune:audio:claimed_lossless"
@@ -42,12 +43,12 @@ internal data class CachedAudioMetadata(
             CachedAudioMetadata(
                 source = stream.source,
                 sampleRateHz = resolveAudioAuthenticitySampleRateHz(stream.sampleRate),
-                claimedLossless = isClaimedLosslessFormat(stream.mimeType, stream.codecs, stream.label),
+                claimedLossless = isClaimedLosslessFormat(stream.mimeType, stream.codecs),
                 bitDepth = stream.bitDepth?.takeIf { it in 1..64 },
             )
 
         fun read(metadata: ContentMetadata, expectedSource: AudioSourceType): CachedAudioMetadata? {
-            if (metadata.get(VERSION_KEY, -1L) != 1L || metadata.get(SOURCE_KEY, "") != expectedSource.name) return null
+            if (metadata.get(VERSION_KEY, -1L) != VERSION || metadata.get(SOURCE_KEY, "") != expectedSource.name) return null
             val rate = metadata.get(SAMPLE_RATE_KEY, -1L).takeIf { it in 1L..Int.MAX_VALUE.toLong() }?.toInt()
             val depth = metadata.get(BIT_DEPTH_KEY, -1L).takeIf { it in 1L..64L }?.toInt()
             val channels = metadata.get(CHANNEL_COUNT_KEY, -1L).takeIf { it in 1L..32L }?.toInt()

@@ -56,7 +56,7 @@
     <string name="library_top_mixes_refresh">Mixen vernieuwen</string>
     <string name="library_top_mixes_configure_ai">AI configureren</string>
     <string name="library_top_mixes_ai_not_configured_title">Stel de AI in om mixen te maken</string>
-    <string name="library_top_mixes_ai_not_configured_desc">Er is AI-integratie nodig voordat ArchiveTune persoonlijke topmixen kan samenstellen.</string>
+    <string name="library_top_mixes_ai_not_configured_desc">Er is AI-integratie nodig voordat Natune persoonlijke topmixen kan samenstellen.</string>
     <string name="library_top_mixes_no_recent_history_title">Er is nog geen recente luistermix</string>
     <string name="library_top_mixes_no_recent_history">Luister naar meer nummers en vernieuw vervolgens de pagina om AI-mixen te maken op basis van je recente luistergeschiedenis.</string>
     <string name="library_top_mixes_no_valid_mixes">De AI heeft geen afspeelbare mixen uit je recente geschiedenis gevonden.</string>
@@ -113,7 +113,7 @@
     <string name="retry">Opnieuw proberen</string>
     <string name="cast">Cast</string>
     <string name="cast_devices">Cast apparaten</string>
-    <string name="cast_sheet_subtitle">Kies waar ArchiveTune wordt afgespeeld</string>
+    <string name="cast_sheet_subtitle">Kies waar Natune wordt afgespeeld</string>
     <string name="cast_available_devices">Beschikbare apparaten</string>
     <string name="cast_searching_devices">Zoeken naar apparaten</string>
     <string name="cast_no_devices">Er zijn geen Cast-apparaten gevonden</string>
@@ -132,7 +132,7 @@
     <string name="play">Afspelen</string>
     <string name="widget_pause">Pauzeren</string>
     <string name="widget_previous">Vorige</string>
-    <string name="widget_tap_to_open">Klik om ArchiveTune te openen</string>
+    <string name="widget_tap_to_open">Klik om Natune te openen</string>
     <string name="widget_insights_title">Inzichten op basis van luistergedrag</string>
     <string name="widget_recommendations">Aanbevelingen</string>
     <string name="widget_listening_time_empty">Nog geen luistertijd</string>

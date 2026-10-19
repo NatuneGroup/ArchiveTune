@@ -12,7 +12,6 @@ package moe.rukamori.archivetune.ui.screens.settings
 
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableFloatStateOf
-import moe.rukamori.archivetune.ui.utils.rememberOpeningTransitionFinished
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -419,7 +418,6 @@ private fun BackgroundPreviewPane(
     colorFilter: ColorFilter,
     modifier: Modifier = Modifier,
 ) {
-    val openingTransitionFinished = rememberOpeningTransitionFinished()
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -438,9 +436,7 @@ private fun BackgroundPreviewPane(
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest),
             contentAlignment = Alignment.Center,
         ) {
-            if (!openingTransitionFinished) {
-                // Blurred decode and preview art wait until the page has finished sliding in.
-            } else if (imageUri == null) {
+            if (imageUri == null) {
                 Icon(
                     painter = painterResource(R.drawable.image),
                     contentDescription = null,

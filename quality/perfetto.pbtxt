@@ -1,0 +1,19 @@
+buffers {
+  size_kb: 8192
+  fill_policy: RING_BUFFER
+}
+duration_ms: 15000
+data_sources {
+  config {
+    name: "linux.ftrace"
+    ftrace_config {
+      atrace_apps: "moe.rukamori.archivetune.debug"
+      atrace_categories: "am"
+      atrace_categories: "view"
+      atrace_categories: "gfx"
+      atrace_categories: "audio"
+      ftrace_events: "sched/sched_switch"
+      ftrace_events: "power/cpu_frequency"
+    }
+  }
+}

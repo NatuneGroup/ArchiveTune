@@ -60,7 +60,7 @@ import java.util.concurrent.Executor
 import kotlin.coroutines.resume
 
 private const val TAG = "MusicDatabase"
-private const val CURRENT_VERSION = 35
+private const val CURRENT_VERSION = 36
 
 class MusicDatabase(
     private val delegate: InternalDatabase,
@@ -158,6 +158,7 @@ class MusicDatabase(
         AutoMigration(from = 20, to = 21, spec = Migration20To21::class),
         AutoMigration(from = 21, to = 22),
         AutoMigration(from = 34, to = 35),
+        AutoMigration(from = 35, to = 36),
     ],
 )
 @TypeConverters(Converters::class)

@@ -18,13 +18,15 @@
     <string name="acoustic_quality_progress">Progress: %1$d%%</string>
     <string name="acoustic_quality_interval">Analyzed interval: %1$.2f–%2$.2f s</string>
     <string name="acoustic_quality_format">Decoded PCM: %1$d Hz · %2$d channels</string>
-    <string name="acoustic_quality_cutoff">Estimated bandwidth cutoff: %1$.2f kHz (graph line)</string>
+    <string name="acoustic_quality_cutoff">Estimated bandwidth cutoff: %1$.2f kHz</string>
     <string name="acoustic_quality_cutoff_unknown">Estimated bandwidth cutoff: uncertain / unavailable</string>
     <string name="acoustic_quality_inconclusive">Inconclusive — insufficient or uncertain provenance evidence</string>
     <string name="acoustic_quality_no_cutoff">No suspicious cutoff found in this excerpt — not proof of losslessness</string>
     <string name="acoustic_quality_suspected">Possible upscaling: spectral cutoff suspected, not proven</string>
     <string name="acoustic_quality_frequency_axis">Frequency: 0 kHz at bottom → %1$.2f kHz at top; time increases left → right</string>
-    <string name="acoustic_quality_heat_scale">Heat: surface color = −100 dB, accent color = 0 dB, normalized window power. Not calibrated loudness.</string>
+    <string name="acoustic_quality_heat_scale">Heat: black = −120 dB, white = 0 dB, normalized window power. Not calibrated loudness.</string>
+    <string name="acoustic_quality_heat_legend_low" translatable="false">−120 dB</string>
+    <string name="acoustic_quality_heat_legend_high" translatable="false">0 dB</string>
     <string name="acoustic_quality_no_song">No current song. Choose a song to enable analysis; opening this section never starts playback.</string>
     <string name="acoustic_quality_expand">Expand acoustic quality graph</string>
     <string name="acoustic_quality_collapse">Collapse acoustic quality graph</string>

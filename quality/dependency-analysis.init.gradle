@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (c) 2026 vossgraves
+// Optional build-host analysis. Ordinary APK/test builds do not load this plugin.
+import groovy.json.JsonOutput
+import org.gradle.api.DefaultTask
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.Classpath
+import org.gradle.api.tasks.OutputFile
+import org.gradle.api.tasks.TaskAction
+import org.gradle.work.DisableCachingByDefault
+
+// DAGP must share a classloader scope with AGP, or a parent of it. An initscript classloader is a sibling of
+// the root project's scope, where the root plugins block exports AGP, so DAGP cannot load from there. The
+// pinned DAGP is declared on the root buildscript instead; subprojects inherit that scope.
+final String DAGP_ID = 'com.autonomousapps.dependency-analysis'
+final String DAGP_COORDINATES = 'com.autonomousapps:dependency-analysis-gradle-plugin:3.19.2'
+
+@DisableCachingByDefault(because = 'Reports are small and contain host-specific compiler paths.')
+abstract class QualityInputs extends DefaultTask {
+    @Classpath
+    abstract ConfigurableFileCollection getCompilerClasspath()
+
+    @Classpath
+    abstract ConfigurableFileCollection getRuntimeArtifacts()
+
+    @OutputFile
+    abstract RegularFileProperty getClasspathManifest()
+
+    @OutputFile
+    abstract RegularFileProperty getWeightReport()
+
+    @TaskAction
+    void report() {
+        def manifest = classpathManifest.get().asFile
+        manifest.parentFile.mkdirs()
+        // Entries absent on this host contribute no classes to the compiler or Detekt, so they are omitted and counted.
+        def entries = compilerClasspath.files.toList()
+        def present = entries.findAll { it.exists() }
+        logger.lifecycle("Compiler classpath: ${present.size()} present, ${entries.size() - present.size()} absent and omitted")
+        manifest.text = present.collect { it.absolutePath }.sort().join('\n') + '\n'
+        def weights = runtimeArtifacts.files.findAll { it.isFile() }
+            .sort { left, right -> right.length() <=> left.length() }
+            .collect { [artifact: it.name, bytes: it.length()] }
+        def report = weightReport.get().asFile
+        report.parentFile.mkdirs()
+        report.text = JsonOutput.prettyPrint(JsonOutput.toJson([
+            reviewThresholdBytes: 20 * 1024 * 1024,
+            artifacts: weights,
+        ])) + '\n'
+        weights.findAll { it.bytes > 20 * 1024 * 1024 }.each {
+            logger.warn("Heavy dependency requires review: ${it.artifact} (${it.bytes} bytes)")
+        }
+    }
+}
+
+gradle.beforeProject { project ->
+    if (gradle.parent != null) return
+    if (project == project.rootProject) {
+        project.buildscript.repositories {
+            google()
+            maven { url = uri('https://maven-central.storage-download.googleapis.com/maven2') }
+            mavenCentral()
+            gradlePluginPortal()
+        }
+        project.buildscript.dependencies.add('classpath', DAGP_COORDINATES)
+        // The root project is not analysed. Its buildscript scope is exported only while the root script applies,
+        // after this hook, so the plugin cannot be applied here. A later apply would register afterEvaluate after
+        // evaluation, which Gradle rejects. Only :app:projectHealth is consumed, and it needs no root aggregate.
+        return
+    }
+    project.pluginManager.apply(DAGP_ID)
+    if (project.path != ':app') return
+    project.plugins.withId('com.android.application') {
+        def android = project.extensions.getByName('androidComponents')
+        android.beforeVariants(android.selector().all()) { variant ->
+            // Dependency advice must not compile every store/device/ABI/release combination.
+            variant.enable = variant.name == 'gmsMobileUniversalDebug'
+        }
+    }
+}
+
+gradle.projectsEvaluated {
+    if (gradle.parent != null) return
+    def root = gradle.rootProject
+    def app = root.project(':app')
+    def compile = app.tasks.named('compileGmsMobileUniversalDebugKotlin')
+    def javaCompile = app.tasks.named('compileGmsMobileUniversalDebugJavaWithJavac')
+    def android = app.extensions.getByName('androidComponents')
+    root.tasks.register('qualityInputs', QualityInputs) {
+        // Written after the variant's Java compile, so entries that step produces are present when recorded.
+        dependsOn javaCompile
+        compilerClasspath.from(compile.map { it.libraries })
+        compilerClasspath.from(android.sdkComponents.bootClasspath)
+        // A plain files view of an Android library's runtime configuration is ambiguous: its artifact-type variants
+        // all match. Only external modules are weighed; project modules are compiled from source, not weighed.
+        def runtimeClasspath = app.configurations.named('gmsMobileUniversalDebugRuntimeClasspath')
+        runtimeArtifacts.from(runtimeClasspath.map { config ->
+            config.incoming.artifactView { view ->
+                view.componentFilter { id -> id instanceof ModuleComponentIdentifier }
+            }.files
+        })
+        classpathManifest.set(root.layout.projectDirectory.file('quality/build/analysis-classpath.txt'))
+        weightReport.set(root.layout.buildDirectory.file('reports/dependencies/weights.json'))
+    }
+}

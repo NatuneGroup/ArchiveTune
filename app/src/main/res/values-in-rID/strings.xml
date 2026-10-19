@@ -58,7 +58,7 @@
     <string name="play">Putar</string>
     <string name="widget_pause">Jeda</string>
     <string name="widget_previous">Sebelumnya</string>
-    <string name="widget_tap_to_open">Ketuk untuk membuka ArchiveTune</string>
+    <string name="widget_tap_to_open">Ketuk untuk membuka Natune</string>
     <string name="play_next">Putar berikutnya</string>
     <string name="add_to_queue">Tambahkan ke antrean</string>
     <string name="add_to_library">Tambahkan ke pustaka</string>
@@ -298,9 +298,9 @@
     <string name="login">Masuk</string>
     <string name="not_logged_in">Belum Masuk</string>
     <string name="playback_confirmation_required">Konfirmasi pemutaran diperlukan</string>
-    <string name="playback_requires_youtube_music_confirmation">Konfirmasikan pemutaran di YouTube Music, lalu kembali ke ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_confirmation">Konfirmasikan pemutaran di YouTube Music, lalu kembali ke Natune.</string>
     <string name="playback_login_refresh_required">Segarkan login YouTube Music</string>
-    <string name="playback_requires_youtube_music_login_refresh">Segarkan login YouTube Music Anda, lalu kembali ke ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_login_refresh">Segarkan login YouTube Music Anda, lalu kembali ke Natune.</string>
     <string name="content_language">Bahasa konten default</string>
     <string name="content_country">Negara konten default</string>
     <string name="system_default">Bawaan sistem</string>
@@ -442,12 +442,12 @@
     <string name="restore_success">Cadangan berhasil dipulihkan</string>
     <string name="restore_failed">Gagal memulihkan cadangan</string>
     <string name="discord_integration">Integrasi Discord</string>
-    <string name="discord_login_description">Hubungkan akun Discord Anda dengan OAuth agar ArchiveTune dapat mempublikasikan Rich Presence melalui Social SDK resmi Discord.</string>
+    <string name="discord_login_description">Hubungkan akun Discord Anda dengan OAuth agar Natune dapat mempublikasikan Rich Presence melalui Social SDK resmi Discord.</string>
     <string name="discord_open_authorization">Sambungkan ke Discord</string>
     <string name="discord_waiting_for_authorization">Menunggu otorisasi Discord...</string>
     <string name="discord_authorization_success">Akun Discord terhubung</string>
     <string name="discord_authorization_failed">Otorisasi Discord gagal</string>
-    <string name="discord_account_ready">ArchiveTune siap mempublikasikan Rich Presence untuk sesi mendengarkan Anda.</string>
+    <string name="discord_account_ready">Natune siap mempublikasikan Rich Presence untuk sesi mendengarkan Anda.</string>
     <string name="discord_connection_settings">Koneksi</string>
     <string name="discord_activity_content">Isi Aktivitas</string>
     <string name="discord_refresh_success">Presence Discord diperbarui</string>
@@ -613,9 +613,9 @@
     <string name="update_notification_channel_name">Pembaruan Aplikasi</string>
     <string name="update_notification_channel_desc">Pemberitahuan untuk pembaruan aplikasi baru</string>
     <string name="update_notification_title">Pembaruan Tersedia</string>
-    <string name="update_notification_text">ArchiveTune %s kini tersedia</string>
+    <string name="update_notification_text">Natune %s kini tersedia</string>
     <string name="download">Unduh</string>
-    <string name="permissions_title">Izinkan ArchiveTune bekerja dengan optimal</string>
+    <string name="permissions_title">Izinkan Natune bekerja dengan optimal</string>
     <string name="permissions_subtitle">Kami menggunakan beberapa izin untuk memutar dan mengelola musik Anda dengan andal. Anda dapat mengubahnya kapan saja di pengaturan sistem.</string>
     <string name="permission_storage_title">Akses penyimpanan</string>
     <string name="permission_storage_desc">Diperlukan untuk membaca file audio lokal dan unduhan Anda untuk diputar.</string>
@@ -653,7 +653,7 @@
     <string name="token_copied">Token disalin ke papan klip</string>
     <string name="extracting_from_url">Mengekstrak token dari URL…</string>
     <string name="po_token_account_notice_title">Gunakan akun yang sama</string>
-    <string name="po_token_account_notice_body">Masuk di sini dengan akun Google yang sama yang sudah Anda gunakan untuk YouTube Music di dalam ArchiveTune sebelum membuat token PO.</string>
+    <string name="po_token_account_notice_body">Masuk di sini dengan akun Google yang sama yang sudah Anda gunakan untuk YouTube Music di dalam Natune sebelum membuat token PO.</string>
     <string name="po_token_account_notice_same_account">Jika WebView ini menggunakan akun lain, token yang dihasilkan tidak akan berfungsi dengan benar.</string>
     <string name="po_token_account_notice_mismatch">Gunakan akun yang cocok, selesaikan alur masuk, lalu buka youtube.com/account dan buat token dari halaman tersebut.</string>
     <string name="saved_accounts">Akun yang disimpan</string>
@@ -703,7 +703,7 @@
     <string name="library_top_mixes_refresh">Segarkan mix</string>
     <string name="library_top_mixes_configure_ai">Konfigurasikan AI</string>
     <string name="library_top_mixes_ai_not_configured_title">Konfigurasikan AI untuk membuat mix</string>
-    <string name="library_top_mixes_ai_not_configured_desc">Integrasi AI diperlukan sebelum ArchiveTune dapat membuat mix teratas pribadi.</string>
+    <string name="library_top_mixes_ai_not_configured_desc">Integrasi AI diperlukan sebelum Natune dapat membuat mix teratas pribadi.</string>
     <string name="library_top_mixes_no_recent_history_title">Tidak ada riwayat mix mendengarkan saat ini</string>
     <string name="library_top_mixes_no_recent_history">Dengarkan lagu lainnya, kemudian segarkan untuk membuat mix AI dari riwayat mendengarkan anda.</string>
     <string name="library_top_mixes_failed">Gagal membuat mix teratas</string>

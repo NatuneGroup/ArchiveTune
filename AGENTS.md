@@ -33,7 +33,25 @@ must preserve the invariants below.
 - Flavors include gms/foss, mobile/tv and ABI choices; not every combination ships. PR coverage is GMS/mobile/universal Debug assembly (arm64-v8a + x86_64) plus lint. Nightly retains six shipping variants; Stable retains seven and its existing reproducibility job.
 - Fork contract tests (`app/src/test/`): `./gradlew :app:testGmsMobileUniversalDebugUnitTest`. Keep `Build Pull Request` / `build` separate from `Unit tests` / `Compile and run unit tests`, running concurrently on the exact integrated head. Do not substitute APK assembly for test compilation. In constrained continuations, no local Gradle/JVM/LSP or per-feature CI: focused tests follow integration.
 - Preserve GitHub-hosted PR runners, PR read-only caches and trusted cache producers. Use plain streaming diagnostics and local profiles/reports, not external build scans; do not change heap/KSP/configuration-cache policies without evidence.
-- Keep the GPL header banner on new `.kt` files. No formatter task — match surrounding style.
+- For this constrained readiness mission, run full app builds, lint, coverage, repeated tests and compiler-backed analysis on GitHub-hosted runners. Keep the authorized VPS to lighter checks; do not retry full CI builds there.
+- Keep the GPL header banner on new `.kt` files and preserve inherited copyright.
+  Header automation validates changes; it must never rewrite existing attribution.
+
+## Lightweight quality and maintained documentation
+
+- Run `python3 scripts/check_repository.py --worktree` without Gradle/JVM/network
+  work. It checks maintained docs/skills, CI command consistency, dependency drift,
+  source/module boundaries, file budgets and copyright preservation.
+- Install the lightweight staged-content hook as documented in
+  [quality gates](docs/engineering/quality.md); preserve an existing user hook setup.
+- Kotlin/Java types use PascalCase, functions/properties camelCase, Compose UI
+  functions PascalCase, constants UPPER_SNAKE_CASE and packages lowercase.
+  Preserve serialized/public legacy names rather than renaming them as cleanup.
+- Product knowledge stays in `docs/claude/`; engineering procedures stay in
+  `docs/engineering/`; reusable agent workflows stay in `.factory/skills/`.
+  Update only affected docs and add tests only for meaningful behavior/regressions.
+- Use the [incident runbook](docs/engineering/incident-runbook.md) for playback or
+  release failures. Missing build/device evidence must remain explicitly unverified.
 
 ## Current local follow-up boundaries
 

@@ -1950,6 +1950,44 @@ interface DatabaseDao {
         bitDepth: Int?,
     )
 
+    /**
+     * Observation write guarded by the declared rendition identity: the columns change only while the
+     * row still declares the rendition the decoder was observed on, so an observation from a superseded
+     * rendition affects zero rows. `IS` is null-safe equality, mirroring [evidenceSurvivesRedeclaration]
+     * (mimeType, codecs and sample rate compared exactly). Use [updateFormatEvidence] only when no
+     * declared identity is tracked.
+     */
+    @Query(
+        "UPDATE format SET evidenceMimeType = :mimeType, evidenceCodecs = :codecs, " +
+            "evidenceSampleRate = :sampleRate, evidenceBitDepth = :bitDepth " +
+            "WHERE id = :id AND mimeType IS :declaredMimeType AND codecs IS :declaredCodecs " +
+            "AND sampleRate IS :declaredSampleRate",
+    )
+    suspend fun updateFormatEvidenceForRendition(
+        id: String,
+        mimeType: String?,
+        codecs: String?,
+        sampleRate: Int?,
+        bitDepth: Int?,
+        declaredMimeType: String?,
+        declaredCodecs: String?,
+        declaredSampleRate: Int?,
+    ): Int
+
+    /**
+     * Field-only declared backfill: patches the content-length/bitrate columns without rewriting the
+     * whole row, so a late declared write can never clobber observed evidence columns or overwrite
+     * other row state. A null [bitrate] keeps the stored value.
+     */
+    @Query(
+        "UPDATE format SET contentLength = :contentLength, bitrate = IFNULL(:bitrate, bitrate) WHERE id = :id",
+    )
+    suspend fun updateFormatLength(
+        id: String,
+        contentLength: Long,
+        bitrate: Int?,
+    ): Int
+
     @Query("SELECT * FROM format WHERE id IN (:ids)")
     suspend fun getFormatsByIds(ids: List<String>): List<FormatEntity>
 

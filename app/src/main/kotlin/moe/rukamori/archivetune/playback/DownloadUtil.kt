@@ -77,6 +77,7 @@ import moe.rukamori.archivetune.db.entities.ArtistEntity
 import moe.rukamori.archivetune.db.entities.FormatEntity
 import moe.rukamori.archivetune.db.entities.SongArtistMap
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.evidenceSurvivesRedeclaration
 import moe.rukamori.archivetune.deezer.DeezerCrypto
 import moe.rukamori.archivetune.deezer.DeezerDecryptingDataSource
 import moe.rukamori.archivetune.di.DownloadCache
@@ -977,22 +978,51 @@ class DownloadUtil
             // downloaded songs" because the export screen read the
             // FormatEntity before the coroutine had a chance to write it.
             // Calling the DAO directly bypasses MusicDatabase.query's
-            // fire-and-forget executor.
+            // fire-and-forget executor. Observed evidence follows the
+            // rendition identity like every other declared writer:
+            // re-declaring the same rendition keeps it, re-declaring a
+            // different rendition drops it instead of letting a stale
+            // lossless claim outlive its stream.
             runCatching {
-                database.upsert(
-                    FormatEntity(
-                        id = mediaId,
-                        itag = 0,
-                        mimeType = normalizedMime,
-                        codecs = codecs,
-                        bitrate = 0,
-                        sampleRate = null,
-                        contentLength = contentLength ?: 0L,
-                        loudnessDb = null,
-                        perceptualLoudnessDb = null,
-                        playbackUrl = null,
-                    ),
-                )
+                val existing =
+                    runBlocking(Dispatchers.IO) {
+                        database.getFormatsByIds(listOf(mediaId)).firstOrNull()
+                    }
+                val keepEvidence = evidenceSurvivesRedeclaration(existing, normalizedMime, codecs, null)
+                if (existing == null) {
+                    database.upsert(
+                        FormatEntity(
+                            id = mediaId,
+                            itag = 0,
+                            mimeType = normalizedMime,
+                            codecs = codecs,
+                            bitrate = 0,
+                            sampleRate = null,
+                            contentLength = contentLength ?: 0L,
+                            loudnessDb = null,
+                            perceptualLoudnessDb = null,
+                            playbackUrl = null,
+                        ),
+                    )
+                } else {
+                    database.upsert(
+                        existing.copy(
+                            itag = 0,
+                            mimeType = normalizedMime,
+                            codecs = codecs,
+                            bitrate = 0,
+                            sampleRate = null,
+                            contentLength = contentLength ?: 0L,
+                            loudnessDb = null,
+                            perceptualLoudnessDb = null,
+                            playbackUrl = null,
+                            evidenceMimeType = existing.evidenceMimeType.takeIf { keepEvidence },
+                            evidenceCodecs = existing.evidenceCodecs.takeIf { keepEvidence },
+                            evidenceSampleRate = existing.evidenceSampleRate.takeIf { keepEvidence },
+                            evidenceBitDepth = existing.evidenceBitDepth.takeIf { keepEvidence },
+                        ),
+                    )
+                }
             }
         }
 

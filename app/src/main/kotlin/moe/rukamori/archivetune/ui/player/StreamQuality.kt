@@ -58,7 +58,7 @@ fun FormatEntity.streamQuality(): StreamQuality {
         }
     return StreamQuality(
         tier = tier,
-        codec = copy(mimeType = observedMime, codecs = observedCodecs).codecLabel(),
+        codec = codecLabel(mimeType = observedMime, codecs = observedCodecs),
     )
 }
 

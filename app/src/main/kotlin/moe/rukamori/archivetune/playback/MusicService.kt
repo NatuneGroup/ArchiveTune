@@ -313,6 +313,7 @@ import moe.rukamori.archivetune.db.entities.LyricsEntity
 import moe.rukamori.archivetune.db.entities.RelatedSongMap
 import moe.rukamori.archivetune.db.entities.Song
 import moe.rukamori.archivetune.db.entities.SongEntity
+import moe.rukamori.archivetune.db.entities.evidenceSurvivesRedeclaration
 import moe.rukamori.archivetune.di.DownloadCache
 import moe.rukamori.archivetune.di.PlayerCache
 import moe.rukamori.archivetune.extensions.SilentHandler
@@ -7551,6 +7552,22 @@ class MusicService :
     private val decodedPcmFormatsByContext =
         ConcurrentHashMap<AtomicReference<AudioAuthenticityPlaybackContext?>, DecodedPcmFormat>()
     private val reportedAudioFormatsByMediaId = android.util.LruCache<String, ReportedAudioFormat>(64)
+
+    /**
+     * Declared rendition identity (mimeType, codecs, sample rate — see
+     * [evidenceSurvivesRedeclaration]) of the format row last written for a media id. Decoder
+     * evidence is only valid while the row still declares this rendition, so a stale observation
+     * written after a source switch is dropped instead of restoring the old claim.
+     */
+    private val declaredRenditionByMediaId = android.util.LruCache<String, RenditionIdentity>(64)
+
+    /**
+     * Latest decoder observation per media id that could not be applied because the format row did
+     * not exist yet or declared another rendition (an UPDATE-only write cannot insert a row).
+     * Re-applied when the declared format row is written for that id; superseded entries are
+     * dropped there, and [LruCache] caps the retained observations.
+     */
+    private val pendingFormatEvidenceByMediaId = android.util.LruCache<String, RenditionEvidenceObservation>(64)
     private val audioTrackConfigurationsByPlayer =
         ConcurrentHashMap<ExoPlayer, androidx.media3.exoplayer.audio.AudioSink.AudioTrackConfig>()
     private var nextMediaItemPrefetchJob: kotlinx.coroutines.Job? = null
@@ -10876,24 +10893,32 @@ class MusicService :
         // reflects what's actually playing (e.g. FLAC, not the YouTube opus row that was
         // persisted by the YouTube resolver). Preserve the authoritative itag and loudness data
         // so the details card and the normalization pipeline keep the real YouTube metadata.
-        val existing =
-            runBlocking(Dispatchers.IO) {
-                database.getFormatsByIds(listOf(mediaId)).firstOrNull()
-            }
-        if (existing != null) {
-            database.query {
-                upsert(
+        // The write completes before [applyDirectStream] returns, so the decoder's evidence
+        // observation can never run against a row that does not exist yet. Observed evidence
+        // follows the rendition identity: re-declaring the same rendition keeps it, re-declaring
+        // a different rendition drops it instead of letting a stale claim outlive its stream.
+        runBlocking(Dispatchers.IO) {
+            val existing = database.getFormatsByIds(listOf(mediaId)).firstOrNull()
+            if (existing == null) {
+                database.upsert(formatEntity)
+            } else {
+                val keepEvidence = evidenceSurvivesRedeclaration(existing, mime, codecs, sampleRate)
+                database.upsert(
                     existing.copy(
                         mimeType = mime,
                         codecs = codecs,
                         bitrate = bitrate,
                         sampleRate = sampleRate,
                         contentLength = knownContentLength ?: 0L,
+                        evidenceMimeType = existing.evidenceMimeType.takeIf { keepEvidence },
+                        evidenceCodecs = existing.evidenceCodecs.takeIf { keepEvidence },
+                        evidenceSampleRate = existing.evidenceSampleRate.takeIf { keepEvidence },
+                        evidenceBitDepth = existing.evidenceBitDepth.takeIf { keepEvidence },
                     ),
                 )
             }
-        } else {
-            database.query { upsert(formatEntity) }
+            declaredRenditionByMediaId.put(mediaId, RenditionIdentity(mime, codecs, sampleRate))
+            reapplyPendingFormatEvidence(mediaId)
         }
 
         // Backfill the content length via a HEAD request if the source didn't
@@ -10909,23 +10934,17 @@ class MusicService :
                     mediaOkHttpClient.newCall(headRequest).execute().use { response ->
                         val len = response.header("Content-Length")?.toLongOrNull() ?: -1L
                         if (len > 0L) {
-                            // Re-read the row so we don't clobber any concurrent
-                            // updates to other fields (e.g. loudness) — only
-                            // patch the contentLength column, plus the bitrate that
-                            // can now be measured from it (the row was written with
-                            // the tier estimate because the length was unknown).
+                            // Patch only the contentLength and bitrate columns — the row may already
+                            // carry observed evidence (or other state) that a whole-row upsert from
+                            // this stale captured write would clobber. A null bitrate keeps the
+                            // stored value.
                             val backfilledBitrate = measuredBitrate(len, stream.matchedDurationMs)
-                            val refreshed =
-                                runBlocking(Dispatchers.IO) {
-                                    database.getFormatsByIds(listOf(mediaId)).firstOrNull()
-                                }?.let { row ->
-                                    row.copy(
-                                        contentLength = len,
-                                        bitrate = backfilledBitrate ?: row.bitrate,
-                                    )
-                                }
-                            if (refreshed != null) {
-                                database.query { upsert(refreshed) }
+                            runBlocking(Dispatchers.IO) {
+                                database.updateFormatLength(
+                                    id = mediaId,
+                                    contentLength = len,
+                                    bitrate = backfilledBitrate,
+                                )
                             }
                             // Also surface the size in the in-memory cache so the
                             // download resolver picks it up immediately for the
@@ -11296,10 +11315,31 @@ class MusicService :
             }
         }
 
-        database.query {
-            upsert(
-                formatEntity,
+        // Same ordered write pattern as the direct-stream rows: the row exists before the decoder
+        // starts, and observed evidence follows the rendition identity — re-declaring the same
+        // rendition keeps it, re-declaring another rendition drops the stale claim.
+        runBlocking(Dispatchers.IO) {
+            val existing = database.getFormatsByIds(listOf(mediaId)).firstOrNull()
+            val keepEvidence =
+                evidenceSurvivesRedeclaration(
+                    existing,
+                    formatEntity.mimeType,
+                    formatEntity.codecs,
+                    formatEntity.sampleRate,
+                )
+            database.upsert(
+                formatEntity.copy(
+                    evidenceMimeType = existing?.evidenceMimeType.takeIf { keepEvidence },
+                    evidenceCodecs = existing?.evidenceCodecs.takeIf { keepEvidence },
+                    evidenceSampleRate = existing?.evidenceSampleRate.takeIf { keepEvidence },
+                    evidenceBitDepth = existing?.evidenceBitDepth.takeIf { keepEvidence },
+                ),
             )
+            declaredRenditionByMediaId.put(
+                mediaId,
+                RenditionIdentity(formatEntity.mimeType, formatEntity.codecs, formatEntity.sampleRate),
+            )
+            reapplyPendingFormatEvidence(mediaId)
         }
         scope.launch(Dispatchers.IO) { recoverSong(mediaId, nonNullPlayback) }
 
@@ -11906,6 +11946,66 @@ class MusicService :
         scope.launch(Dispatchers.Main) { publishDecodedPcmFormat() }
     }
 
+    /** The declared rendition identity evidence is bound to, mirroring [evidenceSurvivesRedeclaration]. */
+    private data class RenditionIdentity(
+        val mimeType: String?,
+        val codecs: String?,
+        val sampleRateHz: Int?,
+    )
+
+    /** A decoder observation plus the declared rendition identity it was captured under. */
+    private data class RenditionEvidenceObservation(
+        val mimeType: String?,
+        val codecs: String?,
+        val sampleRateHz: Int?,
+        val bitDepth: Int?,
+        val declaredIdentity: RenditionIdentity,
+    )
+
+    /**
+     * Applies a decoder observation to the format row, guarded by the declared rendition identity so
+     * a stale observation from a superseded rendition affects zero rows and cannot restore evidence
+     * after a source switch. When the row does not exist yet — the UPDATE-only statement cannot
+     * insert one — the observation is kept in [pendingFormatEvidenceByMediaId] and re-applied by
+     * [reapplyPendingFormatEvidence] once the declared format row is written for the id.
+     */
+    private suspend fun storeFormatEvidence(
+        mediaId: String,
+        observation: RenditionEvidenceObservation,
+    ) {
+        val applied =
+            database.updateFormatEvidenceForRendition(
+                id = mediaId,
+                mimeType = observation.mimeType,
+                codecs = observation.codecs,
+                sampleRate = observation.sampleRateHz,
+                bitDepth = observation.bitDepth,
+                declaredMimeType = observation.declaredIdentity.mimeType,
+                declaredCodecs = observation.declaredIdentity.codecs,
+                declaredSampleRate = observation.declaredIdentity.sampleRateHz,
+            )
+        // Only clear the pending entry when it is still the latest one; a later observation may
+        // have been recorded while this write was in flight.
+        if (applied > 0 && pendingFormatEvidenceByMediaId.get(mediaId) == observation) {
+            pendingFormatEvidenceByMediaId.remove(mediaId)
+        }
+    }
+
+    /**
+     * Re-applies the pending decoder observation for [mediaId] right after the declared format row
+     * is written, in the same ordered write the row was created in, so an observation recorded
+     * before the row existed still lands for the rendition it was observed on. An entry collected
+     * under a superseded rendition matches nothing and is dropped.
+     */
+    private suspend fun reapplyPendingFormatEvidence(mediaId: String) {
+        val observation = pendingFormatEvidenceByMediaId.get(mediaId) ?: return
+        if (observation.declaredIdentity != declaredRenditionByMediaId.get(mediaId)) {
+            pendingFormatEvidenceByMediaId.remove(mediaId)
+        } else {
+            storeFormatEvidence(mediaId, observation)
+        }
+    }
+
     private fun observeAudioTrackConfiguration(observedPlayer: ExoPlayer) {
         observedPlayer.addAnalyticsListener(
             object : androidx.media3.exoplayer.analytics.AnalyticsListener {
@@ -11932,17 +12032,39 @@ class MusicService :
                         ReportedAudioFormat(mediaId, source, rate, depth, format.channelCount.takeIf { it > 0 }),
                     )
                     // Evidence is what the decoder received, not what a source declared. It is the only input that
-                    // may earn a Lossless or Hi-Res label, so it is stored as observed, with no carry-over.
-                    scope.launch(Dispatchers.IO) {
-                        runCatching {
-                            database.updateFormatEvidence(
-                                id = mediaId,
+                    // may earn a Lossless or Hi-Res label, so it is stored as observed, bound to the declared
+                    // rendition identity, with no carry-over from another rendition of the same media id.
+                    val declaredIdentity = declaredRenditionByMediaId.get(mediaId)
+                    if (declaredIdentity == null) {
+                        // No declared rendition is tracked (local and Telegram rows are seeded outside the
+                        // resolved-stream paths), so there is no superseded rendition to guard against.
+                        scope.launch(Dispatchers.IO) {
+                            runCatching {
+                                database.updateFormatEvidence(
+                                    id = mediaId,
+                                    mimeType = format.sampleMimeType,
+                                    codecs = format.codecs,
+                                    sampleRate = rate,
+                                    bitDepth = depth,
+                                )
+                            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+                        }
+                    } else {
+                        val observation =
+                            RenditionEvidenceObservation(
                                 mimeType = format.sampleMimeType,
                                 codecs = format.codecs,
-                                sampleRate = rate,
+                                sampleRateHz = rate,
                                 bitDepth = depth,
+                                declaredIdentity = declaredIdentity,
                             )
-                        }.onFailure { it.rethrowIfAudioSourceCancelled() }
+                        // Record the observation synchronously so a declared row write in between
+                        // re-applies it right after its upsert, in the same ordered write.
+                        pendingFormatEvidenceByMediaId.put(mediaId, observation)
+                        scope.launch(Dispatchers.IO) {
+                            runCatching { storeFormatEvidence(mediaId, observation) }
+                                .onFailure { it.rethrowIfAudioSourceCancelled() }
+                        }
                     }
                     audioPipelineMonitorPlayer = observedPlayer
                     audioPipelineMonitor.onStreamFormat(

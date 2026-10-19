@@ -75,7 +75,15 @@ fun FormatEntity.isLossless(): Boolean {
     return rawCodec.contains("FLAC") || rawCodec.contains("ALAC")
 }
 
-fun FormatEntity.codecLabel(): String {
+/**
+ * Codec display name for raw declared MIME and codec strings. Shared with the observed-evidence
+ * reader so declared and observed codecs are always named the same way, without copying a whole
+ * [FormatEntity] just to reuse the naming.
+ */
+fun codecLabel(
+    mimeType: String,
+    codecs: String,
+): String {
     val rawCodec = codecs.ifBlank { mimeType.substringAfter("/") }.uppercase()
     val rawMime = mimeType.substringAfter("/").substringBefore(";").uppercase()
 
@@ -93,6 +101,29 @@ fun FormatEntity.codecLabel(): String {
         else -> rawCodec
     }
 }
+
+fun FormatEntity.codecLabel(): String = codecLabel(mimeType, codecs)
+
+/**
+ * Whether evidence already observed on [row] survives a declared write that re-declares the row for
+ * [mimeType], [codecs] and [sampleRateHz]. Evidence belongs to the exact rendition it was observed
+ * on: re-declaring the same rendition keeps it, any other rendition of the media id drops it, so an
+ * AAC/MP3 re-declaration of a media id that once played FLAC can never keep the FLAC claim.
+ *
+ * The rendition identity is mimeType, codecs and sample rate, each compared exactly and null-safely:
+ * an unknown rate matches only an unknown rate, so a re-declaration that stops reporting a rate does
+ * not inherit evidence measured at a rate it no longer declares. Declared bitrate and itag are excluded
+ * on purpose: bitrate is re-measured between re-resolutions of the same stream, and itag is a YouTube
+ * format counter that every other writer keeps at 0, so either would drop evidence on identical
+ * re-declarations. The observation write applies the same comparison in SQL (`IS`, null-safe), see
+ * `DatabaseDao.updateFormatEvidenceForRendition`; keep the two in step.
+ */
+internal fun evidenceSurvivesRedeclaration(
+    row: FormatEntity?,
+    mimeType: String,
+    codecs: String,
+    sampleRateHz: Int?,
+): Boolean = row != null && row.mimeType == mimeType && row.codecs == codecs && row.sampleRate == sampleRateHz
 
 fun FormatEntity.formattedBitrate(): String? = bitrate.takeIf { it > 0 }?.let { "${it / 1000} kbps" }
 

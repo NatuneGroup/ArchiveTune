@@ -1736,4 +1736,15 @@
     <string name="user_blocked_by_host">User blocked by host</string>
     <string name="waiting_for_approval">Waiting for approval from host</string>
     <string name="you_label">You</string>
+    <string name="feedback_review_title">Review feedback report</string>
+    <string name="feedback_send">Send feedback</string>
+    <string name="feedback_building">Preparing report…</string>
+    <string name="feedback_building_failed">The report could not be prepared.</string>
+    <string name="feedback_note_hint">Optional note for the developer</string>
+    <string name="feedback_sent">Feedback sent. Thanks!</string>
+    <string name="feedback_send_failed">Could not send: %1$s</string>
+    <string name="crash_prompt_title">ArchiveTune closed unexpectedly</string>
+    <string name="crash_prompt_text">Last time the app crashed. You can review a redacted crash report and decide whether to send it. Nothing is sent without your approval.</string>
+    <string name="crash_prompt_review">Review &amp; send</string>
+    <string name="crash_prompt_delete">Delete report</string>
 </resources>

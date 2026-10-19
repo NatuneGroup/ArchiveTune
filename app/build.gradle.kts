@@ -270,6 +270,26 @@ android {
                 ).trim()
         buildConfigField("String", "POOL_CLIENT_KEY", "\"$poolClientKey\"")
 
+        // Opt-in hosted feedback service (Natune site + Vercel API). Empty by default, which
+        // hides the whole feature: no playback-error feedback action, no crash capture, no
+        // crash prompt. When set, the app offers per-report review + explicit send by the user
+        // only. The ingest key travels with the APK and is public by nature — the server must
+        // treat it as write-only container access, never as report-read or admin authority.
+        val feedbackApiUrl =
+            (
+                localProperties.getProperty("FEEDBACK_API_URL")?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("FEEDBACK_API_URL")?.takeIf { it.isNotBlank() }
+                    ?: ""
+                ).trim().trimEnd('/')
+        val feedbackIngestKey =
+            (
+                localProperties.getProperty("FEEDBACK_INGEST_KEY")
+                    ?: System.getenv("FEEDBACK_INGEST_KEY")
+                    ?: ""
+                ).trim()
+        buildConfigField("String", "FEEDBACK_API_URL", "\"$feedbackApiUrl\"")
+        buildConfigField("String", "FEEDBACK_INGEST_KEY", "\"$feedbackIngestKey\"")
+
         // Amazon Music Web API. Access is approval-gated — Amazon issues a Login with Amazon
         // security profile (client id) to approved partners only — so the client id defaults to
         // blank and the source stays inert until it is set: a blank client id makes

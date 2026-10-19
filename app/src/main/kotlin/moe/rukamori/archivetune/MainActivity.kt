@@ -2466,6 +2466,9 @@ class MainActivity : ComponentActivity() {
                         LocalItemPreferences provides itemPreferences,
                     ) {
                         moe.rukamori.archivetune.ui.component.RestartPromptHost(restartPrompt)
+                        // Opt-in crash feedback: prompts on the next launch after a crash,
+                        // only when the build has a feedback endpoint configured.
+                        moe.rukamori.archivetune.feedback.ui.CrashFeedbackPromptHost()
                         // The opening animation sits under the content and over the background,
                         // so the home screen rises through the particles as the burst lands
                         // rather than wiping them away. Composed only when it is this launch's

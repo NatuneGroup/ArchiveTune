@@ -166,6 +166,7 @@ import moe.rukamori.archivetune.LocalDownloadUtil
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.LocalStableSystemBarsTopPadding
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.feedback.FeedbackApi
 import moe.rukamori.archivetune.canvas.models.CanvasArtwork
 import moe.rukamori.archivetune.canvas.CanvasVideo
 import moe.rukamori.archivetune.canvas.CanvasSource
@@ -2993,6 +2994,7 @@ fun BottomSheetPlayer(
             onClose = dismissPlaybackError,
             onLogin = loginClick,
             onPoTokenLogin = navigateToPoTokenLogin,
+            showFeedbackAction = remember { FeedbackApi.isAvailable() },
         )
     }
 }

@@ -632,6 +632,11 @@ class App :
                     throwable.printStackTrace(pw)
                     val stack = sw.toString()
 
+                    // Opt-in crash feedback: only writes a small redacted report into this
+                    // process's own storage so the NEXT launch can offer to review and send
+                    // it. Deliberately no UI and no network work in the dying process.
+                    moe.rukamori.archivetune.feedback.CrashFeedback.capture(this@App, stack)
+
                     val intent =
                         Intent(this@App, DebugActivity::class.java).apply {
                             putExtra(DebugActivity.EXTRA_STACK_TRACE, stack)

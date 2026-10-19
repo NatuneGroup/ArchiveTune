@@ -63,7 +63,7 @@
     <string name="minimal_home_mode_desc">Hide all home sections except Keep listening, Recently played and Live performances. The hero card at the top stays visible.</string>
     <string name="home_screen_style">Home screen style</string>
     <string name="home_screen_style_desc">Layout of the home feed</string>
-    <string name="home_screen_style_default">ArchiveTune</string>
+    <string name="home_screen_style_default">Natune</string>
     <string name="home_screen_style_rukamori">Rukamori</string>
 
     <!-- Download source priority (fork-only — JioSaavn added). -->
@@ -102,7 +102,7 @@
     <string name="lastfm_filter_top_albums">Top Albums</string>
     <string name="lastfm_start_mix">Start Mix with this Song</string>
     <string name="lastfm_genre">Genre</string>
-    <string name="lastfm_play_in_archivetune">Play in ArchiveTune</string>
+    <string name="lastfm_play_in_archivetune">Play in Natune</string>
     <string name="lastfm_play_next">Play next</string>
     <string name="lastfm_add_to_queue">Add to queue</string>
     <string name="lastfm_add_to_playlist">Add to playlist</string>
@@ -119,7 +119,7 @@
     <string name="lastfm_connect_custom_button">Custom endpoint</string>
     <string name="lastfm_connect_custom_button_description">Self-hosted GNU FM / ListenBrainz-compatible scrobbler. Enter endpoint, API key, and shared secret.</string>
     <string name="lastfm_custom_endpoint_hint">Enter the scrobbler\'s /2.0/ endpoint, API key, and shared secret. Leave key / secret blank for endpoints that don\'t validate credentials.</string>
-    <string name="auth_webview_librefm_subtitle">Tap \"Yes, allow access\" on Libre.fm. ArchiveTune captures the session automatically.</string>
+    <string name="auth_webview_librefm_subtitle">Tap \"Yes, allow access\" on Libre.fm. Natune captures the session automatically.</string>
     <string name="lastfm_search_placeholder">Search scrobbles</string>
     <string name="lastfm_no_search_results">No matching tracks.</string>
     <string name="lastfm_player_unavailable">Player not ready. Try again in a moment.</string>

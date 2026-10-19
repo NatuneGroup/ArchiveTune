@@ -304,9 +304,9 @@
     <string name="login">Логін</string>
     <string name="not_logged_in">Ви не увійшли в систему</string>
     <string name="playback_confirmation_required">Потрібне підтвердження відтворення</string>
-    <string name="playback_requires_youtube_music_confirmation">Підтвердьте відтворення в YouTube Music, а потім поверніться до ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_confirmation">Підтвердьте відтворення в YouTube Music, а потім поверніться до Natune.</string>
     <string name="playback_login_refresh_required">Оновлення входу в YouTube Music</string>
-    <string name="playback_requires_youtube_music_login_refresh">Оновіть дані для входу в YouTube Music, а потім поверніться до ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_login_refresh">Оновіть дані для входу в YouTube Music, а потім поверніться до Natune.</string>
     <string name="content_language">Стандартна мова контенту</string>
     <string name="content_country">Стандартна країна походження контенту</string>
     <string name="system_default">Налаштування системи</string>
@@ -532,9 +532,9 @@
     <string name="update_notification_channel_name">Оновлення додатку</string>
     <string name="update_notification_channel_desc">Сповіщення про нові оновлення додатку</string>
     <string name="update_notification_title">Доступно нове оновлення</string>
-    <string name="update_notification_text">ArchiveTune %s тепер доступно</string>
+    <string name="update_notification_text">Natune %s тепер доступно</string>
     <string name="download">Завантажити</string>
-    <string name="permissions_title">Дозволити ArchiveTune працювати на повну</string>
+    <string name="permissions_title">Дозволити Natune працювати на повну</string>
     <string name="permissions_subtitle">Для безперебійного відтворення та управління вашою музикою нам потрібні деякі дозволи. Ви можете змінити їх у будь-який час у налаштуваннях системи.</string>
     <string name="permission_storage_title">Доступ до сховища</string>
     <string name="permission_storage_desc">Необхідно для зчитування завантажених та локальних аудіофайлів з метою їх відтворення.</string>
@@ -566,7 +566,7 @@
     <string name="token_copied">Токен скопійовано до буфера обміну</string>
     <string name="extracting_from_url">Витягування токенів з URL-адреси…</string>
     <string name="po_token_account_notice_title">Використовуйте той самий обліковий запис</string>
-    <string name="po_token_account_notice_body">Перш ніж створити токен PO, увійдіть сюди за допомогою того самого облікового запису Google, який ви вже використовуєте для YouTube Music у програмі ArchiveTune.</string>
+    <string name="po_token_account_notice_body">Перш ніж створити токен PO, увійдіть сюди за допомогою того самого облікового запису Google, який ви вже використовуєте для YouTube Music у програмі Natune.</string>
     <string name="po_token_account_notice_same_account">Якщо цей WebView використовує інший обліковий запис, згенерований токен не працюватиме належним чином.</string>
     <string name="po_token_account_notice_mismatch">Використовуйте відповідний обліковий запис, завершіть процедуру входу, а потім відкрийте сторінку youtube.com/account і створіть токен на цій сторінці.</string>
     <string name="removed_song_from_queue">Вилучено \"%s\" із черги</string>

@@ -325,14 +325,14 @@
     <string name="storage_folder_selected_restart">تم حفظ مجلد التخزين.</string>
     <string name="storage_folder_invalid">اختار مجلد صالح.</string>
     <string name="storage_folder_unsupported">المجلد ده مش متاح للاستخدام بواسطة التخزين المؤقت المدعوم بالملفات.</string>
-    <string name="storage_folder_not_writable">ArchiveTune مش قادر يكتب ملفات التخزين المؤقت في المجلد ده.</string>
+    <string name="storage_folder_not_writable">Natune مش قادر يكتب ملفات التخزين المؤقت في المجلد ده.</string>
     <string name="storage_cache_cleared">تم مسح التخزين المؤقت.</string>
     <string name="storage_cache_clear_failed">مقدرناش نمسح التخزين المؤقت. اتأكد من صلاحية الوصول لكارت الميموري.</string>
     <string name="storage_clear_song_cache_progress">جاري مسح التخزين المؤقت للأغاني… %1$d%%</string>
     <string name="storage_clear_downloads_progress">جاري مسح التنزيلات… %1$d%%</string>
     <string name="storage_clear_image_cache_progress">جاري مسح التخزين المؤقت للصور… %1$d%%</string>
     <string name="storage_clear_canvas_cache_progress">جاري مسح التخزين المؤقت للخلفيات… %1$d%%</string>
-    <string name="storage_cache_clear_warning">سيب ArchiveTune مفتوح لحد ما نخلص مسح ملفات التخزين المؤقت.</string>
+    <string name="storage_cache_clear_warning">سيب Natune مفتوح لحد ما نخلص مسح ملفات التخزين المؤقت.</string>
     <string name="storage_size_ratio">%1$s / %2$s</string>
     <string name="sensitivity_percentage">%1$d%%</string>
     <string name="clear_song_cache_dialog">متأكد إنك عايز تمسح كل الأغاني المتخزنة مؤقتاً؟</string>

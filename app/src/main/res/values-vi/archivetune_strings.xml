@@ -455,7 +455,7 @@
     <string name="storage_folder_selected_restart">Đã lưu thư mục lưu trữ.</string>
     <string name="storage_folder_invalid">Chọn một thư mục hợp lệ.</string>
     <string name="storage_folder_unsupported">Thư mục này không thể được sử dụng bởi bộ nhớ đệm phương tiện dựa trên tệp.</string>
-    <string name="storage_folder_not_writable">ArchiveTune không thể ghi tệp cache trong thư mục này.</string>
+    <string name="storage_folder_not_writable">Natune không thể ghi tệp cache trong thư mục này.</string>
     <string name="storage_size_ratio">%1$s / %2$s</string>
     <string name="spotify_connect">Kết nối Spotify</string>
     <string name="spotify_available_count">%1$d danh sách phát có sẵn</string>

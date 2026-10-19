@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name" translatable="false">ArchiveTune</string>
+    <string name="app_name" translatable="false">Natune</string>
     <string name="widget_description">Hiển thị bài hát đang phát với các điều khiển phát lại</string>
     <string name="widget_album_art_description">Widget ảnh bìa album với điều khiển phát lại nổi</string>
     <string name="widget_now_playing_card_description">Thẻ đang phát với ảnh bìa, tiến trình và điều khiển phát lại</string>

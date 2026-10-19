@@ -20,7 +20,7 @@
     <string name="music_recognition_error">Something went wrong</string>
     <string name="music_recognition_settings">Music recognition settings</string>
     <string name="music_recognition_background_title">Recognition in background</string>
-    <string name="music_recognition_background_description">When enabled, the Quick Settings tile recognizes audio playing on this device without opening ArchiveTune.</string>
+    <string name="music_recognition_background_description">When enabled, the Quick Settings tile recognizes audio playing on this device without opening Natune.</string>
     <string name="music_recognition_background_foss_description">Background recognition is unavailable in the FOSS variant. The Quick Settings tile opens the recognition screen instead.</string>
     <string name="music_recognition_notification_channel_name">Music recognition</string>
     <string name="music_recognition_notification_channel_description">Music recognition progress and results</string>
@@ -504,14 +504,14 @@
     <string name="storage_folder_selected_restart">Storage folder saved.</string>
     <string name="storage_folder_invalid">Select a valid folder.</string>
     <string name="storage_folder_unsupported">This folder cannot be used by the file-backed media cache.</string>
-    <string name="storage_folder_not_writable">ArchiveTune cannot write cache files in this folder.</string>
+    <string name="storage_folder_not_writable">Natune cannot write cache files in this folder.</string>
     <string name="storage_cache_cleared">Cache cleared.</string>
     <string name="storage_cache_clear_failed">Cache could not be cleared. Check SD card access.</string>
     <string name="storage_clear_song_cache_progress">Clearing song cache...%1$d%%</string>
     <string name="storage_clear_downloads_progress">Clearing downloads...%1$d%%</string>
     <string name="storage_clear_image_cache_progress">Clearing image cache...%1$d%%</string>
     <string name="storage_clear_canvas_cache_progress">Clearing canvas cache...%1$d%%</string>
-    <string name="storage_cache_clear_warning">Keep ArchiveTune open while cache files are being removed.</string>
+    <string name="storage_cache_clear_warning">Keep Natune open while cache files are being removed.</string>
     <string name="storage_size_ratio">%1$s / %2$s</string>
     <string name="sensitivity_percentage">%1$d%%</string>
     <string name="clear_song_cache_dialog">  Are you sure you want to clear all cached songs?</string>
@@ -577,7 +577,7 @@
     <string name="crossfade_gapless_title">Skip gapless albums</string>
     <string name="crossfade_gapless_description">Do not crossfade consecutive songs from the same album.</string>
     <string name="auto_choose_playback_client">Auto choose playback client</string>
-    <string name="auto_choose_playback_client_enabled_note">ArchiveTune chooses a compatible client using recent success, latency and failures.</string>
+    <string name="auto_choose_playback_client_enabled_note">Natune chooses a compatible client using recent success, latency and failures.</string>
     <string name="auto_choose_playback_client_disabled_note">Only the selected playback client is used. Failures are reported without automatic client fallback.</string>
     <string name="player_stream_client">Playback client</string>
     <string name="player_stream_client_desc">Controls which playback source is used to fetch streams</string>
@@ -594,10 +594,10 @@
     <string name="player_stream_client_android_music_desc">The YouTube Music app client. Balances speed and compatibility.</string>
     <string name="player_stream_client_hi_res_lossless_desc">High-resolution lossless audio client.</string>
     <string name="auth_webview_youtube_subtitle">Sign in with Google to link your YouTube Music account.</string>
-    <string name="auth_webview_tidal_subtitle">Sign in to Tidal below. ArchiveTune saves the session automatically.</string>
+    <string name="auth_webview_tidal_subtitle">Sign in to Tidal below. Natune saves the session automatically.</string>
     <string name="auth_webview_qobuz_subtitle">Sign in to Qobuz below. Your credentials are captured automatically.</string>
     <string name="auth_webview_deezer_subtitle">Sign in to Deezer below. The session cookie is saved automatically.</string>
-    <string name="auth_webview_lastfm_subtitle">Tap \"Yes, allow access\" on Last.fm. ArchiveTune captures the session automatically.</string>
+    <string name="auth_webview_lastfm_subtitle">Tap \"Yes, allow access\" on Last.fm. Natune captures the session automatically.</string>
     <string name="lastfm_login">Connect with Last.fm</string>
     <string name="lastfm_login_success">Signed in to Last.fm</string>
     <string name="lastfm_login_cancelled">Last.fm sign-in cancelled</string>
@@ -742,7 +742,7 @@
     <string name="spotify_show_playlist">Show Spotify in Library</string>
     <string name="spotify_show_playlist_desc">Adds a Spotify pill to each Library section, so playlists, songs, artists and albums can be browsed from either service.</string>
     <string name="spotify_sync_history">Sync Spotify listening history</string>
-    <string name="spotify_sync_history_desc">Show Spotify’s recently played tracks in ArchiveTune History. ArchiveTune only reads this data from Spotify and does not start background playback.</string>
+    <string name="spotify_sync_history_desc">Show Spotify’s recently played tracks in Natune History. Natune only reads this data from Spotify and does not start background playback.</string>
     <string name="spotify_reload_playlist">Reload Playlist</string>
     <string name="spotify_reload_playlist_desc">Refresh Spotify playlists from your account.</string>
     <string name="spotify_no_tracks">No Spotify tracks found.</string>
@@ -1130,7 +1130,7 @@
     <string name="spotify_stream_enabled_desc">Try Spotify for a track before falling through to the sources below it.</string>
     <string name="spotify_stream_needs_account">Sign in with a separate streaming account first.</string>
     <string name="spotify_stream_warning_title">Experimental, and against Spotify\'s terms</string>
-    <string name="spotify_stream_warning_body">This source plays Spotify audio outside Spotify\'s own apps. Spotify can suspend an account used this way. Use a separate, throwaway account here, never the one your library and playlists live on. The streaming account registers a device called ArchiveTune Player and reports what it plays.</string>
+    <string name="spotify_stream_warning_body">This source plays Spotify audio outside Spotify\'s own apps. Spotify can suspend an account used this way. Use a separate, throwaway account here, never the one your library and playlists live on. The streaming account registers a device called Natune Player and reports what it plays.</string>
     <string name="spotify_stream_account">Streaming account</string>
     <string name="spotify_stream_sign_in">Sign in with a separate account</string>
     <string name="spotify_stream_sign_in_desc">Opens a private sign-in that does not share cookies with the Spotify catalog account.</string>

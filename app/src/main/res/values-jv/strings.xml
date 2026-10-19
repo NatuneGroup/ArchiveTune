@@ -58,7 +58,7 @@
     <string name="play">Puter</string>
     <string name="widget_pause">Jeda</string>
     <string name="widget_previous">Sadurunge</string>
-    <string name="widget_tap_to_open">Ketuk untuk membuka ArchiveTune</string>
+    <string name="widget_tap_to_open">Ketuk untuk membuka Natune</string>
     <string name="play_next">Puter sabanjure</string>
     <string name="add_to_queue">Tambahke ke antrean</string>
     <string name="add_to_library">Tambahke ke pustaka</string>
@@ -298,9 +298,9 @@
     <string name="login">Mlebu</string>
     <string name="not_logged_in">Belum Mlebu</string>
     <string name="playback_confirmation_required">Konfirmasi pemutaran diperlukan</string>
-    <string name="playback_requires_youtube_music_confirmation">Konfirmasikan pemutaran di YouTube Music, lalu kembali ke ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_confirmation">Konfirmasikan pemutaran di YouTube Music, lalu kembali ke Natune.</string>
     <string name="playback_login_refresh_required">Segarkan login YouTube Music</string>
-    <string name="playback_requires_youtube_music_login_refresh">Segarkan login YouTube Music Kowe, lalu kembali ke ArchiveTune.</string>
+    <string name="playback_requires_youtube_music_login_refresh">Segarkan login YouTube Music Kowe, lalu kembali ke Natune.</string>
     <string name="content_language">Bahasa konten default</string>
     <string name="content_country">Negara konten default</string>
     <string name="system_default">Bawaan sistem</string>
@@ -442,12 +442,12 @@
     <string name="restore_success">Cadangan berhasil dipulihkan</string>
     <string name="restore_failed">Gagal memulihkan cadangan</string>
     <string name="discord_integration">Integrasi Discord</string>
-    <string name="discord_login_description">Hubungkan akun Discord Kowe dengan OAuth agar ArchiveTune dapat mempublikasikan Rich Presence melalui Social SDK resmi Discord.</string>
+    <string name="discord_login_description">Hubungkan akun Discord Kowe dengan OAuth agar Natune dapat mempublikasikan Rich Presence melalui Social SDK resmi Discord.</string>
     <string name="discord_open_authorization">Sambungkan ke Discord</string>
     <string name="discord_waiting_for_authorization">Menunggu otorisasi Discord...</string>
     <string name="discord_authorization_success">Akun Discord terhubung</string>
     <string name="discord_authorization_failed">Otorisasi Discord gagal</string>
-    <string name="discord_account_ready">ArchiveTune siap mempublikasikan Rich Presence untuk sesi mendengarkan Kowe.</string>
+    <string name="discord_account_ready">Natune siap mempublikasikan Rich Presence untuk sesi mendengarkan Kowe.</string>
     <string name="discord_connection_settings">Koneksi</string>
     <string name="discord_activity_content">Isi Aktivitas</string>
     <string name="discord_refresh_success">Presence Discord diperbarui</string>
@@ -613,9 +613,9 @@
     <string name="update_notification_channel_name">Pembaruan Aplikasi</string>
     <string name="update_notification_channel_desc">Pemberitahuan untuk pembaruan aplikasi baru</string>
     <string name="update_notification_title">Pembaruan Tersedia</string>
-    <string name="update_notification_text">ArchiveTune %s kini tersedia</string>
+    <string name="update_notification_text">Natune %s kini tersedia</string>
     <string name="download">Unduh</string>
-    <string name="permissions_title">Izinkan ArchiveTune bekerja dengan optimal</string>
+    <string name="permissions_title">Izinkan Natune bekerja dengan optimal</string>
     <string name="permissions_subtitle">Kami menggunakan beberapa izin untuk memutar dan mengelola musik Kowe dengan andal. Kowe dapat mengubahnya kapan saja di pengaturan sistem.</string>
     <string name="permission_storage_title">Akses penyimpanan</string>
     <string name="permission_storage_desc">Diperlukan untuk membaca file audio lokal dan unduhan Kowe untuk diputer.</string>
@@ -653,7 +653,7 @@
     <string name="token_copied">Token disalin ke papan klip</string>
     <string name="extracting_from_url">Mengekstrak token dari URL…</string>
     <string name="po_token_account_notice_title">Gunakan akun yang sama</string>
-    <string name="po_token_account_notice_body">Mlebu di sini dengan akun Google yang sama yang sudah Kowe gunakan untuk YouTube Music di dalam ArchiveTune sebelum membuat token PO.</string>
+    <string name="po_token_account_notice_body">Mlebu di sini dengan akun Google yang sama yang sudah Kowe gunakan untuk YouTube Music di dalam Natune sebelum membuat token PO.</string>
     <string name="po_token_account_notice_same_account">Jika WebView ini menggunakan akun lain, token yang dihasilkan tidak akan berfungsi dengan benar.</string>
     <string name="po_token_account_notice_mismatch">Gunakan akun yang cocok, selesaikan alur masuk, lalu buka youtube.com/account dan buat token dari halaman tersebut.</string>
     <string name="saved_accounts">Akun yang disimpan</string>

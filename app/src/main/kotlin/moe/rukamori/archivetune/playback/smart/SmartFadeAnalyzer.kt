@@ -131,6 +131,10 @@ class SmartFadeAnalyzer(
     @Volatile
     private var released = false
 
+    /** Track ids the automix planner needs right now (current and next). Queued analysis for others is dropped. */
+    @Volatile
+    private var wanted: Set<String> = emptySet()
+
     private val fetchClient =
         OkHttpClient
             .Builder()
@@ -179,6 +183,11 @@ class SmartFadeAnalyzer(
     /** True while a decode and inference for [trackId] is in flight. */
     fun isAnalysing(trackId: String): Boolean = trackId in running
 
+    /** Publishes the planner's current needs; called from the smart-fade tick before [request]. */
+    fun setWanted(trackIds: Set<String>) {
+        wanted = trackIds
+    }
+
     /**
      * Queues [trackId] for analysis if not already done or in flight. Cheap to
      * call repeatedly — the driver re-requests every poll tick. Local tracks
@@ -201,6 +210,8 @@ class SmartFadeAnalyzer(
             executor.execute {
                 try {
                     if (released) return@execute
+                    // Skipped past before this ran: nothing plays it, so don't spend a decode on it.
+                    if (trackId !in wanted) return@execute
                     // A usable stored analysis short-circuits the whole pipeline:
                     // without this head-check the first request of a session would
                     // re-earn from audio a result that was already on disk.

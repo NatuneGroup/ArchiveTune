@@ -400,10 +400,10 @@ object DeezerAudioProvider {
                     matchedArtist = match.artists.firstOrNull(),
                     matchedAlbum = match.album,
                     matchedDurationMs = match.durationMs,
-                    // Deezer's gateway does not report either, and FLAC here is always CD-quality, so
-                    // report the known 16/44.1 for FLAC and leave MP3 to the consumer's tier heuristic.
-                    sampleRate = if (media.flac) 44_100 else null,
-                    bitDepth = if (media.flac) 16 else null,
+                    // Deezer's gateway reports neither rate nor depth, so both stay unknown rather than being
+                    // assumed to be CD quality.
+                    sampleRate = null,
+                    bitDepth = null,
                 )
             streamCache[cacheKey] = CachedStream(stream, System.currentTimeMillis() + STREAM_CACHE_MS)
             return stream

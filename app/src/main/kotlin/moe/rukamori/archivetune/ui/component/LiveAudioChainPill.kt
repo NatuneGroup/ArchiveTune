@@ -203,14 +203,15 @@ fun rememberLiveAudioChainLabels(): LiveAudioChainLabels {
     }
 
     val engineNote = stringResource(R.string.live_audio_chain_engine_16bit_note)
+    val sourceDepthSuffix = status.sourceBitDepth.takeIf { it > 0 }?.let { " • $it-bit" }.orEmpty()
     val statusLine = with(status) {
         when {
             usbExclusiveActive && verifiedBitPerfect && nativeRateMatched ->
-                "Bit-Perfect • ${sourceBitDepth.takeIf { it > 0 } ?: decodedBitDepth}-bit • ${rateKhz(sourceSampleRate)}"
+                "Bit-Perfect$sourceDepthSuffix • ${rateKhz(sourceSampleRate)}"
             verifiedBitPerfect && nativeRateMatched ->
-                "Bit-Perfect • ${sourceBitDepth.takeIf { it > 0 } ?: decodedBitDepth}-bit • ${rateKhz(sourceSampleRate)}"
+                "Bit-Perfect$sourceDepthSuffix • ${rateKhz(sourceSampleRate)}"
             verifiedBitPerfect ->
-                "Native Rate • ${sourceBitDepth.takeIf { it > 0 } ?: decodedBitDepth}-bit • ${rateKhz(sourceSampleRate)}"
+                "Native Rate$sourceDepthSuffix • ${rateKhz(sourceSampleRate)}"
             mixerBitPerfectActive && sourceSampleRate > 0 ->
                 "Bit-Perfect mixer • ${outputBitDepth}-bit • ${rateKhz(outputSampleRate)}"
             floatRouteActive && sinkDecodedEncoding == C.ENCODING_PCM_FLOAT && sourceBitDepth > 16 ->

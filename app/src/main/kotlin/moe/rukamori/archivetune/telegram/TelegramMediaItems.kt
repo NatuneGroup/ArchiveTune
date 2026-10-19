@@ -11,6 +11,7 @@
 package moe.rukamori.archivetune.telegram
 
 import moe.rukamori.archivetune.db.entities.FormatEntity
+import moe.rukamori.archivetune.db.entities.evidenceSurvivesRedeclaration
 import moe.rukamori.archivetune.models.MediaMetadata
 
 /**
@@ -50,8 +51,9 @@ fun TelegramTrack.toMediaMetadata(channelTitle: String? = null): MediaMetadata {
  * Sample rate is left null here and refined from the downloaded file during playback (see the
  * telegram branch of PlayerConnection's metadata-extraction job). itag = -1 marks a non-YouTube
  * source, matching the local-media convention.
+ * [existing] keeps its observed evidence only while the declared rendition is unchanged.
  */
-fun TelegramTrack.toFormatEntity(): FormatEntity {
+fun TelegramTrack.toFormatEntity(existing: FormatEntity? = null): FormatEntity {
     val extension = fileExtension(fileName)
     val mime =
         mimeType.substringBefore(";").ifBlank {
@@ -75,6 +77,7 @@ fun TelegramTrack.toFormatEntity(): FormatEntity {
         } else {
             0
         }
+    val keepEvidence = evidenceSurvivesRedeclaration(existing, mime, extension, null)
     return FormatEntity(
         id = mediaId,
         itag = -1,
@@ -86,5 +89,9 @@ fun TelegramTrack.toFormatEntity(): FormatEntity {
         loudnessDb = null,
         perceptualLoudnessDb = null,
         playbackUrl = null,
+        evidenceMimeType = existing?.evidenceMimeType.takeIf { keepEvidence },
+        evidenceCodecs = existing?.evidenceCodecs.takeIf { keepEvidence },
+        evidenceSampleRate = existing?.evidenceSampleRate.takeIf { keepEvidence },
+        evidenceBitDepth = existing?.evidenceBitDepth.takeIf { keepEvidence },
     )
 }

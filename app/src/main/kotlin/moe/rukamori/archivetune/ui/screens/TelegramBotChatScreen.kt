@@ -208,7 +208,7 @@ fun TelegramBotChatScreen(
         database.withTransaction {
             tracks.forEach { track ->
                 insert(track.toMediaMetadata(sourceTitle))
-                upsert(track.toFormatEntity())
+                upsert(track.toFormatEntity(getFormatsByIds(listOf(track.mediaId)).firstOrNull()))
             }
         }
         results.clear()

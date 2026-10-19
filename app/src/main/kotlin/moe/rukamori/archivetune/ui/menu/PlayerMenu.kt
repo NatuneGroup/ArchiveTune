@@ -1800,7 +1800,9 @@ private fun SongSourceDialog(
     val aacLabel = stringResource(R.string.quality_badge_aac)
     val saavnLabel = stringResource(R.string.quality_badge_saavn)
     val mp3Label = stringResource(R.string.quality_badge_mp3)
-    val losslessLabel = stringResource(R.string.quality_badge_lossless)
+    // Provider-declared, not decoded: same wording as the player's unverified badge.
+    val declaredLosslessLabel =
+        stringResource(R.string.flamingo_quality_unverified, stringResource(R.string.quality_badge_lossless))
     val noResultsText = stringResource(R.string.source_search_no_results)
     val noBackendText = stringResource(R.string.source_search_no_backend)
 
@@ -1810,9 +1812,9 @@ private fun SongSourceDialog(
     // is 320kbps MP3, and labelling those rows "Lossless" would promise a quality resolve() cannot
     // deliver.
     val deezerLabel =
-        remember(losslessLabel, mp3Label) {
+        remember(declaredLosslessLabel, mp3Label) {
             val availability = DeezerAudioProvider.accountAvailability()
-            if (availability.manualPremium || availability.pooledPremium > 0) losslessLabel else mp3Label
+            if (availability.manualPremium || availability.pooledPremium > 0) declaredLosslessLabel else mp3Label
         }
 
     // Provider filter → "search backend not yet available" empty state.
@@ -1900,7 +1902,7 @@ private fun SongSourceDialog(
                             artist = candidate.artist,
                             thumbnailUrl = candidate.thumbnailUrl,
                             durationMs = candidate.durationMs,
-                            qualityLabel = losslessLabel,
+                            qualityLabel = declaredLosslessLabel,
                             songItem = null,
                         ),
                     )
@@ -1963,7 +1965,7 @@ private fun SongSourceDialog(
                                 artist = candidate.artist.orEmpty(),
                                 thumbnailUrl = thumb,
                                 durationMs = candidate.durationMs,
-                                qualityLabel = losslessLabel,
+                                qualityLabel = declaredLosslessLabel,
                                 songItem = null,
                             ),
                         )
@@ -1988,7 +1990,7 @@ private fun SongSourceDialog(
                                 // The search payload carries no duration; the row simply
                                 // omits it rather than showing a made-up length.
                                 durationMs = null,
-                                qualityLabel = if (candidate.isLossless) losslessLabel else aacLabel,
+                                qualityLabel = if (candidate.isLossless) declaredLosslessLabel else aacLabel,
                                 songItem = null,
                             ),
                         )

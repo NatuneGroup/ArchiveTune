@@ -27,13 +27,13 @@ import java.util.concurrent.TimeUnit
 
 class PlaybackPipelinePolicyTest {
     @Test
-    fun `lossless claim requires a lossless encoding or explicit lossless quality label`() {
-        assertTrue(isClaimedLosslessFormat("audio/flac", "flac", "Qobuz FLAC"))
-        assertTrue(isClaimedLosslessFormat("audio/mp4", "alac", "Apple Music"))
-        assertTrue(isClaimedLosslessFormat("audio/mp4", "", "Tidal HI-RES_LOSSLESS"))
-        assertTrue(isClaimedLosslessFormat("audio/flac", "flac", "Qobuz MAX"))
-        assertFalse(isClaimedLosslessFormat("audio/mp4", "mp4a.40.2", "JioSaavn 320"))
-        assertFalse(isClaimedLosslessFormat("audio/webm", "opus", "YouTube Music"))
+    fun `lossless claim requires a lossless encoding marker, never a quality label`() {
+        assertTrue(isClaimedLosslessFormat("audio/flac", "flac"))
+        assertTrue(isClaimedLosslessFormat("audio/mp4", "alac"))
+        assertTrue(isClaimedLosslessFormat("audio/raw", ""))
+        assertFalse(isClaimedLosslessFormat("audio/mp4", ""))
+        assertFalse(isClaimedLosslessFormat("audio/mp4", "mp4a.40.2"))
+        assertFalse(isClaimedLosslessFormat("audio/webm", "opus"))
     }
 
     @Test

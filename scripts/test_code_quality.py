@@ -7,7 +7,7 @@ import tempfile
 import unittest
 import subprocess
 
-from scripts.check_code_quality import ROOT, FORMAT_ROOTS, SOURCE_ROOTS, cpd_findings, detekt_findings, formatter_patch, prepare_formatter, regressions
+from scripts.check_code_quality import ROOT, FORMAT_ROOTS, SOURCE_ROOTS, cpd_findings, detekt_findings, formatter_patch, formatting_regressions, prepare_base_formatter, prepare_formatter, regressions
 
 
 class CodeQualityTest(unittest.TestCase):
@@ -136,6 +136,59 @@ class CodeQualityTest(unittest.TestCase):
             subprocess.run(["git", "-C", str(root), "apply", "--check", "-"], input=patch.encode(), check=True)
             subprocess.run(["git", "-C", str(root), "apply", "-"], input=patch.encode(), check=True)
             self.assertEqual(expected, source.read_text())
+
+    def formatting_case(self, base, base_formatted, candidate, candidate_formatted):
+        """Run the ratchet with formatter output supplied for the base and candidate copies."""
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        work = Path(temporary.name)
+        root = work / "repo"
+        relative = Path("app/src/main/kotlin/Legacy.kt")
+        source = root / relative
+        source.parent.mkdir(parents=True)
+        subprocess.run(["git", "-C", str(root), "init", "--quiet"], check=True)
+        if base is not None:
+            source.write_text(base)
+            subprocess.run(["git", "-C", str(root), "add", "."], check=True)
+        revision = subprocess.check_output(["git", "-C", str(root), "write-tree"]).decode().strip()
+        source.write_text(candidate)
+        candidates = work / "candidate"
+        (candidates / relative).parent.mkdir(parents=True)
+        (candidates / relative).write_text(candidate_formatted)
+        copied = prepare_base_formatter(root, revision, candidates, work / "original", work / "formatted")
+        self.assertEqual(0 if base is None else 1, copied)
+        if base is not None:
+            self.assertEqual(base, (work / "original" / relative).read_text())
+            (work / "formatted" / relative).write_text(base_formatted)
+        return formatting_regressions(root, candidates, work / "original", work / "formatted")
+
+    LEGACY = "fun legacy(){println(1)}\n\nfun kept() = 1\n"
+    LEGACY_FORMATTED = "fun legacy() {\n    println(1)\n}\n\nfun kept() = 1\n"
+
+    def test_formatted_edit_in_a_legacy_file_inherits_its_debt(self):
+        candidate = self.LEGACY.replace("= 1", "= 2")
+        self.assertEqual([], self.formatting_case(
+            self.LEGACY, self.LEGACY_FORMATTED, candidate, self.LEGACY_FORMATTED.replace("= 1", "= 2"),
+        ))
+
+    def test_removing_unformatted_code_from_a_legacy_file_passes(self):
+        candidate = "fun kept() = 1\n"
+        self.assertEqual([], self.formatting_case(self.LEGACY, self.LEGACY_FORMATTED, candidate, candidate))
+
+    def test_unformatted_addition_to_a_legacy_file_fails(self):
+        candidate = self.LEGACY + "fun added( ) = 3\n"
+        self.assertEqual(
+            ["app/src/main/kotlin/Legacy.kt: formatter rewrites 2 lines, base 1"],
+            self.formatting_case(
+                self.LEGACY, self.LEGACY_FORMATTED, candidate, self.LEGACY_FORMATTED + "fun added() = 3\n",
+            ),
+        )
+
+    def test_new_file_must_be_fully_formatted(self):
+        self.assertEqual(
+            ["app/src/main/kotlin/Legacy.kt: formatter rewrites 1 lines, base 0"],
+            self.formatting_case(None, None, "fun added(){}\n", "fun added() {}\n"),
+        )
 
 
 if __name__ == "__main__":

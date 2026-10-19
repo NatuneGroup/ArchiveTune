@@ -31,6 +31,7 @@ import moe.rukamori.archivetune.acoustics.AcousticAuditController
 import moe.rukamori.archivetune.acoustics.AcousticAuditResult
 import moe.rukamori.archivetune.acoustics.AcousticAuditStatus
 import moe.rukamori.archivetune.acoustics.AcousticAuditTarget
+import moe.rukamori.archivetune.acoustics.AcousticHeatAxis
 import moe.rukamori.archivetune.acoustics.rememberAcousticAuditController
 
 @Composable
@@ -116,23 +117,37 @@ internal fun AcousticQualityContent(
     }
 }
 
+/**
+ * Notes that change how to read a result; the rest of [AcousticAuditResult.limitations] is fixed
+ * method detail.
+ */
+private val ReaderNotes = setOf("insufficient_active_evidence", "pcm_budget_shortened_excerpt")
+
 @Composable
 private fun AcousticQualityResult(result: AcousticAuditResult) {
     val source = acousticCodeText(result.sourceLabel)
-    val interval =
+    val channels =
+        when (result.channelCount) {
+            1 -> stringResource(R.string.acoustic_quality_mono)
+            2 -> stringResource(R.string.acoustic_quality_stereo)
+            else -> stringResource(R.string.acoustic_quality_channels, result.channelCount)
+        }
+    val details =
         stringResource(
-            R.string.acoustic_quality_interval,
-            result.startMs / 1000f,
-            (result.startMs + result.durationMs) / 1000f,
+            R.string.acoustic_quality_details,
+            AcousticHeatAxis.formatClock(result.startMs / 1000.0),
+            AcousticHeatAxis.formatClock((result.startMs + result.durationMs) / 1000.0),
+            result.sampleRate / 1000f,
+            channels,
+            source,
         )
-    val format =
-        stringResource(R.string.acoustic_quality_format, result.sampleRate, result.channelCount)
+    val topKHz = result.nyquistHz / 1000f
     val cutoff =
         result.cutoffHz
             ?.takeIf { it.isFinite() }
             ?.let {
-                stringResource(R.string.acoustic_quality_cutoff, it / 1000f)
-            } ?: stringResource(R.string.acoustic_quality_cutoff_unknown)
+                stringResource(R.string.acoustic_quality_cutoff, it / 1000f, topKHz)
+            } ?: stringResource(R.string.acoustic_quality_cutoff_unknown, topKHz)
     val assessment =
         stringResource(
             when (result.assessment) {
@@ -142,18 +157,32 @@ private fun AcousticQualityResult(result: AcousticAuditResult) {
             }
         )
     Text(assessment, style = MaterialTheme.typography.titleSmall)
-    Text(source)
-    Text(interval)
-    Text(format)
     Text(cutoff)
-    AcousticHeatGraph(result, "$source. $interval. $format. $cutoff. $assessment")
-    Text(stringResource(R.string.acoustic_quality_frequency_axis, result.nyquistHz / 1000f))
-    Text(
-        stringResource(R.string.acoustic_quality_heat_scale),
-        style = MaterialTheme.typography.bodySmall,
-    )
-    result.limitations.distinct().forEach {
-        Text(acousticCodeText(it), style = MaterialTheme.typography.bodySmall)
+    AcousticHeatGraph(result, "$assessment. $cutoff. $details")
+    Text(details, style = MaterialTheme.typography.bodySmall)
+    result.limitations
+        .distinct()
+        .filter { it in ReaderNotes }
+        .forEach {
+            Text(acousticCodeText(it), style = MaterialTheme.typography.bodySmall)
+        }
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            stringResource(R.string.acoustic_quality_read_title),
+            style = MaterialTheme.typography.labelLarge,
+        )
+        Text(
+            stringResource(R.string.acoustic_quality_read_axes),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            stringResource(R.string.acoustic_quality_read_colour),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Text(
+            stringResource(R.string.acoustic_quality_read_cutoff),
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -169,23 +198,8 @@ internal fun acousticCodeText(code: String): String =
             "TIDAL_CURRENT" -> R.string.acoustic_quality_code_tidal_current
             "QOBUZ_CURRENT" -> R.string.acoustic_quality_code_qobuz_current
             "QOBUZ_BACKUP_CURRENT" -> R.string.acoustic_quality_code_qobuz_backup_current
-            "excerpt_only" -> R.string.acoustic_quality_code_excerpt_only
-            "cached_rendition" -> R.string.acoustic_quality_code_cached_rendition
-            "current_clear_rendition" -> R.string.acoustic_quality_code_current_clear_rendition
-            "local_file" -> R.string.acoustic_quality_code_local_file
-            "local_content" -> R.string.acoustic_quality_code_local_content
-            "spectral_heuristic_not_provenance" ->
-                R.string.acoustic_quality_code_spectral_heuristic_not_provenance
-            "normalized_window_power" -> R.string.acoustic_quality_code_normalized_window_power
-            "time_windows_may_be_thinned" ->
-                R.string.acoustic_quality_code_time_windows_may_be_thinned
-            "assessment_uses_bounded_prefix" ->
-                R.string.acoustic_quality_code_assessment_uses_bounded_prefix
-            "decoded_pcm16" -> R.string.acoustic_quality_code_decoded_pcm16
-            "decoded_pcm_float" -> R.string.acoustic_quality_code_decoded_pcm_float
             "insufficient_active_evidence" ->
                 R.string.acoustic_quality_code_insufficient_active_evidence
-            "unknown" -> R.string.acoustic_quality_code_unknown
             "pcm_budget_shortened_excerpt" ->
                 R.string.acoustic_quality_code_pcm_budget_shortened_excerpt
             "deadline_exceeded" -> R.string.acoustic_quality_code_deadline_exceeded

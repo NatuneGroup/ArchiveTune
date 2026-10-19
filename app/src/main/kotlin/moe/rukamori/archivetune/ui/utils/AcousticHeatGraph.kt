@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -60,11 +61,12 @@ private val LeftGutter = 34.dp
 private val BottomGutter = 18.dp
 private val AxisText = Color(0xFFB5B5B5)
 private val GridLine = Color.White.copy(alpha = 0.1f)
+private val CutoffLine = Color(0xFF4FC3F7)
 
 /**
- * Heat picture on a black card: a 2:1 plot with a 0 Hz baseline, kHz and m:ss gridlines, and a
- * legend drawn from the same palette as the raster. The raster is built on [Dispatchers.Default],
- * not on Main.
+ * Heat picture on a black card: a 2:1 plot with a 0 Hz baseline, kHz and m:ss gridlines, a dashed
+ * line where the sound stops (when the analyzer found one), and a key drawn from the same palette
+ * as the raster. The raster is built on [Dispatchers.Default], not on Main.
  */
 @Composable
 internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String) {
@@ -73,6 +75,12 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
     val legendBrush = remember {
         Brush.horizontalGradient(AcousticHeatPalette.legendColors(LEGEND_STOPS).map { Color(it) })
     }
+    val cutoffLabel =
+        result.cutoffHz
+            ?.takeIf { it.isFinite() && it > 0f && it < result.nyquistHz }
+            ?.let {
+                stringResource(R.string.acoustic_quality_cutoff_marker, it / 1000f)
+            }
     BoxWithConstraints(
         Modifier.fillMaxWidth().background(Color.Black).padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
@@ -164,6 +172,28 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
                         drawText(label, topLeft = Offset(left, plotH + 3.dp.toPx()))
                         second += step
                     }
+                }
+                val cutoffHz = result.cutoffHz
+                if (cutoffLabel != null && cutoffHz != null) {
+                    val y = plotH * (1f - cutoffHz / result.nyquistHz)
+                    drawLine(
+                        CutoffLine,
+                        Offset(originX, y),
+                        Offset(originX + plotW, y),
+                        strokeWidth = 1.5.dp.toPx(),
+                        pathEffect =
+                            PathEffect.dashPathEffect(floatArrayOf(6.dp.toPx(), 4.dp.toPx())),
+                    )
+                    val label =
+                        textMeasurer.measure(cutoffLabel, labelStyle.copy(color = CutoffLine))
+                    val gap = 2.dp.toPx()
+                    val top =
+                        if (y - label.size.height - gap >= 0f) y - label.size.height - gap
+                        else y + gap
+                    drawText(
+                        label,
+                        topLeft = Offset(originX + plotW - label.size.width - 4.dp.toPx(), top),
+                    )
                 }
             }
             Row(

@@ -46,6 +46,15 @@ On a suitable JDK 21 host, or in the GitHub repository-quality workflow:
 python3 scripts/check_code_quality.py --base <base-commit>
 ```
 
+The analysis covers the production roots compiled into the selected
+GMS/mobile/universal Debug variant, including the GMS flavor source set
+`app/src/gms/kotlin`; the mutually exclusive `app/src/foss` implementations stay
+out of the same analysis tree. PR runs compare against the pull-request base.
+Manual dispatches of the repository-quality workflow take a `base` input
+(default `dev`): its merge-base with `origin/<base>` is the comparison base, and
+a base that contains HEAD is rejected. When dispatching on `dev` itself, pass
+the last validated revision instead — for example the previous release commit.
+
 The isolated Gradle project in `quality/` needs no Android SDK or initialized
 submodules. Spotless runs ktfmt's Kotlin style on changed production/test Kotlin
 files, copied into an isolated temporary directory under `quality/build/`.
@@ -97,9 +106,13 @@ optional analysis invocation; normal build and release variant matrices are unch
 The plugin is applied to subprojects, which inherit the root classloader scope that
 also holds AGP; the root project's aggregate report is not part of this analysis.
 In `dependency_health.yml`, manual and reusable runs compare with the `semantic_base`
-input (default `origin/dev`, through its merge-base with HEAD). Scheduled runs compare
-with the parent commit. A base equal to HEAD is rejected because it compares a tree
-with itself.
+input (default `origin/dev`, through its merge-base with HEAD). Dispatching
+`Unit tests` with `extended_checks=true` forwards its `semantic_base` input to the
+dependency/semantic job. A base that contains HEAD is rejected because it compares a
+tree with itself, so an extended dev run must pass an earlier revision — for example
+`gh workflow run tests.yml --ref dev -f extended_checks=true -f semantic_base=<commit>`
+with the last validated commit (the previous release commit or the merge commit of
+the last green extended run). Scheduled runs compare with the previous commit.
 
 ## Development container and environment
 

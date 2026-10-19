@@ -377,13 +377,16 @@ private fun PlaybackErrorExpandedContent(
                 copyText = copyText,
                 loginText = loginText,
                 poTokenLoginText = poTokenLoginText,
+                feedbackText = feedbackText,
                 showLoginAction = showLoginAction,
                 showPoTokenLoginAction = showPoTokenLoginAction,
+                showFeedbackAction = showFeedbackAction,
                 onRetry = onRetry,
                 onClose = onClose,
                 onCopy = onCopy,
                 onLogin = onLogin,
                 onPoTokenLogin = onPoTokenLogin,
+                onFeedback = onFeedback,
                 modifier = Modifier.fillMaxWidth(),
             )
         }

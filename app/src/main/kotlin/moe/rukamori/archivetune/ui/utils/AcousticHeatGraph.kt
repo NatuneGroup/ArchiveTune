@@ -42,6 +42,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
@@ -49,7 +50,6 @@ import moe.rukamori.archivetune.acoustics.AcousticAuditResult
 import moe.rukamori.archivetune.acoustics.AcousticHeatAxis
 import moe.rukamori.archivetune.acoustics.AcousticHeatPalette
 import moe.rukamori.archivetune.acoustics.AcousticHeatRaster
-import kotlin.math.roundToInt
 
 private const val LEGEND_STOPS = 20
 
@@ -62,8 +62,9 @@ private val AxisText = Color(0xFFB5B5B5)
 private val GridLine = Color.White.copy(alpha = 0.1f)
 
 /**
- * Heat picture on a black card: a 2:1 plot with a 0 Hz baseline, kHz and m:ss gridlines, and a legend
- * drawn from the same palette as the raster. The raster is built on [Dispatchers.Default], not on Main.
+ * Heat picture on a black card: a 2:1 plot with a 0 Hz baseline, kHz and m:ss gridlines, and a
+ * legend drawn from the same palette as the raster. The raster is built on [Dispatchers.Default],
+ * not on Main.
  */
 @Composable
 internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String) {
@@ -72,7 +73,9 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
     val legendBrush = remember {
         Brush.horizontalGradient(AcousticHeatPalette.legendColors(LEGEND_STOPS).map { Color(it) })
     }
-    BoxWithConstraints(Modifier.fillMaxWidth().background(Color.Black).padding(horizontal = 8.dp, vertical = 6.dp)) {
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().background(Color.Black).padding(horizontal = 8.dp, vertical = 6.dp)
+    ) {
         val plotWidth = (maxWidth - LeftGutter).coerceAtLeast(0.dp)
         val plotHeight = plotWidth / 2f
         val density = LocalDensity.current
@@ -82,22 +85,29 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
         // scale it to the destination with medium filtering; a wide plot keeps its bounded cost.
         val rasterWidth = plotPxWidth.coerceAtMost(MAX_RASTER_WIDTH)
         val rasterHeight = plotPxHeight.coerceAtMost(MAX_RASTER_HEIGHT)
-        val image: ImageBitmap? by produceState<ImageBitmap?>(null, result, rasterWidth, rasterHeight) {
-            value = withContext(Dispatchers.Default) {
-                val pixels = AcousticHeatRaster.render(result, rasterWidth, rasterHeight)
-                if (pixels.isEmpty()) {
-                    null
-                } else {
-                    Bitmap.createBitmap(pixels, rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888).asImageBitmap()
-                }
+        val image: ImageBitmap? by
+            produceState<ImageBitmap?>(null, result, rasterWidth, rasterHeight) {
+                value =
+                    withContext(Dispatchers.Default) {
+                        val pixels = AcousticHeatRaster.render(result, rasterWidth, rasterHeight)
+                        if (pixels.isEmpty()) {
+                            null
+                        } else {
+                            Bitmap.createBitmap(
+                                    pixels,
+                                    rasterWidth,
+                                    rasterHeight,
+                                    Bitmap.Config.ARGB_8888,
+                                )
+                                .asImageBitmap()
+                        }
+                    }
             }
-        }
         Column {
             Canvas(
-                Modifier
-                    .fillMaxWidth()
-                    .height(plotHeight + BottomGutter)
-                    .semantics { contentDescription = description },
+                Modifier.fillMaxWidth().height(plotHeight + BottomGutter).semantics {
+                    contentDescription = description
+                }
             ) {
                 val originX = LeftGutter.toPx()
                 val plotW = plotPxWidth.toFloat()
@@ -116,11 +126,21 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
                     var khz = 0
                     while (khz <= maxKHz) {
                         val y = plotH * (1f - khz / maxKHz)
-                        drawLine(GridLine, Offset(originX, y), Offset(originX + plotW, y), strokeWidth = 1f)
-                        val label = textMeasurer.measure(if (khz == 0) "0" else "${khz}k", labelStyle)
+                        drawLine(
+                            GridLine,
+                            Offset(originX, y),
+                            Offset(originX + plotW, y),
+                            strokeWidth = 1f,
+                        )
+                        val label =
+                            textMeasurer.measure(if (khz == 0) "0" else "${khz}k", labelStyle)
                         drawText(
                             label,
-                            topLeft = Offset(originX - 5.dp.toPx() - label.size.width, y - label.size.height / 2f),
+                            topLeft =
+                                Offset(
+                                    originX - 5.dp.toPx() - label.size.width,
+                                    y - label.size.height / 2f,
+                                ),
                         )
                         khz += step
                     }
@@ -132,13 +152,15 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
                     while (second <= durationSeconds) {
                         val x = originX + plotW * (second / durationSeconds).toFloat()
                         drawLine(GridLine, Offset(x, 0f), Offset(x, plotH), strokeWidth = 1f)
-                        val label = textMeasurer.measure(
-                            AcousticHeatAxis.formatClock(result.startMs / 1000.0 + second),
-                            labelStyle,
-                        )
-                        val left = (x - label.size.width / 2f)
-                            .coerceAtLeast(0f)
-                            .coerceAtMost(maxOf(0f, size.width - label.size.width))
+                        val label =
+                            textMeasurer.measure(
+                                AcousticHeatAxis.formatClock(result.startMs / 1000.0 + second),
+                                labelStyle,
+                            )
+                        val left =
+                            (x - label.size.width / 2f)
+                                .coerceAtLeast(0f)
+                                .coerceAtMost(maxOf(0f, size.width - label.size.width))
                         drawText(label, topLeft = Offset(left, plotH + 3.dp.toPx()))
                         second += step
                     }
@@ -153,7 +175,12 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
                     style = MaterialTheme.typography.labelSmall,
                     color = AxisText,
                 )
-                Box(Modifier.weight(1f).padding(horizontal = 6.dp).height(8.dp).background(legendBrush))
+                Box(
+                    Modifier.weight(1f)
+                        .padding(horizontal = 6.dp)
+                        .height(8.dp)
+                        .background(legendBrush)
+                )
                 Text(
                     stringResource(R.string.acoustic_quality_heat_legend_high),
                     style = MaterialTheme.typography.labelSmall,

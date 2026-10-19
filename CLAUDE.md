@@ -96,7 +96,9 @@ uninitialized/unchanged here and never publish another Canary.
   copyright banner to credit a different project. Match the file around you.
 - Lightweight quality checks and naming rules live in
   [docs/engineering/quality.md](docs/engineering/quality.md). Reusable workflows
-  live in `.factory/skills/`; do not create competing copies of maintained docs.
+  live in `.factory/skills/` (`.claude/skills` links there; shared Claude Code
+  permissions are in `.claude/settings.json`, personal overrides go in the ignored
+  `.claude/settings.local.json`); do not create competing copies of maintained docs.
 - User-facing strings go in `strings.xml`/`archivetune_strings.xml`, never inline.
 - Never restore anything in `docs/REMOVED_RUKAMORI_COMPONENTS.md` without reading
   why it went.

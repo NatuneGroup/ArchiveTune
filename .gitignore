@@ -128,8 +128,8 @@ core.*
 /string_cleaner.py
 /.codexignore
 /android_resource_cleaner.py
-# Local Claude Code config
-.claude/
+# Claude Code: shared .claude/settings.json and .claude/skills are tracked; personal settings are not
+.claude/settings.local.json
 
 # Agent session state — never commit
 /.swarm/

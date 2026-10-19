@@ -43,7 +43,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -58,6 +61,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.media3.common.PlaybackException
 import moe.rukamori.archivetune.R
+import moe.rukamori.archivetune.feedback.FeedbackDrafts
+import moe.rukamori.archivetune.feedback.ui.FeedbackReviewDialog
 
 @Composable
 fun PlaybackErrorDialog(
@@ -68,6 +73,8 @@ fun PlaybackErrorDialog(
     onClose: () -> Unit,
     onLogin: () -> Unit,
     onPoTokenLogin: () -> Unit,
+    // Opt-in feedback: renders only when the build has a feedback endpoint configured.
+    showFeedbackAction: Boolean,
 ) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
@@ -158,6 +165,9 @@ fun PlaybackErrorDialog(
                 Toast.makeText(context, copiedText, Toast.LENGTH_SHORT).show()
             }
         }
+    var showFeedbackReviewer by remember { mutableStateOf(false) }
+    val feedbackLabel = stringResource(R.string.feedback_send)
+    val feedbackTitleText = stringResource(R.string.feedback_review_title)
 
     BasicAlertDialog(
         onDismissRequest = {},
@@ -202,13 +212,16 @@ fun PlaybackErrorDialog(
                             copyText = copyText,
                             loginText = loginText,
                             poTokenLoginText = poTokenLoginText,
+                            feedbackText = feedbackLabel,
                             showLoginAction = showLoginAction,
                             showPoTokenLoginAction = showPoTokenLoginAction,
+                            showFeedbackAction = showFeedbackAction,
                             onRetry = onRetry,
                             onClose = onClose,
                             onCopy = onCopyClick,
                             onLogin = onLogin,
                             onPoTokenLogin = onPoTokenLogin,
+                            onFeedback = { showFeedbackReviewer = true },
                         )
                     } else {
                         PlaybackErrorCompactContent(
@@ -221,18 +234,31 @@ fun PlaybackErrorDialog(
                             copyText = copyText,
                             loginText = loginText,
                             poTokenLoginText = poTokenLoginText,
+                            feedbackText = feedbackLabel,
                             showLoginAction = showLoginAction,
                             showPoTokenLoginAction = showPoTokenLoginAction,
+                            showFeedbackAction = showFeedbackAction,
                             onRetry = onRetry,
                             onClose = onClose,
                             onCopy = onCopyClick,
                             onLogin = onLogin,
                             onPoTokenLogin = onPoTokenLogin,
+                            onFeedback = { showFeedbackReviewer = true },
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showFeedbackReviewer) {
+        FeedbackReviewDialog(
+            title = feedbackTitleText,
+            // Same error details the dialog shows on screen, plus the existing
+            // redacted diagnostic-report path.
+            loadDraft = { FeedbackDrafts.playback(context, details) },
+            onDismiss = { showFeedbackReviewer = false },
+        )
     }
 }
 
@@ -247,13 +273,16 @@ private fun PlaybackErrorCompactContent(
     copyText: String,
     loginText: String,
     poTokenLoginText: String,
+    feedbackText: String,
     showLoginAction: Boolean,
     showPoTokenLoginAction: Boolean,
+    showFeedbackAction: Boolean,
     onRetry: () -> Unit,
     onClose: () -> Unit,
     onCopy: () -> Unit,
     onLogin: () -> Unit,
     onPoTokenLogin: () -> Unit,
+    onFeedback: () -> Unit,
 ) {
     Column(
         modifier =
@@ -281,13 +310,16 @@ private fun PlaybackErrorCompactContent(
             copyText = copyText,
             loginText = loginText,
             poTokenLoginText = poTokenLoginText,
+            feedbackText = feedbackText,
             showLoginAction = showLoginAction,
             showPoTokenLoginAction = showPoTokenLoginAction,
+            showFeedbackAction = showFeedbackAction,
             onRetry = onRetry,
             onClose = onClose,
             onCopy = onCopy,
             onLogin = onLogin,
             onPoTokenLogin = onPoTokenLogin,
+            onFeedback = onFeedback,
             modifier = Modifier.fillMaxWidth(),
         )
     }
@@ -304,13 +336,16 @@ private fun PlaybackErrorExpandedContent(
     copyText: String,
     loginText: String,
     poTokenLoginText: String,
+    feedbackText: String,
     showLoginAction: Boolean,
     showPoTokenLoginAction: Boolean,
+    showFeedbackAction: Boolean,
     onRetry: () -> Unit,
     onClose: () -> Unit,
     onCopy: () -> Unit,
     onLogin: () -> Unit,
     onPoTokenLogin: () -> Unit,
+    onFeedback: () -> Unit,
 ) {
     Row(
         modifier =
@@ -342,13 +377,16 @@ private fun PlaybackErrorExpandedContent(
                 copyText = copyText,
                 loginText = loginText,
                 poTokenLoginText = poTokenLoginText,
+                feedbackText = feedbackText,
                 showLoginAction = showLoginAction,
                 showPoTokenLoginAction = showPoTokenLoginAction,
+                showFeedbackAction = showFeedbackAction,
                 onRetry = onRetry,
                 onClose = onClose,
                 onCopy = onCopy,
                 onLogin = onLogin,
                 onPoTokenLogin = onPoTokenLogin,
+                onFeedback = onFeedback,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -438,13 +476,16 @@ private fun PlaybackErrorActions(
     copyText: String,
     loginText: String,
     poTokenLoginText: String,
+    feedbackText: String,
     showLoginAction: Boolean,
     showPoTokenLoginAction: Boolean,
+    showFeedbackAction: Boolean,
     onRetry: () -> Unit,
     onClose: () -> Unit,
     onCopy: () -> Unit,
     onLogin: () -> Unit,
     onPoTokenLogin: () -> Unit,
+    onFeedback: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     FlowRow(
@@ -471,6 +512,14 @@ private fun PlaybackErrorActions(
                 PlaybackErrorActionContent(
                     icon = R.drawable.player_token,
                     label = poTokenLoginText,
+                )
+            }
+        }
+        if (showFeedbackAction) {
+            OutlinedButton(onClick = onFeedback) {
+                PlaybackErrorActionContent(
+                    icon = R.drawable.send,
+                    label = feedbackText,
                 )
             }
         }

@@ -18,7 +18,15 @@ import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.GlobalLog
 import moe.rukamori.archivetune.utils.dataStore
 
-internal suspend fun diagnosticReport(context: Context, capturedText: String): String {
+internal suspend fun diagnosticReport(context: Context, capturedText: String): String =
+    DiagnosticRedaction.redact(unredactedDiagnosticReport(context, capturedText))
+
+/**
+ * The report sections before redaction. A caller that publishes the text must redact it
+ * once as a whole: [diagnosticReport] does so for the log export, and feedback drafts do
+ * so together with their own sections.
+ */
+internal suspend fun unredactedDiagnosticReport(context: Context, capturedText: String): String {
     val values =
         try {
             context.dataStore.data.first().asMap().mapKeys { it.key.name }
@@ -80,10 +88,9 @@ internal suspend fun diagnosticReport(context: Context, capturedText: String): S
                 GlobalLog.snapshot().forEach { appendLine(GlobalLog.format(it)) }
                 appendLine()
                 appendLine("Selected system/application log view:")
-                appendLine(DiagnosticRedaction.redact(capturedText))
+                appendLine(capturedText)
             }
         }
-        .let(DiagnosticRedaction::redact)
 }
 
 private const val RETAINED_DIAGNOSTICS_LIMIT = 200

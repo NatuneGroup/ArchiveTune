@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.logcat
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,5 +65,39 @@ class DiagnosticRedactionTest {
         assertTrue(result.contains("crossfadeEnabled=true"))
         assertFalse(result.contains("secret-cookie"))
         assertFalse(result.contains("secret-key"))
+    }
+
+    @Test
+    fun localPathsContentUrisAddressesAndCookieNamesAreRemoved() {
+        val text = """
+            content://media/external/audio/42 file:///sdcard/Music/a.flac /storage/emulated/0/Music/b.mp3
+            /data/user/0/moe.rukamori.archivetune/files/c.m4a ip=192.168.1.20 peer=2001:db8::1
+            SAPISID=sap-secret __Secure-3PSID=psid-secret visitorData=visitor-secret poToken=po-secret
+            dataSyncId=sync-secret session_key=session-secret status=READY
+        """.trimIndent()
+        val result = DiagnosticRedaction.redact(text)
+        listOf(
+            "audio/42",
+            "a.flac",
+            "b.mp3",
+            "c.m4a",
+            "192.168.1.20",
+            "2001:db8",
+            "sap-secret",
+            "psid-secret",
+            "visitor-secret",
+            "po-secret",
+            "sync-secret",
+            "session-secret",
+        ).forEach { assertFalse(it, result.contains(it)) }
+        assertTrue(result.contains("status=READY"))
+    }
+
+    @Test
+    fun redactionIsIdempotent() {
+        // Feedback drafts redact text whose diagnostics were already redacted; a second pass must change nothing.
+        val text = "token=abc SAPISID=x /storage/emulated/0/a.mp3 10.0.0.1 visitorData=v file:///x content://y status=READY"
+        val once = DiagnosticRedaction.redact(text)
+        assertEquals(once, DiagnosticRedaction.redact(once))
     }
 }

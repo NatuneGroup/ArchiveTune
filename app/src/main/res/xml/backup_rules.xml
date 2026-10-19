@@ -7,6 +7,9 @@
         domain="file"
         path="./download" />
     <exclude
+        domain="file"
+        path="./feedback" />
+    <exclude
         domain="database"
         path="exoplayer_internal.db" />
 </full-backup-content>

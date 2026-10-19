@@ -52,6 +52,10 @@ import moe.rukamori.archivetune.acoustics.AcousticHeatRaster
 import kotlin.math.roundToInt
 
 private const val LEGEND_STOPS = 20
+
+/** Raster bounds from the heatmap plan: a big destination is scaled to at most this source size. */
+private const val MAX_RASTER_WIDTH = 1024
+private const val MAX_RASTER_HEIGHT = 512
 private val LeftGutter = 34.dp
 private val BottomGutter = 18.dp
 private val AxisText = Color(0xFFB5B5B5)
@@ -74,13 +78,17 @@ internal fun AcousticHeatGraph(result: AcousticAuditResult, description: String)
         val density = LocalDensity.current
         val plotPxWidth = with(density) { plotWidth.roundToPx() }
         val plotPxHeight = with(density) { plotHeight.roundToPx() }
-        val image: ImageBitmap? by produceState<ImageBitmap?>(null, result, plotPxWidth, plotPxHeight) {
+        // Allocate the raster at the bounded source size, not the full plot size, and let the draw
+        // scale it to the destination with medium filtering; a wide plot keeps its bounded cost.
+        val rasterWidth = plotPxWidth.coerceAtMost(MAX_RASTER_WIDTH)
+        val rasterHeight = plotPxHeight.coerceAtMost(MAX_RASTER_HEIGHT)
+        val image: ImageBitmap? by produceState<ImageBitmap?>(null, result, rasterWidth, rasterHeight) {
             value = withContext(Dispatchers.Default) {
-                val pixels = AcousticHeatRaster.render(result, plotPxWidth, plotPxHeight)
+                val pixels = AcousticHeatRaster.render(result, rasterWidth, rasterHeight)
                 if (pixels.isEmpty()) {
                     null
                 } else {
-                    Bitmap.createBitmap(pixels, plotPxWidth, plotPxHeight, Bitmap.Config.ARGB_8888).asImageBitmap()
+                    Bitmap.createBitmap(pixels, rasterWidth, rasterHeight, Bitmap.Config.ARGB_8888).asImageBitmap()
                 }
             }
         }

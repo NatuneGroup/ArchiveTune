@@ -11,16 +11,23 @@ import java.util.Locale
 import kotlin.math.floor
 import kotlin.math.log10
 import kotlin.math.pow
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * Renders an [AcousticAuditResult] heat grid to ARGB pixels without Android types, so it is unit-testable.
  * Each output pixel averages the source cells it covers in linear power, then converts back to dB: a
  * dB-domain mean would dilute a short hot cell into the surrounding floor. Output row 0 is the top of the
- * picture (highest frequency); source row 0 is 0 Hz.
+ * picture (highest frequency); source row 0 is 0 Hz. Suspends cooperate with cancellation per row, so a
+ * dismissed or resized graph stops obsolete rendering work promptly.
  */
 internal object AcousticHeatRaster {
     /** ARGB pixels of [outWidth] x [outHeight], or an empty array when the sizes or the grid do not match. */
-    fun render(result: AcousticAuditResult, outWidth: Int, outHeight: Int): IntArray {
+    suspend fun render(
+        result: AcousticAuditResult,
+        outWidth: Int,
+        outHeight: Int,
+    ): IntArray {
         val srcWidth = result.width
         val srcHeight = result.height
         val heat = result.magnitudeDb
@@ -31,6 +38,7 @@ internal object AcousticHeatRaster {
         }
         val pixels = IntArray(outWidth * outHeight)
         for (y in 0 until outHeight) {
+            currentCoroutineContext().ensureActive()
             val row = outHeight - 1 - y
             val r0 = row * srcHeight / outHeight
             val r1 = maxOf(r0 + 1, (row + 1) * srcHeight / outHeight)

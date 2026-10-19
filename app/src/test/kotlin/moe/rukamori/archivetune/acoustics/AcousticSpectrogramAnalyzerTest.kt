@@ -70,6 +70,19 @@ class AcousticSpectrogramAnalyzerTest {
     }
 
     @Test
+    fun fullScaleBinCenteredToneReadsMinus352DbWithHannOffset() {
+        // Hann coherent gain puts a full-scale bin-centred sine at A^2/4 of the normalised power (-6.02 dB);
+        // the 2.4988 dB window offset makes its display heat about -3.52 dB.
+        for (rate in rates) {
+            val bin = 100
+            val frequency = bin * rate.toDouble() / 2048
+            val samples = FloatArray(2048) { sin(2 * PI * frequency * it / rate).toFloat() }
+            val result = analyze(samples, rate)
+            assertEquals(-3.52f, result.magnitudeDb[bin * result.width], 0.02f)
+        }
+    }
+
+    @Test
     fun antiPhaseStereoRetainsChannelPowerInsteadOfBecomingSilentMono() {
         for (rate in rates) {
             val mono = tone(rate, rate * 2)

@@ -10002,12 +10002,18 @@ class MusicService :
                     val row = database.getFormatsByIds(listOf(query.mediaId)).firstOrNull()
                     if (row != null) {
                         val bitrate = measuredBitrate(file.length(), candidate.matchedDurationMs)
+                        val keepEvidence =
+                            evidenceSurvivesRedeclaration(row, row.mimeType, placeholder.codecs, row.sampleRate)
                         database.query {
                             upsert(
                                 row.copy(
                                     codecs = placeholder.codecs,
                                     contentLength = file.length(),
                                     bitrate = bitrate ?: row.bitrate,
+                                    evidenceMimeType = row.evidenceMimeType.takeIf { keepEvidence },
+                                    evidenceCodecs = row.evidenceCodecs.takeIf { keepEvidence },
+                                    evidenceSampleRate = row.evidenceSampleRate.takeIf { keepEvidence },
+                                    evidenceBitDepth = row.evidenceBitDepth.takeIf { keepEvidence },
                                 ),
                             )
                         }

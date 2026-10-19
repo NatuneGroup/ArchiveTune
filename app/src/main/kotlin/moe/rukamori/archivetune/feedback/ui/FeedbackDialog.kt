@@ -9,6 +9,14 @@
 package moe.rukamori.archivetune.feedback.ui
 
 import android.widget.Toast
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -19,11 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialogDefaults
-import androidx.compose.material3.BasicAlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -42,33 +47,35 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.DialogProperties
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.rukamori.archivetune.LocalAnimationsDisabled
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.feedback.FeedbackApi
-import moe.rukamori.archivetune.feedback.FeedbackApi.FeedbackRejection
 import moe.rukamori.archivetune.feedback.FeedbackDraft
 import moe.rukamori.archivetune.feedback.FeedbackDrafts
+import moe.rukamori.archivetune.feedback.FeedbackReport
+import moe.rukamori.archivetune.ui.component.DefaultDialog
 import java.time.Instant
 
 /**
- * The single review-before-send surface for every feedback report. The report
- * text is built by [loadDraft] (off the main thread) and shown verbatim so the
- * user can read it, edit the optional note, or back out; only Send posts it.
- * Closing the dialog never sends, and a failed send keeps the draft on screen.
+ * The single review-before-send surface for every feedback report. [loadDraft] builds the
+ * text off the main thread and it is shown verbatim, so the user reads exactly what Send
+ * posts. Only Send transmits: closing never does, and a failed send keeps the draft on
+ * screen. [onSent] runs after a delivered report and defaults to [onDismiss].
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FeedbackReviewDialog(
     title: String,
     loadDraft: suspend () -> FeedbackDraft?,
     onDismiss: () -> Unit,
+    onSent: () -> Unit = onDismiss,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sentText = stringResource(R.string.feedback_sent)
+    val animationsDisabled = LocalAnimationsDisabled.current
     var draft by remember { mutableStateOf<FeedbackDraft?>(null) }
     var buildFailed by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
@@ -80,133 +87,139 @@ fun FeedbackReviewDialog(
         buildFailed = draft == null
     }
 
-    BasicAlertDialog(
-        onDismissRequest = { if (!sending) onDismiss() },
-        properties =
-            DialogProperties(
-                dismissOnBackPress = !sending,
-                dismissOnClickOutside = !sending,
-            ),
+    val status =
+        when {
+            buildFailed -> ReviewStatus.Failed
+            draft == null -> ReviewStatus.Preparing
+            else -> ReviewStatus.Ready
+        }
+
+    DefaultDialog(
+        onDismiss = { if (!sending) onDismiss() },
+        title = { Text(title) },
+        horizontalAlignment = Alignment.Start,
+        contentScrollable = true,
+        buttons = {
+            TextButton(enabled = !sending, onClick = onDismiss) {
+                Text(stringResource(R.string.later))
+            }
+            if (sending) {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+            } else {
+                Button(
+                    enabled = draft != null,
+                    onClick = {
+                        val ready = draft ?: return@Button
+                        sending = true
+                        sendError = null
+                        scope.launch {
+                            val result =
+                                FeedbackApi.send(
+                                    FeedbackDrafts.envelope(
+                                        draft = ready,
+                                        note = note,
+                                        sentAt = Instant.now().toString(),
+                                    ),
+                                )
+                            sending = false
+                            result
+                                .onSuccess {
+                                    Toast.makeText(context, sentText, Toast.LENGTH_SHORT).show()
+                                    onSent()
+                                }
+                                .onFailure { failure -> sendError = failure.message ?: failure.javaClass.simpleName }
+                        }
+                    },
+                ) {
+                    Text(stringResource(R.string.send))
+                }
+            }
+        },
     ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = AlertDialogDefaults.shape,
-            color = AlertDialogDefaults.containerColor,
-            tonalElevation = AlertDialogDefaults.TonalElevation,
-        ) {
-            Column(
-                modifier = Modifier.padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                    when {
-                        buildFailed -> Text(
+        Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            AnimatedContent(
+                targetState = status,
+                transitionSpec = {
+                    if (animationsDisabled) {
+                        EnterTransition.None togetherWith ExitTransition.None
+                    } else {
+                        (fadeIn(tween(180)) togetherWith fadeOut(tween(120))).using(SizeTransform(clip = false))
+                    }
+                },
+                label = "feedbackReviewStatus",
+            ) { current ->
+                when (current) {
+                    ReviewStatus.Failed ->
+                        Text(
                             text = stringResource(R.string.feedback_building_failed),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error,
                         )
-                        draft == null -> Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ReviewStatus.Preparing ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             CircularProgressIndicator(modifier = Modifier.size(16.dp))
                             Text(
                                 text = stringResource(R.string.feedback_building),
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
-                    }
-                }
-                draft?.let { ready ->
-                    Surface(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 320.dp),
-                        shape = MaterialTheme.shapes.large,
-                        color = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    ) {
-                        SelectionContainer(
-                            modifier =
-                                Modifier
-                                    .padding(16.dp)
-                                    .verticalScroll(rememberScrollState()),
-                        ) {
-                            Text(
-                                text = ready.report,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                            )
+                    ReviewStatus.Ready ->
+                        draft?.let { ready ->
+                            ReportPreview(report = ready.report, note = note, onNoteChange = { note = it })
                         }
-                    }
-                    OutlinedTextField(
-                        value = note,
-                        onValueChange = { note = it },
-                        singleLine = true,
-                        placeholder = { Text(stringResource(R.string.feedback_note_hint)) },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-                sendError?.let { message ->
-                    Text(
-                        text = stringResource(R.string.feedback_send_failed, message),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(
-                        enabled = !sending,
-                        onClick = onDismiss,
-                    ) {
-                        Text(stringResource(R.string.later))
-                    }
-                    if (sending) {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                    } else {
-                        Button(
-                            enabled = draft != null,
-                            onClick = {
-                                val ready = draft ?: return@Button
-                                sending = true
-                                sendError = null
-                                scope.launch {
-                                    val result =
-                                        FeedbackApi.send(
-                                            FeedbackDrafts.envelope(
-                                                draft = ready,
-                                                note = note,
-                                                sentAt = Instant.now().toString(),
-                                            ),
-                                        )
-                                    sending = false
-                                    result
-                                        .onSuccess {
-                                            Toast.makeText(context, sentText, Toast.LENGTH_SHORT).show()
-                                            onDismiss()
-                                        }
-                                        .onFailure { failure ->
-                                            sendError =
-                                                if (failure is FeedbackRejection) {
-                                                    failure.message
-                                                } else {
-                                                    failure.message
-                                                        ?: failure.javaClass.simpleName
-                                                }
-                                        }
-                                }
-                            },
-                        ) {
-                            Text(stringResource(R.string.send))
-                        }
-                    }
                 }
             }
+            sendError?.let { message ->
+                Text(
+                    text = stringResource(R.string.feedback_send_failed, message),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
         }
+    }
+}
+
+private enum class ReviewStatus { Preparing, Failed, Ready }
+
+@Composable
+private fun ReportPreview(
+    report: String,
+    note: String,
+    onNoteChange: (String) -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 320.dp),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surfaceContainerHighest,
+        ) {
+            SelectionContainer(
+                modifier =
+                    Modifier
+                        .padding(16.dp)
+                        .verticalScroll(rememberScrollState()),
+            ) {
+                Text(
+                    text = report,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            }
+        }
+        OutlinedTextField(
+            value = note,
+            onValueChange = { onNoteChange(it.take(FeedbackReport.MAX_NOTE_CHARS)) },
+            singleLine = true,
+            placeholder = { Text(stringResource(R.string.feedback_note_hint)) },
+            supportingText = { Text(stringResource(R.string.feedback_note_limit, FeedbackReport.MAX_NOTE_CHARS)) },
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

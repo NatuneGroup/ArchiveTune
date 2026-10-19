@@ -8,9 +8,14 @@
 
 package moe.rukamori.archivetune.feedback
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.audiosource.executeCancellable
 import moe.rukamori.archivetune.utils.withAppProxy
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
@@ -47,16 +52,16 @@ object FeedbackApi {
         BuildConfig.FEEDBACK_API_URL.isNotBlank() && BuildConfig.FEEDBACK_INGEST_KEY.isNotBlank()
 
     /**
-     * Sends an already-assembled [moe.rukamori.archivetune.feedback.FeedbackReport] JSON
-     * envelope. Never retries silently: a network failure is reported back so the
-     * dialog can tell the user the report was not delivered.
+     * Posts an already-assembled [FeedbackReport] envelope. Cancelling the caller cancels
+     * the HTTP call too, so a dismissed review never keeps uploading. Never retries silently:
+     * a failure is returned so the dialog can say the report was not delivered.
      */
     suspend fun send(envelopeJson: String): Result<Unit> =
         withContext(Dispatchers.IO) {
             if (!isAvailable()) {
                 return@withContext Result.failure(IllegalStateException("Feedback service not configured"))
             }
-            runCatching {
+            try {
                 val request =
                     Request
                         .Builder()
@@ -64,20 +69,30 @@ object FeedbackApi {
                         .addHeader("X-Ingest-Key", BuildConfig.FEEDBACK_INGEST_KEY.trim())
                         .post(envelopeJson.toRequestBody(JSON))
                         .build()
-                client.newCall(request).execute().use { response ->
+                client.newCall(request).executeCancellable().use { response ->
                     when {
-                        response.isSuccessful -> {}
+                        response.isSuccessful -> Unit
                         response.code == 429 -> throw FeedbackRejection("Rate limited, try again later")
-                        response.code in 400..499 -> {
-                            val reason =
-                                response.body?.string()?.take(200)?.takeIf(String::isNotBlank)
-                            throw FeedbackRejection(reason ?: "Report rejected (${response.code})")
-                        }
+                        response.code in 400..499 ->
+                            throw FeedbackRejection(
+                                serverError(response.body?.string()) ?: "Report rejected (${response.code})",
+                            )
                         else -> throw FeedbackRejection("Service unavailable (${response.code})")
                     }
                 }
+                Result.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Result.failure(e)
             }
         }
+
+    /** The server's `error` string for a rejected request; the raw body is never shown. */
+    private fun serverError(body: String?): String? =
+        runCatching { Json.parseToJsonElement(body.orEmpty()).jsonObject["error"]?.jsonPrimitive?.content }
+            .getOrNull()
+            ?.takeIf(String::isNotBlank)
 
     private fun trimmedUrl(): String = BuildConfig.FEEDBACK_API_URL.trim().trimEnd('/') + PATH
 

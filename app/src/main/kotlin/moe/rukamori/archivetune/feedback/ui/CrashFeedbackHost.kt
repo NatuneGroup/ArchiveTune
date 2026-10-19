@@ -16,10 +16,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.feedback.CrashFeedback
@@ -36,6 +38,7 @@ import moe.rukamori.archivetune.feedback.FeedbackDrafts
 fun CrashFeedbackPromptHost() {
     if (!FeedbackApi.isAvailable()) return
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var checked by remember { mutableStateOf(false) }
     var showPrompt by remember { mutableStateOf(false) }
     var showReviewer by remember { mutableStateOf(false) }
@@ -52,6 +55,14 @@ fun CrashFeedbackPromptHost() {
             title = stringResource(R.string.feedback_review_title),
             loadDraft = { FeedbackDrafts.crash(context) },
             onDismiss = { showReviewer = false },
+            onSent = {
+                // A delivered crash must not be offered again on the next launch.
+                scope.launch {
+                    withContext(Dispatchers.IO) { CrashFeedback.clear(context) }
+                    showPrompt = false
+                    showReviewer = false
+                }
+            },
         )
         // While the reviewer is open the underlying prompt is parked, not dismissed.
         return
@@ -67,9 +78,17 @@ fun CrashFeedbackPromptHost() {
             }
         },
         dismissButton = {
-            // Deleting the stored report is the explicit "do not send" action;
-            // silently dismissing only skips the prompt for this session.
-            TextButton(onClick = { CrashFeedback.clear(context) }) {
+            // Deleting the stored report is the explicit "do not send" action; silently dismissing
+            // only skips the prompt for this session. The prompt closes once the file is really gone.
+            TextButton(
+                onClick = {
+                    scope.launch {
+                        if (withContext(Dispatchers.IO) { CrashFeedback.clear(context) }) {
+                            showPrompt = false
+                        }
+                    }
+                },
+            ) {
                 Text(stringResource(R.string.crash_prompt_delete))
             }
             TextButton(onClick = { showPrompt = false }) {

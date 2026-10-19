@@ -1741,6 +1741,7 @@
     <string name="feedback_building">Preparing report…</string>
     <string name="feedback_building_failed">The report could not be prepared.</string>
     <string name="feedback_note_hint">Optional note for the developer</string>
+    <string name="feedback_note_limit">Up to %1$d characters</string>
     <string name="feedback_sent">Feedback sent. Thanks!</string>
     <string name="feedback_send_failed">Could not send: %1$s</string>
     <string name="crash_prompt_title">ArchiveTune closed unexpectedly</string>

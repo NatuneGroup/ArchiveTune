@@ -35,6 +35,7 @@ jobs:
         with:
           fetch-depth: 0
           submodules: true
+          persist-credentials: false
       - uses: actions/setup-java@v5
         with:
           java-version: '21'

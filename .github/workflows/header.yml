@@ -14,5 +14,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: Preserve existing copyright and validate candidate banners
         run: python3 scripts/check_repository.py --base HEAD~1 --headers-only

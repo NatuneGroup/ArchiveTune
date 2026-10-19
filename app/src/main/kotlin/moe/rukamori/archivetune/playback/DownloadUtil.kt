@@ -1043,13 +1043,22 @@ class DownloadUtil
                     val format = playbackData.format
                     val contentLength = format.contentLength ?: 0L
                     val resolvedCodecs = format.mimeType.codecsFromMimeType()
+                    val mimeType = format.mimeType.split(";")[0]
+                    val existingFormat = database.getFormatsByIds(listOf(mediaId)).firstOrNull()
+                    val keepEvidence =
+                        evidenceSurvivesRedeclaration(
+                            existingFormat,
+                            mimeType,
+                            resolvedCodecs,
+                            format.audioSampleRate,
+                        )
 
                     database.query {
                         upsert(
                             FormatEntity(
                                 id = mediaId,
                                 itag = format.itag,
-                                mimeType = format.mimeType.split(";")[0],
+                                mimeType = mimeType,
                                 codecs = resolvedCodecs,
                                 bitrate = format.bitrate,
                                 sampleRate = format.audioSampleRate,
@@ -1057,6 +1066,10 @@ class DownloadUtil
                                 loudnessDb = playbackData.audioConfig?.loudnessDb,
                                 perceptualLoudnessDb = playbackData.audioConfig?.perceptualLoudnessDb,
                                 playbackUrl = playbackData.playbackTracking?.videostatsPlaybackUrl?.baseUrl,
+                                evidenceMimeType = existingFormat?.evidenceMimeType.takeIf { keepEvidence },
+                                evidenceCodecs = existingFormat?.evidenceCodecs.takeIf { keepEvidence },
+                                evidenceSampleRate = existingFormat?.evidenceSampleRate.takeIf { keepEvidence },
+                                evidenceBitDepth = existingFormat?.evidenceBitDepth.takeIf { keepEvidence },
                             ),
                         )
 

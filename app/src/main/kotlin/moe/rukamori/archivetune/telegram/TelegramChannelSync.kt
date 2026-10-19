@@ -255,7 +255,7 @@ object TelegramChannelSync {
         database.withTransaction {
             if (checkInPlaylist(playlistId, track.mediaId) > 0) return@withTransaction false
             insert(track.toMediaMetadata(channelTitle))
-            upsert(track.toFormatEntity())
+            upsert(track.toFormatEntity(getFormatsByIds(listOf(track.mediaId)).firstOrNull()))
             val position = (maxPlaylistSongPosition(playlistId) ?: -1) + 1
             insert(
                 PlaylistSongMap(

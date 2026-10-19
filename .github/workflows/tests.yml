@@ -11,6 +11,11 @@ on:
         type: boolean
         required: false
         default: false
+      semantic_base:
+        description: Integration revision the dependency/semantic analysis compares with HEAD (used only by extended_checks; on dev pass the last validated revision, e.g. the previous release commit)
+        type: string
+        required: false
+        default: origin/dev
 
 permissions:
   contents: read
@@ -30,6 +35,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: true
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -90,6 +96,8 @@ jobs:
   dependency-health:
     if: ${{ inputs.extended_checks }}
     uses: ./.github/workflows/dependency_health.yml
+    with:
+      semantic_base: ${{ inputs.semantic_base }}
 
   stability:
     if: ${{ inputs.extended_checks }}

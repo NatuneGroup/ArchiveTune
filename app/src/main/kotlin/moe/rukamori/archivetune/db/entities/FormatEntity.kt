@@ -113,8 +113,8 @@ fun FormatEntity.codecLabel(): String = codecLabel(mimeType, codecs)
  * The rendition identity is mimeType, codecs and sample rate, each compared exactly and null-safely:
  * an unknown rate matches only an unknown rate, so a re-declaration that stops reporting a rate does
  * not inherit evidence measured at a rate it no longer declares. Declared bitrate and itag are excluded
- * on purpose: bitrate is re-measured between re-resolutions of the same stream, and itag is a YouTube
- * format counter that every other writer keeps at 0, so either would drop evidence on identical
+ * on purpose: bitrate varies by writer and resolution of the same stream, and itag is the YouTube
+ * format number on some writes and 0 or -1 on others, so either would drop evidence on identical
  * re-declarations. The observation write applies the same comparison in SQL (`IS`, null-safe), see
  * `DatabaseDao.updateFormatEvidenceForRendition`; keep the two in step.
  */

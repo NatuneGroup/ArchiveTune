@@ -12,6 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           submodules: true
 
       - name: Set up JDK 21

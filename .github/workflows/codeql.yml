@@ -1,0 +1,49 @@
+name: CodeQL security analysis
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: '50 4 * * 3'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  analyze:
+    name: Kotlin and Java security analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          persist-credentials: false
+      - uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: temurin
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+          queries: security-extended
+      - name: Compile the documented debug variant without signing secrets
+        run: ./gradlew --console=plain --stacktrace assembleGmsMobileUniversalDebug
+      - name: Release compiler memory before security queries
+        run: ./gradlew --stop
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:java-kotlin
+          ram: 6144
+          threads: 2

@@ -93,8 +93,10 @@ uninitialized/unchanged here and never publish another Canary.
 - Player styles are self-contained (`bitchord/`, `simpmusic/`, `tiktok/`). The one
   exception is the swept lyric renderer — see [docs/lyrics.md](docs/lyrics.md).
 - New `.kt` files keep the GPL header banner. Never rewrite an existing file's
-  copyright banner to credit a different project. No formatter task; match the file
-  around you.
+  copyright banner to credit a different project. Match the file around you.
+- Lightweight quality checks and naming rules live in
+  [docs/engineering/quality.md](docs/engineering/quality.md). Reusable workflows
+  live in `.factory/skills/`; do not create competing copies of maintained docs.
 - User-facing strings go in `strings.xml`/`archivetune_strings.xml`, never inline.
 - Never restore anything in `docs/REMOVED_RUKAMORI_COMPONENTS.md` without reading
   why it went.

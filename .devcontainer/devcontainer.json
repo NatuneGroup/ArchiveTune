@@ -1,0 +1,22 @@
+{
+  "name": "ArchiveTune Android (remote x86_64)",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "runArgs": ["--platform=linux/amd64"],
+  "remoteUser": "vscode",
+  "hostRequirements": {
+    "cpus": 4,
+    "memory": "12gb",
+    "storage": "35gb"
+  },
+  "mounts": [
+    "source=archivetune-gradle,target=/home/vscode/.gradle,type=volume"
+  ],
+  "postCreateCommand": "bash scripts/setup_android.sh && python3 scripts/check_repository.py --worktree",
+  "customizations": {
+    "vscode": {
+      "extensions": ["fwcd.kotlin", "redhat.java"]
+    }
+  }
+}

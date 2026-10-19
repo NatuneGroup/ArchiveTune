@@ -1,9 +1,28 @@
-# detekt.yml
+config:
+  validation: true
+  warningsAsErrors: true
+
+complexity:
+  active: true
+  CyclomaticComplexMethod:
+    active: true
+    allowedComplexity: 14
+  LongMethod:
+    active: true
+    allowedLines: 80
+  NestedBlockDepth:
+    active: true
+    allowedDepth: 4
+
 style:
   active: true
   UnusedPrivateClass:
     active: true
-  UnusedPrivateMember:
+  UnusedPrivateFunction:
+    active: true
+  UnusedPrivateProperty:
+    active: true
+  UnusedVariable:
     active: true
 
 empty-blocks:

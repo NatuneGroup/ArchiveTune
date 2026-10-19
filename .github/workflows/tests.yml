@@ -5,6 +5,20 @@ name: Unit tests
 # can only rot unnoticed between manual runs: run this after merges.
 on:
   workflow_dispatch:
+    inputs:
+      extended_checks:
+        description: Also run dependency/semantic analysis, CodeQL and three full test repetitions
+        type: boolean
+        required: false
+        default: false
+      semantic_base:
+        description: Integration revision the dependency/semantic analysis compares with HEAD (used only by extended_checks; on dev pass the last validated revision, e.g. the previous release commit)
+        type: string
+        required: false
+        default: origin/dev
+
+permissions:
+  contents: read
 
 concurrency:
   # Per-commit: a second push must not wait out the first, and must not cancel it.
@@ -15,11 +29,13 @@ jobs:
   unit-tests:
     name: Compile and run unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
           submodules: true
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v5
@@ -41,7 +57,9 @@ jobs:
         run: |
           set -euo pipefail
           # Fail if this documented contract variant disappears; never test a different flavor.
-          ./gradlew --console=plain --stacktrace --profile :app:testGmsMobileUniversalDebugUnitTest
+          ./gradlew --console=plain --stacktrace --profile \
+            -I quality/unit-tests.init.gradle \
+            :app:testGmsMobileUniversalDebugUnitTest --rerun :app:criticalPolicyCoverage
         env:
           PULL_REQUEST: 'false'
           GITHUB_EVENT_NAME: ${{ github.event_name }}
@@ -60,5 +78,36 @@ jobs:
             build/reports/profile/
             app/build/reports/tests/
             app/build/test-results/
+            app/build/reports/jacoco/
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Upload compact machine-readable test evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-machine-reports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            app/build/reports/jacoco/*.xml
+            app/build/test-results/**/TEST-*.xml
+          if-no-files-found: warn
+          retention-days: 7
+
+  dependency-health:
+    if: ${{ inputs.extended_checks }}
+    uses: ./.github/workflows/dependency_health.yml
+    with:
+      semantic_base: ${{ inputs.semantic_base }}
+
+  stability:
+    if: ${{ inputs.extended_checks }}
+    uses: ./.github/workflows/test_stability.yml
+    with:
+      test_filter: '*'
+
+  security:
+    if: ${{ inputs.extended_checks }}
+    permissions:
+      contents: read
+      security-events: write
+    uses: ./.github/workflows/codeql.yml

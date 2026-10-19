@@ -67,6 +67,67 @@ queue handoff, decoded-PCM observation and UI behavior; it cannot establish
 physical-device audio quality, USB/DAC output or authenticated-provider behavior.
 Those checks must remain explicitly unverified until there is real evidence.
 
+## Auth-free synthetic playback check
+
+Use a clean QA emulator, not an AVD containing personal accounts. After installing
+the exact debug APK above, select its serial explicitly (`adb devices`):
+
+```sh
+export PATH="$ANDROID_HOME/platform-tools:$PATH"
+APK=app/build/outputs/apk/gmsMobileX86_64/debug/app-gms-mobile-x86_64-debug.apk
+python3 scripts/android_qa.py prepare --serial emulator-5554 --apk "$APK"
+```
+
+The harness refuses physical devices and verifies that the installed APK's
+SHA-256 matches the supplied file. It creates a real, seekable 30-second PCM WAV
+and grants only the app's media-read permission. It never inserts account tokens,
+alters onboarding preferences or requires an authenticated streaming provider.
+
+Complete the normal onboarding:
+
+1. Continue from Welcome.
+2. On Permissions, media access is already granted. Notification/battery requests
+   are optional for this foreground check; continue without granting extra access.
+3. On the login page, scroll to the actions and choose **Skip**, not Sign in.
+4. Continue past Community without opening an external link and finish onboarding.
+5. If an ANR or system error appears, record it and stop. Do not dismiss it and
+   claim a pass.
+
+Then exercise the real external-audio intent, media session and player:
+
+```sh
+python3 scripts/android_qa.py verify --serial emulator-5554 --apk "$APK"
+```
+
+The check requires this app's synthetic track to enter Playing, advance at least
+one second, pause and resume. It fails on a wrong APK, missing session/track,
+timeout or nonadvancing playback. It records only the supplied APK hash, checkout
+revision and assertions in `.factory/reports/android-qa/result.json`; unrelated
+apps' raw media-session metadata is not retained. Match the APK to the build's
+recorded source snapshot, because a checkout revision alone cannot prove APK
+provenance. This is not a visual-layout, physical-audio or authenticated-source test.
+
+## Bounded performance capture
+
+With only synthetic playback running on that clean emulator:
+
+```sh
+mkdir -p .factory/reports/android-qa
+adb -s emulator-5554 shell perfetto --txt -c - \
+  -o /data/misc/perfetto-traces/archivetune-qa.perfetto-trace \
+  < quality/perfetto.pbtxt
+adb -s emulator-5554 pull \
+  /data/misc/perfetto-traces/archivetune-qa.perfetto-trace \
+  .factory/reports/android-qa/
+```
+
+The config bounds recording to 15 seconds and 8 MiB, including scheduler,
+CPU-frequency and Android activity/view/audio slices. During capture, interact
+with the synthetic track's player, or run the synthetic `verify` command in a
+second terminal. Inspect the trace locally in Perfetto or
+Android Studio; do not upload it to an external service. It can expose framework
+rendering/stall timing, not prove physical output or provider/server traces.
+
 Media3 1.10.1 reports [the sink's AudioTrack configuration](https://github.com/androidx/media/blob/1.10.1/libraries/exoplayer/src/main/java/androidx/media3/exoplayer/audio/DefaultAudioSink.java#L871).
 The bit-perfect output provider can change the PCM container after that request.
 Decoded PCM and Android-output rows therefore remain unavailable for the custom

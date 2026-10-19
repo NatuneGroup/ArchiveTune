@@ -515,7 +515,7 @@
     <string name="year_in_music_empty_subtitle">%d년에 음악을 더 많이 감상하시면 연말 요약이 여기에 나타납니다.</string>
     <string name="storage_location_free">%s 여유 공간 있음</string>
     <string name="aod_customize_show_artist">아티스트 표시</string>
-    <string name="storage_folder_not_writable">ArchiveTune이 이 폴더에 캐시 파일을 저장할 수 없습니다. 쓰기 권한을 확인해 주세요.</string>
+    <string name="storage_folder_not_writable">Natune이 이 폴더에 캐시 파일을 저장할 수 없습니다. 쓰기 권한을 확인해 주세요.</string>
     <string name="storage_folder_unsupported">이 폴더는 파일 기반 음악 캐시에 사용할 수 없습니다.</string>
     <string name="aod_customize_sample_elapsed">1:24</string>
     <string name="mini_player_background_style">미니 플레이어 배경 스타일</string>

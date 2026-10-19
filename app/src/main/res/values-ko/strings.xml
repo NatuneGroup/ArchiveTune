@@ -295,9 +295,9 @@
     <string name="login">로그인</string>
     <string name="not_logged_in">로그인되지 않음</string>
     <string name="playback_confirmation_required">재생 승인 필요</string>
-    <string name="playback_requires_youtube_music_confirmation">YouTube Music에서 재생 여부를 확인한 후 ArchiveTune으로 돌아오세요.</string>
+    <string name="playback_requires_youtube_music_confirmation">YouTube Music에서 재생 여부를 확인한 후 Natune으로 돌아오세요.</string>
     <string name="playback_login_refresh_required">YouTube Music 로그인 새로고침</string>
-    <string name="playback_requires_youtube_music_login_refresh">YouTube Music 로그인을 새로고침한 다음 ArchiveTune으로 돌아옵니다.</string>
+    <string name="playback_requires_youtube_music_login_refresh">YouTube Music 로그인을 새로고침한 다음 Natune으로 돌아옵니다.</string>
     <string name="content_language">선호하는 콘텐츠 언어</string>
     <string name="content_country">선호하는 콘텐츠 국가</string>
     <string name="system_default">시스템 기본값</string>
@@ -573,9 +573,9 @@
     <string name="update_notification_channel_name">앱 업데이트 상태 푸시</string>
     <string name="update_notification_channel_desc">앱의 신버전 배포 시점에 알리는 시스템 전용 푸시 알림 채널입니다.</string>
     <string name="update_notification_title">새로운 업데이트 발견됨</string>
-    <string name="update_notification_text">이제 기기에서 즉시 ArchiveTune %s 버전을 설치하여 이용할 수 있습니다.</string>
+    <string name="update_notification_text">이제 기기에서 즉시 Natune %s 버전을 설치하여 이용할 수 있습니다.</string>
     <string name="download">오프라인 저장</string>
-    <string name="permissions_title">ArchiveTune 최적 작동 권한 허용</string>
+    <string name="permissions_title">Natune 최적 작동 권한 허용</string>
     <string name="permissions_subtitle">음악 재생 안정성을 보장하고 미디어를 편하게 컨트롤 및 관리할 수 있도록 스마트폰 시스템의 권한을 일부 활용합니다. 시스템 설정에서 철회하실 수 있습니다.</string>
     <string name="permission_storage_title">기기 내부 미디어 저장소 접근 권한</string>
     <string name="permission_storage_desc">스마트폰 내부 저장소에 소장 중인 로컬 음악 파일을 재생 목록으로 스캔하여 불러오기 위해 해당 미디어 권한이 필수로 사용됩니다.</string>
@@ -613,7 +613,7 @@
     <string name="token_copied">해당 검증 토큰을 안전하게 클립보드에 복사했습니다.</string>
     <string name="extracting_from_url">지정된 구글 계정 주소로부터 토큰 구조 파싱 중</string>
     <string name="po_token_account_notice_title">반드시 동일한 계정을 사용하십시오!</string>
-    <string name="po_token_account_notice_body">PO 토큰 생성을 정상 마쳐 무한 로딩 오류를 뚫기 전에, 먼저 현재 ArchiveTune 앱 내부에서 이미 로그인하여 사용하고 있는 동일한 Google/YouTube Music 계정으로 여기서 로그인해 주셔야 에러가 나지 않습니다.</string>
+    <string name="po_token_account_notice_body">PO 토큰 생성을 정상 마쳐 무한 로딩 오류를 뚫기 전에, 먼저 현재 Natune 앱 내부에서 이미 로그인하여 사용하고 있는 동일한 Google/YouTube Music 계정으로 여기서 로그인해 주셔야 에러가 나지 않습니다.</string>
     <string name="po_token_account_notice_same_account">이곳 내부 웹뷰와 메인 플레이어에 등록된 계정이 서로 다른 인물이면, 새로 수집되는 우회 토큰이 앱 재생기 상에서 올바르게 가동되지 않습니다.</string>
     <string name="po_token_account_notice_mismatch">계정 불일치 경고: 동일한 계정으로 웹뷰 내부 가입 로그인 절차를 모두 마친 후 youtube.com/account 주소로 진입하여 토큰 데이터를 생성해 주시기 바랍니다.</string>
     <string name="saved_accounts">기기 저장된 전환용 구글 계정 목록</string>
@@ -642,7 +642,7 @@
     <string name="discord_activity_type_watching_label">시청 중</string>
     <string name="newest_first">최신순</string>
     <string name="see_all">모두 보기</string>
-    <string name="discord_account_ready">이제 ArchiveTune에서 음악 감상 세션의 Rich Presence를 프로필에 공유할 준비가 되었습니다.</string>
+    <string name="discord_account_ready">이제 Natune에서 음악 감상 세션의 Rich Presence를 프로필에 공유할 준비가 되었습니다.</string>
     <string name="discord_connection_settings">연동 설정</string>
     <string name="discord_image_artist_artwork">아티스트 아트워크</string>
     <string name="sort_z_to_a">역가나다순</string>
@@ -691,7 +691,7 @@
     <string name="discord_activity_type_competing_label">경쟁 중</string>
     <string name="discord_platform_embedded">임베디드</string>
     <string name="recently_played">최근 재생한 음악</string>
-    <string name="widget_tap_to_open">탭하여 ArchiveTune 열기</string>
+    <string name="widget_tap_to_open">탭하여 Natune 열기</string>
     <string name="discord_refresh_failed">Discord Rich Presence 새로고침 실패</string>
     <string name="top_artist_badge">인기 아티스트</string>
     <string name="your_playlists">내 재생목록</string>
@@ -810,7 +810,7 @@
     <string name="updates_channel_warning_stable_source">공식 배포 버전을 통해 가장 안정적인 기능만을 제공합니다.</string>
     <string name="updates_channel_warning_stable_desc">새로운 기능 적용은 다소 늦어질 수 있으나, 버그나 비정상 종료 우려 없이 편안하게 이용 가능합니다.</string>
     <string name="download_complete">오프라인 저장 완료</string>
-    <string name="onboarding_welcome_title">ArchiveTune에 오신 것을 환영합니다</string>
+    <string name="onboarding_welcome_title">Natune에 오신 것을 환영합니다</string>
     <string name="onboarding_welcome_subtitle">당신만의 특별한 음악 보관함을 함께 완성해 보세요.</string>
     <string name="onboarding_permissions_title">필수 권한 설정</string>
     <string name="onboarding_permissions_subtitle">끊김 없는 음악 감상 환경을 구축하기 위해 아래의 권한 허용이 필요합니다.</string>

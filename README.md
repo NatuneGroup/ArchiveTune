@@ -1,6 +1,6 @@
 <div align="center">
 
-  <img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/icon.png" width="160" height="160" alt="ArchiveTune Logo" style="border-radius: 22%">
+  <img src="https://github.com/NatuneGroup/ArchiveTune/blob/main/fastlane/metadata/android/en-US/images/icon.png" width="160" height="160" alt="Natune Logo" style="border-radius: 22%">
 
   <h1>ArchiveTune</h1>
 

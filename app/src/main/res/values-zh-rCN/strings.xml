@@ -88,7 +88,7 @@
     <string name="update_notification_channel_desc">新应用更新通知</string>
     <string name="update_notification_title">更新可用</string>
     <string name="download">下载</string>
-    <string name="permissions_title">让ArchiveTune发挥最佳作用</string>
+    <string name="permissions_title">让Natune发挥最佳作用</string>
     <string name="permissions_subtitle">我们使用一些权限来可靠地播放和管理您的音乐，你可以随时在系统设置中更改这些</string>
     <string name="permission_storage_title">存储访问</string>
     <string name="permission_storage_desc">播放时必须读取下载的和本地音频文件</string>
@@ -277,7 +277,7 @@
     <string name="latest_version_format">最新消息：%s</string>
     <string name="enable_update_notification">启用更新通知</string>
     <string name="recent_commits">近期提交</string>
-    <string name="update_notification_text">ArchiveTune%s现已发布</string>
+    <string name="update_notification_text">Natune%s现已发布</string>
     <string name="permission_status_allowed">允许</string>
     <string name="next">下一个</string>
     <string name="delete_playlist_confirm">你真的想删除播放列表”%s\"吗?</string>

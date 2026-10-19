@@ -109,6 +109,17 @@ class RepositoryChecksTest(unittest.TestCase):
             self.assertEqual("© upstream\nλ\0value\n", snapshot.text("first.txt"))
             self.assertEqual("separate object", snapshot.text("second.txt"))
 
+    def test_submodule_pointers_are_not_read_as_blobs(self):
+        root = self.temporary_repository()
+        sha = "0dc0699899d9e4268dad8b696fba0e6a60727e3c"
+        subprocess.run(
+            ["git", "-C", str(root), "update-index", "--add", "--cacheinfo", f"160000,{sha},IconPack"],
+            check=True,
+        )
+        with patch.object(checker, "ROOT", root), Snapshot(staged=True) as snapshot:
+            self.assertIsNone(snapshot.size("IconPack"))
+            self.assertEqual("", snapshot.text("IconPack"))
+
 
 if __name__ == "__main__":
     unittest.main()

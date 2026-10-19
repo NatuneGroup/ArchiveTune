@@ -11,7 +11,7 @@ adapted, or studies. Everything below is GPL-3.0 unless stated otherwise.
 | --- | --- | --- |
 | [rukamori/ArchiveTune](https://github.com/rukamori/ArchiveTune) | Rukamori | The base application: player, library, queue, playback service, settings shell. Most files still carry the Rukamori header. |
 | [rukamori/core](https://github.com/rukamori/core) → [vossgraves/core](https://github.com/vossgraves/core) | Rukamori, forked by vossgraves | The InnerTube client (`core` submodule). A NewPipeExtractor-based fork that deliberately omits `NetworkGatekeeper`. |
-| [rukamori/IconPack](https://github.com/rukamori/IconPack) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori | Icon assets and the media obfuscator (submodules). |
+| [NatuneGroup/IconPack](https://github.com/NatuneGroup/IconPack) (fork of [rukamori/IconPack](https://github.com/rukamori/IconPack)) · [rukamori/morideobfuscator](https://github.com/rukamori/morideobfuscator) | Rukamori (upstream); Natune (IconPack fork) | Icon pack for the icon switcher: the upstream icon sets, with Natune artwork replacing or redrawing the icons that carried the old ArchiveTune mark. Also the media obfuscator (submodules). |
 
 ## Projects whose work we port or adapt
 

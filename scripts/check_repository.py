@@ -57,6 +57,9 @@ class GitObjects:
         if header.endswith(b" missing\n"):
             return None
         fields = header.split()
+        if len(fields) == 2 and fields[1] == b"submodule":
+            # Git 2.55 reports a submodule pointer by type alone: no size, no content.
+            return None
         if len(fields) != 3 or not fields[2].isdigit():
             raise ValueError("Git object reader returned an invalid header")
         return int(fields[2]) if fields[1] == b"blob" else None

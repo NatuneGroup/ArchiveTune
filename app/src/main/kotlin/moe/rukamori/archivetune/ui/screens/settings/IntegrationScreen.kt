@@ -256,6 +256,16 @@ fun IntegrationScreen(
                         },
                     )
                 }
+
+                item {
+                    PreferenceEntry(
+                        modifier = positions.modifierFor("addons"),
+                        title = { Text(stringResource(R.string.addons_title)) },
+                        description = stringResource(R.string.addons_description),
+                        icon = { Icon(painterResource(R.drawable.integration), null) },
+                        onClick = { navController.navigate("settings/addons") },
+                    )
+                }
             }
 
             // "External Sources" hosts Spotify — a read-only playlist import source, not a

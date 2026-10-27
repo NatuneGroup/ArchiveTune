@@ -1666,6 +1666,9 @@ val TelegramBotsKey = stringPreferencesKey("telegramBots")
 // in sync with what they've collected via bots. Default ON per the feature brief.
 val TelegramBotForwardToChannelKey = booleanPreferencesKey("telegramBotForwardToChannel")
 
+// Add-on manifest URLs and their enabled state are stored as a JSON array.
+val AddonInstallationsKey = stringPreferencesKey("addonInstallations")
+
 
 // ---------------------------------------------------------------------------
 // Multi-source audio framework

@@ -44,6 +44,7 @@ into `dev` only after the device QA in [docs/claude/RELEASES.md](docs/claude/REL
 | [docs/fork-divergence.md](docs/fork-divergence.md) | What 4nx3b's fork has that we do not and the reverse, by tree comparison rather than commit count |
 | [docs/source-logins.md](docs/source-logins.md) | The four WebView sign-in screens: what each captures, why nothing saves unverified, the Qobuz app-secret search |
 | [docs/instance-racing.md](docs/instance-racing.md) | Tidal public instances: where they come from, how the resolver races them, health and cooldowns |
+| [docs/addons.md](docs/addons.md) | Declarative HTTPS add-on manifest and search/stream response contract |
 | [docs/telegram-native.md](docs/telegram-native.md) | The TDLight engine: why the native library is downloaded, the digest pinning, schema drift from 1.8.56 |
 | [docs/spotify-native-playback.md](docs/spotify-native-playback.md) | Playing Spotify tracks with no YouTube release: shipped ISRC resolution, and the unshipped native-id design |
 | [docs/REMOVED_RUKAMORI_COMPONENTS.md](docs/REMOVED_RUKAMORI_COMPONENTS.md) | What the 2026-08 cleanup deleted, and why not to restore it |

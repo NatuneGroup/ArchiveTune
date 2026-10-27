@@ -11,6 +11,8 @@ package moe.rukamori.archivetune.ui.screens.search
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -52,20 +54,26 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import android.widget.Toast
 import androidx.navigation.NavController
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.addons.AddonTrack
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.LocalPlayerConnection
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.AppBarHeight
 import moe.rukamori.archivetune.constants.SearchProvider
+import moe.rukamori.archivetune.extensions.toMediaItem
 import moe.rukamori.archivetune.extensions.togglePlayPause
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_ALBUM
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_ARTIST
@@ -83,6 +91,8 @@ import moe.rukamori.archivetune.innertube.models.WatchEndpoint
 import moe.rukamori.archivetune.innertube.models.YTItem
 import moe.rukamori.archivetune.innertube.pages.SearchSummary
 import moe.rukamori.archivetune.models.toMediaMetadata
+import moe.rukamori.archivetune.models.MediaMetadata as AppMediaMetadata
+import moe.rukamori.archivetune.playback.queues.ListQueue
 import moe.rukamori.archivetune.playback.queues.YouTubeQueue
 import moe.rukamori.archivetune.ui.component.ChipsRow
 import moe.rukamori.archivetune.ui.component.EmptyPlaceholder
@@ -106,9 +116,11 @@ fun OnlineSearchResult(
 ) {
     val menuState = LocalMenuState.current
     val playerConnection = LocalPlayerConnection.current ?: return
+    val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val isPlaying by playerConnection.isPlaying.collectAsStateWithLifecycle()
     val mediaMetadata by playerConnection.mediaMetadata.collectAsStateWithLifecycle()
+    val addonTracks by viewModel.addonTracks.collectAsStateWithLifecycle()
     if (viewModel.searchProvider == SearchProvider.SPOTIFY) {
         SpotifyOnlineSearchResult(navController = navController)
         return
@@ -272,6 +284,62 @@ fun OnlineSearchResult(
         )
     }
 
+    val addonTrackContent: @Composable (AddonTrack) -> Unit = { track ->
+        val addonMediaId = "addon:${track.addonId}:${track.id}"
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        if (mediaMetadata?.id == addonMediaId) {
+                            playerConnection.player.togglePlayPause()
+                        } else {
+                            coroutineScope.launch {
+                                try {
+                                    val stream = viewModel.resolveAddonTrack(track)
+                                    val metadata =
+                                        AppMediaMetadata(
+                                            id = addonMediaId,
+                                            title = track.title,
+                                            artists = listOf(AppMediaMetadata.Artist(id = null, name = track.artist)),
+                                            duration = ((track.displayDurationMs ?: 0L) / 1000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt(),
+                                            thumbnailUrl = track.displayArtworkUrl,
+                                            album = track.album?.let { AppMediaMetadata.Album(id = it, title = it) },
+                                        )
+                                    val mediaItem =
+                                        metadata.toMediaItem()
+                                            .buildUpon()
+                                            .setUri(stream.url.toUri())
+                                            .apply { stream.mimeType?.let(::setMimeType) }
+                                            .build()
+                                    playerConnection.playQueue(
+                                        ListQueue(title = track.addonName, items = listOf(mediaItem)),
+                                    )
+                                } catch (error: Throwable) {
+                                    if (error is kotlinx.coroutines.CancellationException) throw error
+                                    Toast.makeText(context, R.string.addon_stream_failed, Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        }
+                    }
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            Icon(painterResource(R.drawable.music_note), contentDescription = null)
+            Column(Modifier.weight(1f)) {
+                Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    text = "${track.artist} · ${track.addonName}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+
     Column(
         modifier =
             Modifier
@@ -390,7 +458,34 @@ fun OnlineSearchResult(
                     }
                 }
 
-                if (allModeSections.isEmpty() && isAllModeLoaded) {
+                if (addonTracks.isNotEmpty()) {
+                    item(key = "addon_results_header", contentType = "section_header") {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier.width(3.dp).height(18.dp).clip(RoundedCornerShape(2.dp))
+                                    .background(MaterialTheme.colorScheme.primary),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = stringResource(R.string.addon_search_results),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                    }
+                    items(
+                        items = addonTracks,
+                        key = { "addon:${it.addonId}:${it.id}" },
+                        contentType = { "addon_result" },
+                        itemContent = { track -> addonTrackContent(track) },
+                    )
+                }
+
+                if (allModeSections.isEmpty() && addonTracks.isEmpty() && isAllModeLoaded) {
                     item(key = "empty_all", contentType = "empty") {
                         EmptyPlaceholder(
                             icon = R.drawable.search,
@@ -399,6 +494,22 @@ fun OnlineSearchResult(
                     }
                 }
             } else {
+                if (searchFilter?.value == FILTER_SONG.value && addonTracks.isNotEmpty()) {
+                    item(key = "addon_songs_header", contentType = "section_header") {
+                        Text(
+                            text = stringResource(R.string.addon_search_results),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                        )
+                    }
+                    items(
+                        items = addonTracks,
+                        key = { "filtered_addon:${it.addonId}:${it.id}" },
+                        contentType = { "addon_result" },
+                        itemContent = { track -> addonTrackContent(track) },
+                    )
+                }
                 items(
                     items = viewModel.sortedItems(itemsPage?.items.orEmpty().distinctBy { it.id }, searchSort),
                     key = { "filtered_${it.id}" },
@@ -416,7 +527,9 @@ fun OnlineSearchResult(
                     }
                 }
 
-                if (itemsPage?.items?.isEmpty() == true) {
+                if (itemsPage?.items?.isEmpty() == true &&
+                    (searchFilter?.value != FILTER_SONG.value || addonTracks.isEmpty())
+                ) {
                     item(key = "empty_filtered", contentType = "empty") {
                         EmptyPlaceholder(
                             icon = R.drawable.search,

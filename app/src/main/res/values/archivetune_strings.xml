@@ -86,6 +86,17 @@
     <string name="local_songs_no_matches_title">No matching local songs</string>
     <string name="local_songs_no_matches_desc">Try a different song, artist, or album name.</string>
     <string name="sort_by_album">Album</string>
+    <string name="addons_title">Add-ons</string>
+    <string name="addons_description">Manage catalog and playback extensions</string>
+    <string name="addon_add_title">Add an add-on</string>
+    <string name="addon_add_description">Add an HTTPS add-on server URL</string>
+    <string name="addon_manifest_url_hint">https://example.com/addon</string>
+    <string name="addon_empty_title">No add-ons installed</string>
+    <string name="addon_empty_description">Add an add-on manifest to include its tracks in search.</string>
+    <string name="addon_remove">Remove add-on</string>
+    <string name="addon_operation_failed">Could not complete the add-on request. Check the manifest URL and try again.</string>
+    <string name="addon_stream_failed">Could not resolve this add-on track.</string>
+    <string name="addon_search_results">Add-on results</string>
     <string name="remote_history">Remote</string>
     <string name="charts">Charts</string>
     <string name="back_button_desc">Back</string>

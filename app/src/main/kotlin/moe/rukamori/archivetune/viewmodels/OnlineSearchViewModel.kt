@@ -19,11 +19,18 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.addons.AddonRepository
+import moe.rukamori.archivetune.addons.AddonStreamResponse
+import moe.rukamori.archivetune.addons.AddonTrack
+import moe.rukamori.archivetune.addons.playbackMimeType
+import moe.rukamori.archivetune.addons.toFormatEntity
 import moe.rukamori.archivetune.aicontentfilter.FilterAiContentUseCase
 import moe.rukamori.archivetune.aicontentfilter.LoadAiContentFilterPolicyUseCase
 import moe.rukamori.archivetune.constants.HideExplicitKey
 import moe.rukamori.archivetune.constants.HideVideoKey
+import moe.rukamori.archivetune.db.MusicDatabase
 import moe.rukamori.archivetune.innertube.YouTube
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_ALBUM
 import moe.rukamori.archivetune.innertube.YouTube.SearchFilter.Companion.FILTER_ARTIST
@@ -60,6 +67,8 @@ class OnlineSearchViewModel
         savedStateHandle: SavedStateHandle,
         private val loadAiContentFilterPolicy: LoadAiContentFilterPolicyUseCase,
         private val filterAiContent: FilterAiContentUseCase,
+        private val addonRepository: AddonRepository,
+        private val database: MusicDatabase,
     ) : ViewModel() {
         val query =
             decodeOnlineSearchQuery(
@@ -72,6 +81,8 @@ class OnlineSearchViewModel
         val filter = MutableStateFlow<YouTube.SearchFilter?>(null)
         var summaryPage by mutableStateOf<SearchSummaryPage?>(null)
         val viewStateMap = mutableStateMapOf<String, ItemsPage?>()
+        private val _addonTracks = MutableStateFlow<List<AddonTrack>>(emptyList())
+        val addonTracks = _addonTracks.asStateFlow()
 
         private val allModeFilters =
             listOf(
@@ -87,6 +98,14 @@ class OnlineSearchViewModel
 
         init {
             if (searchProvider == SearchProvider.YOUTUBE) {
+                viewModelScope.launch {
+                    try {
+                        _addonTracks.value = addonRepository.search(query)
+                    } catch (error: Throwable) {
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        reportException(error)
+                    }
+                }
                 viewModelScope.launch {
                     filter.collect { selectedFilter ->
                         if (selectedFilter == null) {
@@ -192,6 +211,20 @@ class OnlineSearchViewModel
                         )
                 }
             }
+        }
+
+        suspend fun resolveAddonTrack(track: AddonTrack): AddonStreamResponse {
+            val mediaId = "addon:${track.addonId}:${track.id}"
+            val stream = addonRepository.resolveStream(track.addonId, track)
+            val format = stream.toFormatEntity(mediaId)
+            database.query { upsert(format) }
+            return stream.copy(
+                mimeType = stream.playbackMimeType(format.mimeType.takeIf { it.startsWith("audio/") }),
+                codecs = format.codecs,
+                bitrate = format.bitrate.toDouble(),
+                sampleRate = format.sampleRate?.toDouble(),
+                contentLength = format.contentLength,
+            )
         }
 
         fun sortedItems(

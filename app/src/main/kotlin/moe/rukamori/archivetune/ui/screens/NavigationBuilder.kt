@@ -61,6 +61,7 @@ import moe.rukamori.archivetune.ui.screens.search.OnlineSearchResultRoute
 import moe.rukamori.archivetune.ui.screens.search.OnlineSearchResultRoutePrefix
 import moe.rukamori.archivetune.ui.screens.search.SearchScreen
 import moe.rukamori.archivetune.ui.screens.settings.AboutScreen
+import moe.rukamori.archivetune.ui.screens.settings.AddonSettings
 import moe.rukamori.archivetune.ui.screens.settings.AccountSettings
 import moe.rukamori.archivetune.ui.screens.settings.AiIntegrationSettings
 import moe.rukamori.archivetune.ui.screens.settings.AndroidAutoSettings
@@ -652,6 +653,9 @@ fun NavGraphBuilder.navigationBuilder(
         arguments = listOf(navArgument("scrollTo") { type = NavType.StringType; nullable = true; defaultValue = null }),
     ) {
         IntegrationScreen(navController, it.savedStateHandle["scrollTo"])
+    }
+    composable("settings/addons") {
+        AddonSettings(navController)
     }
     composable(route = "settings/integrations/listen_together") {
         ListenTogetherSettings(navController, scrollBehavior)

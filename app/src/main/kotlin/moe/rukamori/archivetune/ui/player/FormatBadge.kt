@@ -72,8 +72,7 @@ fun LosslessOrStats(
     modifier: Modifier = Modifier,
 ) {
     val lossless = format?.isLossless() == true
-    val hiRes = lossless && (format?.sampleRate ?: 0) >= 88_200
-    val hiQuality = !lossless && (format?.bitrate ?: 0) >= 250_000
+    val badgeText = format?.qualityBadgeText()
     when {
         // Still resolving — nothing measured yet to confirm with, so this is a
         // statement of intent, not a result.
@@ -82,24 +81,21 @@ fun LosslessOrStats(
             animated = false,
             modifier = modifier,
         )
-        lossless -> LosslessLabel(
-            // Same line Tidal, Qobuz and Apple Music draw it at.
-            text = if (hiRes) "Hi-Res Lossless" else "Lossless",
-            // Shimmer is reserved for the thing that was asked for and
-            // confirmed. It is what makes the badge read as an achievement
-            // rather than a label, which only one of these two is.
-            animated = true,
-            modifier = modifier,
-        )
-        // Lossy, but the good end of lossy.
-        hiQuality -> LosslessLabel(
-            text = "Hi-Quality",
-            animated = false,
+        badgeText != null -> LosslessLabel(
+            text = badgeText,
+            animated = lossless,
             modifier = modifier,
         )
         else -> {}
     }
 }
+
+internal fun FormatEntity.qualityBadgeText(): String? =
+    when {
+        isLossless() -> if ((sampleRate ?: 0) >= 88_200) "Hi-Res Lossless" else "Lossless"
+        bitrate >= 250_000 -> "Hi-Quality"
+        else -> null
+    }
 
 /** Whether the stream is a lossless codec. */
 private fun FormatEntity.isLossless(): Boolean =

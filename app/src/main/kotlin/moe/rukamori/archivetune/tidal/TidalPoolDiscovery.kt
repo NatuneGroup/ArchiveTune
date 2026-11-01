@@ -15,6 +15,7 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAuthBackoff
 import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -70,7 +71,7 @@ internal object TidalPoolDiscovery {
         }
         // Auth backoff and the discovery TTL both keep stale answers rather than billing another
         // feed read — discovered URLs are community instances, usable while the pool rests.
-        if (PoolAccountManager.authBackoffActive()) return discoveryCache
+        if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
         val now = System.currentTimeMillis()
         if (fetchedAtMs != 0L && now - fetchedAtMs < TTL_MS) return discoveryCache
         // Single-flight: resolve paths and health scans call this often, and concurrent callers
@@ -81,7 +82,7 @@ internal object TidalPoolDiscovery {
                 TidalAudioProvider.clearPoolDiscovery()
                 return emptyList()
             }
-            if (PoolAccountManager.authBackoffActive()) return discoveryCache
+            if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
             if (fetchedAtMs != 0L && System.currentTimeMillis() - fetchedAtMs < TTL_MS) {
                 return discoveryCache
             }

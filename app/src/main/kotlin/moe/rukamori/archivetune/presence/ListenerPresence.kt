@@ -20,8 +20,10 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import java.io.IOException
 import java.security.SecureRandom
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
 import kotlin.random.Random
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -39,13 +41,17 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.withAppProxy
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import timber.log.Timber
 
 /**
@@ -72,6 +78,7 @@ object ListenerPresence {
     private const val TAG = "ListenerPresence"
     private const val HEARTBEAT_PATH = "/api/heartbeat"
     private const val REQUEST_TIMEOUT_MS = 10_000L
+    private const val CALL_TIMEOUT_MS = 15_000L
     private const val HTTPS_PREFIX = "https://"
     private val JSON_MEDIA = "application/json".toMediaType()
 
@@ -92,6 +99,12 @@ object ListenerPresence {
             .withAppProxy()
             .connectTimeout(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            .callTimeout(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+            // One call per beat, no silent transport retries and no redirect chasing: the
+            // host either takes the frame or the beat is simply dropped.
+            .retryOnConnectionFailure(false)
+            .followRedirects(false)
+            .followSslRedirects(false)
             .build()
     }
 
@@ -190,31 +203,46 @@ object ListenerPresence {
         }
     }
 
-    private fun send(context: Context, payloadJson: String): Result<Unit> =
-        try {
-            if (!isOnline(context)) {
-                Result.failure(IllegalStateException("Listener presence skipped while offline"))
-            } else {
-                val request =
-                    Request
-                        .Builder()
-                        .url(baseUrl + HEARTBEAT_PATH)
-                        .header("Accept", "application/json")
-                        .post(payloadJson.toRequestBody(JSON_MEDIA))
-                        .build()
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        Result.success(Unit)
-                    } else {
-                        Result.failure(IllegalStateException("Listener presence rejected (HTTP ${response.code})"))
-                    }
-                }
-            }
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (failure: Exception) {
-            Result.failure(failure)
+    private suspend fun send(context: Context, payloadJson: String): Result<Unit> {
+        if (!isOnline(context)) {
+            return Result.failure(IllegalStateException("Listener presence skipped while offline"))
         }
+        // enqueue + invokeOnCancellation keeps a beat cancellable like the rest of the loop; the
+        // final "stopped" beat runs inside withContext(NonCancellable), where cancellation cannot
+        // reach it and callTimeout bounds the whole call instead of a manual delay.
+        return suspendCancellableCoroutine { cont ->
+            val request =
+                Request
+                    .Builder()
+                    .url(baseUrl + HEARTBEAT_PATH)
+                    .header("Accept", "application/json")
+                    // A ByteArray body keeps the Content-Type exactly "application/json" — the
+                    // String overload would append "; charset=utf-8".
+                    .post(payloadJson.encodeToByteArray().toRequestBody(JSON_MEDIA))
+                    .build()
+            val call = client.newCall(request)
+            cont.invokeOnCancellation { call.cancel() }
+            call.enqueue(
+                object : Callback {
+                    override fun onFailure(call: Call, e: IOException) {
+                        if (cont.isActive) cont.resume(Result.failure(e))
+                    }
+
+                    override fun onResponse(call: Call, response: Response) {
+                        val result =
+                            response.use {
+                                if (it.isSuccessful) {
+                                    Result.success(Unit)
+                                } else {
+                                    Result.failure(IllegalStateException("Listener presence rejected (HTTP ${it.code})"))
+                                }
+                            }
+                        if (cont.isActive) cont.resume(result)
+                    }
+                },
+            )
+        }
+    }
 
     /** Validated-internet check at send time: no heartbeat leaves while the device is offline. */
     private fun isOnline(context: Context): Boolean {

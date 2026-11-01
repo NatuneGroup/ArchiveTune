@@ -170,6 +170,8 @@ internal object PoolEndpoints {
                 // must stop the walk before the next endpoint is tried, not after the request
                 // is already on the wire.
                 coroutineContext.ensureActive()
+                // Wait (≤2s) for the persisted backoff window to load before consulting it.
+                PoolAuthBackoff.awaitReady()
                 if (!PoolAccountManager.isPoolEnabled() || PoolAccountManager.authBackoffActive()) {
                     throw PoolUnavailableException()
                 }

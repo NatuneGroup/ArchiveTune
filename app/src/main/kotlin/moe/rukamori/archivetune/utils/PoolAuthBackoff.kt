@@ -12,10 +12,12 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.BuildConfig
 import timber.log.Timber
 
@@ -47,8 +49,36 @@ internal object PoolAuthBackoff {
     @Volatile
     private var loadRequested = false
 
+    @Volatile
+    private var contextHint: Context? = null
+
+    /** Completed once the persisted window has been read — or its read failed, counted inactive. */
+    private val ready = CompletableDeferred<Unit>()
+
+    /**
+     * True once the persisted window is loaded. The getter also kicks [ensureLoaded] through the
+     * context hint, so synchronous discovery paths can gate on it without a suspend hop.
+     */
+    val isReady: Boolean
+        get() {
+            contextHint?.let(::ensureLoaded)
+            return ready.isCompleted
+        }
+
     /** True while a persisted 401 backoff window is open. */
-    fun active(): Boolean = untilMs != 0L && System.currentTimeMillis() < untilMs
+    fun active(): Boolean {
+        contextHint?.let(::ensureLoaded)
+        return untilMs != 0L && System.currentTimeMillis() < untilMs
+    }
+
+    /**
+     * Suspends until the persisted window is read, capped at [timeoutMs] so a slow DataStore
+     * read cannot stall a resolver; gates then use whatever state was loaded in time.
+     */
+    suspend fun awaitReady(timeoutMs: Long = 2_000L) {
+        contextHint?.let(::ensureLoaded)
+        withTimeoutOrNull(timeoutMs) { ready.await() }
+    }
 
     /**
      * Kicks off [load] once per process, from whichever caller asks first. Gate checks cannot
@@ -56,12 +86,20 @@ internal object PoolAuthBackoff {
      * sees the persisted window — startup discovery no longer races ahead of it.
      */
     fun ensureLoaded(context: Context) {
+        val appContext = context.applicationContext
+        contextHint = appContext
         if (loadRequested) return
         loadRequested = true
         persistScope.launch {
             runCatching {
-                load(context.applicationContext, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
-            }.onFailure { loadRequested = false }
+                load(appContext, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
+            }.onFailure {
+                // An unreadable window is treated as inactive, but a later call may retry the load.
+                untilMs = 0L
+                windowMs = 0L
+                loadRequested = false
+            }
+            ready.complete(Unit)
         }
     }
 

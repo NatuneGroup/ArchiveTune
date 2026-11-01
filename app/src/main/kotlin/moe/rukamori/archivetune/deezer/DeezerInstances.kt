@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAuthBackoff
 import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -251,7 +252,7 @@ object DeezerInstances {
         }
         // Auth backoff keeps stale answers rather than billing another feed read — discovered
         // URLs are community instances, usable while the pool rests.
-        if (PoolAccountManager.authBackoffActive()) return discovered
+        if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discovered
         val now = System.currentTimeMillis()
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
         synchronized(this) {
@@ -259,7 +260,7 @@ object DeezerInstances {
                 invalidatePoolInstancesCache()
                 return emptyList()
             }
-            if (PoolAccountManager.authBackoffActive()) return discovered
+            if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discovered
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {

@@ -13,6 +13,7 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAuthBackoff
 import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -67,7 +68,7 @@ internal object QobuzPoolDiscovery {
         }
         // Auth backoff and the freshness window both keep stale answers rather than billing
         // another feed read — discovered URLs are community instances, usable while the pool rests.
-        if (PoolAccountManager.authBackoffActive()) return discoveryCache
+        if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
         if (System.currentTimeMillis() < expiresAtMs) return discoveryCache
         // Single-flight: resolve paths call this per track, and concurrent callers used to each
         // spend a full feed fetch — the expiry re-check inside the lock hands followers the
@@ -77,7 +78,7 @@ internal object QobuzPoolDiscovery {
                 QobuzAudioProvider.clearPoolDiscovery()
                 return emptyList()
             }
-            if (PoolAccountManager.authBackoffActive()) return discoveryCache
+            if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
             if (System.currentTimeMillis() < expiresAtMs) return discoveryCache
             val discovered = LinkedHashSet<String>()
             var answeredAny = false

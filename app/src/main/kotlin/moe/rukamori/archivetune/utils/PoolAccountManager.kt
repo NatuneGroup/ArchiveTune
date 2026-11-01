@@ -477,6 +477,7 @@ object PoolAccountManager {
                 ) {
                     return@withLock hasAccounts()
                 }
+                PoolAuthBackoff.awaitReady()
                 if (!isEnabled) {
                     // isEnabled already guarantees a URL, so this only guards the impossible.
                     lastFeedError = null
@@ -716,8 +717,7 @@ object PoolAccountManager {
     ) {
         if (id == null || !isPoolEnabled() || authBackoffActive()) return
 
-        // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
-        // token is hit by multiple resolvers (e.g., LosslessStreamResolver racing all pool accounts).
+        // Deduplicate reports ~10 min: one dead token is hit by every racing resolver at once.
         val dedupeKey = "$service:$id:$reportType"
         val now = System.currentTimeMillis()
         val lastReported = reportDedupe[dedupeKey]
@@ -726,11 +726,11 @@ object PoolAccountManager {
         }
         reportDedupe[dedupeKey] = now
 
-        // Prune old entries to prevent unbounded map growth (~10min window).
         reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
 
         reportScope.launch {
-            if (!isPoolEnabled()) return@launch
+            PoolAuthBackoff.awaitReady()
+            if (!isPoolEnabled() || authBackoffActive()) return@launch
             runCatching {
                 val body =
                     JSONObject()

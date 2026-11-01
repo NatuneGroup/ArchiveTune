@@ -418,19 +418,19 @@ object PoolAccountManager {
                 // at-rest layer), so the parse-time decryptor is a pure pass-through.
                 val passthrough: (String) -> String? = { raw -> raw }
                 cached(context, CACHE_TIDAL_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    tidalCache = parseTidal(JSONArray(it), passthrough)
+                    tidalCache = PoolFeedParser.parseTidal(JSONArray(it), passthrough)
                 }
                 cached(context, CACHE_QOBUZ_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    qobuzCache = parseQobuz(JSONArray(it), passthrough)
+                    qobuzCache = PoolFeedParser.parseQobuz(JSONArray(it), passthrough)
                 }
                 cached(context, CACHE_DEEZER_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    deezerCache = parseDeezer(JSONArray(it), passthrough)
+                    deezerCache = PoolFeedParser.parseDeezer(JSONArray(it), passthrough)
                 }
                 cached(context, CACHE_APPLE_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    appleMusicCache = parseAppleMusic(JSONArray(it), passthrough)
+                    appleMusicCache = PoolFeedParser.parseAppleMusic(JSONArray(it), passthrough)
                 }
                 cached(context, CACHE_AMAZON_KEY)?.takeIf { it.isNotBlank() }?.let {
-                    amazonCache = parseAmazon(JSONArray(it), passthrough)
+                    amazonCache = PoolFeedParser.parseAmazon(JSONArray(it), passthrough)
                 }
                 loadedFromDisk = true
                 Timber.tag(TAG).d(
@@ -547,6 +547,34 @@ object PoolAccountManager {
      * encrypted. Returns the HTTP status so the caller can distinguish 401 (key rejected) from
      * 404 (feed not deployed) from a network failure (0). Never throws.
      */
+    /**
+     * Logs why a feed read failed. HTTP 401 specifically means the pool's read-key enforcement
+     * rejected the presented key (revoked, deleted, or from an older pool database) — surfacing it
+     * explicitly keeps the failure mode obvious instead of looking like an empty pool.
+     */
+    private fun logFeedRejection(
+        path: String,
+        code: Int,
+    ) {
+        if (code == 401) {
+            Timber.tag(TAG).w(
+                "Pool account feed rejected the presented key (HTTP 401) — " +
+                    "it is revoked, deleted, or predates the pool's current database.",
+            )
+        } else {
+            Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, code)
+        }
+    }
+
+    /** Suppresses repeat reports inside [REPORT_DEDUPE_WINDOW_MS] and prunes stale stamps. */
+    private fun recentlyReported(dedupeKey: String): Boolean {
+        val now = System.currentTimeMillis()
+        val lastReported = reportDedupe[dedupeKey]
+        if (lastReported != null && now - lastReported < REPORT_DEDUPE_WINDOW_MS) return true
+        reportDedupe[dedupeKey] = now
+        reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
+        return false
+    }
     private suspend fun fetchAccounts(
         context: Context,
         path: String,
@@ -556,27 +584,16 @@ object PoolAccountManager {
         return try {
             reply.let {
                 if (reply == null || reply.first != 200) {
-                    // HTTP 401 specifically means the pool's read-key enforcement rejected the
-                    // presented key (revoked, deleted, or from an older pool database). Surface
-                    // that explicitly so the failure mode is obvious in logs instead of looking
-                    // like an empty pool.
-                    if (reply?.first == 401) {
-                        Timber.tag(TAG).w(
-                            "Pool account feed rejected the presented key (HTTP 401) — " +
-                                "it is revoked, deleted, or predates the pool's current database.",
-                        )
-                    } else {
-                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.first ?: 0)
-                    }
+                    logFeedRejection(path, reply?.first ?: 0)
                     return@let FeedFetch(null, reply?.first ?: 0)
                 }
                 val root = JSONObject(reply.second)
-                val decryptor = decryptorFor(root, readKey)
-                val tidal = parseTidal(accountsArray(root, "tidal"), decryptor)
-                val qobuz = parseQobuz(accountsArray(root, "qobuz"), decryptor)
-                val deezer = parseDeezer(accountsArray(root, "deezer"), decryptor)
-                val apple = parseAppleMusic(accountsArray(root, "apple-music"), decryptor)
-                val amazon = parseAmazon(accountsArray(root, "amazon-music"), decryptor)
+                val decryptor = PoolFeedParser.decryptorFor(root, readKey)
+                val tidal = PoolFeedParser.parseTidal(PoolFeedParser.accountsArray(root, "tidal"), decryptor)
+                val qobuz = PoolFeedParser.parseQobuz(PoolFeedParser.accountsArray(root, "qobuz"), decryptor)
+                val deezer = PoolFeedParser.parseDeezer(PoolFeedParser.accountsArray(root, "deezer"), decryptor)
+                val apple = PoolFeedParser.parseAppleMusic(PoolFeedParser.accountsArray(root, "apple-music"), decryptor)
+                val amazon = PoolFeedParser.parseAmazon(PoolFeedParser.accountsArray(root, "amazon-music"), decryptor)
                 if (!isPoolEnabled()) return@let FeedFetch(root, 200)
                 // Don't overwrite the in-memory cache with an empty list when the pool returns a
                 // 200 with a partial/empty response (rate-limit, transient server bug, captive-portal
@@ -718,15 +735,7 @@ object PoolAccountManager {
         if (id == null || !isPoolEnabled() || authBackoffActive()) return
 
         // Deduplicate reports ~10 min: one dead token is hit by every racing resolver at once.
-        val dedupeKey = "$service:$id:$reportType"
-        val now = System.currentTimeMillis()
-        val lastReported = reportDedupe[dedupeKey]
-        if (lastReported != null && now - lastReported < REPORT_DEDUPE_WINDOW_MS) {
-            return
-        }
-        reportDedupe[dedupeKey] = now
-
-        reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
+        if (recentlyReported("$service:$id:$reportType")) return
 
         reportScope.launch {
             PoolAuthBackoff.awaitReady()
@@ -780,36 +789,6 @@ object PoolAccountManager {
      * Accounts array for one service, tolerant of both feed shapes: the canonical
      * `{ "tidal": { "accounts": [...] } }` and a bare `{ "tidal": [...] }`. Null when absent.
      */
-    private fun accountsArray(root: JSONObject, service: String): JSONArray? =
-        root.optJSONObject(service)?.optJSONArray("accounts") ?: root.optJSONArray(service)
-
-    /** Decrypts a sensitive field with the feed's decryptor. Blank/failed decryptions yield null. */
-    private fun field(
-        obj: JSONObject,
-        key: String,
-        decryptor: (String) -> String?,
-    ): String? {
-        val raw = obj.optString(key, "").takeIf { it.isNotBlank() } ?: return null
-        val decoded = decryptor(raw)?.takeIf { it.isNotBlank() }
-        if (decoded == null && PoolCrypto.isEncrypted(raw)) {
-            Timber.tag(TAG).w("Dropped encrypted pool field %s because no available key could decrypt it", key)
-        }
-        return decoded
-    }
-
-    /** Builds the decryptor lambda for a feed response, selecting the indicated encryption scheme. */
-    private fun decryptorFor(root: JSONObject, readKey: String): (String) -> String? {
-        val derivedKey = PoolCrypto.deriveClientKey(readKey)
-        val encryptionScheme = root.optString("encryption", "")
-        return { raw ->
-            if (encryptionScheme == "read-key") {
-                PoolCrypto.maybeDecryptWith(raw, derivedKey) ?: PoolCrypto.maybeDecrypt(raw)
-            } else {
-                PoolCrypto.maybeDecrypt(raw) ?: PoolCrypto.maybeDecryptWith(raw, derivedKey)
-            }
-        }
-    }
-
     /**
      * Merges a replacement credential into the cache after a dead-token report, under the refresh mutex
      * to ensure atomicity with persist(). Replaces the dead element in-place or drops it when no
@@ -824,177 +803,20 @@ object PoolAccountManager {
         if (!isPoolEnabled()) return
         val ctx = appContext ?: return
         val replacementObj = root.optJSONObject("replacement") ?: return
-        val decryptor = decryptorFor(replacementObj, readKey)
+        val decryptor = PoolFeedParser.decryptorFor(replacementObj, readKey)
         val replacementArr = replacementObj.optJSONObject(service)?.optJSONArray("accounts") ?: JSONArray()
 
         refreshMutex.withLock {
             if (!isPoolEnabled()) return@withLock
             when (service) {
-                "tidal" -> tidalCache = mergeList(tidalCache, deadId, TidalPoolAccount::id, replacementArr, ::parseTidal, decryptor) ?: return@withLock
-                "qobuz" -> qobuzCache = mergeList(qobuzCache, deadId, QobuzPoolAccount::id, replacementArr, ::parseQobuz, decryptor) ?: return@withLock
-                "deezer" -> deezerCache = mergeList(deezerCache, deadId, DeezerPoolAccount::id, replacementArr, ::parseDeezer, decryptor) ?: return@withLock
-                "apple-music" -> appleMusicCache = mergeList(appleMusicCache, deadId, AppleMusicPoolAccount::id, replacementArr, ::parseAppleMusic, decryptor) ?: return@withLock
-                "amazon-music" -> amazonCache = mergeList(amazonCache, deadId, AmazonPoolAccount::id, replacementArr, ::parseAmazon, decryptor) ?: return@withLock
+                "tidal" -> tidalCache = PoolFeedParser.mergeList(tidalCache, deadId, TidalPoolAccount::id, replacementArr, PoolFeedParser::parseTidal, decryptor) ?: return@withLock
+                "qobuz" -> qobuzCache = PoolFeedParser.mergeList(qobuzCache, deadId, QobuzPoolAccount::id, replacementArr, PoolFeedParser::parseQobuz, decryptor) ?: return@withLock
+                "deezer" -> deezerCache = PoolFeedParser.mergeList(deezerCache, deadId, DeezerPoolAccount::id, replacementArr, PoolFeedParser::parseDeezer, decryptor) ?: return@withLock
+                "apple-music" -> appleMusicCache = PoolFeedParser.mergeList(appleMusicCache, deadId, AppleMusicPoolAccount::id, replacementArr, PoolFeedParser::parseAppleMusic, decryptor) ?: return@withLock
+                "amazon-music" -> amazonCache = PoolFeedParser.mergeList(amazonCache, deadId, AmazonPoolAccount::id, replacementArr, PoolFeedParser::parseAmazon, decryptor) ?: return@withLock
                 else -> return@withLock
             }
             persist(ctx, tidalCache, qobuzCache, deezerCache, appleMusicCache, amazonCache)
         }
-    }
-
-    /**
-     * Replaces the dead-id element of [cacheList] with the parsed replacement, preserving order.
-     * Null return means "nothing to persist": the dead entry is no longer cached (a refresh landed
-     * while the report was in flight, so that cache is authoritative) or the replacement failed to
-     * parse. An empty [replacementArr] drops the dead entry with no substitute.
-     */
-    private fun <T> mergeList(
-        cacheList: List<T>,
-        deadId: Long,
-        idOf: (T) -> Long?,
-        replacementArr: JSONArray,
-        parse: (JSONArray?, (String) -> String?) -> List<T>,
-        decryptor: (String) -> String?,
-    ): List<T>? {
-        val deadIndex = cacheList.indexOfFirst { idOf(it) == deadId }
-        if (deadIndex < 0) return null
-
-        if (replacementArr.length() == 0) {
-            return cacheList.filterIndexed { idx, _ -> idx != deadIndex }
-        }
-
-        val replacementEntry = parse(replacementArr, decryptor).firstOrNull() ?: return null
-
-        // Replacement already cached (a concurrent report raced to the same one) — just drop the dead entry.
-        return if (cacheList.any { idOf(it) == idOf(replacementEntry) }) {
-            cacheList.filterIndexed { idx, _ -> idx != deadIndex }
-        } else {
-            cacheList.mapIndexed { idx, entry -> if (idx == deadIndex) replacementEntry else entry }
-        }
-    }
-
-    private fun parseTidal(
-        arr: JSONArray?,
-        decryptor: (String) -> String?,
-    ): List<TidalPoolAccount> {
-        if (arr == null) return emptyList()
-        val out = mutableListOf<TidalPoolAccount>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val token = field(obj, "token", decryptor) ?: continue
-            out +=
-                TidalPoolAccount(
-                    id = entryId(obj),
-                    token = token,
-                    refreshToken = field(obj, "refreshToken", decryptor),
-                    countryCode = field(obj, "countryCode", decryptor),
-                    premium = obj.optBoolean("premium", false),
-                )
-        }
-        return out
-    }
-
-    private fun parseQobuz(
-        arr: JSONArray?,
-        decryptor: (String) -> String?,
-    ): List<QobuzPoolAccount> {
-        if (arr == null) return emptyList()
-        val out = mutableListOf<QobuzPoolAccount>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val token = field(obj, "token", decryptor) ?: continue
-            val appId = field(obj, "appId", decryptor) ?: continue
-            // Without an app secret the app cannot sign Qobuz stream URLs, so such an account is
-            // useless for playback and is skipped rather than cached as a dead entry.
-            val appSecret = field(obj, "appSecret", decryptor) ?: continue
-            out +=
-                QobuzPoolAccount(
-                    id = entryId(obj),
-                    token = token,
-                    appId = appId,
-                    appSecret = appSecret,
-                    premium = obj.optBoolean("premium", false),
-                )
-        }
-        return out
-    }
-
-    private fun parseDeezer(
-        arr: JSONArray?,
-        decryptor: (String) -> String?,
-    ): List<DeezerPoolAccount> {
-        if (arr == null) return emptyList()
-        val out = mutableListOf<DeezerPoolAccount>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val arl = field(obj, "arl", decryptor) ?: continue
-            out +=
-                DeezerPoolAccount(
-                    id = entryId(obj),
-                    arl = arl,
-                    premium = obj.optBoolean("premium", false),
-                    masterSecret = field(obj, "masterSecret", decryptor),
-                )
-        }
-        return out
-    }
-
-    private fun parseAmazon(
-        arr: JSONArray?,
-        decryptor: (String) -> String?,
-    ): List<AmazonPoolAccount> {
-        if (arr == null) return emptyList()
-        val out = mutableListOf<AmazonPoolAccount>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            // Either tier is useful on its own: the account tier carries a session, the instance
-            // tier a base URL. An entry with neither is not something playback can use.
-            val baseUrl = obj.optString("baseUrl", "").trim().ifBlank { null }
-            val session = field(obj, "session", decryptor)
-            val turnstileJwtExpiresAtMs =
-                obj.optLong("turnstileJwtExpiresAtMs", 0L).takeIf { it > 0L }
-                    ?: parseIsoMillis(obj.optString("turnstileJwtExpiresAt", ""))
-            if (baseUrl == null && session == null) continue
-            out +=
-                AmazonPoolAccount(
-                    id = entryId(obj),
-                    session = session,
-                    premium = obj.optBoolean("premium", false),
-                    baseUrl = baseUrl,
-                    bypassToken = field(obj, "bypassToken", decryptor),
-                    turnstileJwt = field(obj, "turnstileJwt", decryptor),
-                    turnstileJwtExpiresAtMs = turnstileJwtExpiresAtMs,
-                )
-        }
-        return out
-    }
-
-    /** Plaintext pool timestamps (the JWT expiry) as epoch millis; unparseable ones read as absent. */
-    private fun parseIsoMillis(raw: String): Long? =
-        raw.takeIf { it.isNotBlank() }?.let {
-            runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
-        }
-
-    /** Pool entry id from the accounts feed (positive when present); null for manual/legacy entries. */
-    private fun entryId(obj: JSONObject): Long? =
-        obj.optLong("id", 0L).takeIf { it > 0L }
-
-    private fun parseAppleMusic(
-        arr: JSONArray?,
-        decryptor: (String) -> String?,
-    ): List<AppleMusicPoolAccount> {
-        if (arr == null) return emptyList()
-        val out = mutableListOf<AppleMusicPoolAccount>()
-        for (i in 0 until arr.length()) {
-            val obj = arr.optJSONObject(i) ?: continue
-            val token = field(obj, "token", decryptor) ?: continue
-            if (!token.startsWith("0.")) continue // media-user-tokens always start with "0."
-            out +=
-                AppleMusicPoolAccount(
-                    id = entryId(obj),
-                    mediaUserToken = token,
-                    premium = obj.optBoolean("premium", true),
-                )
-        }
-        return out
     }
 }

@@ -130,6 +130,87 @@ object LosslessStreamResolver {
      *
      * Returns null when no path yields a stream.
      */
+    /**
+     * Races all pooled Tidal tokens in parallel: the first non-null hit wins and the rest are
+     * cancelled (worst case ~one resolve instead of one per account). A 401 from a token reports
+     * the account dead and triggers the bounded forced re-lease. [resolveTidal] is not suspend,
+     * so the coroutineScope is bridged with runBlocking.
+     */
+    private fun raceTidalPoolAccounts(
+        context: Context,
+        poolAccounts: List<PoolAccountManager.TidalPoolAccount>,
+        mediaId: String,
+        title: String,
+        artists: List<String>,
+        durationMs: Long?,
+        apiQuality: String,
+        cacheDir: File,
+    ): DirectStream? =
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                coroutineScope {
+                    val jobs =
+                        poolAccounts.map { poolAccount ->
+                            async(Dispatchers.IO) {
+                                val poolCountry =
+                                    poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
+                                runCatching {
+                                    TidalAccountManager.resolveDirectStream(
+                                        accessToken = poolAccount.token,
+                                        title = title,
+                                        artists = artists,
+                                        durationMs = durationMs,
+                                        audioQuality = apiQuality,
+                                        cacheDir = cacheDir,
+                                        countryCode = poolCountry,
+                                    )
+                                }
+                                    .onFailure {
+                                        if (TidalAccountManager.isUnauthorized(it)) {
+                                            PoolAccountManager.report(
+                                                "tidal",
+                                                "account",
+                                                poolAccount.id,
+                                                "dead",
+                                            )
+                                            // A real rejection is the one signal worth a forced
+                                            // re-lease — bounded per provider, fire-and-forget.
+                                            PoolAccountManager.refreshOnRejection(
+                                                context,
+                                                "tidal",
+                                            )
+                                        } else {
+                                            Timber.tag("LosslessResolver")
+                                                .w(
+                                                    it,
+                                                    "Tidal pool account resolve failed for %s",
+                                                    mediaId,
+                                                )
+                                        }
+                                    }
+                                    .getOrNull()
+                            }
+                        }
+                    // First non-null wins; cancel the rest.
+                    var winner: DirectStream? = null
+                    for (job in jobs) {
+                        val result = job.await()
+                        if (result != null) {
+                            winner = result
+                            // Cancel any still-pending jobs — we have a winner.
+                            jobs.forEach { other -> if (!other.isCompleted) other.cancel() }
+                            break
+                        }
+                    }
+                    winner
+                }
+            }
+        }
+            .onFailure {
+                Timber.tag("LosslessResolver")
+                    .w(it, "Tidal pool race failed for %s", mediaId)
+            }
+            .getOrNull()
     fun resolveTidal(
         context: Context,
         mediaId: String,
@@ -211,77 +292,17 @@ object LosslessStreamResolver {
                 }
             }
             if (poolAccounts.isNotEmpty()) {
-                // Race all pool accounts in parallel: the first hit wins and the rest are
-                // cancelled. With N pool accounts this reduces the worst-case wall time from
-                // N × resolve_time to ~1 × resolve_time (typical speedup: 10× for a 10-account
-                // pool where the user's first 9 accounts don't have the track).
-                //
-                // resolveTidal is NOT a suspend function, so we wrap the
-                // coroutineScope in runBlocking to bridge into the suspend world.
-                val stream = runCatching {
-                    runBlocking(Dispatchers.IO) {
-                        coroutineScope {
-                            val jobs = poolAccounts.map { poolAccount ->
-                                async(Dispatchers.IO) {
-                                    val poolCountry =
-                                        poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                                    runCatching {
-                                        TidalAccountManager.resolveDirectStream(
-                                            accessToken = poolAccount.token,
-                                            title = title,
-                                            artists = artists,
-                                            durationMs = durationMs,
-                                            audioQuality = apiQuality,
-                                            cacheDir = cacheDir,
-                                            countryCode = poolCountry,
-                                        )
-                                    }
-                                        .onFailure {
-                                            if (TidalAccountManager.isUnauthorized(it)) {
-                                                PoolAccountManager.report(
-                                                    "tidal",
-                                                    "account",
-                                                    poolAccount.id,
-                                                    "dead",
-                                                )
-                                                // A real rejection is the one signal worth a forced
-                                                // re-lease — bounded per provider, fire-and-forget.
-                                                PoolAccountManager.refreshOnRejection(
-                                                    context,
-                                                    "tidal",
-                                                )
-                                            } else {
-                                                Timber.tag("LosslessResolver")
-                                                    .w(
-                                                        it,
-                                                        "Tidal pool account resolve failed for %s",
-                                                        mediaId,
-                                                    )
-                                            }
-                                        }
-                                        .getOrNull()
-                                }
-                            }
-                            // First non-null wins; cancel the rest.
-                            var winner: DirectStream? = null
-                            for (job in jobs) {
-                                val result = job.await()
-                                if (result != null) {
-                                    winner = result
-                                    // Cancel any still-pending jobs — we have a winner.
-                                    jobs.forEach { other -> if (!other.isCompleted) other.cancel() }
-                                    break
-                                }
-                            }
-                            winner
-                        }
-                    }
-                }
-                    .onFailure {
-                        Timber.tag("LosslessResolver")
-                            .w(it, "Tidal pool race failed for %s", mediaId)
-                    }
-                    .getOrNull()
+                val stream =
+                    raceTidalPoolAccounts(
+                        context = context,
+                        poolAccounts = poolAccounts,
+                        mediaId = mediaId,
+                        title = title,
+                        artists = artists,
+                        durationMs = durationMs,
+                        apiQuality = apiQuality,
+                        cacheDir = cacheDir,
+                    )
                 if (stream != null) {
                     Timber.tag("LosslessResolver")
                         .d(

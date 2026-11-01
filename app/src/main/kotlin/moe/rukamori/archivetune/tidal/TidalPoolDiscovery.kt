@@ -131,19 +131,7 @@ internal object TidalPoolDiscovery {
                         return@use false
                     PoolAccountManager.notePoolAuthAnswer(response.code)
                     if (!response.isSuccessful) {
-                        ArchivePoolEndpoints.remember(base)
-                        // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
-                        // and an empty body, which otherwise looks identical to a healthy pool
-                        // with no instances contributed.
-                        if (response.code == 401) {
-                            Timber.tag("TidalHealth")
-                                .w(
-                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                    source,
-                                )
-                        }
-                        return@use true
+                        return@use noteUnsuccessfulDiscovery(response.code, base, source)
                     }
                     val body = response.body?.string().orEmpty()
                     // Remember only once the body arrived whole — a reset mid-200 is transport
@@ -163,6 +151,28 @@ internal object TidalPoolDiscovery {
             }
         }
         return if (answeredAny) discovered.toList() else null
+    }
+
+    /**
+     * Records a definitive non-2xx discovery answer. Makes 401 visible: the pool rejects
+     * unauthenticated reads with HTTP 401 and an empty body, which otherwise looks identical to
+     * a healthy pool with no instances contributed.
+     */
+    private fun noteUnsuccessfulDiscovery(
+        code: Int,
+        base: String,
+        source: String,
+    ): Boolean {
+        ArchivePoolEndpoints.remember(base)
+        if (code == 401) {
+            Timber.tag("TidalHealth")
+                .w(
+                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
+                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
+                    source,
+                )
+        }
+        return true
     }
 
     /**

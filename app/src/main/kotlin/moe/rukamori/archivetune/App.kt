@@ -235,12 +235,7 @@ class App : Application(), SingletonImageLoader.Factory {
         }
         CanvasArtworkPlaybackCache.init(this)
         CustomArtworkStore.init(this)
-        // Opt-in Natune status: the loop stays idle until the user switches it on and playback
-        // reports isPlaying through ListenerPresence.onPlayingChanged.
-        ListenerPresence.start(this)
-        // Restore any persisted pool auth backoff before the first pool transport can run —
-        // startup discovery otherwise fires while the gate is still unloaded.
-        PoolAuthBackoff.ensureLoaded(this)
+        startPoolAndPresence()
         applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
         PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
         // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up
@@ -382,19 +377,8 @@ class App : Application(), SingletonImageLoader.Factory {
         )
     }
 
-    private fun initializeDeferredAsync() {
-        // Registers the recurring source refresh. KEEP, so this is a no-op once scheduled rather
-        // than pushing the next run further out on every launch.
-        moe.rukamori.archivetune.utils.SourceRefreshWorker.schedule(this)
-
-        // A partial download is never resumable and never installable, so a process start is when
-        // it
-        // goes. A staged APK survives only while it is still newer than the running build: once the
-        // install has landed, the next launch is what removes the APK the update was carried in.
-        applicationScope.launch(Dispatchers.IO) {
-            AppUpdateInstaller.pruneStagedUpdate(this@App)
-        }
-
+    /** Restores deferred-startup preferences and flags off the main thread. */
+    private fun restoreStartupPreferences() {
         applicationScope.launch(Dispatchers.IO) {
             try {
                 val prefs = dataStore.data.first()
@@ -463,6 +447,31 @@ class App : Application(), SingletonImageLoader.Factory {
                 reportException(e)
             }
         }
+    }
+
+    /**
+     * Opt-in Natune status stays idle until the user switches it on, and the persisted pool auth
+     * backoff must load before the first pool transport can run — both are cheap to kick off here.
+     */
+    private fun startPoolAndPresence() {
+        ListenerPresence.start(this)
+        PoolAuthBackoff.ensureLoaded(this)
+    }
+
+    private fun initializeDeferredAsync() {
+        // Registers the recurring source refresh. KEEP, so this is a no-op once scheduled rather
+        // than pushing the next run further out on every launch.
+        moe.rukamori.archivetune.utils.SourceRefreshWorker.schedule(this)
+
+        // A partial download is never resumable and never installable, so a process start is when
+        // it
+        // goes. A staged APK survives only while it is still newer than the running build: once the
+        // install has landed, the next launch is what removes the APK the update was carried in.
+        applicationScope.launch(Dispatchers.IO) {
+            AppUpdateInstaller.pruneStagedUpdate(this@App)
+        }
+
+        restoreStartupPreferences()
 
         // Subtly verify the public Tidal instances on startup so dead / preview-only (unsubscribed)
         // mirrors are pruned before the user plays anything. The scan is staggered (one instance at

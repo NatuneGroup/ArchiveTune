@@ -151,19 +151,7 @@ fun IntegrationScreen(
                 }
             }
 
-            // Natune status sits next to Discord presence: both are opt-in "while you listen"
-            // sharing — anonymous aggregate counts here, account-bound rich presence there.
-            PreferenceGroup(
-                modifier = positions.modifierFor("natune_status"),
-                title = stringResource(R.string.natune_status),
-            ) {
-                item {
-                    ListenerPresenceSection(
-                        showMapLink = true,
-                        showReset = true,
-                    )
-                }
-            }
+            NatuneStatusPreferenceGroup(modifier = positions.modifierFor("natune_status"))
 
             // "Music Sources" groups every external streaming source together: Tidal, Qobuz,
             // Deezer, Amazon, Apple Music, QQ Music and Telegram. Every sign-in row is always
@@ -441,5 +429,21 @@ fun IntegrationScreen(
             message = error,
             onDismiss = spotifyAccountViewModel::dismissError,
         )
+    }
+}
+
+/** Natune status group: opt-in "while you listen" sharing beside the Discord presence group. */
+@Composable
+private fun NatuneStatusPreferenceGroup(modifier: Modifier = Modifier) {
+    PreferenceGroup(
+        modifier = modifier,
+        title = stringResource(R.string.natune_status),
+    ) {
+        item {
+            ListenerPresenceSection(
+                showMapLink = true,
+                showReset = true,
+            )
+        }
     }
 }

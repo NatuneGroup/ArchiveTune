@@ -73,6 +73,7 @@ jobs:
           # Dedicated ArchivePool deployment override (e.g. the Cloudflare Workers host); wins over
           # SOURCE_PROVIDER_URL as the primary when set, vercel.app stays the fallback.
           ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL || secrets.ARCHIVEPOOL_BASE_URL }}
+          ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ vars.ARCHIVETUNE_LISTENER_PRESENCE_URL || secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
           # POOL_CLIENT_KEY not needed: v2 feed protocol derives encryption from the read key.
 

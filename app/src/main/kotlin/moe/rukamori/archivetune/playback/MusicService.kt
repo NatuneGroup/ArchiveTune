@@ -245,6 +245,7 @@ import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
+import moe.rukamori.archivetune.presence.ListenerPresence
 import moe.rukamori.archivetune.qqmusic.QqMusicAudioProvider
 import moe.rukamori.archivetune.qqmusic.QqMusicSession
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
@@ -5471,7 +5472,6 @@ class MusicService :
     }
 
 
-
     private fun updateNotification() {
         try {
             val customLayout =
@@ -7955,6 +7955,8 @@ class MusicService :
         }
         updateAudiblePlaybackRecovery()
 
+        ListenerPresence.onPlayingChanged(isPlaying)
+
         widgetUpdater.update()
         widgetUpdater.updateProgressTracking()
     }
@@ -8596,7 +8598,6 @@ class MusicService :
             if (shouldResume) player.play()
             return
         }
-
 
         if (dataStore.get(AutoSkipNextOnErrorKey, false)) {
             skipOnError()
@@ -10673,7 +10674,6 @@ class MusicService :
         )
     }
 
-
     private fun parseQobuzInstances(): List<String> = parseInstances(QobuzInstancesKey)
 
     private fun parseQobuzAudioQuality(): QobuzAudioQuality =
@@ -11143,7 +11143,6 @@ class MusicService :
         refreshAudioAuthenticityContexts(mediaId)
         Timber.tag("PlaybackDiagnostics").i("Source selected provider=youtube route=terminal_fallback")
 
-
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
             ?.takeUnless { lowDataModeActive }
@@ -11376,7 +11375,6 @@ class MusicService :
     }
 
 
-
     private fun resolveCachedDataSpec(
         dataSpec: DataSpec,
         mediaId: String,
@@ -11506,7 +11504,6 @@ class MusicService :
                     isCached = span.isCached,
                 )
             }
-
 
     private fun Uri.shouldBypassYouTubeResolver(): Boolean {
         val normalizedScheme = scheme?.lowercase(Locale.US)
@@ -12806,6 +12803,8 @@ class MusicService :
 
     override fun onDestroy() {
         invalidatePlaylistWork()
+        // Service teardown is a stop for presence purposes: emit the final `stopped` beat.
+        ListenerPresence.onPlayingChanged(false)
         initialQueueLoadGeneration++
         // Released before anything else is torn down: once destruction has started no bound client
         // may obtain this service again (and the binder must stop pinning it).

@@ -261,6 +261,18 @@ android {
                 ).trim().trimEnd('/')
         buildConfigField("String", "ARCHIVEPOOL_BASE_URL", "\"$archivePoolBaseUrl\"")
 
+        // Natune status (opt-in listener presence) endpoint: the Cloudflare Worker serving
+        // /api/heartbeat and /api/listeners/active for the public live map. Precedence:
+        // local.properties, then the ARCHIVETUNE_LISTENER_PRESENCE_URL env/CI variable, then
+        // the baked-in default deployment.
+        val listenerPresenceUrl =
+            (
+                localProperties.getProperty("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
+                    ?: "https://natune-status.codmplayer1234.workers.dev"
+                ).trim().trimEnd('/')
+        buildConfigField("String", "LISTENER_PRESENCE_URL", "\"$listenerPresenceUrl\"")
+
         // Per-app read key for the Source Pool. Sent as a Bearer token on discovery requests so the
         // pool can gate access. Optional: blank works fine while the pool runs unenforced.
         val sourceProviderKey =

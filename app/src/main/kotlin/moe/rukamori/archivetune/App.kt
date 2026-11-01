@@ -68,6 +68,7 @@ import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
 import moe.rukamori.archivetune.customartwork.CustomArtworkInterceptor
 import moe.rukamori.archivetune.customartwork.CustomArtworkStore
+import moe.rukamori.archivetune.presence.ListenerPresence
 import moe.rukamori.archivetune.ui.screens.settings.ThemePalettes
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
@@ -241,6 +242,9 @@ class App :
         }
         CanvasArtworkPlaybackCache.init(this)
         CustomArtworkStore.init(this)
+        // Opt-in Natune status: the loop stays idle until the user switches it on and playback
+        // reports isPlaying through ListenerPresence.onPlayingChanged.
+        ListenerPresence.start(this)
         applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
         PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
         // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up

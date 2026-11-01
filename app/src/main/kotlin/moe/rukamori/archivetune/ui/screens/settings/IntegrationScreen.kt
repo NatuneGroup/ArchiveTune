@@ -41,6 +41,7 @@ import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.spotify.SpotifyAccountViewModel
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
@@ -146,6 +147,20 @@ fun IntegrationScreen(
                         onClick = {
                             navController.navigate("settings/discord")
                         },
+                    )
+                }
+            }
+
+            // Natune status sits next to Discord presence: both are opt-in "while you listen"
+            // sharing — anonymous aggregate counts here, account-bound rich presence there.
+            PreferenceGroup(
+                modifier = positions.modifierFor("natune_status"),
+                title = stringResource(R.string.natune_status),
+            ) {
+                item {
+                    ListenerPresenceSection(
+                        showMapLink = true,
+                        showReset = true,
                     )
                 }
             }

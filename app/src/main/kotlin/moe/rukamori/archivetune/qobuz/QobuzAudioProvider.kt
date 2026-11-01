@@ -69,8 +69,6 @@ object QobuzAudioProvider {
     private var poolInstances: List<Instance> = emptyList()
 
     @Volatile
-
-    @Volatile
     private var tokens: List<QobuzToken> = emptyList()
 
     val activeInstanceUrls: List<String>

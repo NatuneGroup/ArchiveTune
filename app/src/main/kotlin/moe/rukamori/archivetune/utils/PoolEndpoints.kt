@@ -8,6 +8,7 @@
 
 package moe.rukamori.archivetune.utils
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import moe.rukamori.archivetune.BuildConfig
@@ -206,12 +207,19 @@ internal object PoolEndpoints {
                                         // Every definitive answer feeds the shared auth backoff:
                                         // 401 doubles the quiet window, a 2xx clears it.
                                         PoolAccountManager.notePoolAuthAnswer(it.code)
-                                        runCatching {
+                                        try {
                                             it.code to
                                                 if (it.isSuccessful) it.body?.string().orEmpty() else ""
+                                        } catch (cancelled: CancellationException) {
+                                            throw cancelled
+                                        } catch (io: IOException) {
+                                            // A reset or truncate mid-200 is a transport failure,
+                                            // not a definitive answer: the walk tries the next
+                                            // endpoint instead of throwing out of it.
+                                            null
                                         }
                                     }
-                                if (cont.isActive) cont.resumeWith(result)
+                                if (cont.isActive) cont.resume(result)
                             }
                         },
                     )

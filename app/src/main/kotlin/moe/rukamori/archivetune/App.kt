@@ -76,6 +76,7 @@ import moe.rukamori.archivetune.utils.AppProxy
 import moe.rukamori.archivetune.utils.AppUpdateInstaller
 import moe.rukamori.archivetune.utils.CanvasResolverEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolAuthBackoff
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.utils.ProxyUtils
 import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
@@ -245,6 +246,9 @@ class App :
         // Opt-in Natune status: the loop stays idle until the user switches it on and playback
         // reports isPlaying through ListenerPresence.onPlayingChanged.
         ListenerPresence.start(this)
+        // Restore any persisted pool auth backoff before the first pool transport can run —
+        // startup discovery otherwise fires while the gate is still unloaded.
+        PoolAuthBackoff.ensureLoaded(this)
         applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
         PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
         // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up

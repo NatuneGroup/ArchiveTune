@@ -103,15 +103,16 @@ object PoolAccountManager {
     }
 
     /**
-     * True when a pool is configured and the user has not opted out. Instance tiers that fetch
-     * their own feeds (Deezer's `/api/instances/deezer`) follow the same switch as the accounts.
+     * True when a pool is configured and the user has not opted out; provider-local pool feeds
+     * follow the same switch as the accounts.
      */
     fun isPoolEnabled(): Boolean = poolAccountsEnabled && isEnabled
 
-    /** True while a persisted 401 backoff window is open (see [PoolAuthBackoff]). */
-    fun authBackoffActive(): Boolean = PoolAuthBackoff.active()
+    fun authBackoffActive(): Boolean {
+        appContext?.let(PoolAuthBackoff::ensureLoaded)
+        return PoolAuthBackoff.active()
+    }
 
-    /** Records one definitive pool answer for auth purposes (see [PoolAuthBackoff.noteAnswer]). */
     fun notePoolAuthAnswer(status: Int) = PoolAuthBackoff.noteAnswer(status, appContext)
 
     private suspend fun syncPoolAccountsEnabled(context: Context) {
@@ -147,7 +148,6 @@ object PoolAccountManager {
     private val reportDedupe = ConcurrentHashMap<String, Long>()
     private const val REPORT_DEDUPE_WINDOW_MS = 10 * 60 * 1000L
 
-    /** Forced re-lease attempts per service after a real credential rejection, stamped at request time. */
     private val rejectedRefreshAt = ConcurrentHashMap<String, Long>()
     private const val REJECT_REFRESH_MIN_INTERVAL_MS = 5L * 60 * 1000L
 
@@ -482,8 +482,7 @@ object PoolAccountManager {
                     lastFeedError = null
                     Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
                 } else if (authBackoffActive()) {
-                    // A persisted 401 backoff quiets the feed; the cached lease keeps serving
-                    // until the window closes or a new key ships.
+                    // A persisted 401 backoff quiets the feed; the cached lease keeps serving.
                     Timber.tag(TAG).d("Pool feed auth backoff active; not fetching")
                     lastFeedError =
                         "Pool rejected the API key (HTTP 401) — further requests paused after repeated rejections."
@@ -758,17 +757,19 @@ object PoolAccountManager {
     }
 
     /**
-     * Forced feed refresh after a provider really rejected a leased credential (401/403) — a real
-     * rejection, unlike suspected staleness, means the cache may serve dead entries. Bounded to
-     * one per [REJECT_REFRESH_MIN_INTERVAL_MS] per service; fire-and-forget like [report].
+     * Forced feed refresh after a provider really rejected a leased credential (401/403), bounded
+     * to one per [REJECT_REFRESH_MIN_INTERVAL_MS] per service; fire-and-forget like [report].
      */
     fun refreshOnRejection(
         context: Context,
         service: String,
     ) {
+        // Atomic check+stamp: a bare get+put let every concurrent rejection launch a re-lease.
         val now = System.currentTimeMillis()
-        if (now - (rejectedRefreshAt[service] ?: 0L) < REJECT_REFRESH_MIN_INTERVAL_MS) return
-        rejectedRefreshAt[service] = now
+        synchronized(rejectedRefreshAt) {
+            if (now - (rejectedRefreshAt[service] ?: 0L) < REJECT_REFRESH_MIN_INTERVAL_MS) return
+            rejectedRefreshAt[service] = now
+        }
         reportScope.launch {
             runCatching { refresh(context.applicationContext, force = true) }
                 .onFailure { Timber.tag(TAG).w(it, "Pool re-lease after %s rejection failed", service) }
@@ -777,8 +778,7 @@ object PoolAccountManager {
 
     /**
      * Accounts array for one service, tolerant of both feed shapes: the canonical
-     * `{ "tidal": { "accounts": [...] } }` (mirrors the legacy /api/sources account half) and a
-     * bare `{ "tidal": [...] } }. Null when the service is absent or empty.
+     * `{ "tidal": { "accounts": [...] } }` and a bare `{ "tidal": [...] }`. Null when absent.
      */
     private fun accountsArray(root: JSONObject, service: String): JSONArray? =
         root.optJSONObject(service)?.optJSONArray("accounts") ?: root.optJSONArray(service)

@@ -44,8 +44,26 @@ internal object PoolAuthBackoff {
 
     private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile
+    private var loadRequested = false
+
     /** True while a persisted 401 backoff window is open. */
     fun active(): Boolean = untilMs != 0L && System.currentTimeMillis() < untilMs
+
+    /**
+     * Kicks off [load] once per process, from whichever caller asks first. Gate checks cannot
+     * suspend for a DataStore read, so the first gate check fires the load and every later check
+     * sees the persisted window — startup discovery no longer races ahead of it.
+     */
+    fun ensureLoaded(context: Context) {
+        if (loadRequested) return
+        loadRequested = true
+        persistScope.launch {
+            runCatching {
+                load(context.applicationContext, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
+            }.onFailure { loadRequested = false }
+        }
+    }
 
     /**
      * Records one definitive pool answer: a 401 doubles the quiet window, any 2xx clears it.

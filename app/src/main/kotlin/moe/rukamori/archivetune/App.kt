@@ -10,8 +10,8 @@ package moe.rukamori.archivetune
 
 import android.app.ActivityManager
 import android.app.Application
-import android.content.Context
 import android.content.ComponentCallbacks2
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.datastore.preferences.core.edit
@@ -29,8 +29,15 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.CachePolicy
 import coil3.request.allowHardware
 import coil3.request.crossfade
-import moe.rukamori.archivetune.utils.isLowRamDevice
 import dagger.hilt.android.HiltAndroidApp
+import java.io.File
+import java.io.PrintWriter
+import java.io.StringWriter
+import java.util.*
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
+import kotlin.system.exitProcess
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -41,7 +48,13 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
+import moe.rukamori.archivetune.canvas.AppleMusicProvider
+import moe.rukamori.archivetune.canvas.SpotifyCanvasProvider
+import moe.rukamori.archivetune.canvas.StartCanvasPolicyUseCase
 import moe.rukamori.archivetune.constants.*
+import moe.rukamori.archivetune.customartwork.CustomArtworkInterceptor
+import moe.rukamori.archivetune.customartwork.CustomArtworkStore
 import moe.rukamori.archivetune.deezer.DeezerAudioProvider
 import moe.rukamori.archivetune.extensions.*
 import moe.rukamori.archivetune.innertube.YouTube
@@ -50,25 +63,19 @@ import moe.rukamori.archivetune.kugou.KuGou
 import moe.rukamori.archivetune.lastfm.LastFM
 import moe.rukamori.archivetune.lyrics.JapaneseLanguagePackManager
 import moe.rukamori.archivetune.lyrics.PaxsenixAppleMusicToken
-import moe.rukamori.archivetune.canvas.AppleMusicProvider
-import moe.rukamori.archivetune.canvas.SpotifyCanvasProvider
-import moe.rukamori.archivetune.canvas.StartCanvasPolicyUseCase
-import moe.rukamori.archivetune.playback.stream.YoutubeiStreamRepository
 import moe.rukamori.archivetune.morideobfuscator.ytdlp.YtDlpJavaScriptRuntime
 import moe.rukamori.archivetune.paxsenix.PaxsenixLyrics
+import moe.rukamori.archivetune.playback.stream.YoutubeiStreamRepository
+import moe.rukamori.archivetune.presence.ListenerPresence
+import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.scrobbling.LastFmServiceConfig
 import moe.rukamori.archivetune.spotify.Spotify
 import moe.rukamori.archivetune.spotify.SpotifyLibraryRepository
 import moe.rukamori.archivetune.storage.StorageFolderKind
 import moe.rukamori.archivetune.storage.StorageLocationRepository
-import moe.rukamori.archivetune.applemusic.AppleMusicAudioProvider
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
-import moe.rukamori.archivetune.qobuz.QobuzAudioProvider
 import moe.rukamori.archivetune.ui.player.CanvasArtworkPlaybackCache
-import moe.rukamori.archivetune.customartwork.CustomArtworkInterceptor
-import moe.rukamori.archivetune.customartwork.CustomArtworkStore
-import moe.rukamori.archivetune.presence.ListenerPresence
 import moe.rukamori.archivetune.ui.screens.settings.ThemePalettes
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPalette
 import moe.rukamori.archivetune.ui.theme.ThemeSeedPaletteCodec
@@ -83,6 +90,7 @@ import moe.rukamori.archivetune.utils.clearPlaybackWebAuthSession
 import moe.rukamori.archivetune.utils.dataStore
 import moe.rukamori.archivetune.utils.get
 import moe.rukamori.archivetune.utils.getAsync
+import moe.rukamori.archivetune.utils.isLowRamDevice
 import moe.rukamori.archivetune.utils.potoken.BotGuardTokenGenerator
 import moe.rukamori.archivetune.utils.reportException
 import moe.rukamori.archivetune.utils.toPlaybackAuthState
@@ -91,36 +99,23 @@ import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import timber.log.Timber
-import java.io.File
-import java.io.PrintWriter
-import java.io.StringWriter
-import java.util.*
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.inject.Inject
-import kotlin.system.exitProcess
 
 @HiltAndroidApp
-class App :
-    Application(),
-    SingletonImageLoader.Factory {
+class App : Application(), SingletonImageLoader.Factory {
 
     /**
      * Injected only so the canvas provider can mint a Spotify token on demand — see
      * [SpotifyLibraryRepository.ensureAccessToken].
      */
-    @Inject
-    lateinit var spotifyLibraryRepository: SpotifyLibraryRepository
+    @Inject lateinit var spotifyLibraryRepository: SpotifyLibraryRepository
 
     // Starts the Canvas network policy (wifi-only, low-data, cache budget) and the cache init,
     // so the Canvas settings actually gate resolution from the first launch.
-    @Inject
-    lateinit var startCanvasPolicy: StartCanvasPolicyUseCase
+    @Inject lateinit var startCanvasPolicy: StartCanvasPolicyUseCase
 
     // Resolver session invalidation on memory pressure (upstream 15.0.0 `adb071ae8`).
     // Field injection keeps this additive: no constructor or init-order changes.
-    @Inject
-    lateinit var youtubeiStreamRepository: YoutubeiStreamRepository
+    @Inject lateinit var youtubeiStreamRepository: YoutubeiStreamRepository
 
     @Inject
     lateinit var youTubeLoginRepository: moe.rukamori.archivetune.auth.YouTubeLoginRepository
@@ -140,9 +135,9 @@ class App :
     /**
      * Pulls Spotify's play history into the app's stored list each time the app comes to the
      * foreground, when the user turned the sync on. The History screen only reads what this and its
-     * own visits have stored, so without it a play made in the Spotify app is missed until the screen
-     * is opened. One read per foreground at most: the repository serves a fresh cache for five
-     * minutes and holds off for a rate limit, and nothing here retries in the background.
+     * own visits have stored, so without it a play made in the Spotify app is missed until the
+     * screen is opened. One read per foreground at most: the repository serves a fresh cache for
+     * five minutes and holds off for a rate limit, and nothing here retries in the background.
      */
     private fun syncSpotifyHistory() {
         if (!spotifyHistorySyncing.compareAndSet(false, true)) return
@@ -169,10 +164,7 @@ class App :
         } else {
             val pid = android.os.Process.myPid()
             val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
-            activityManager
-                ?.runningAppProcesses
-                ?.firstOrNull { it.pid == pid }
-                ?.processName
+            activityManager?.runningAppProcesses?.firstOrNull { it.pid == pid }?.processName
         }
 
     @OptIn(DelicateCoroutinesApi::class)
@@ -195,11 +187,9 @@ class App :
         Timber.plant(Timber.DebugTree())
         try {
             Timber.plant(
-                moe.rukamori.archivetune.utils
-                    .GlobalLogTree(),
+                moe.rukamori.archivetune.utils.GlobalLogTree(),
             )
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
         moe.rukamori.archivetune.logcat.PersistentLogCapture.start(this)
 
         initializeCriticalSync()
@@ -219,7 +209,8 @@ class App :
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && imageLoaderCreated) {
             runCatching { SingletonImageLoader.get(this).memoryCache?.clear() }
         }
-        // BotGuard's WebView engine is recreated on the next mint, so release it once the UI is hidden.
+        // BotGuard's WebView engine is recreated on the next mint, so release it once the UI is
+        // hidden.
         if (level >= ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
             applicationScope.launch { BotGuardTokenGenerator.onAppBackgrounded() }
         }
@@ -234,11 +225,12 @@ class App :
                 .collect { AppProxy.apply(it) }
         }
         runCatching {
-            val config = com.downloader.PRDownloaderConfig.newBuilder()
-                .setReadTimeout(60_000)
-                .setConnectTimeout(15_000)
-                .setUserAgent("ArchiveTune/${BuildConfig.VERSION_NAME}")
-                .build()
+            val config =
+                com.downloader.PRDownloaderConfig.newBuilder()
+                    .setReadTimeout(60_000)
+                    .setConnectTimeout(15_000)
+                    .setUserAgent("ArchiveTune/${BuildConfig.VERSION_NAME}")
+                    .build()
             com.downloader.PRDownloader.initialize(this, config)
         }
         CanvasArtworkPlaybackCache.init(this)
@@ -344,14 +336,16 @@ class App :
             CanvasResolverEndpoints.parse(dataStore.get(CanvasResolverEndpointsKey, ""))
         }
 
-        ProcessLifecycleOwner.get().lifecycle.addObserver(
-            LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_START) {
-                    syncSpotifyHistory()
-                    JapaneseLanguagePackManager.onForeground()
-                }
-            },
-        )
+        ProcessLifecycleOwner.get()
+            .lifecycle
+            .addObserver(
+                LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_START) {
+                        syncSpotifyHistory()
+                        JapaneseLanguagePackManager.onForeground()
+                    }
+                },
+            )
 
         // Pre-warm the Apple Music web player JWT on startup so the first
         // lyrics lookup and canvas resolution don't pay the extra ~300ms scrape
@@ -393,7 +387,8 @@ class App :
         // than pushing the next run further out on every launch.
         moe.rukamori.archivetune.utils.SourceRefreshWorker.schedule(this)
 
-        // A partial download is never resumable and never installable, so a process start is when it
+        // A partial download is never resumable and never installable, so a process start is when
+        // it
         // goes. A staged APK survives only while it is still newer than the running build: once the
         // install has landed, the next launch is what removes the APK the update was carried in.
         applicationScope.launch(Dispatchers.IO) {
@@ -404,12 +399,16 @@ class App :
             try {
                 val prefs = dataStore.data.first()
 
-                prefs[ContentCountryKey]?.takeIf { it != SYSTEM_DEFAULT }?.let { country ->
-                    YouTube.locale = YouTube.locale.copy(gl = country)
-                }
-                prefs[ContentLanguageKey]?.takeIf { it != SYSTEM_DEFAULT }?.let { lang ->
-                    YouTube.locale = YouTube.locale.copy(hl = lang)
-                }
+                prefs[ContentCountryKey]
+                    ?.takeIf { it != SYSTEM_DEFAULT }
+                    ?.let { country ->
+                        YouTube.locale = YouTube.locale.copy(gl = country)
+                    }
+                prefs[ContentLanguageKey]
+                    ?.takeIf { it != SYSTEM_DEFAULT }
+                    ?.let { lang ->
+                        YouTube.locale = YouTube.locale.copy(hl = lang)
+                    }
                 // Restore the YouTube Music region override. BOTH halves have to come back: the
                 // `gl` locale override *and* `regionSpooferActive`, which is what forces the
                 // region-sensitive endpoints (home, search, charts, explore, moods, new releases)
@@ -417,10 +416,12 @@ class App :
                 // spoofing silently stops working after the very first restart, including the
                 // automatic one that picking a region triggers: the account context comes back and
                 // YouTube went on serving the account's home country.
-                prefs[YouTubeMusicRegionKey]?.takeIf { it != SYSTEM_DEFAULT }?.let { regionValue ->
-                    YouTube.locale = YouTube.locale.copy(gl = regionValue)
-                    YouTube.regionSpooferActive = true
-                }
+                prefs[YouTubeMusicRegionKey]
+                    ?.takeIf { it != SYSTEM_DEFAULT }
+                    ?.let { regionValue ->
+                        YouTube.locale = YouTube.locale.copy(gl = regionValue)
+                        YouTube.regionSpooferActive = true
+                    }
 
                 LastFmServiceConfig.fromPreferences(prefs).apply(prefs[LastFMSessionKey])
 
@@ -449,7 +450,8 @@ class App :
                             tertiary = randomPalette.tertiary,
                             neutral = randomPalette.neutral,
                         )
-                    val encodedPalette = ThemeSeedPaletteCodec.encodeForPreference(seedPalette, "Random")
+                    val encodedPalette =
+                        ThemeSeedPaletteCodec.encodeForPreference(seedPalette, "Random")
                     dataStore.edit { settings ->
                         settings[CustomThemeColorKey] = encodedPalette
                     }
@@ -469,25 +471,36 @@ class App :
         applicationScope.launch(Dispatchers.IO) {
             try {
                 if (dataStore.get(TidalEnabledKey, true)) {
-                    // Restore the last probe track so the very first scan can classify preview vs full.
-                    dataStore.get(TidalLastProbeTrackKey)?.takeIf { it.isNotBlank() }?.let {
-                        if (TidalAudioProvider.lastResolvedTrackId.isNullOrBlank()) {
-                            TidalAudioProvider.seedProbeTrack(it)
+                    // Restore the last probe track so the very first scan can classify preview vs
+                    // full.
+                    dataStore
+                        .get(TidalLastProbeTrackKey)
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            if (TidalAudioProvider.lastResolvedTrackId.isNullOrBlank()) {
+                                TidalAudioProvider.seedProbeTrack(it)
+                            }
                         }
-                    }
                     // When a community Source Pool URL is baked in, auto-discover its
                     // health-checked instances on startup so playback is seamless without any
                     // manual setup. With no provider configured this stays a cheap re-verify.
-                    val autoDiscover = PoolAccountManager.isEnabled && dataStore.get(UsePoolAccountsKey, true)
-                    TidalInstanceHealthManager.refresh(this@App, includeDiscovery = autoDiscover, staggered = true)
+                    val autoDiscover =
+                        PoolAccountManager.isEnabled && dataStore.get(UsePoolAccountsKey, true)
+                    TidalInstanceHealthManager.refresh(
+                        this@App,
+                        includeDiscovery = autoDiscover,
+                        staggered = true,
+                    )
                 }
             } catch (e: Exception) {
                 Timber.w(e, "Tidal instance startup health scan failed")
             }
         }
 
-        // Pull shared premium ACCOUNTS (real subscriber tokens) from the community Source Pool so the
-        // resolvers can stream full-quality FLAC directly against the official Tidal/Qobuz APIs — no
+        // Pull shared premium ACCOUNTS (real subscriber tokens) from the community Source Pool so
+        // the
+        // resolvers can stream full-quality FLAC directly against the official Tidal/Qobuz APIs —
+        // no
         // self-hosted restream instance required. Loads the persisted cache first (instant), then
         // refreshes over the network. Disabled automatically when no Source Pool URL is baked in.
         applicationScope.launch(Dispatchers.IO) {
@@ -506,9 +519,12 @@ class App :
         applicationScope.launch(Dispatchers.IO) {
             try {
                 if (dataStore.get(QobuzEnabledKey, false)) {
-                    dataStore.get(QobuzLastProbeTrackKey)?.takeIf { it.isNotBlank() }?.let {
-                        QobuzAudioProvider.seedProbeTrack(it)
-                    }
+                    dataStore
+                        .get(QobuzLastProbeTrackKey)
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let {
+                            QobuzAudioProvider.seedProbeTrack(it)
+                        }
                 }
             } catch (e: Exception) {
                 Timber.w(e, "Qobuz probe-track restore failed")
@@ -523,7 +539,8 @@ class App :
                         it[DnsOverHttpsProviderKey] ?: "Cloudflare",
                         it[stringPreferencesKey("customDnsUrl")] ?: "https://",
                     )
-                }.distinctUntilChanged()
+                }
+                .distinctUntilChanged()
                 .collect { (enabled, provider, customUrl) ->
                     if (enabled) {
                         val dnsProviderUrls =
@@ -547,8 +564,10 @@ class App :
                 }
         }
 
-        // Mirrors the manually signed-in Deezer account into the provider. A collector rather than a
-        // one-shot read so signing in or out takes effect immediately, and so the value survives the
+        // Mirrors the manually signed-in Deezer account into the provider. A collector rather than
+        // a
+        // one-shot read so signing in or out takes effect immediately, and so the value survives
+        // the
         // pool refresh that replaces the pooled account cache.
         applicationScope.launch(Dispatchers.IO) {
             dataStore.data
@@ -569,8 +588,10 @@ class App :
                 }
         }
 
-        // Observe UsePoolAccountsKey and update PoolAccountManager so it returns empty lists when OFF.
-        // Default ON: the pool is enabled by default and the toggle exists to turn it off, not to opt in.
+        // Observe UsePoolAccountsKey and update PoolAccountManager so it returns empty lists when
+        // OFF.
+        // Default ON: the pool is enabled by default and the toggle exists to turn it off, not to
+        // opt in.
         applicationScope.launch(Dispatchers.IO) {
             dataStore.data
                 .map { it[UsePoolAccountsKey] ?: true }
@@ -583,7 +604,8 @@ class App :
                         AppleMusicAudioProvider.invalidatePoolAccountCache()
                         QobuzAudioProvider.invalidatePoolAccountCache()
                         DeezerAudioProvider.invalidatePoolAccountCache()
-                        moe.rukamori.archivetune.deezer.DeezerInstances.invalidatePoolInstancesCache()
+                        moe.rukamori.archivetune.deezer.DeezerInstances
+                            .invalidatePoolInstancesCache()
                         TidalAudioProvider.clearPoolDiscovery()
                         if (!enabled && PoolAccountManager.isEnabled) {
                             dataStore.edit { it.remove(TidalVerifiedInstancesKey) }
@@ -614,7 +636,9 @@ class App :
                 .distinctUntilChanged()
                 .collect {
                     val authState = youTubeLoginRepository.reconcilePersisted()
-                    authState.sessionId?.takeIf(String::isNotBlank)?.let { BotGuardTokenGenerator.preWarm(it) }
+                    authState.sessionId?.takeIf(String::isNotBlank)?.let {
+                        BotGuardTokenGenerator.preWarm(it)
+                    }
                 }
         }
 
@@ -635,7 +659,8 @@ class App :
 
         try {
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-                // Replacing the default handler also drops the runtime's FATAL EXCEPTION line, which
+                // Replacing the default handler also drops the runtime's FATAL EXCEPTION line,
+                // which
                 // is the only place the persistent log capture can see the crash.
                 android.util.Log.e("AndroidRuntime", "FATAL EXCEPTION: ${thread.name}", throwable)
                 try {
@@ -652,13 +677,14 @@ class App :
                     val intent =
                         Intent(this@App, DebugActivity::class.java).apply {
                             putExtra(DebugActivity.EXTRA_STACK_TRACE, stack)
-                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                            addFlags(
+                                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK,
+                            )
                         }
                     startActivity(intent)
                     try {
                         Thread.sleep(100)
-                    } catch (_: InterruptedException) {
-                    }
+                    } catch (_: InterruptedException) {}
                 } catch (e: Exception) {
                     reportException(e)
                 } finally {
@@ -673,7 +699,8 @@ class App :
             dataStore.data
                 .map { prefs ->
                     LastFmServiceConfig.fromPreferences(prefs) to prefs[LastFMSessionKey]
-                }.distinctUntilChanged()
+                }
+                .distinctUntilChanged()
                 .collect { (serviceConfig, sessionKey) ->
                     serviceConfig.apply(sessionKey)
                 }
@@ -687,7 +714,8 @@ class App :
         // Coil builds this once and keeps it for the life of the process, so reading a preference
         // here before the first DataStore snapshot has landed does not just miss once — it pins the
         // image cache to the built-in defaults until the app is killed, silently ignoring the size
-        // the reader chose. Bounded, so a slow first read delays the first image rather than the app.
+        // the reader chose. Bounded, so a slow first read delays the first image rather than the
+        // app.
         PreferenceStore.blockUntilLoaded()
 
         val smartTrimmer = dataStore[SmartTrimmerKey] ?: false
@@ -695,20 +723,24 @@ class App :
         val lowRam = isLowRamDevice()
 
         val diskCache =
-            DiskCache
-                .Builder()
-                .directory(StorageLocationRepository.cacheDirectory(this, StorageFolderKind.IMAGE_CACHE))
+            DiskCache.Builder()
+                .directory(
+                    StorageLocationRepository.cacheDirectory(this, StorageFolderKind.IMAGE_CACHE),
+                )
                 .maxSizeBytes(imageCacheConfig.maxSizeBytes)
                 .build()
 
-        if (smartTrimmer && imageCacheConfig.policy == CachePolicy.ENABLED && didRunImageCacheTrim.compareAndSet(false, true)) {
+        if (
+            smartTrimmer &&
+                imageCacheConfig.policy == CachePolicy.ENABLED &&
+                didRunImageCacheTrim.compareAndSet(false, true)
+        ) {
             applicationScope.launch(Dispatchers.IO) { trimImageDiskCache(diskCache) }
         }
 
         // Tuned OkHttp client dedicated to image fetching.
         val imageHttpClient =
-            OkHttpClient
-                .Builder()
+            OkHttpClient.Builder()
                 .withAppProxy()
                 .connectionPool(ConnectionPool(20, 5, TimeUnit.MINUTES))
                 .connectTimeout(6, TimeUnit.SECONDS)
@@ -719,8 +751,7 @@ class App :
                 .followSslRedirects(true)
                 .build()
 
-        return ImageLoader
-            .Builder(this)
+        return ImageLoader.Builder(this)
             .components {
                 add(CustomArtworkInterceptor())
                 add(moe.rukamori.archivetune.telegram.TelegramThumbnailFetcher.Factory())
@@ -729,11 +760,9 @@ class App :
             .crossfade(!lowRam)
             .allowHardware(Build.VERSION.SDK_INT >= Build.VERSION_CODES.P)
             .memoryCache {
-                MemoryCache
-                    .Builder()
-                    .maxSizePercent(this@App, if (lowRam) 0.15 else 0.25)
-                    .build()
-            }.memoryCachePolicy(CachePolicy.ENABLED)
+                MemoryCache.Builder().maxSizePercent(this@App, if (lowRam) 0.15 else 0.25).build()
+            }
+            .memoryCachePolicy(CachePolicy.ENABLED)
             .diskCache(diskCache)
             .diskCachePolicy(imageCacheConfig.policy)
             .build()
@@ -748,11 +777,7 @@ class App :
             if (!dir.exists()) return
 
             val files =
-                dir
-                    .walkTopDown()
-                    .filter { it.isFile }
-                    .sortedBy { it.lastModified() }
-                    .toList()
+                dir.walkTopDown().filter { it.isFile }.sortedBy { it.lastModified() }.toList()
             var currentSize = files.sumOf { it.length() }
             if (currentSize <= limitBytes) return
 
@@ -761,8 +786,7 @@ class App :
                 val size = file.length()
                 if (runCatching { file.delete() }.getOrDefault(false)) currentSize -= size
             }
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
     }
 
     companion object {
@@ -777,7 +801,9 @@ class App :
             if (clearWebAuthSession) {
                 clearPlaybackWebAuthSession()
             }
-            instance.applicationScope.launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            instance.applicationScope.launch(
+                start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED,
+            ) {
                 instance.youTubeLoginRepository.logout()
             }
         }
@@ -790,11 +816,11 @@ internal data class ImageDiskCacheConfig(
 )
 
 /**
- * Per-provider sub-paths served by the Paxsenix ("Lyrically") API, longest first
- * so `apple-music/cache/cleanup` is stripped before `apple-music/cache`.
+ * Per-provider sub-paths served by the Paxsenix ("Lyrically") API, longest first so
+ * `apple-music/cache/cleanup` is stripped before `apple-music/cache`.
  *
- * [PaxsenixLyrics] appends the sub-path for whichever provider is being queried,
- * so the configured endpoint has to be the *service root*.
+ * [PaxsenixLyrics] appends the sub-path for whichever provider is being queried, so the configured
+ * endpoint has to be the *service root*.
  */
 private val PAXSENIX_PROVIDER_PATHS =
     listOf(
@@ -854,8 +880,7 @@ private suspend fun resolveSpotifyTrackUri(
 
     val query = listOf(cleanTitle, cleanArtist).filter { it.isNotBlank() }.joinToString(" ")
     val tracks =
-        Spotify
-            .search(query = query, types = listOf("track"), limit = 5)
+        Spotify.search(query = query, types = listOf("track"), limit = 5)
             .getOrNull()
             ?.tracks
             ?.items
@@ -871,11 +896,9 @@ private suspend fun resolveSpotifyTrackUri(
         cleanArtist.isBlank() ||
             names.any { candidate ->
                 candidate.isNotBlank() &&
-                    (
-                        candidate.equals(cleanArtist, ignoreCase = true) ||
-                            candidate.contains(cleanArtist, ignoreCase = true) ||
-                            cleanArtist.contains(candidate, ignoreCase = true)
-                    )
+                    (candidate.equals(cleanArtist, ignoreCase = true) ||
+                        candidate.contains(cleanArtist, ignoreCase = true) ||
+                        cleanArtist.contains(candidate, ignoreCase = true))
             }
 
     val match =
@@ -890,8 +913,12 @@ private suspend fun resolveSpotifyTrackUri(
 internal fun resolveImageDiskCacheConfig(maxImageCacheSizeMb: Int?): ImageDiskCacheConfig {
     val sizeMb = maxImageCacheSizeMb ?: 512
     if (sizeMb == 0) return ImageDiskCacheConfig(policy = CachePolicy.DISABLED, maxSizeBytes = 1L)
-    if (sizeMb < 0) return ImageDiskCacheConfig(policy = CachePolicy.ENABLED, maxSizeBytes = Long.MAX_VALUE)
+    if (sizeMb < 0)
+        return ImageDiskCacheConfig(policy = CachePolicy.ENABLED, maxSizeBytes = Long.MAX_VALUE)
     val bytesPerMb = 1024L * 1024L
     val safeSizeMb = sizeMb.toLong().coerceAtMost(Long.MAX_VALUE / bytesPerMb)
-    return ImageDiskCacheConfig(policy = CachePolicy.ENABLED, maxSizeBytes = safeSizeMb * bytesPerMb)
+    return ImageDiskCacheConfig(
+        policy = CachePolicy.ENABLED,
+        maxSizeBytes = safeSizeMb * bytesPerMb,
+    )
 }

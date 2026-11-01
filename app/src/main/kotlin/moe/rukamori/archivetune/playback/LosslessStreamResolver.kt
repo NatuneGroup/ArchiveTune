@@ -9,6 +9,7 @@
 package moe.rukamori.archivetune.playback
 
 import android.content.Context
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -37,7 +38,6 @@ import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
-import java.io.File
 
 /**
  * Pool-aware lossless stream resolver, used by the **download path**
@@ -60,24 +60,30 @@ object LosslessStreamResolver {
         directTrackId: String? = null,
     ): DirectStream? {
         val userInstances = parseMultiline(context, QobuzInstancesKey)
-        val discoveredInstances = runCatching { QobuzAudioProvider.discoverInstances() }
+        val discoveredInstances = runCatching {
+            QobuzAudioProvider.discoverInstances()
+        }
             .getOrDefault(emptyList())
-        val mergedInstances = LinkedHashSet<String>().apply {
-            addAll(userInstances)
-            addAll(discoveredInstances)
-        }.toList()
+        val mergedInstances =
+            LinkedHashSet<String>()
+                .apply {
+                    addAll(userInstances)
+                    addAll(discoveredInstances)
+                }
+                .toList()
 
         val userTokens = QobuzToken.listFromJson(readString(context, QobuzTokensKey))
-        val poolTokens = PoolAccountManager.qobuzAccounts().map {
-            QobuzToken(
-                token = it.token,
-                appId = it.appId,
-                appSecret = it.appSecret,
-                label = "Source Pool",
-                subscription = if (it.premium) "premium" else "",
-                poolId = it.id,
-            )
-        }
+        val poolTokens =
+            PoolAccountManager.qobuzAccounts().map {
+                QobuzToken(
+                    token = it.token,
+                    appId = it.appId,
+                    appSecret = it.appSecret,
+                    label = "Source Pool",
+                    subscription = if (it.premium) "premium" else "",
+                    poolId = it.id,
+                )
+            }
         val mergedTokens = (userTokens + poolTokens).distinctBy { it.token }
 
         if (mergedInstances.isEmpty() && mergedTokens.isEmpty()) {
@@ -91,33 +97,35 @@ object LosslessStreamResolver {
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 QobuzAudioProvider.resolve(
-                    query = QobuzAudioProvider.Query(
-                        mediaId = mediaId,
-                        title = title,
-                        artists = artists,
-                        album = album,
-                        durationMs = durationMs,
-                        directTrackId = directTrackId,
-                    ),
+                    query =
+                        QobuzAudioProvider.Query(
+                            mediaId = mediaId,
+                            title = title,
+                            artists = artists,
+                            album = album,
+                            durationMs = durationMs,
+                            directTrackId = directTrackId,
+                        ),
                     formatId = formatId,
                 )
             }
-        }.onFailure { error ->
-            Timber.tag("LosslessResolver").w(error, "Qobuz resolve failed for %s", mediaId)
-        }.getOrNull()
+        }
+            .onFailure { error ->
+                Timber.tag("LosslessResolver").w(error, "Qobuz resolve failed for %s", mediaId)
+            }
+            .getOrNull()
     }
 
     /**
      * Resolves a Tidal stream URL for [mediaId] using:
      *
-     *   1. The user's own Tidal access token (if signed in)
-     *   2. Community Source Pool Tidal accounts (premium first)
-     *   3. Public HiFi/QQDL instances (user-configured + pool-discovered)
+     * 1. The user's own Tidal access token (if signed in)
+     * 2. Community Source Pool Tidal accounts (premium first)
+     * 3. Public HiFi/QQDL instances (user-configured + pool-discovered)
      *
-     * Mirrors [MusicService.resolveTidalStream]. Each pool token is tried
-     * in turn via [TidalAccountManager.resolveDirectStream] (full-quality
-     * FLAC via the official API), and only when all account paths fail do
-     * we fall through to the public-instance path via
+     * Mirrors [MusicService.resolveTidalStream]. Each pool token is tried in turn via
+     * [TidalAccountManager.resolveDirectStream] (full-quality FLAC via the official API), and only
+     * when all account paths fail do we fall through to the public-instance path via
      * [TidalAudioProvider.resolve].
      *
      * Returns null when no path yields a stream.
@@ -132,16 +140,20 @@ object LosslessStreamResolver {
         audioQuality: TidalAudioQuality,
         cacheDir: File,
     ): DirectStream? {
-        val apiQuality = when (audioQuality) {
-            TidalAudioQuality.HI_RES_LOSSLESS -> "HI_RES_LOSSLESS"
-            TidalAudioQuality.FLAC -> "LOSSLESS"
-            TidalAudioQuality.AAC_320 -> "HIGH"
-        }
+        val apiQuality =
+            when (audioQuality) {
+                TidalAudioQuality.HI_RES_LOSSLESS -> "HI_RES_LOSSLESS"
+                TidalAudioQuality.FLAC -> "LOSSLESS"
+                TidalAudioQuality.AAC_320 -> "HIGH"
+            }
         val accountFirst = readBoolean(context, TidalAccountFirstKey, true)
-        Timber.tag("LosslessResolver").d(
-            "Tidal resolve start | quality=%s accountFirst=%s poolAccounts=%d",
-            audioQuality.name, accountFirst, PoolAccountManager.tidalAccounts().size,
-        )
+        Timber.tag("LosslessResolver")
+            .d(
+                "Tidal resolve start | quality=%s accountFirst=%s poolAccounts=%d",
+                audioQuality.name,
+                accountFirst,
+                PoolAccountManager.tidalAccounts().size,
+            )
 
         if (accountFirst) {
             // 1) The user's own Tidal token. We do NOT refresh here —
@@ -163,9 +175,12 @@ object LosslessStreamResolver {
                             countryCode = country,
                         )
                     }
-                }.onFailure {
-                    Timber.tag("LosslessResolver").w(it, "Tidal user-token resolve failed for %s", mediaId)
-                }.getOrNull()
+                }
+                    .onFailure {
+                        Timber.tag("LosslessResolver")
+                            .w(it, "Tidal user-token resolve failed for %s", mediaId)
+                    }
+                    .getOrNull()
                 if (stream != null) return stream
             }
 
@@ -183,13 +198,16 @@ object LosslessStreamResolver {
             if (poolAccounts.any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
                 runCatching {
                     runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(context) }
-                }.onFailure {
-                    Timber.tag("LosslessResolver").w(it, "Tidal pool re-lease failed; using cached accounts")
                 }
+                    .onFailure {
+                        Timber.tag("LosslessResolver")
+                            .w(it, "Tidal pool re-lease failed; using cached accounts")
+                    }
                 val refreshed = PoolAccountManager.tidalAccounts()
                 if (refreshed.isNotEmpty()) {
                     poolAccounts = refreshed
-                    Timber.tag("LosslessResolver").d("Re-leased %d fresh Tidal pool account(s)", refreshed.size)
+                    Timber.tag("LosslessResolver")
+                        .d("Re-leased %d fresh Tidal pool account(s)", refreshed.size)
                 }
             }
             if (poolAccounts.isNotEmpty()) {
@@ -217,18 +235,31 @@ object LosslessStreamResolver {
                                             cacheDir = cacheDir,
                                             countryCode = poolCountry,
                                         )
-                                    }.onFailure {
-                                        if (TidalAccountManager.isUnauthorized(it)) {
-                                            PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                                            // A real rejection is the one signal worth a forced
-                                            // re-lease — bounded per provider, fire-and-forget.
-                                            PoolAccountManager.refreshOnRejection(context, "tidal")
-                                        } else {
-                                            Timber.tag("LosslessResolver").w(
-                                                it, "Tidal pool account resolve failed for %s", mediaId,
-                                            )
+                                    }
+                                        .onFailure {
+                                            if (TidalAccountManager.isUnauthorized(it)) {
+                                                PoolAccountManager.report(
+                                                    "tidal",
+                                                    "account",
+                                                    poolAccount.id,
+                                                    "dead",
+                                                )
+                                                // A real rejection is the one signal worth a forced
+                                                // re-lease — bounded per provider, fire-and-forget.
+                                                PoolAccountManager.refreshOnRejection(
+                                                    context,
+                                                    "tidal",
+                                                )
+                                            } else {
+                                                Timber.tag("LosslessResolver")
+                                                    .w(
+                                                        it,
+                                                        "Tidal pool account resolve failed for %s",
+                                                        mediaId,
+                                                    )
+                                            }
                                         }
-                                    }.getOrNull()
+                                        .getOrNull()
                                 }
                             }
                             // First non-null wins; cancel the rest.
@@ -245,13 +276,18 @@ object LosslessStreamResolver {
                             winner
                         }
                     }
-                }.onFailure {
-                    Timber.tag("LosslessResolver").w(it, "Tidal pool race failed for %s", mediaId)
-                }.getOrNull()
+                }
+                    .onFailure {
+                        Timber.tag("LosslessResolver")
+                            .w(it, "Tidal pool race failed for %s", mediaId)
+                    }
+                    .getOrNull()
                 if (stream != null) {
-                    Timber.tag("LosslessResolver").d(
-                        "Tidal resolved via pool race for %s", mediaId,
-                    )
+                    Timber.tag("LosslessResolver")
+                        .d(
+                            "Tidal resolved via pool race for %s",
+                            mediaId,
+                        )
                     return stream
                 }
             }
@@ -263,74 +299,83 @@ object LosslessStreamResolver {
         //    still FLAC when the instance supports it.
         val configuredInstances = parseMultiline(context, TidalInstancesKey)
         val discoveredInstances = TidalInstanceHealthManager.healthyUrls(context)
-        val mergedInstances = LinkedHashSet<String>().apply {
-            addAll(configuredInstances)
-            addAll(discoveredInstances)
-        }.toList()
+        val mergedInstances =
+            LinkedHashSet<String>()
+                .apply {
+                    addAll(configuredInstances)
+                    addAll(discoveredInstances)
+                }
+                .toList()
         TidalAudioProvider.setInstances(mergedInstances)
 
         return runCatching {
             runBlocking(Dispatchers.IO) {
                 TidalAudioProvider.resolve(
-                    query = TidalAudioProvider.Query(
-                        mediaId = mediaId,
-                        title = title,
-                        artists = artists,
-                        album = album,
-                        isrc = null,
-                        durationMs = durationMs,
-                    ),
+                    query =
+                        TidalAudioProvider.Query(
+                            mediaId = mediaId,
+                            title = title,
+                            artists = artists,
+                            album = album,
+                            isrc = null,
+                            durationMs = durationMs,
+                        ),
                     cacheDir = cacheDir,
                     preferAtmos = false,
                     preferLiveDash = false,
                     audioQuality = audioQuality,
                 )
             }
-        }.onFailure {
-            Timber.tag("LosslessResolver").w(it, "Tidal public-instance resolve failed for %s", mediaId)
-        }.getOrNull()?.let { resolved ->
-            DirectStream(
-                uri = resolved.mediaUri,
-                mimeType = resolved.mimeType,
-                codecs = resolved.codecs,
-                contentLength = resolved.contentLength,
-                label = "Tidal ${resolved.label}",
-                source = AudioSourceType.TIDAL,
-                matchedTitle = resolved.matchedTitle,
-                matchedArtist = resolved.matchedArtist,
-                matchedAlbum = resolved.matchedAlbum,
-                matchedDurationMs = resolved.matchedDurationMs,
-            )
         }
+            .onFailure {
+                Timber.tag("LosslessResolver")
+                    .w(it, "Tidal public-instance resolve failed for %s", mediaId)
+            }
+            .getOrNull()
+            ?.let { resolved ->
+                DirectStream(
+                    uri = resolved.mediaUri,
+                    mimeType = resolved.mimeType,
+                    codecs = resolved.codecs,
+                    contentLength = resolved.contentLength,
+                    label = "Tidal ${resolved.label}",
+                    source = AudioSourceType.TIDAL,
+                    matchedTitle = resolved.matchedTitle,
+                    matchedArtist = resolved.matchedArtist,
+                    matchedAlbum = resolved.matchedAlbum,
+                    matchedDurationMs = resolved.matchedDurationMs,
+                )
+            }
     }
 
     /**
      * Resolves a **Qobuz backup** stream for [mediaId] — the community-hosted `mlc-ytify.kouzu.in`
      * mirror, keyed by YouTube video id.
      */
-    fun resolveQobuzBackup(mediaId: String): DirectStream? =
-        runCatching {
-            runBlocking(Dispatchers.IO) {
-                QobuzBackupProvider.resolveStream(mediaId)?.let { resolved ->
-                    DirectStream(
-                        uri = resolved.uri,
-                        mimeType = resolved.mimeType,
-                        codecs = resolved.codecs,
-                        contentLength = resolved.contentLength,
-                        label = resolved.label,
-                        source = AudioSourceType.QOBUZ_BACKUP,
-                        // The mirror is keyed by the YouTube id we asked for, so the match is
-                        // authoritative by construction — there is no catalogue search to verify.
-                        trustedDirectId = true,
-                        sampleRate = resolved.sampleRate,
-                        bitDepth = resolved.bitDepth,
-                        matchedDurationMs = resolved.durationMs,
-                    )
-                }
+    fun resolveQobuzBackup(mediaId: String): DirectStream? = runCatching {
+        runBlocking(Dispatchers.IO) {
+            QobuzBackupProvider.resolveStream(mediaId)?.let { resolved ->
+                DirectStream(
+                    uri = resolved.uri,
+                    mimeType = resolved.mimeType,
+                    codecs = resolved.codecs,
+                    contentLength = resolved.contentLength,
+                    label = resolved.label,
+                    source = AudioSourceType.QOBUZ_BACKUP,
+                    // The mirror is keyed by the YouTube id we asked for, so the match is
+                    // authoritative by construction — there is no catalogue search to verify.
+                    trustedDirectId = true,
+                    sampleRate = resolved.sampleRate,
+                    bitDepth = resolved.bitDepth,
+                    matchedDurationMs = resolved.durationMs,
+                )
             }
-        }.onFailure { error ->
+        }
+    }
+        .onFailure { error ->
             Timber.tag("LosslessResolver").w(error, "Qobuz backup resolve failed for %s", mediaId)
-        }.getOrNull()
+        }
+        .getOrNull()
 
     /** Resolves a **Deezer** stream for [mediaId]. */
     fun resolveDeezer(
@@ -342,13 +387,13 @@ object LosslessStreamResolver {
         format: String,
     ): DirectStream? {
         if (!DeezerAudioProvider.hasBackends()) {
-            Timber.tag("LosslessResolver").d("Deezer skip: no accounts and no API instances available")
+            Timber.tag("LosslessResolver")
+                .d("Deezer skip: no accounts and no API instances available")
             return null
         }
         return runCatching {
             runBlocking(Dispatchers.IO) {
-                DeezerAudioProvider
-                    .resolve(
+                DeezerAudioProvider.resolve(
                         query =
                             DeezerAudioProvider.Query(
                                 mediaId = mediaId,
@@ -358,7 +403,8 @@ object LosslessStreamResolver {
                                 durationMs = durationMs,
                             ),
                         format = format,
-                    )?.let { resolved ->
+                    )
+                    ?.let { resolved ->
                         DirectStream(
                             uri = resolved.uri,
                             mimeType = resolved.mimeType,
@@ -375,9 +421,11 @@ object LosslessStreamResolver {
                         )
                     }
             }
-        }.onFailure { error ->
-            Timber.tag("LosslessResolver").w(error, "Deezer resolve failed for %s", mediaId)
-        }.getOrNull()
+        }
+            .onFailure { error ->
+                Timber.tag("LosslessResolver").w(error, "Deezer resolve failed for %s", mediaId)
+            }
+            .getOrNull()
     }
 
     /** Resolves a **JioSaavn** stream for [mediaId]. */
@@ -391,56 +439,61 @@ object LosslessStreamResolver {
     ): DirectStream? {
         val artistHint = artists.firstOrNull()?.takeIf { it.isNotBlank() }.orEmpty()
         val albumHint = album?.takeIf { it.isNotBlank() }.orEmpty()
-        val searchQuery =
-            buildString {
-                append(title)
-                if (artistHint.isNotBlank()) append(' ').append(artistHint)
-                if (albumHint.isNotBlank()) append(' ').append(albumHint)
-            }.trim()
+        val searchQuery = buildString {
+            append(title)
+            if (artistHint.isNotBlank()) append(' ').append(artistHint)
+            if (albumHint.isNotBlank()) append(' ').append(albumHint)
+        }
+            .trim()
 
         return AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
             runCatching {
                 runBlocking(Dispatchers.IO + AudioSourceAttemptScope.coroutineContextElement()) {
-                    AudioSourceAttemptScope.withinSuspending(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-                val results = SaavnService.searchSongs(searchQuery).getOrNull().orEmpty()
-                if (results.isEmpty()) return@withinSuspending null
-                val wantedDurationSec = durationMs?.let { it / 1000 }
-                val candidate =
-                    results
-                        // Pro-only tracks answer with a 30-second preview, which would silently
-                        // download as a truncated file.
-                        .filter { !it.isProOnly && it.downloadUrl.isNotEmpty() }
-                        .minByOrNull { song ->
-                            saavnMatchPenalty(
-                                candidateTitle = song.name,
-                                candidateArtist = song.artists.primary.firstOrNull()?.name,
-                                candidateDurationSec = song.duration?.toLong(),
-                                wantedTitle = title,
-                                wantedArtist = artistHint,
-                                wantedDurationSec = wantedDurationSec,
-                            )
-                        } ?: return@withinSuspending null
-                val streamUrl =
-                    SaavnService.selectBestUrl(candidate.downloadUrl, qualityApiValue)
-                        ?: return@withinSuspending null
-                DirectStream(
-                    uri = streamUrl,
-                    mimeType = "audio/mp4",
-                    codecs = "mp4a.40.2",
-                    contentLength = null,
-                    label = "JioSaavn $qualityApiValue",
-                    source = AudioSourceType.JIOSAAVN,
-                    matchedTitle = candidate.name,
-                    matchedArtist = candidate.artists.primary.firstOrNull()?.name,
-                    matchedAlbum = candidate.album?.name,
-                    matchedDurationMs = candidate.duration?.toLong()?.times(1000L),
-                )
+                    AudioSourceAttemptScope.withinSuspending(
+                        AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS,
+                    ) {
+                        val results = SaavnService.searchSongs(searchQuery).getOrNull().orEmpty()
+                        if (results.isEmpty()) return@withinSuspending null
+                        val wantedDurationSec = durationMs?.let { it / 1000 }
+                        val candidate =
+                            results
+                                // Pro-only tracks answer with a 30-second preview, which would
+                                // silently
+                                // download as a truncated file.
+                                .filter { !it.isProOnly && it.downloadUrl.isNotEmpty() }
+                                .minByOrNull { song ->
+                                    saavnMatchPenalty(
+                                        candidateTitle = song.name,
+                                        candidateArtist = song.artists.primary.firstOrNull()?.name,
+                                        candidateDurationSec = song.duration?.toLong(),
+                                        wantedTitle = title,
+                                        wantedArtist = artistHint,
+                                        wantedDurationSec = wantedDurationSec,
+                                    )
+                                } ?: return@withinSuspending null
+                        val streamUrl =
+                            SaavnService.selectBestUrl(candidate.downloadUrl, qualityApiValue)
+                                ?: return@withinSuspending null
+                        DirectStream(
+                            uri = streamUrl,
+                            mimeType = "audio/mp4",
+                            codecs = "mp4a.40.2",
+                            contentLength = null,
+                            label = "JioSaavn $qualityApiValue",
+                            source = AudioSourceType.JIOSAAVN,
+                            matchedTitle = candidate.name,
+                            matchedArtist = candidate.artists.primary.firstOrNull()?.name,
+                            matchedAlbum = candidate.album?.name,
+                            matchedDurationMs = candidate.duration?.toLong()?.times(1000L),
+                        )
                     }
                 }
-            }.onFailure { error ->
-                error.rethrowIfAudioSourceCancelled()
-                Timber.tag("LosslessResolver").w(error, "JioSaavn resolve failed for %s", mediaId)
             }
+                .onFailure { error ->
+                    error.rethrowIfAudioSourceCancelled()
+                    Timber.tag("LosslessResolver")
+                        .w(error, "JioSaavn resolve failed for %s", mediaId)
+                }
                 .getOrNull()
         }
     }
@@ -476,7 +529,8 @@ object LosslessStreamResolver {
             penalty +=
                 when {
                     normArtist == normWantedArtist -> 0
-                    normArtist.contains(normWantedArtist) || normWantedArtist.contains(normArtist) -> 1
+                    normArtist.contains(normWantedArtist) ||
+                        normWantedArtist.contains(normArtist) -> 1
                     else -> 3
                 }
         }
@@ -496,32 +550,38 @@ object LosslessStreamResolver {
     private val SAAVN_NORMALIZE_REGEX = Regex("[^\\p{L}\\p{N}]")
 
     /**
-     * Returns the cache key prefix for [source], matching
-     * [MusicService.sourceCacheKey] so bytes cached here are picked up
-     * by the playback resolver and vice versa.
+     * Returns the cache key prefix for [source], matching [MusicService.sourceCacheKey] so bytes
+     * cached here are picked up by the playback resolver and vice versa.
      */
-    fun cacheKeyPrefix(source: AudioSourceType): String = when (source) {
-        AudioSourceType.TIDAL -> "tidal:"
-        AudioSourceType.QOBUZ -> "qobuz:"
-        else -> "${source.name.lowercase()}:"
-    }
+    fun cacheKeyPrefix(source: AudioSourceType): String =
+        when (source) {
+            AudioSourceType.TIDAL -> "tidal:"
+            AudioSourceType.QOBUZ -> "qobuz:"
+            else -> "${source.name.lowercase()}:"
+        }
 
     // ---- helpers ----
 
-    private fun readString(context: Context, key: androidx.datastore.preferences.core.Preferences.Key<String>): String =
-        runCatching { runBlocking { context.dataStore.data.first()[key] ?: "" } }.getOrDefault("")
+    private fun readString(
+        context: Context,
+        key: androidx.datastore.preferences.core.Preferences.Key<String>,
+    ): String = runCatching {
+        runBlocking { context.dataStore.data.first()[key] ?: "" }
+    }
+        .getOrDefault("")
 
     private fun readBoolean(
         context: Context,
         key: androidx.datastore.preferences.core.Preferences.Key<Boolean>,
         default: Boolean,
-    ): Boolean = runCatching { runBlocking { context.dataStore.data.first()[key] ?: default } }.getOrDefault(default)
+    ): Boolean = runCatching {
+        runBlocking { context.dataStore.data.first()[key] ?: default }
+    }
+        .getOrDefault(default)
 
     private fun parseMultiline(
         context: Context,
         key: androidx.datastore.preferences.core.Preferences.Key<String>,
-    ): List<String> = readString(context, key)
-        .split('\n')
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
+    ): List<String> =
+        readString(context, key).split('\n').map { it.trim() }.filter { it.isNotEmpty() }
 }

@@ -35,10 +35,10 @@ import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 
 /**
- * The Natune status (listener presence) opt-in, shared by the onboarding welcome page and
- * Settings → Integration. It is off until the user switches it on, and the disclosure stays one
- * tap away. [showMapLink] and [showReset] are passed where the dashboard link and the identifier
- * reset belong (settings); onboarding shows just the switch and the disclosure.
+ * The Natune status (listener presence) opt-in, shared by the onboarding welcome page and Settings
+ * → Integration. It is off until the user switches it on, and the disclosure stays one tap away.
+ * [showMapLink] and [showReset] are passed where the dashboard link and the identifier reset belong
+ * (settings); onboarding shows just the switch and the disclosure.
  */
 @Composable
 fun ListenerPresenceSection(
@@ -78,7 +78,8 @@ fun ListenerPresenceSection(
             title = {
                 Text(
                     stringResource(
-                        if (showDetails) R.string.presence_hide_details else R.string.presence_show_details,
+                        if (showDetails) R.string.presence_hide_details
+                        else R.string.presence_show_details,
                     ),
                 )
             },

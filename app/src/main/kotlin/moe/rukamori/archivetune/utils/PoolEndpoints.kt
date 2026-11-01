@@ -8,6 +8,9 @@
 
 package moe.rukamori.archivetune.utils
 
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -19,9 +22,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
-import java.io.IOException
-import kotlin.coroutines.coroutineContext
-import kotlin.coroutines.resume
 
 /**
  * The ordered ArchivePool deployments one pool request is tried against while the service moves off
@@ -32,8 +32,8 @@ import kotlin.coroutines.resume
  * A request moves to the next endpoint on a transport failure — connection refused, DNS failure,
  * timeout — or a host-level answer ([isFailoverStatus]: HTTP 402 or 5xx). API-level answers like
  * 400, 401, 403, 404 or 429 are definitive and stop the walk. POST /api/report is different again:
- * a transport failure means the report may already have reached the server, so only an explicit
- * 402 or 5xx answer advances it — a report is never delivered twice.
+ * a transport failure means the report may already have reached the server, so only an explicit 402
+ * or 5xx answer advances it — a report is never delivered twice.
  */
 internal object ArchivePoolEndpoints {
 
@@ -43,13 +43,15 @@ internal object ArchivePoolEndpoints {
     /** How long the deployment that last produced a definitive answer is tried first. */
     private const val REMEMBER_NS = 10L * 60 * 1_000_000_000L
 
-    /** Internal so tests can backdate or clear the memory; production writes go through [remember]. */
-    @Volatile
-    internal var lastGood: Pair<String, Long>? = null
+    /**
+     * Internal so tests can backdate or clear the memory; production writes go through [remember].
+     */
+    @Volatile internal var lastGood: Pair<String, Long>? = null
 
     /**
      * The configured deployment normalized: trimmed, without a trailing slash, https only. A blank
-     * or non-https value answers the public fallback, matching every host's unset-means-default rule.
+     * or non-https value answers the public fallback, matching every host's unset-means-default
+     * rule.
      */
     fun primary(configured: String?): String =
         configured?.trim()?.trimEnd('/')?.takeIf { it.startsWith("https://") } ?: FALLBACK_BASE_URL
@@ -60,7 +62,9 @@ internal object ArchivePoolEndpoints {
      */
     fun candidates(configured: String?): List<String> {
         val ordered = LinkedHashSet<String>(3)
-        lastGood?.takeIf { System.nanoTime() - it.second < REMEMBER_NS }?.let { ordered += it.first }
+        lastGood
+            ?.takeIf { System.nanoTime() - it.second < REMEMBER_NS }
+            ?.let { ordered += it.first }
         ordered += primary(configured)
         ordered += FALLBACK_BASE_URL
         return ordered.toList()
@@ -127,13 +131,14 @@ internal object ArchivePoolEndpoints {
 internal object PoolEndpoints {
 
     /**
-     * The build-configured pool deployment: the dedicated ARCHIVEPOOL_BASE_URL build value when
-     * set and https, else the legacy SOURCE_PROVIDER_URL build value, else the public default.
+     * The build-configured pool deployment: the dedicated ARCHIVEPOOL_BASE_URL build value when set
+     * and https, else the legacy SOURCE_PROVIDER_URL build value, else the public default.
      */
     fun configuredBaseUrl(): String =
         ArchivePoolEndpoints.primary(
-            listOf(BuildConfig.ARCHIVEPOOL_BASE_URL, BuildConfig.SOURCE_PROVIDER_URL)
-                .firstOrNull { it.trim().startsWith("https://") },
+            listOf(BuildConfig.ARCHIVEPOOL_BASE_URL, BuildConfig.SOURCE_PROVIDER_URL).firstOrNull {
+                it.trim().startsWith("https://")
+            },
         )
 
     /** The deduplicated deployments one request walks, remembered endpoint first when fresh. */
@@ -165,7 +170,8 @@ internal object PoolEndpoints {
         body: String?,
     ): Pair<Int, String>? =
         try {
-            ArchivePoolEndpoints.acrossEndpoints(configuredBaseUrl(), report = body != null) { base ->
+            ArchivePoolEndpoints.acrossEndpoints(configuredBaseUrl(), report = body != null) { base
+                ->
                 // A dead coroutine, a switched-off Playback Pool or an open 401 auth backoff
                 // must stop the walk before the next endpoint is tried, not after the request
                 // is already on the wire.
@@ -177,11 +183,11 @@ internal object PoolEndpoints {
                 }
                 suspendCancellableCoroutine<Pair<Int, String>?> { cont ->
                     val builder =
-                        Request
-                            .Builder()
+                        Request.Builder()
                             .url("$base$path")
                             .header("User-Agent", "ArchiveTune-Android")
-                            // v2 of the pool protocol: sensitive fields are encrypted with a key derived
+                            // v2 of the pool protocol: sensitive fields are encrypted with a key
+                            // derived
                             // from the read key; older servers ignore the header.
                             .header("X-Pool-Client", "v2")
                     if (readKey.isNotBlank()) {
@@ -204,23 +210,22 @@ internal object PoolEndpoints {
                             }
 
                             override fun onResponse(call: Call, response: Response) {
-                                val result =
-                                    response.use {
-                                        // Every definitive answer feeds the shared auth backoff:
-                                        // 401 doubles the quiet window, a 2xx clears it.
-                                        PoolAccountManager.notePoolAuthAnswer(it.code)
-                                        try {
-                                            it.code to
-                                                if (it.isSuccessful) it.body?.string().orEmpty() else ""
-                                        } catch (cancelled: CancellationException) {
-                                            throw cancelled
-                                        } catch (io: IOException) {
-                                            // A reset or truncate mid-200 is a transport failure,
-                                            // not a definitive answer: the walk tries the next
-                                            // endpoint instead of throwing out of it.
-                                            null
-                                        }
+                                val result = response.use {
+                                    // Every definitive answer feeds the shared auth backoff:
+                                    // 401 doubles the quiet window, a 2xx clears it.
+                                    PoolAccountManager.notePoolAuthAnswer(it.code)
+                                    try {
+                                        it.code to
+                                            if (it.isSuccessful) it.body?.string().orEmpty() else ""
+                                    } catch (cancelled: CancellationException) {
+                                        throw cancelled
+                                    } catch (io: IOException) {
+                                        // A reset or truncate mid-200 is a transport failure,
+                                        // not a definitive answer: the walk tries the next
+                                        // endpoint instead of throwing out of it.
+                                        null
                                     }
+                                }
                                 if (cont.isActive) cont.resume(result)
                             }
                         },

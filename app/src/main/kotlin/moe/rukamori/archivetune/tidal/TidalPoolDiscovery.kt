@@ -26,9 +26,9 @@ import timber.log.Timber
 /**
  * Source Pool discovery for Tidal: which community instances the pool currently lists.
  *
- * The feed is a paid shared resource, so this object owns the request-shaping rules for it:
- * answers (empty ones included) are cached for [TTL_MS], concurrent callers share one fetch via
- * a single-flight lock, a pool 401 backs the whole feature off through PoolAuthBackoff, and the
+ * The feed is a paid shared resource, so this object owns the request-shaping rules for it: answers
+ * (empty ones included) are cached for [TTL_MS], concurrent callers share one fetch via a
+ * single-flight lock, a pool 401 backs the whole feature off through PoolAuthBackoff, and the
  * request itself fails over across the configured deployment and the fallback base the way
  * [PoolEndpoints] does — remembering a working deployment once a definitive answer lands.
  *
@@ -42,11 +42,9 @@ internal object TidalPoolDiscovery {
         private set
 
     /** The last pool discovery answer (empty counts) — feeds are not free. */
-    @Volatile
-    private var discoveryCache: List<String> = emptyList()
+    @Volatile private var discoveryCache: List<String> = emptyList()
 
-    @Volatile
-    private var fetchedAtMs = 0L
+    @Volatile private var fetchedAtMs = 0L
 
     private val lock = Any()
 
@@ -71,7 +69,8 @@ internal object TidalPoolDiscovery {
         }
         // Auth backoff and the discovery TTL both keep stale answers rather than billing another
         // feed read — discovered URLs are community instances, usable while the pool rests.
-        if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
+        if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive())
+            return discoveryCache
         val now = System.currentTimeMillis()
         if (fetchedAtMs != 0L && now - fetchedAtMs < TTL_MS) return discoveryCache
         // Single-flight: resolve paths and health scans call this often, and concurrent callers
@@ -82,7 +81,8 @@ internal object TidalPoolDiscovery {
                 TidalAudioProvider.clearPoolDiscovery()
                 return emptyList()
             }
-            if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive()) return discoveryCache
+            if (!PoolAuthBackoff.isReady || PoolAccountManager.authBackoffActive())
+                return discoveryCache
             if (fetchedAtMs != 0L && System.currentTimeMillis() - fetchedAtMs < TTL_MS) {
                 return discoveryCache
             }
@@ -113,46 +113,50 @@ internal object TidalPoolDiscovery {
             if (!PoolAccountManager.isPoolEnabled() || PoolAccountManager.authBackoffActive()) break
             // Remember the deployment itself — the configured base may already contain a path.
             val source = "$base/api/discovery/tidal"
-            val answered =
-                runCatching {
-                    val builder =
-                        Request
-                            .Builder()
-                            .url(source)
-                            .header("User-Agent", TidalAudioProvider.DOWNLOAD_USER_AGENT)
-                    // Present the per-app read key when the pool has gating enabled.
-                    if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                        builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                    }
-                    val request = builder.get().build()
-                    client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                        if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
-                        PoolAccountManager.notePoolAuthAnswer(response.code)
-                        if (!response.isSuccessful) {
-                            ArchivePoolEndpoints.remember(base)
-                            // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
-                            // and an empty body, which otherwise looks identical to a healthy pool
-                            // with no instances contributed.
-                            if (response.code == 401) {
-                                Timber
-                                    .tag("TidalHealth")
-                                    .w(
-                                        "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                            "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                        source,
-                                    )
-                            }
-                            return@use true
-                        }
-                        val body = response.body?.string().orEmpty()
-                        // Remember only once the body arrived whole — a reset mid-200 is transport failure.
+            val answered = runCatching {
+                val builder =
+                    Request.Builder()
+                        .url(source)
+                        .header("User-Agent", TidalAudioProvider.DOWNLOAD_USER_AGENT)
+                // Present the per-app read key when the pool has gating enabled.
+                if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
+                    builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
+                }
+                val request = builder.get().build()
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                    if (
+                        !PoolAccountManager.isPoolEnabled() ||
+                            ArchivePoolEndpoints.isFailoverStatus(response.code)
+                    )
+                        return@use false
+                    PoolAccountManager.notePoolAuthAnswer(response.code)
+                    if (!response.isSuccessful) {
                         ArchivePoolEndpoints.remember(base)
-                        parseDiscoveredInstances(body).forEach { url ->
-                            TidalAudioProvider.normalizeInstanceUrl(url)?.let(discovered::add)
+                        // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
+                        // and an empty body, which otherwise looks identical to a healthy pool
+                        // with no instances contributed.
+                        if (response.code == 401) {
+                            Timber.tag("TidalHealth")
+                                .w(
+                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
+                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
+                                    source,
+                                )
                         }
-                        true
+                        return@use true
                     }
-                }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrDefault(false)
+                    val body = response.body?.string().orEmpty()
+                    // Remember only once the body arrived whole — a reset mid-200 is transport
+                    // failure.
+                    ArchivePoolEndpoints.remember(base)
+                    parseDiscoveredInstances(body).forEach { url ->
+                        TidalAudioProvider.normalizeInstanceUrl(url)?.let(discovered::add)
+                    }
+                    true
+                }
+            }
+                .onFailure { it.rethrowIfAudioSourceCancelled() }
+                .getOrDefault(false)
             if (answered) {
                 answeredAny = true
                 break
@@ -163,10 +167,10 @@ internal object TidalPoolDiscovery {
 
     /**
      * Parses a discovery payload. Supports:
-     *  - a JSON object whose values are arrays of URLs, e.g. Monochrome's
-     *    `{ "api": [...], "streaming": [...] }` (streaming instances are preferred);
-     *  - a JSON array of URL strings or objects with a "url"/"host" field;
-     *  - plain newline / whitespace separated URLs.
+     * - a JSON object whose values are arrays of URLs, e.g. Monochrome's `{ "api": [...],
+     *   "streaming": [...] }` (streaming instances are preferred);
+     * - a JSON array of URL strings or objects with a "url"/"host" field;
+     * - plain newline / whitespace separated URLs.
      */
     private fun parseDiscoveredInstances(body: String): List<String> {
         val trimmed = body.trim()
@@ -211,7 +215,7 @@ internal object TidalPoolDiscovery {
                 is String -> item.takeIf { it.isNotBlank() }?.let(into::add)
                 is JSONObject -> {
                     (item.optString("url").takeIf { it.isNotBlank() }
-                        ?: item.optString("host").takeIf { it.isNotBlank() })
+                            ?: item.optString("host").takeIf { it.isNotBlank() })
                         ?.let(into::add)
                 }
             }

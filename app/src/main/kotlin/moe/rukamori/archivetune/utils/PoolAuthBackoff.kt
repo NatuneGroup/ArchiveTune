@@ -22,12 +22,12 @@ import moe.rukamori.archivetune.BuildConfig
 import timber.log.Timber
 
 /**
- * Pool-wide auth backoff, shared by every ArchivePool transport: an HTTP 401 means the build's
- * read key is missing or invalid, and retrying only bills more rejections until a new key ships.
- * Each rejection doubles the quiet window ([INITIAL_MS] up to [MAX_MS]); a 2xx clears it, and a
- * changed baked read key clears it on the next [load]. While [active] is true no pool request
- * leaves — feeds, discovery and reports alike — and callers keep serving whatever they already
- * cached: the leased credentials authenticate to their providers, not to the pool.
+ * Pool-wide auth backoff, shared by every ArchivePool transport: an HTTP 401 means the build's read
+ * key is missing or invalid, and retrying only bills more rejections until a new key ships. Each
+ * rejection doubles the quiet window ([INITIAL_MS] up to [MAX_MS]); a 2xx clears it, and a changed
+ * baked read key clears it on the next [load]. While [active] is true no pool request leaves —
+ * feeds, discovery and reports alike — and callers keep serving whatever they already cached: the
+ * leased credentials authenticate to their providers, not to the pool.
  */
 internal object PoolAuthBackoff {
 
@@ -38,19 +38,15 @@ internal object PoolAuthBackoff {
     private val WINDOW_KEY = longPreferencesKey("poolAuthBackoffWindowMs")
     private val KEY_HASH_KEY = stringPreferencesKey("poolAuthBackoffKeyHash")
 
-    @Volatile
-    private var untilMs = 0L
+    @Volatile private var untilMs = 0L
 
-    @Volatile
-    private var windowMs = 0L
+    @Volatile private var windowMs = 0L
 
     private val persistScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    @Volatile
-    private var loadRequested = false
+    @Volatile private var loadRequested = false
 
-    @Volatile
-    private var contextHint: Context? = null
+    @Volatile private var contextHint: Context? = null
 
     /** Completed once the persisted window has been read — or its read failed, counted inactive. */
     private val ready = CompletableDeferred<Unit>()
@@ -72,8 +68,8 @@ internal object PoolAuthBackoff {
     }
 
     /**
-     * Suspends until the persisted window is read, capped at [timeoutMs] so a slow DataStore
-     * read cannot stall a resolver; gates then use whatever state was loaded in time.
+     * Suspends until the persisted window is read, capped at [timeoutMs] so a slow DataStore read
+     * cannot stall a resolver; gates then use whatever state was loaded in time.
      */
     suspend fun awaitReady(timeoutMs: Long = 2_000L) {
         contextHint?.let(::ensureLoaded)
@@ -93,20 +89,22 @@ internal object PoolAuthBackoff {
         persistScope.launch {
             runCatching {
                 load(appContext, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
-            }.onFailure {
-                // An unreadable window is treated as inactive, but a later call may retry the load.
-                untilMs = 0L
-                windowMs = 0L
-                loadRequested = false
             }
+                .onFailure {
+                    // An unreadable window is treated as inactive, but a later call may retry the
+                    // load.
+                    untilMs = 0L
+                    windowMs = 0L
+                    loadRequested = false
+                }
             ready.complete(Unit)
         }
     }
 
     /**
      * Records one definitive pool answer: a 401 doubles the quiet window, any 2xx clears it.
-     * Persistence is best-effort — pass the context when one is around; the in-memory window
-     * binds this process either way.
+     * Persistence is best-effort — pass the context when one is around; the in-memory window binds
+     * this process either way.
      */
     fun noteAnswer(
         status: Int,
@@ -129,8 +127,8 @@ internal object PoolAuthBackoff {
 
     /**
      * Loads the persisted window once per process. The backoff is bound to the read key that
-     * produced it: a build shipping a different [keyHash] starts clean instead of sitting out
-     * up to a day of another key's rejections.
+     * produced it: a build shipping a different [keyHash] starts clean instead of sitting out up to
+     * a day of another key's rejections.
      */
     suspend fun load(
         context: Context,
@@ -165,7 +163,10 @@ internal object PoolAuthBackoff {
                         prefs[KEY_HASH_KEY] = keyHash
                     }
                 }
-            }.onFailure { Timber.tag("PoolAccounts").w(it, "Failed to persist pool auth backoff") }
+            }
+                .onFailure {
+                    Timber.tag("PoolAccounts").w(it, "Failed to persist pool auth backoff")
+                }
         }
     }
 }

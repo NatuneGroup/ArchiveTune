@@ -28,10 +28,14 @@ data class ListenerPresenceState(
     val consentVersion: Int,
 ) {
     val active: Boolean
-        get() = enabled && consentVersion == ListenerPresencePolicy.CONSENT_VERSION && !listenerId.isNullOrEmpty()
+        get() =
+            enabled &&
+                consentVersion == ListenerPresencePolicy.CONSENT_VERSION &&
+                !listenerId.isNullOrEmpty()
 
     companion object {
-        val Off: ListenerPresenceState = ListenerPresenceState(enabled = false, listenerId = null, consentVersion = 0)
+        val Off: ListenerPresenceState =
+            ListenerPresenceState(enabled = false, listenerId = null, consentVersion = 0)
     }
 }
 
@@ -56,7 +60,10 @@ object ListenerPresencePolicy {
     private val listenerIdPattern = Regex("^[a-f0-9]{32}$")
     private val appVersionPattern = Regex("^[0-9A-Za-z._+-]{1,32}$")
 
-    /** Sixteen random bytes as 32 lowercase hex characters. Android passes SecureRandom through [randomBytes]. */
+    /**
+     * Sixteen random bytes as 32 lowercase hex characters. Android passes SecureRandom through
+     * [randomBytes].
+     */
     fun newListenerId(randomBytes: (Int) -> ByteArray = { Random.nextBytes(it) }): String =
         randomBytes(LISTENER_ID_BYTES).joinToString(separator = "") { byte ->
             (byte.toInt() and 0xFF).toString(radix = 16).padStart(2, '0')
@@ -73,16 +80,24 @@ object ListenerPresencePolicy {
         appVersion: String,
         state: String,
     ): String {
-        require(isValidListenerId(listenerId)) { "Listener presence id must be 32 lowercase hex characters" }
-        require(state == STATE_PLAYING || state == STATE_STOPPED) { "Unknown listener presence state" }
+        require(isValidListenerId(listenerId)) {
+            "Listener presence id must be 32 lowercase hex characters"
+        }
+        require(state == STATE_PLAYING || state == STATE_STOPPED) {
+            "Unknown listener presence state"
+        }
         val json =
             """{"schema":$SCHEMA_VERSION,"id":"$listenerId","platform":"$PLATFORM_ANDROID",""" +
                 """"app":"${sanitizedAppVersion(appVersion)}","state":"$state"}"""
-        check(json.encodeToByteArray().size <= MAX_PAYLOAD_BYTES) { "Listener presence payload exceeds its limit" }
+        check(json.encodeToByteArray().size <= MAX_PAYLOAD_BYTES) {
+            "Listener presence payload exceeds its limit"
+        }
         return json
     }
 
-    /** The opt-in after the user switches it on: a fresh identifier and the current consent version. */
+    /**
+     * The opt-in after the user switches it on: a fresh identifier and the current consent version.
+     */
     fun enable(
         current: ListenerPresenceState,
         newId: () -> String,
@@ -90,10 +105,17 @@ object ListenerPresencePolicy {
         if (current.active) {
             current
         } else {
-            ListenerPresenceState(enabled = true, listenerId = newId(), consentVersion = CONSENT_VERSION)
+            ListenerPresenceState(
+                enabled = true,
+                listenerId = newId(),
+                consentVersion = CONSENT_VERSION,
+            )
         }
 
-    /** The opt-in after the user switches it off. The identifier is removed, so a later opt-in starts fresh. */
+    /**
+     * The opt-in after the user switches it off. The identifier is removed, so a later opt-in
+     * starts fresh.
+     */
     fun disable(): ListenerPresenceState = ListenerPresenceState.Off
 
     /** Replaces the identifier of an active opt-in. An inactive opt-in is returned unchanged. */

@@ -58,9 +58,10 @@ import timber.log.Timber
  * A separate DataStore file rather than the main settings store, and the backup rules exclude it:
  * the random listener ID never reaches Android backup or device transfer.
  */
-private val Context.listenerPresenceDataStore: DataStore<Preferences> by preferencesDataStore(
-    name = "listener_presence",
-)
+private val Context.listenerPresenceDataStore: DataStore<Preferences> by
+    preferencesDataStore(
+        name = "listener_presence",
+    )
 
 private val enabledKey = booleanPreferencesKey(ListenerPresenceKeys.ENABLED)
 private val listenerIdKey = stringPreferencesKey(ListenerPresenceKeys.LISTENER_ID)
@@ -94,8 +95,7 @@ object ListenerPresence {
     private var controllerJob: Job? = null
 
     private val client: OkHttpClient by lazy {
-        OkHttpClient
-            .Builder()
+        OkHttpClient.Builder()
             .withAppProxy()
             .connectTimeout(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             .readTimeout(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS)
@@ -141,21 +141,27 @@ object ListenerPresence {
             if (controllerJob != null || !isConfigured) return
             val appContext = context.applicationContext
             val appVersion = ListenerPresencePolicy.sanitizedAppVersion(BuildConfig.VERSION_NAME)
-            controllerJob =
-                scope.launch {
-                    combine(state(appContext), playing, onlineFlow(appContext)) { optIn, isPlaying, online ->
+            controllerJob = scope.launch {
+                combine(state(appContext), playing, onlineFlow(appContext)) {
+                        optIn,
+                        isPlaying,
+                        online ->
                         val id = optIn.listenerId
-                        if (optIn.active && isPlaying && online && id != null &&
-                            ListenerPresencePolicy.isValidListenerId(id)
+                        if (
+                            optIn.active &&
+                                isPlaying &&
+                                online &&
+                                id != null &&
+                                ListenerPresencePolicy.isValidListenerId(id)
                         ) {
                             id
                         } else {
                             null
                         }
                     }
-                        .distinctUntilChanged()
-                        .collectLatest { id -> if (id != null) beat(appContext, id, appVersion) }
-                }
+                    .distinctUntilChanged()
+                    .collectLatest { id -> if (id != null) beat(appContext, id, appVersion) }
+            }
         }
     }
 
@@ -166,9 +172,10 @@ object ListenerPresence {
 
     /**
      * While [id] is the current key: one `playing` payload immediately, then one every
-     * [ListenerPresencePolicy.HEARTBEAT_INTERVAL_MS] plus up to [HEARTBEAT_JITTER_MS][ListenerPresencePolicy.HEARTBEAT_JITTER_MS]
-     * of uniform jitter so the fleet does not beat in lockstep. A pause, a stop, an opt-out, an
-     * identifier change or lost connectivity cancels the loop and sends one best-effort `stopped`.
+     * [ListenerPresencePolicy.HEARTBEAT_INTERVAL_MS] plus up to
+     * [HEARTBEAT_JITTER_MS][ListenerPresencePolicy.HEARTBEAT_JITTER_MS] of uniform jitter so the
+     * fleet does not beat in lockstep. A pause, a stop, an opt-out, an identifier change or lost
+     * connectivity cancels the loop and sends one best-effort `stopped`.
      */
     private suspend fun beat(
         context: Context,
@@ -177,7 +184,14 @@ object ListenerPresence {
     ) {
         try {
             while (true) {
-                sendQuietly(context, ListenerPresencePolicy.payloadJson(id, appVersion, ListenerPresencePolicy.STATE_PLAYING))
+                sendQuietly(
+                    context,
+                    ListenerPresencePolicy.payloadJson(
+                        id,
+                        appVersion,
+                        ListenerPresencePolicy.STATE_PLAYING,
+                    ),
+                )
                 delay(
                     ListenerPresencePolicy.HEARTBEAT_INTERVAL_MS +
                         Random.nextLong(ListenerPresencePolicy.HEARTBEAT_JITTER_MS + 1),
@@ -185,7 +199,14 @@ object ListenerPresence {
             }
         } finally {
             withContext(NonCancellable) {
-                sendQuietly(context, ListenerPresencePolicy.payloadJson(id, appVersion, ListenerPresencePolicy.STATE_STOPPED))
+                sendQuietly(
+                    context,
+                    ListenerPresencePolicy.payloadJson(
+                        id,
+                        appVersion,
+                        ListenerPresencePolicy.STATE_STOPPED,
+                    ),
+                )
             }
         }
     }
@@ -193,7 +214,8 @@ object ListenerPresence {
     private suspend fun sendQuietly(context: Context, payloadJson: String) {
         try {
             send(context, payloadJson).onFailure {
-                // Dropped on purpose: the next playback tick sends a fresh payload instead of retrying.
+                // Dropped on purpose: the next playback tick sends a fresh payload instead of
+                // retrying.
                 Timber.tag(TAG).d(it, "heartbeat dropped")
             }
         } catch (cancelled: CancellationException) {
@@ -212,8 +234,7 @@ object ListenerPresence {
         // reach it and callTimeout bounds the whole call instead of a manual delay.
         return suspendCancellableCoroutine { cont ->
             val request =
-                Request
-                    .Builder()
+                Request.Builder()
                     .url(baseUrl + HEARTBEAT_PATH)
                     .header("Accept", "application/json")
                     // A ByteArray body keeps the Content-Type exactly "application/json" — the
@@ -229,14 +250,17 @@ object ListenerPresence {
                     }
 
                     override fun onResponse(call: Call, response: Response) {
-                        val result =
-                            response.use {
-                                if (it.isSuccessful) {
-                                    Result.success(Unit)
-                                } else {
-                                    Result.failure(IllegalStateException("Listener presence rejected (HTTP ${it.code})"))
-                                }
+                        val result = response.use {
+                            if (it.isSuccessful) {
+                                Result.success(Unit)
+                            } else {
+                                Result.failure(
+                                    IllegalStateException(
+                                        "Listener presence rejected (HTTP ${it.code})",
+                                    ),
+                                )
                             }
+                        }
                         if (cont.isActive) cont.resume(result)
                     }
                 },
@@ -254,41 +278,39 @@ object ListenerPresence {
     }
 
     /** Emits the current online state, then every change, so a reconnect beats immediately. */
-    private fun onlineFlow(context: Context): Flow<Boolean> =
-        callbackFlow {
-            val manager =
-                context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            if (manager == null) {
-                trySend(false)
-                close()
-                return@callbackFlow
-            }
-            trySend(isOnline(context))
-            val callback =
-                object : ConnectivityManager.NetworkCallback() {
-                    override fun onAvailable(network: Network) {
-                        trySend(isOnline(context))
-                    }
-
-                    override fun onLost(network: Network) {
-                        trySend(isOnline(context))
-                    }
-
-                    override fun onCapabilitiesChanged(
-                        network: Network,
-                        capabilities: NetworkCapabilities,
-                    ) {
-                        trySend(isOnline(context))
-                    }
-                }
-            manager.registerDefaultNetworkCallback(callback)
-            awaitClose { runCatching { manager.unregisterNetworkCallback(callback) } }
-        }.distinctUntilChanged()
-
-    private fun newListenerId(): String =
-        ListenerPresencePolicy.newListenerId { count ->
-            ByteArray(count).also { secureRandom.nextBytes(it) }
+    private fun onlineFlow(context: Context): Flow<Boolean> = callbackFlow {
+        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        if (manager == null) {
+            trySend(false)
+            close()
+            return@callbackFlow
         }
+        trySend(isOnline(context))
+        val callback =
+            object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    trySend(isOnline(context))
+                }
+
+                override fun onLost(network: Network) {
+                    trySend(isOnline(context))
+                }
+
+                override fun onCapabilitiesChanged(
+                    network: Network,
+                    capabilities: NetworkCapabilities,
+                ) {
+                    trySend(isOnline(context))
+                }
+            }
+        manager.registerDefaultNetworkCallback(callback)
+        awaitClose { runCatching { manager.unregisterNetworkCallback(callback) } }
+    }
+        .distinctUntilChanged()
+
+    private fun newListenerId(): String = ListenerPresencePolicy.newListenerId { count ->
+        ByteArray(count).also { secureRandom.nextBytes(it) }
+    }
 
     private fun Preferences.toState(): ListenerPresenceState =
         ListenerPresenceState(

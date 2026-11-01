@@ -108,6 +108,12 @@ object PoolAccountManager {
      */
     fun isPoolEnabled(): Boolean = poolAccountsEnabled && isEnabled
 
+    /** True while a persisted 401 backoff window is open (see [PoolAuthBackoff]). */
+    fun authBackoffActive(): Boolean = PoolAuthBackoff.active()
+
+    /** Records one definitive pool answer for auth purposes (see [PoolAuthBackoff.noteAnswer]). */
+    fun notePoolAuthAnswer(status: Int) = PoolAuthBackoff.noteAnswer(status, appContext)
+
     private suspend fun syncPoolAccountsEnabled(context: Context) {
         val enabled = context.dataStore.getAsync(UsePoolAccountsKey) ?: true
         val wasEnabled = poolAccountsEnabled
@@ -140,6 +146,10 @@ object PoolAccountManager {
     /** Report deduplication: "$service:$id:$type" → timestamp. Suppresses duplicate reports within ~10 minutes. */
     private val reportDedupe = ConcurrentHashMap<String, Long>()
     private const val REPORT_DEDUPE_WINDOW_MS = 10 * 60 * 1000L
+
+    /** Forced re-lease attempts per service after a real credential rejection, stamped at request time. */
+    private val rejectedRefreshAt = ConcurrentHashMap<String, Long>()
+    private const val REJECT_REFRESH_MIN_INTERVAL_MS = 5L * 60 * 1000L
 
     /** A shared Tidal subscriber token contributed to the pool. */
     data class TidalPoolAccount(
@@ -402,6 +412,8 @@ object PoolAccountManager {
                     lastRefreshAtMillis,
                     context.dataStore.getAsync(CACHE_LAST_REFRESH_KEY) ?: 0L,
                 )
+                // The persisted backoff is bound to the key that produced it; a changed key starts clean.
+                PoolAuthBackoff.load(context, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
                 // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
                 // at-rest layer), so the parse-time decryptor is a pure pass-through.
                 val passthrough: (String) -> String? = { raw -> raw }
@@ -469,6 +481,12 @@ object PoolAccountManager {
                     // isEnabled already guarantees a URL, so this only guards the impossible.
                     lastFeedError = null
                     Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
+                } else if (authBackoffActive()) {
+                    // A persisted 401 backoff quiets the feed; the cached lease keeps serving
+                    // until the window closes or a new key ships.
+                    Timber.tag(TAG).d("Pool feed auth backoff active; not fetching")
+                    lastFeedError =
+                        "Pool rejected the API key (HTTP 401) — further requests paused after repeated rejections."
                 } else {
                     // The read key is baked in at build time; there is no on-device override.
                     val readKey = BuildConfig.SOURCE_PROVIDER_KEY
@@ -697,7 +715,7 @@ object PoolAccountManager {
         id: Long?,
         reportType: String,
     ) {
-        if (id == null || !isPoolEnabled()) return
+        if (id == null || !isPoolEnabled() || authBackoffActive()) return
 
         // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
         // token is hit by multiple resolvers (e.g., LosslessStreamResolver racing all pool accounts).
@@ -736,6 +754,24 @@ object PoolAccountManager {
                     }
                 }
             }.onFailure { Timber.tag(TAG).w(it, "Pool report failed") }
+        }
+    }
+
+    /**
+     * Forced feed refresh after a provider really rejected a leased credential (401/403) — a real
+     * rejection, unlike suspected staleness, means the cache may serve dead entries. Bounded to
+     * one per [REJECT_REFRESH_MIN_INTERVAL_MS] per service; fire-and-forget like [report].
+     */
+    fun refreshOnRejection(
+        context: Context,
+        service: String,
+    ) {
+        val now = System.currentTimeMillis()
+        if (now - (rejectedRefreshAt[service] ?: 0L) < REJECT_REFRESH_MIN_INTERVAL_MS) return
+        rejectedRefreshAt[service] = now
+        reportScope.launch {
+            runCatching { refresh(context.applicationContext, force = true) }
+                .onFailure { Timber.tag(TAG).w(it, "Pool re-lease after %s rejection failed", service) }
         }
     }
 

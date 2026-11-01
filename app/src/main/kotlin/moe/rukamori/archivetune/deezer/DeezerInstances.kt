@@ -249,6 +249,9 @@ object DeezerInstances {
             invalidatePoolInstancesCache()
             return emptyList()
         }
+        // Auth backoff keeps stale answers rather than billing another feed read — discovered
+        // URLs are community instances, usable while the pool rests.
+        if (PoolAccountManager.authBackoffActive()) return discovered
         val now = System.currentTimeMillis()
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
         synchronized(this) {
@@ -256,11 +259,12 @@ object DeezerInstances {
                 invalidatePoolInstancesCache()
                 return emptyList()
             }
+            if (PoolAccountManager.authBackoffActive()) return discovered
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {
                     for (base in PoolEndpoints.bases()) {
-                        if (!PoolAccountManager.isPoolEnabled()) break
+                        if (!PoolAccountManager.isPoolEnabled() || PoolAccountManager.authBackoffActive()) break
                         val url = "$base/api/instances/deezer"
                         val builder = Request.Builder().url(url).header("User-Agent", USER_AGENT)
                         if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
@@ -271,6 +275,7 @@ object DeezerInstances {
                             try {
                                 client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
                                     if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use null
+                                    PoolAccountManager.notePoolAuthAnswer(response.code)
                                     if (!response.isSuccessful) {
                                         // A definitive API error ends the walk: remember the
                                         // deployment itself, not a guess carved out of the URL.

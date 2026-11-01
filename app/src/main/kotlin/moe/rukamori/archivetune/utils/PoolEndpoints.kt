@@ -165,10 +165,13 @@ internal object PoolEndpoints {
     ): Pair<Int, String>? =
         try {
             ArchivePoolEndpoints.acrossEndpoints(configuredBaseUrl(), report = body != null) { base ->
-                // A dead coroutine or a switched-off Playback Pool must stop the walk before the
-                // next endpoint is tried, not after the request is already on the wire.
+                // A dead coroutine, a switched-off Playback Pool or an open 401 auth backoff
+                // must stop the walk before the next endpoint is tried, not after the request
+                // is already on the wire.
                 coroutineContext.ensureActive()
-                if (!PoolAccountManager.isPoolEnabled()) throw PoolUnavailableException()
+                if (!PoolAccountManager.isPoolEnabled() || PoolAccountManager.authBackoffActive()) {
+                    throw PoolUnavailableException()
+                }
                 suspendCancellableCoroutine<Pair<Int, String>?> { cont ->
                     val builder =
                         Request
@@ -200,6 +203,9 @@ internal object PoolEndpoints {
                             override fun onResponse(call: Call, response: Response) {
                                 val result =
                                     response.use {
+                                        // Every definitive answer feeds the shared auth backoff:
+                                        // 401 doubles the quiet window, a 2xx clears it.
+                                        PoolAccountManager.notePoolAuthAnswer(it.code)
                                         runCatching {
                                             it.code to
                                                 if (it.isSuccessful) it.body?.string().orEmpty() else ""

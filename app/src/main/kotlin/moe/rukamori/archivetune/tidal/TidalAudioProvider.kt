@@ -10,10 +10,6 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
-import moe.rukamori.archivetune.BuildConfig
-import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
-import moe.rukamori.archivetune.utils.PoolAccountManager
-import moe.rukamori.archivetune.utils.PoolEndpoints
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -55,7 +51,7 @@ object TidalAudioProvider {
     private const val COUNTRY_CODE = "US"
     private const val LOCALE = "en_US"
     private const val DEVICE_TYPE = "BROWSER"
-    private const val DOWNLOAD_USER_AGENT = "ArchiveTune-Android"
+    internal const val DOWNLOAD_USER_AGENT = "ArchiveTune-Android"
     private const val BROWSER_USER_AGENT =
         "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36"
     private const val DASH_MIME_TYPE = "application/dash+xml"
@@ -139,9 +135,6 @@ object TidalAudioProvider {
     @Volatile
     private var customEndpoints: List<TidalDownloadEndpoint> = emptyList()
 
-    @Volatile
-    private var poolDiscoveredInstanceUrls: Set<String> = emptySet()
-
     private val activeEndpoints: List<TidalDownloadEndpoint>
         get() = customEndpoints
 
@@ -170,12 +163,13 @@ object TidalAudioProvider {
             }
     }
 
+    /** Drops every pool-supplied instance (e.g. when the Source Pool toggle goes off). */
     fun clearPoolDiscovery() {
-        val discovered = poolDiscoveredInstanceUrls
+        val discovered = TidalPoolDiscovery.discoveredUrls
         if (discovered.isNotEmpty()) {
             customEndpoints = customEndpoints.filterNot { it.baseUrl in discovered }
-            poolDiscoveredInstanceUrls = emptySet()
         }
+        TidalPoolDiscovery.clear()
     }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null if it is not valid. */
@@ -385,133 +379,12 @@ object TidalAudioProvider {
     }
 
     /**
-     * Best-effort auto-discovery of additional public instances from community sources. Returns
-     * the list of newly discovered, valid base URLs (may be empty). Never throws; on failure it
-     * simply returns an empty list so the caller can keep the manual list. Runs blocking network
-     * calls, so invoke it off the main thread.
+     * Best-effort auto-discovery of additional public instances from the Source Pool feed —
+     * cached, single-flight and backoff-aware in [TidalPoolDiscovery]. Never throws; on failure
+     * it returns the last known list so the caller can keep the manual list. Runs blocking
+     * network calls, so invoke it off the main thread.
      */
-    fun discoverInstances(): List<String> {
-        if (!PoolAccountManager.isPoolEnabled()) {
-            clearPoolDiscovery()
-            return emptyList()
-        }
-        val discovered =
-            AudioSourceAttemptScope.within(AudioSourceAttemptTimeouts.PROVIDER_ATTEMPT_MS) {
-                discoverInstancesWithinAttempt()
-            }
-        if (!PoolAccountManager.isPoolEnabled()) {
-            clearPoolDiscovery()
-            return emptyList()
-        }
-        if (discovered.isNotEmpty()) poolDiscoveredInstanceUrls = poolDiscoveredInstanceUrls + discovered
-        return discovered
-    }
-
-    private fun discoverInstancesWithinAttempt(): List<String> {
-        val discovered = LinkedHashSet<String>()
-        for (base in PoolEndpoints.bases()) {
-            if (!PoolAccountManager.isPoolEnabled()) break
-            // Remember the deployment itself — the configured base may already contain a path.
-            val source = "$base/api/discovery/tidal"
-            val answered = runCatching {
-                val builder =
-                    Request
-                        .Builder()
-                        .url(source)
-                        .header("User-Agent", DOWNLOAD_USER_AGENT)
-                // Present the per-app read key when the pool has gating enabled.
-                if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                    builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                }
-                val request = builder.get().build()
-                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
-                    if (!response.isSuccessful) {
-                        ArchivePoolEndpoints.remember(base)
-                        // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
-                        // and an empty body, which otherwise looks identical to a healthy pool
-                        // with no instances contributed.
-                        if (response.code == 401) {
-                            Timber
-                                .tag("TidalHealth")
-                                .w(
-                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                    source,
-                                )
-                        }
-                        return@use true
-                    }
-                    val body = response.body?.string().orEmpty()
-                    // Remember only once the body arrived whole — a reset mid-200 is transport failure.
-                    ArchivePoolEndpoints.remember(base)
-                    parseDiscoveredInstances(body).forEach { url ->
-                        normalizeInstanceUrl(url)?.let(discovered::add)
-                    }
-                    true
-                }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrDefault(false)
-            if (answered) break
-        }
-        return discovered.toList()
-    }
-
-    /**
-     * Parses a discovery payload. Supports:
-     *  - a JSON object whose values are arrays of URLs, e.g. Monochrome's
-     *    `{ "api": [...], "streaming": [...] }` (streaming instances are preferred);
-     *  - a JSON array of URL strings or objects with a "url"/"host" field;
-     *  - plain newline / whitespace separated URLs.
-     */
-    private fun parseDiscoveredInstances(body: String): List<String> {
-        val trimmed = body.trim()
-        if (trimmed.isEmpty()) return emptyList()
-
-        // JSON object with array-valued fields (Monochrome/tidal-uptime format). "streaming"
-        // instances serve audio and are listed first, then "api". We deliberately ignore "qobuz"
-        // (a different backend) and, like the official frontend, drop dead ".squid.wtf" hosts.
-        runCatching {
-            val obj = JSONObject(trimmed)
-            val result = LinkedHashSet<String>()
-            // Only Tidal-serving categories; qobuz is a separate backend and must not be mixed in.
-            val keys = listOf("streaming", "instances", "api")
-            for (key in keys) {
-                val arr = obj.optJSONArray(key) ?: continue
-                collectStringsFromArray(arr, result)
-            }
-            val filtered = result.filterNot { it.contains(".squid.wtf", ignoreCase = true) }
-            if (filtered.isNotEmpty()) return filtered
-        }
-
-        // JSON array of strings or objects with a "url"/"host" field.
-        runCatching {
-            val result = LinkedHashSet<String>()
-            collectStringsFromArray(JSONArray(trimmed), result)
-            if (result.isNotEmpty()) return result.toList()
-        }
-
-        // Plain newline / whitespace separated URLs.
-        return trimmed
-            .split('\n', '\r', ' ', ',')
-            .map { it.trim() }
-            .filter { it.isNotEmpty() && !it.startsWith("#") }
-    }
-
-    private fun collectStringsFromArray(
-        arr: JSONArray,
-        into: MutableCollection<String>,
-    ) {
-        for (i in 0 until arr.length()) {
-            when (val item = arr.opt(i)) {
-                is String -> item.takeIf { it.isNotBlank() }?.let(into::add)
-                is JSONObject -> {
-                    (item.optString("url").takeIf { it.isNotBlank() }
-                        ?: item.optString("host").takeIf { it.isNotBlank() })
-                        ?.let(into::add)
-                }
-            }
-        }
-    }
+    fun discoverInstances(): List<String> = TidalPoolDiscovery.discoverInstances(healthClient)
 
     data class Query(
         val mediaId: String,

@@ -176,10 +176,13 @@ object LosslessStreamResolver {
             // Pooled Tidal access tokens live about an hour, but the app's pool cache is held for
             // hours, so the cached copies are usually already stale. Using one anyway guarantees a
             // 401 — and the handler below then reports a healthy account dead, which is how good
-            // accounts used to get disabled. Check the token's own expiry and re-lease first.
+            // accounts used to get disabled. An expired-looking token is a hint, not a rejection:
+            // the throttled refresh decides whether to re-lease and serves the cached lease
+            // meanwhile — forcing the heaviest pool route on every stale token (~hourly per
+            // install) is how the fleet's feed traffic multiplied.
             if (poolAccounts.any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
                 runCatching {
-                    runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(context, force = true) }
+                    runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(context) }
                 }.onFailure {
                     Timber.tag("LosslessResolver").w(it, "Tidal pool re-lease failed; using cached accounts")
                 }
@@ -217,6 +220,9 @@ object LosslessStreamResolver {
                                     }.onFailure {
                                         if (TidalAccountManager.isUnauthorized(it)) {
                                             PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
+                                            // A real rejection is the one signal worth a forced
+                                            // re-lease — bounded per provider, fire-and-forget.
+                                            PoolAccountManager.refreshOnRejection(context, "tidal")
                                         } else {
                                             Timber.tag("LosslessResolver").w(
                                                 it, "Tidal pool account resolve failed for %s", mediaId,

@@ -155,8 +155,8 @@ internal object TidalPoolDiscovery {
 
     /**
      * Records a definitive non-2xx discovery answer. Makes 401 visible: the pool rejects
-     * unauthenticated reads with HTTP 401 and an empty body, which otherwise looks identical to
-     * a healthy pool with no instances contributed.
+     * unauthenticated reads with HTTP 401 and an empty body, which otherwise looks identical to a
+     * healthy pool with no instances contributed.
      */
     private fun noteUnsuccessfulDiscovery(
         code: Int,

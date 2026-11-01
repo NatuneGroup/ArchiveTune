@@ -13,23 +13,25 @@ import org.json.JSONObject
 import timber.log.Timber
 
 /**
- * The pure half of the pool account feed: locating the accounts arrays, selecting and applying
- * the feed's decryptor, and parsing each service's entries into the cache shapes
- * [PoolAccountManager] holds. No state lives here — feeds parse the same way whether they arrive
- * via a refresh, a report's replacement block or a discovery answer.
+ * The pure half of the pool account feed: locating the accounts arrays, selecting and applying the
+ * feed's decryptor, and parsing each service's entries into the cache shapes [PoolAccountManager]
+ * holds. No state lives here — feeds parse the same way whether they arrive via a refresh, a
+ * report's replacement block or a discovery answer.
  */
 internal object PoolFeedParser {
 
     private const val TAG = "PoolAccountManager"
 
     /**
-     * Accounts array for one service, tolerant of both feed shapes: the canonical
-     * `{ "tidal": { "accounts": [...] } }` and a bare `{ "tidal": [...] }`. Null when absent.
+     * Accounts array for one service, tolerant of both feed shapes: the canonical `{ "tidal": {
+     * "accounts": [...] } }` and a bare `{ "tidal": [...] }`. Null when absent.
      */
     fun accountsArray(root: JSONObject, service: String): JSONArray? =
         root.optJSONObject(service)?.optJSONArray("accounts") ?: root.optJSONArray(service)
 
-    /** Decrypts a sensitive field with the feed's decryptor. Blank/failed decryptions yield null. */
+    /**
+     * Decrypts a sensitive field with the feed's decryptor. Blank/failed decryptions yield null.
+     */
     fun field(
         obj: JSONObject,
         key: String,
@@ -38,12 +40,15 @@ internal object PoolFeedParser {
         val raw = obj.optString(key, "").takeIf { it.isNotBlank() } ?: return null
         val decoded = decryptor(raw)?.takeIf { it.isNotBlank() }
         if (decoded == null && PoolCrypto.isEncrypted(raw)) {
-            Timber.tag(TAG).w("Dropped encrypted pool field %s because no available key could decrypt it", key)
+            Timber.tag(TAG)
+                .w("Dropped encrypted pool field %s because no available key could decrypt it", key)
         }
         return decoded
     }
 
-    /** Builds the decryptor lambda for a feed response, selecting the indicated encryption scheme. */
+    /**
+     * Builds the decryptor lambda for a feed response, selecting the indicated encryption scheme.
+     */
     fun decryptorFor(root: JSONObject, readKey: String): (String) -> String? {
         val derivedKey = PoolCrypto.deriveClientKey(readKey)
         val encryptionScheme = root.optString("encryption", "")
@@ -79,7 +84,8 @@ internal object PoolFeedParser {
 
         val replacementEntry = parse(replacementArr, decryptor).firstOrNull() ?: return null
 
-        // Replacement already cached (a concurrent report raced to the same one) — just drop the dead entry.
+        // Replacement already cached (a concurrent report raced to the same one) — just drop the
+        // dead entry.
         return if (cacheList.any { idOf(it) == idOf(replacementEntry) }) {
             cacheList.filterIndexed { idx, _ -> idx != deadIndex }
         } else {
@@ -183,15 +189,19 @@ internal object PoolFeedParser {
         return out
     }
 
-    /** Plaintext pool timestamps (the JWT expiry) as epoch millis; unparseable ones read as absent. */
+    /**
+     * Plaintext pool timestamps (the JWT expiry) as epoch millis; unparseable ones read as absent.
+     */
     private fun parseIsoMillis(raw: String): Long? =
-        raw.takeIf { it.isNotBlank() }?.let {
-            runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
-        }
+        raw.takeIf { it.isNotBlank() }
+            ?.let {
+                runCatching { java.time.Instant.parse(it).toEpochMilli() }.getOrNull()
+            }
 
-    /** Pool entry id from the accounts feed (positive when present); null for manual/legacy entries. */
-    private fun entryId(obj: JSONObject): Long? =
-        obj.optLong("id", 0L).takeIf { it > 0L }
+    /**
+     * Pool entry id from the accounts feed (positive when present); null for manual/legacy entries.
+     */
+    private fun entryId(obj: JSONObject): Long? = obj.optLong("id", 0L).takeIf { it > 0L }
 
     fun parseAppleMusic(
         arr: JSONArray?,

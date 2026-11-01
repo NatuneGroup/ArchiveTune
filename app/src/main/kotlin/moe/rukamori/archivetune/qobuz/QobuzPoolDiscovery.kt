@@ -112,60 +112,54 @@ internal object QobuzPoolDiscovery {
             if (!PoolAccountManager.isPoolEnabled() || PoolAccountManager.authBackoffActive()) break
             // Remember the deployment itself — the configured base may already contain a path.
             val source = "$base/api/discovery/qobuz"
-            val answered =
-                runCatching {
-                        val builder =
-                            Request
-                                .Builder()
-                                .url(source)
-                                .header("User-Agent", QobuzAudioProvider.USER_AGENT)
-                        // Present the per-app read key when the pool has gating enabled.
-                        if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                            builder.header(
-                                "Authorization",
-                                "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}",
-                            )
-                        }
-                        val request = builder.get().build()
-                        client
-                            .newCall(request)
-                            .withAudioSourceAttemptDeadline()
-                            .execute()
-                            .use { response ->
-                                if (
-                                    !PoolAccountManager.isPoolEnabled() ||
-                                        ArchivePoolEndpoints.isFailoverStatus(response.code)
-                                ) {
-                                    return@use false
-                                }
-                                PoolAccountManager.notePoolAuthAnswer(response.code)
-                                if (!response.isSuccessful) {
-                                    ArchivePoolEndpoints.remember(base)
-                                    // A rejected read and a healthy pool with nothing contributed
-                                    // both end up as zero instances here, so say which one
-                                    // happened — this is the whole difference between "no Qobuz
-                                    // accounts" and "this build's key is wrong".
-                                    if (response.code == 401) {
-                                        Timber.tag("QobuzDiscovery")
-                                            .w(
-                                                "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                                    "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                                source,
-                                            )
-                                    }
-                                    return@use true
-                                }
-                                val body = response.body?.string().orEmpty()
-                                // Remember only once the body arrived whole — a reset mid-200 is
-                                // transport failure.
-                                ArchivePoolEndpoints.remember(base)
-                                if (body.isBlank()) return@use true
-                                discovered += parseDiscoveredUrls(body)
-                                true
-                            }
+            val answered = runCatching {
+                val builder =
+                    Request.Builder()
+                        .url(source)
+                        .header("User-Agent", QobuzAudioProvider.USER_AGENT)
+                // Present the per-app read key when the pool has gating enabled.
+                if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
+                    builder.header(
+                        "Authorization",
+                        "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}",
+                    )
+                }
+                val request = builder.get().build()
+                client.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
+                    if (
+                        !PoolAccountManager.isPoolEnabled() ||
+                            ArchivePoolEndpoints.isFailoverStatus(response.code)
+                    ) {
+                        return@use false
                     }
-                    .onFailure { it.rethrowIfAudioSourceCancelled() }
-                    .getOrDefault(false)
+                    PoolAccountManager.notePoolAuthAnswer(response.code)
+                    if (!response.isSuccessful) {
+                        ArchivePoolEndpoints.remember(base)
+                        // A rejected read and a healthy pool with nothing contributed
+                        // both end up as zero instances here, so say which one
+                        // happened — this is the whole difference between "no Qobuz
+                        // accounts" and "this build's key is wrong".
+                        if (response.code == 401) {
+                            Timber.tag("QobuzDiscovery")
+                                .w(
+                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
+                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
+                                    source,
+                                )
+                        }
+                        return@use true
+                    }
+                    val body = response.body?.string().orEmpty()
+                    // Remember only once the body arrived whole — a reset mid-200 is
+                    // transport failure.
+                    ArchivePoolEndpoints.remember(base)
+                    if (body.isBlank()) return@use true
+                    discovered += parseDiscoveredUrls(body)
+                    true
+                }
+            }
+                .onFailure { it.rethrowIfAudioSourceCancelled() }
+                .getOrDefault(false)
             if (answered) {
                 answeredAny = true
                 break
@@ -194,4 +188,5 @@ internal object QobuzPoolDiscovery {
             }
         }
         return out.toList()
-    }}
+    }
+}

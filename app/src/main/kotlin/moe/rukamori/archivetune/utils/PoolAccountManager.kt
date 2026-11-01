@@ -25,10 +25,7 @@ import moe.rukamori.archivetune.audiosource.AmazonInstance
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.canvas.AppleMusicProvider
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
-import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
-import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
@@ -260,31 +257,24 @@ object PoolAccountManager {
             .callTimeout(10, TimeUnit.SECONDS)
             .build()
 
-    private val JSON_MEDIA = "application/json; charset=utf-8".toMediaTypeOrNull()
-
     /** Fire-and-forget reports survive app lifecycle (SupervisorJob); reports never gate playback. */
     private val reportScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** True when a Source Pool URL is configured, i.e. account discovery is possible. */
     val isEnabled: Boolean
-        get() = BuildConfig.SOURCE_PROVIDER_URL.isNotBlank()
+        get() = PoolEndpoints.configuredBaseUrl().isNotBlank()
 
-    private val poolBaseUrl: String?
-        get() =
-            BuildConfig.SOURCE_PROVIDER_URL
-                .trim()
-                .trimEnd('/')
-                .takeIf { it.isNotEmpty() }
+    private val poolBaseUrl: String
+        get() = PoolEndpoints.configuredBaseUrl()
 
     /**
      * Credentials-only feed of the split pool. The server also serves a combined legacy feed at
      * /api/sources (accounts + instance URLs together) for older app builds; this client asks
      * for the narrow account feed so tokens and instance URLs arrive over separate URLs.
      * Falls back to the legacy URL only when the pool deployment predates the split (404).
+     * Every request walks the deployments [PoolEndpoints] orders for it: the build-configured
+     * primary first, then the public vercel.app fallback.
      */
-    private val accountsUrl: String? get() = poolBaseUrl?.let { "$it/api/accounts" }
-
-    private val legacySourcesUrl: String? get() = poolBaseUrl?.let { "$it/api/sources" }
 
     /** How long an account that just failed to resolve is tried last for. */
     private const val ACCOUNT_COOLDOWN_MS = 10 * 60 * 1000L
@@ -475,8 +465,7 @@ object PoolAccountManager {
                 ) {
                     return@withLock hasAccounts()
                 }
-                val url = accountsUrl ?: legacySourcesUrl
-                if (url == null) {
+                if (!isEnabled) {
                     // isEnabled already guarantees a URL, so this only guards the impossible.
                     lastFeedError = null
                     Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
@@ -488,11 +477,11 @@ object PoolAccountManager {
                     lastRefreshAtMillis = attemptAt
                     context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
 
-                    var result = fetchAccounts(context, url, readKey)
+                    var result = fetchAccounts(context, "/api/accounts", readKey)
                     // Pool deployment predates the split feed — retry the combined URL.
-                    if (!result.succeeded && result.code == 404 && url == accountsUrl && legacySourcesUrl != null) {
+                    if (!result.succeeded && result.code == 404) {
                         Timber.tag(TAG).d("/api/accounts unavailable; falling back to legacy /api/sources")
-                        result = fetchAccounts(context, legacySourcesUrl!!, readKey)
+                        result = fetchAccounts(context, "/api/sources", readKey)
                     }
                     // Record why the fetch failed — or clear it on success — so the settings screen
                     // can show the reason rather than a generic "failed". refresh()'s own Boolean
@@ -508,7 +497,7 @@ object PoolAccountManager {
                             result.code == 404 -> {
                                 Timber.tag(TAG).e(
                                     "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
-                                        "SOURCE_PROVIDER_URL points at a host that is not an ArchivePool deployment " +
+                                        "the configured pool URL points at a host that is not an ArchivePool deployment " +
                                         "(this is NOT a read-key problem; a bad key answers 401).",
                                     poolBaseUrl,
                                 )
@@ -542,47 +531,35 @@ object PoolAccountManager {
      */
     private suspend fun fetchAccounts(
         context: Context,
-        url: String,
+        path: String,
         readKey: String,
     ): FeedFetch {
-        val builder =
-            Request
-                .Builder()
-                .url(url)
-                .header("User-Agent", "ArchiveTune-Android")
-                // v2 of the pool feed protocol: the server encrypts sensitive fields with a key
-                // DERIVED from the read key below (SHA-256 of a domain-separated string), so this
-                // app needs only the source-provider key — no separately-distributed
-                // POOL_CLIENT_KEY has to match the deployment. Older servers ignore the header.
-                .header("X-Pool-Client", "v2")
-        if (readKey.isNotBlank()) {
-            builder.header("Authorization", "Bearer $readKey")
-        }
+        val reply = PoolEndpoints.get(client, path, readKey)
         return try {
-            client.newCall(builder.get().build()).execute().use { response ->
-                if (!response.isSuccessful) {
+            reply.let {
+                if (reply == null || reply.first != 200) {
                     // HTTP 401 specifically means the pool's read-key enforcement rejected the
                     // presented key (revoked, deleted, or from an older pool database). Surface
                     // that explicitly so the failure mode is obvious in logs instead of looking
                     // like an empty pool.
-                    if (response.code == 401) {
+                    if (reply?.first == 401) {
                         Timber.tag(TAG).w(
                             "Pool account feed rejected the presented key (HTTP 401) — " +
                                 "it is revoked, deleted, or predates the pool's current database.",
                         )
                     } else {
-                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", url, response.code)
+                        Timber.tag(TAG).w("Pool account feed %s returned HTTP %d", path, reply?.first ?: 0)
                     }
-                    return@use FeedFetch(null, response.code)
+                    return@let FeedFetch(null, reply?.first ?: 0)
                 }
-                val root = JSONObject(response.body?.string().orEmpty())
+                val root = JSONObject(reply.second)
                 val decryptor = decryptorFor(root, readKey)
                 val tidal = parseTidal(accountsArray(root, "tidal"), decryptor)
                 val qobuz = parseQobuz(accountsArray(root, "qobuz"), decryptor)
                 val deezer = parseDeezer(accountsArray(root, "deezer"), decryptor)
                 val apple = parseAppleMusic(accountsArray(root, "apple-music"), decryptor)
                 val amazon = parseAmazon(accountsArray(root, "amazon-music"), decryptor)
-                if (!isPoolEnabled()) return@use FeedFetch(root, 200)
+                if (!isPoolEnabled()) return@let FeedFetch(root, 200)
                 // Don't overwrite the in-memory cache with an empty list when the pool returns a
                 // 200 with a partial/empty response (rate-limit, transient server bug, captive-portal
                 // interception, malformed JSON): every provider would vanish from playback until a
@@ -721,7 +698,6 @@ object PoolAccountManager {
         reportType: String,
     ) {
         if (id == null || !isPoolEnabled()) return
-        val base = poolBaseUrl ?: return
 
         // Deduplicate reports within ~10 minutes to avoid spamming the server when one dead
         // token is hit by multiple resolvers (e.g., LosslessStreamResolver racing all pool accounts).
@@ -746,28 +722,17 @@ object PoolAccountManager {
                         .put("id", id)
                         .put("report", reportType)
                         .toString()
-                val builder =
-                    Request
-                        .Builder()
-                        .url("$base/api/report")
-                        .header("User-Agent", "ArchiveTune-Android")
-                        .header("X-Pool-Client", "v2")
-                        .post(body.toRequestBody(JSON_MEDIA))
                 val readKey = poolApiKey?.takeIf { it.isNotBlank() } ?: BuildConfig.SOURCE_PROVIDER_KEY
-                if (readKey.isNotBlank()) {
-                    builder.header("Authorization", "Bearer $readKey")
+                val reply = PoolEndpoints.postReport(client, "/api/report", readKey, body)
+                if (reply == null || reply.first !in 200..299) {
+                    Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, reply?.first ?: 0)
+                    return@runCatching
                 }
-                client.newCall(builder.build()).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Timber.tag(TAG).d("Pool report %s/%s/%s returned HTTP %d", service, reportType, id, response.code)
-                        return@use
-                    }
-                    val responseBody = response.body?.string().orEmpty()
-                    if (responseBody.isNotBlank()) {
-                        val root = JSONObject(responseBody)
-                        if (root.optBoolean("ok", false) && kind == "account" && readKey.isNotBlank()) {
-                            mergeReplacement(root, service, id, readKey)
-                        }
+                val responseBody = reply.second
+                if (responseBody.isNotBlank()) {
+                    val root = JSONObject(responseBody)
+                    if (root.optBoolean("ok", false) && kind == "account" && readKey.isNotBlank()) {
+                        mergeReplacement(root, service, id, readKey)
                     }
                 }
             }.onFailure { Timber.tag(TAG).w(it, "Pool report failed") }

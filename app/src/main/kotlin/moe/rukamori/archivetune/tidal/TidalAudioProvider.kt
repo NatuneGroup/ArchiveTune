@@ -11,7 +11,9 @@ import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import android.net.Uri
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolEndpoints
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -118,7 +120,7 @@ object TidalAudioProvider {
     // candidate list probed nothing but dead hosts, cost ~10s of probing on every launch, and
     // made an install that never asked for those hosts look like it was "fetching instances
     // from monochrome". Instances come only from the user's own Tidal settings entries and the
-    // Source Pool discovery feed ($SOURCE_PROVIDER_URL/api/discovery/tidal).
+    // Source Pool discovery feed (<configured-or-fallback deployment>/api/discovery/tidal).
 
     // Live uptime feed used by the official monochrome.tf frontend to discover currently-healthy
     // instances. Best-effort only: it rotates and may be unreachable, so discovery is allowed to
@@ -126,17 +128,12 @@ object TidalAudioProvider {
     // { "api": [{ "url", "version" }, ...], "streaming": [...], "qobuz": [...] }.
     // (tidal-uptime.geeked.wtf now NXDOMAINs; left empty until a live feed URL is confirmed.)
     //
-    // The community Source Pool website (configured via BuildConfig.SOURCE_PROVIDER_URL) exposes a
-    // health-checked feed in this exact { streaming, api } shape at /api/discovery/tidal. When the
-    // URL is set at build time, it becomes the discovery source so the app auto-pulls verified
-    // instances contributed by the community. When blank, discovery stays disabled.
-    private val INSTANCE_DISCOVERY_SOURCES: List<String> =
-        BuildConfig.SOURCE_PROVIDER_URL
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { listOf("$it/api/discovery/tidal") }
-            ?: emptyList()
+    // The community Source Pool website (build-configured via ARCHIVEPOOL_BASE_URL or the legacy
+    // SOURCE_PROVIDER_URL, public default as the ordered fallback) exposes a health-checked feed in
+    // this exact { streaming, api } shape at /api/discovery/tidal; the configured deployment becomes
+    // the discovery source so the app auto-pulls verified community instances.
+    private val INSTANCE_DISCOVERY_SOURCES: List<String>
+        get() = PoolEndpoints.bases().map { "$it/api/discovery/tidal" }
 
     /**
      * User-configured instance list (base URLs), applied via [setInstances]. When empty there are
@@ -418,7 +415,7 @@ object TidalAudioProvider {
         val discovered = LinkedHashSet<String>()
         for (source in INSTANCE_DISCOVERY_SOURCES) {
             if (!PoolAccountManager.isPoolEnabled()) break
-            runCatching {
+            val answered = runCatching {
                 val builder =
                     Request
                         .Builder()
@@ -430,7 +427,8 @@ object TidalAudioProvider {
                 }
                 val request = builder.get().build()
                 healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!PoolAccountManager.isPoolEnabled()) return@use
+                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
+                    ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
                     if (!response.isSuccessful) {
                         // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
                         // and an empty body, which otherwise looks identical to a healthy pool
@@ -444,14 +442,16 @@ object TidalAudioProvider {
                                     source,
                                 )
                         }
-                        return@use
+                        return@use true
                     }
                     val body = response.body?.string().orEmpty()
                     parseDiscoveredInstances(body).forEach { url ->
                         normalizeInstanceUrl(url)?.let(discovered::add)
                     }
+                    true
                 }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }
+            }.onFailure { it.rethrowIfAudioSourceCancelled() }.getOrDefault(false)
+            if (answered) break
         }
         return discovered.toList()
     }

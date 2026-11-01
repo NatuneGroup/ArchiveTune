@@ -53,8 +53,8 @@ if (localPropertiesFile.exists()) {
 // A pre-release build is named after its release tag instead — "C<yyyyMMddHHmm>" for Canary,
 // "N<yyyyMMddHHmm>" for Nightly, the way rukamori names his nightlies "N<yyyyMMdd>" — so the tag,
 // the release title and the version the app reports are all one string.
-val baseVersionName = "15.0.0"
-val baseVersionCode = 1500
+val baseVersionName = "15.1.0"
+val baseVersionCode = 1501
 
 val forkRevision = runCatching {
     providers.exec {
@@ -246,6 +246,20 @@ android {
                     ?: "https://archivepool.vercel.app"
                 ).trim().trimEnd('/')
         buildConfigField("String", "SOURCE_PROVIDER_URL", "\"$sourceProviderUrl\"")
+
+        // Dedicated ArchivePool deployment override for the move off Vercel onto Cloudflare
+        // Workers: when set (and https) it wins over SOURCE_PROVIDER_URL as the primary endpoint
+        // on every pool request, while the public vercel.app deployment stays the ordered
+        // fallback the app fails over to on a host-level failure (402/5xx or unreachable).
+        // Same precedence as the pool URL: local.properties, then the ARCHIVEPOOL_BASE_URL
+        // env/CI variable, then blank (keep the SOURCE_PROVIDER_URL value as primary).
+        val archivePoolBaseUrl =
+            (
+                localProperties.getProperty("ARCHIVEPOOL_BASE_URL")?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ARCHIVEPOOL_BASE_URL")?.takeIf { it.isNotBlank() }
+                    ?: ""
+                ).trim().trimEnd('/')
+        buildConfigField("String", "ARCHIVEPOOL_BASE_URL", "\"$archivePoolBaseUrl\"")
 
         // Per-app read key for the Source Pool. Sent as a Bearer token on discovery requests so the
         // pool can gate access. Optional: blank works fine while the pool runs unenforced.

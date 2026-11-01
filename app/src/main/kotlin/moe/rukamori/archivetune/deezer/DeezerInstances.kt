@@ -11,7 +11,9 @@ import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.rethrowIfAudioSourceCancelled
 import moe.rukamori.archivetune.audiosource.withAudioSourceAttemptDeadline
 import moe.rukamori.archivetune.BuildConfig
+import moe.rukamori.archivetune.utils.ArchivePoolEndpoints
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolEndpoints
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONArray
@@ -100,7 +102,7 @@ object DeezerInstances {
      */
     fun hasInstances(): Boolean =
         userInstances.isNotEmpty() ||
-            (PoolAccountManager.isPoolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrl() != null)
+            (PoolAccountManager.isPoolEnabled() && (discovered.isNotEmpty() || discoveredAt == 0L) && poolFeedUrls().isNotEmpty())
 
     /** User instances first, then pool ones; cooling-down instances sort last rather than vanish. */
     fun instances(): List<String> {
@@ -238,12 +240,8 @@ object DeezerInstances {
         }
             .getOrNull()
 
-    private fun poolFeedUrl(): String? =
-        BuildConfig.SOURCE_PROVIDER_URL
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { "$it/api/instances/deezer" }
+    private fun poolFeedUrls(): List<String> =
+        PoolEndpoints.bases().map { "$it/api/instances/deezer" }
 
     /** Fetches the pool's instance list at most every [DISCOVERY_TTL_MS]. Never throws. */
     private fun discoverIfStale(): List<String> {
@@ -253,7 +251,6 @@ object DeezerInstances {
         }
         val now = System.currentTimeMillis()
         if (discoveredAt != 0L && now - discoveredAt < DISCOVERY_TTL_MS) return discovered
-        val url = poolFeedUrl() ?: return emptyList()
         synchronized(this) {
             if (!PoolAccountManager.isPoolEnabled()) {
                 invalidatePoolInstancesCache()
@@ -262,23 +259,38 @@ object DeezerInstances {
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {
-                    val builder = Request.Builder().url(url).header("User-Agent", USER_AGENT)
-                    if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                        builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                    }
-                    client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
-                        if (!PoolAccountManager.isPoolEnabled()) return@use null
-                        if (!response.isSuccessful) {
-                            Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
-                            return@use null
+                    for (url in poolFeedUrls()) {
+                        if (!PoolAccountManager.isPoolEnabled()) break
+                        val builder = Request.Builder().url(url).header("User-Agent", USER_AGENT)
+                        if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
+                            builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
                         }
-                        parseFeed(response.body?.string().orEmpty())
+                        var answered = false
+                        val reply =
+                            try {
+                                client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
+                                    if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use null
+                                    answered = true
+                                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
+                                    if (!response.isSuccessful) {
+                                        Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
+                                        return@use null
+                                    }
+                                    parseFeed(response.body?.string().orEmpty())
+                                }
+                            } catch (failure: Exception) {
+                                failure.rethrowIfAudioSourceCancelled()
+                                Timber.tag(TAG).w(failure, "pool instance feed failed")
+                                null
+                            }
+                        if (answered) return@runCatching reply
                     }
-                }.onFailure {
+                    null
+                }.getOrElse {
                     it.rethrowIfAudioSourceCancelled()
                     Timber.tag(TAG).w(it, "pool instance feed failed")
+                    null
                 }
-                    .getOrNull()
             if (!PoolAccountManager.isPoolEnabled()) {
                 invalidatePoolInstancesCache()
                 return emptyList()

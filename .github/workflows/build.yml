@@ -126,6 +126,9 @@ jobs:
           # secret before Actions variables existed. The gradle default
           # (https://archivepool.vercel.app) applies when neither is set.
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          # Dedicated ArchivePool deployment override (e.g. the Cloudflare Workers host). When set
+          # it wins over SOURCE_PROVIDER_URL as the primary; vercel.app stays the fallback.
+          ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL || secrets.ARCHIVEPOOL_BASE_URL }}
           # Per-app read key created by ArchivePool's admin page.
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
           # POOL_CLIENT_KEY is intentionally NOT passed anymore: builds speak the v2 feed

@@ -575,6 +575,57 @@ object PoolAccountManager {
         reportDedupe.entries.removeIf { (_, ts) -> now - ts > REPORT_DEDUPE_WINDOW_MS }
         return false
     }
+    /**
+     * Applies one feed reply: non-200 is logged and reported by code, and a 200 with all-empty
+     * lists keeps the previous cache so a transient server bug cannot vanish every provider
+     * mid-playback.
+     */
+    private suspend fun applyFeedReply(
+        context: Context,
+        path: String,
+        reply: Pair<Int, String>?,
+        readKey: String,
+    ): FeedFetch {
+        if (reply == null || reply.first != 200) {
+            logFeedRejection(path, reply?.first ?: 0)
+            return FeedFetch(null, reply?.first ?: 0)
+        }
+        val root = JSONObject(reply.second)
+        val decryptor = PoolFeedParser.decryptorFor(root, readKey)
+        val tidal = PoolFeedParser.parseTidal(PoolFeedParser.accountsArray(root, "tidal"), decryptor)
+        val qobuz = PoolFeedParser.parseQobuz(PoolFeedParser.accountsArray(root, "qobuz"), decryptor)
+        val deezer = PoolFeedParser.parseDeezer(PoolFeedParser.accountsArray(root, "deezer"), decryptor)
+        val apple = PoolFeedParser.parseAppleMusic(PoolFeedParser.accountsArray(root, "apple-music"), decryptor)
+        val amazon = PoolFeedParser.parseAmazon(PoolFeedParser.accountsArray(root, "amazon-music"), decryptor)
+        if (!isPoolEnabled()) return FeedFetch(root, 200)
+        // Don't overwrite the in-memory cache with an empty list when the pool returns a
+        // 200 with a partial/empty response (rate-limit, transient server bug, captive-portal
+        // interception, malformed JSON): every provider would vanish from playback until a
+        // force-stop and re-open. Only update the cache when at least one list is
+        // non-empty. Otherwise keep the previous (non-empty) cache so playback keeps working.
+        val allEmpty = tidal.isEmpty() && qobuz.isEmpty() && deezer.isEmpty() && apple.isEmpty() && amazon.isEmpty()
+        if (allEmpty && hasAccounts()) {
+            Timber
+                .tag(TAG)
+                .w("Pool returned empty account lists — keeping existing cache to avoid mid-playback source disappearance")
+        } else {
+            tidalCache = tidal
+            qobuzCache = qobuz
+            deezerCache = deezer
+            appleMusicCache = apple
+            amazonCache = amazon
+            persist(context, tidal, qobuz, deezer, apple, amazon)
+        }
+        Timber.tag(TAG).i(
+            "Pool accounts refreshed: tidal=%d qobuz=%d deezer=%d apple=%d amazon=%d",
+            tidal.size,
+            qobuz.size,
+            deezer.size,
+            apple.size,
+            amazon.size,
+        )
+        return FeedFetch(root, 200)
+    }
     private suspend fun fetchAccounts(
         context: Context,
         path: String,
@@ -582,47 +633,7 @@ object PoolAccountManager {
     ): FeedFetch {
         val reply = PoolEndpoints.get(client, path, readKey)
         return try {
-            reply.let {
-                if (reply == null || reply.first != 200) {
-                    logFeedRejection(path, reply?.first ?: 0)
-                    return@let FeedFetch(null, reply?.first ?: 0)
-                }
-                val root = JSONObject(reply.second)
-                val decryptor = PoolFeedParser.decryptorFor(root, readKey)
-                val tidal = PoolFeedParser.parseTidal(PoolFeedParser.accountsArray(root, "tidal"), decryptor)
-                val qobuz = PoolFeedParser.parseQobuz(PoolFeedParser.accountsArray(root, "qobuz"), decryptor)
-                val deezer = PoolFeedParser.parseDeezer(PoolFeedParser.accountsArray(root, "deezer"), decryptor)
-                val apple = PoolFeedParser.parseAppleMusic(PoolFeedParser.accountsArray(root, "apple-music"), decryptor)
-                val amazon = PoolFeedParser.parseAmazon(PoolFeedParser.accountsArray(root, "amazon-music"), decryptor)
-                if (!isPoolEnabled()) return@let FeedFetch(root, 200)
-                // Don't overwrite the in-memory cache with an empty list when the pool returns a
-                // 200 with a partial/empty response (rate-limit, transient server bug, captive-portal
-                // interception, malformed JSON): every provider would vanish from playback until a
-                // force-stop and re-open. Only update the cache when at least one list is
-                // non-empty. Otherwise keep the previous (non-empty) cache so playback keeps working.
-                val allEmpty = tidal.isEmpty() && qobuz.isEmpty() && deezer.isEmpty() && apple.isEmpty() && amazon.isEmpty()
-                if (allEmpty && hasAccounts()) {
-                    Timber
-                        .tag(TAG)
-                        .w("Pool returned empty account lists — keeping existing cache to avoid mid-playback source disappearance")
-                } else {
-                    tidalCache = tidal
-                    qobuzCache = qobuz
-                    deezerCache = deezer
-                    appleMusicCache = apple
-                    amazonCache = amazon
-                    persist(context, tidal, qobuz, deezer, apple, amazon)
-                }
-                Timber.tag(TAG).i(
-                    "Pool accounts refreshed: tidal=%d qobuz=%d deezer=%d apple=%d amazon=%d",
-                    tidal.size,
-                    qobuz.size,
-                    deezer.size,
-                    apple.size,
-                    amazon.size,
-                )
-                FeedFetch(root, 200)
-            }
+            applyFeedReply(context, path, reply, readKey)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

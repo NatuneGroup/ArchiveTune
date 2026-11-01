@@ -238,25 +238,7 @@ class App : Application(), SingletonImageLoader.Factory {
         startPoolAndPresence()
         applicationScope.launch(Dispatchers.IO) { CustomArtworkStore.preload() }
         PaxsenixLyrics.setUserAgent("ArchiveTune", BuildConfig.VERSION_NAME)
-        // Route PaxsenixLyrics diagnostic logs through GlobalLog so they show up
-        // in the in-app logcat viewer with the proper tag, instead of going to
-        // System.err (which Android redirects to logcat one line at a time as
-        // `W/System.err`, with synchronized I/O that causes contention during
-        // parallel lyrics prefetch).
-        PaxsenixLyrics.logger = { message ->
-            moe.rukamori.archivetune.utils.GlobalLog.append(
-                android.util.Log.INFO,
-                "PaxsenixLyrics",
-                message,
-            )
-        }
-
-        // Route AppleMusicProvider (canvas) diagnostic logs through GlobalLog too — same rationale
-        // as PaxsenixLyrics.logger above: `println(...)` lands in logcat as `I/System.out:` with no
-        // tag/level, bypassing the in-app log viewer.
-        AppleMusicProvider.logger = { level, tag, message ->
-            moe.rukamori.archivetune.utils.GlobalLog.append(level, tag, message)
-        }
+        routeProviderDiagnosticLogs()
 
         // Feed the user's own Apple Music account tokens (pasted on the Apple
         // Music settings page) into the canvas module's AMP requests: their
@@ -453,6 +435,23 @@ class App : Application(), SingletonImageLoader.Factory {
      * Opt-in Natune status stays idle until the user switches it on, and the persisted pool auth
      * backoff must load before the first pool transport can run — both are cheap to kick off here.
      */
+    /**
+     * Routes provider diagnostic logs through GlobalLog so they reach the in-app viewer with the
+     * proper tag/level instead of System.err/System.out single-line logcat drops.
+     */
+    private fun routeProviderDiagnosticLogs() {
+        PaxsenixLyrics.logger = { message ->
+            moe.rukamori.archivetune.utils.GlobalLog.append(
+                android.util.Log.INFO,
+                "PaxsenixLyrics",
+                message,
+            )
+        }
+        AppleMusicProvider.logger = { level, tag, message ->
+            moe.rukamori.archivetune.utils.GlobalLog.append(level, tag, message)
+        }
+    }
+
     private fun startPoolAndPresence() {
         ListenerPresence.start(this)
         PoolAuthBackoff.ensureLoaded(this)

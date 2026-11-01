@@ -135,21 +135,7 @@ fun IntegrationScreen(
                 }
             }
 
-            PreferenceGroup(
-                modifier = positions.modifierFor("discord_presence"),
-                title = stringResource(R.string.general),
-            ) {
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("discord_account"),
-                        title = { Text(stringResource(R.string.discord_integration)) },
-                        icon = { Icon(painterResource(R.drawable.discord), null) },
-                        onClick = {
-                            navController.navigate("settings/discord")
-                        },
-                    )
-                }
-            }
+            DiscordPresencePreferenceGroup(positions) { navController.navigate("settings/discord") }
 
             NatuneStatusPreferenceGroup(modifier = positions.modifierFor("natune_status"))
 
@@ -432,6 +418,26 @@ fun IntegrationScreen(
     }
 }
 
+
+@Composable
+private fun DiscordPresencePreferenceGroup(
+    positions: PreferencePositions,
+    onOpenDiscord: () -> Unit,
+) {
+    PreferenceGroup(
+        modifier = positions.modifierFor("discord_presence"),
+        title = stringResource(R.string.general),
+    ) {
+        item {
+            PreferenceEntry(
+                modifier = positions.modifierFor("discord_account"),
+                title = { Text(stringResource(R.string.discord_integration)) },
+                icon = { Icon(painterResource(R.drawable.discord), null) },
+                onClick = { onOpenDiscord() },
+            )
+        }
+    }
+}
 /** Natune status group: opt-in "while you listen" sharing beside the Discord presence group. */
 @Composable
 private fun NatuneStatusPreferenceGroup(modifier: Modifier = Modifier) {

@@ -207,9 +207,6 @@ object QobuzAudioProvider {
 
     // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, resolved from the
     // build-configured deployment (ARCHIVEPOOL_BASE_URL, else SOURCE_PROVIDER_URL) and its fallback.
-    private val instanceDiscoverySources: List<String>
-        get() = PoolEndpoints.bases().map { "$it/api/discovery/qobuz" }
-
     /**
      * Best-effort discovery of community Qobuz proxy instances from the Source Pool website. Returns
      * newly discovered valid base URLs (may be empty). Never throws; blocking network I/O, so call
@@ -228,12 +225,13 @@ object QobuzAudioProvider {
             clearPoolDiscovery()
             return emptyList()
         }
-        if (instanceDiscoverySources.isEmpty()) return emptyList()
         val now = System.currentTimeMillis()
         if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
         val discovered = LinkedHashSet<String>()
-        for (source in instanceDiscoverySources) {
+        for (base in PoolEndpoints.bases()) {
             if (!PoolAccountManager.isPoolEnabled()) break
+            // Remember the deployment itself — the configured base may already contain a path.
+            val source = "$base/api/discovery/qobuz"
             val answered = runCatching {
                 val builder =
                     Request
@@ -247,8 +245,8 @@ object QobuzAudioProvider {
                 val request = builder.get().build()
                 healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
-                    ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
                     if (!response.isSuccessful) {
+                        ArchivePoolEndpoints.remember(base)
                         // A rejected read and a healthy pool with nothing contributed both end up
                         // as zero instances here, so say which one happened — this is the whole
                         // difference between "no Qobuz accounts" and "this build's key is wrong".
@@ -264,6 +262,8 @@ object QobuzAudioProvider {
                         return@use true
                     }
                     val body = response.body?.string().orEmpty()
+                    // Remember only once the body arrived whole — a reset mid-200 is transport failure.
+                    ArchivePoolEndpoints.remember(base)
                     if (body.isBlank()) return@use true
                     val obj = runCatching { JSONObject(body) }.getOrNull() ?: return@use true
                     for (key in listOf("streaming", "instances", "api")) {

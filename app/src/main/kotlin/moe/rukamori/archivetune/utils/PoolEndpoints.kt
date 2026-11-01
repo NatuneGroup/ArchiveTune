@@ -8,11 +8,19 @@
 
 package moe.rukamori.archivetune.utils
 
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.suspendCancellableCoroutine
 import moe.rukamori.archivetune.BuildConfig
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import java.io.IOException
+import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.resume
 
 /**
  * The ordered ArchivePool deployments one pool request is tried against while the service moves off
@@ -155,29 +163,60 @@ internal object PoolEndpoints {
         readKey: String,
         body: String?,
     ): Pair<Int, String>? =
-        ArchivePoolEndpoints.acrossEndpoints(configuredBaseUrl(), report = body != null) { base ->
-            try {
-                val builder =
-                    Request
-                        .Builder()
-                        .url("$base$path")
-                        .header("User-Agent", "ArchiveTune-Android")
-                        // v2 of the pool protocol: sensitive fields are encrypted with a key derived
-                        // from the read key; older servers ignore the header.
-                        .header("X-Pool-Client", "v2")
-                if (readKey.isNotBlank()) {
-                    builder.header("Authorization", "Bearer $readKey")
+        try {
+            ArchivePoolEndpoints.acrossEndpoints(configuredBaseUrl(), report = body != null) { base ->
+                // A dead coroutine or a switched-off Playback Pool must stop the walk before the
+                // next endpoint is tried, not after the request is already on the wire.
+                coroutineContext.ensureActive()
+                if (!PoolAccountManager.isPoolEnabled()) throw PoolUnavailableException()
+                suspendCancellableCoroutine<Pair<Int, String>?> { cont ->
+                    val builder =
+                        Request
+                            .Builder()
+                            .url("$base$path")
+                            .header("User-Agent", "ArchiveTune-Android")
+                            // v2 of the pool protocol: sensitive fields are encrypted with a key derived
+                            // from the read key; older servers ignore the header.
+                            .header("X-Pool-Client", "v2")
+                    if (readKey.isNotBlank()) {
+                        builder.header("Authorization", "Bearer $readKey")
+                    }
+                    if (body != null) {
+                        builder.post(body.toRequestBody(JSON_MEDIA))
+                    }
+                    val call = client.newCall(builder.build())
+                    // execute() would ignore coroutine cancellation for the whole socket wait;
+                    // enqueue plus cancel() frees it and lets CancellationException propagate.
+                    cont.invokeOnCancellation { call.cancel() }
+                    call.enqueue(
+                        object : Callback {
+                            override fun onFailure(call: Call, e: IOException) {
+                                // null = transport failure: the caller walks the next endpoint
+                                // (or stops, for a report). A cancelled call never resumes here —
+                                // the continuation is already dead and throws on its own.
+                                if (cont.isActive) cont.resume(null)
+                            }
+
+                            override fun onResponse(call: Call, response: Response) {
+                                val result =
+                                    response.use {
+                                        runCatching {
+                                            it.code to
+                                                if (it.isSuccessful) it.body?.string().orEmpty() else ""
+                                        }
+                                    }
+                                if (cont.isActive) cont.resumeWith(result)
+                            }
+                        },
+                    )
                 }
-                if (body != null) {
-                    builder.post(body.toRequestBody(JSON_MEDIA))
-                }
-                client.newCall(builder.build()).execute().use { response ->
-                    response.code to if (response.isSuccessful) response.body?.string().orEmpty() else ""
-                }
-            } catch (_: Exception) {
-                null
             }
+        } catch (e: PoolUnavailableException) {
+            null
         }
 
     private val JSON_MEDIA = "application/json; charset=utf-8".toMediaTypeOrNull()
 }
+
+/** Thrown inside an endpoint walk when the Playback Pool stops being usable mid-request. */
+private class PoolUnavailableException : Exception()

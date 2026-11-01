@@ -128,12 +128,8 @@ object TidalAudioProvider {
     // { "api": [{ "url", "version" }, ...], "streaming": [...], "qobuz": [...] }.
     // (tidal-uptime.geeked.wtf now NXDOMAINs; left empty until a live feed URL is confirmed.)
     //
-    // The community Source Pool website (build-configured via ARCHIVEPOOL_BASE_URL or the legacy
-    // SOURCE_PROVIDER_URL, public default as the ordered fallback) exposes a health-checked feed in
-    // this exact { streaming, api } shape at /api/discovery/tidal; the configured deployment becomes
-    // the discovery source so the app auto-pulls verified community instances.
-    private val INSTANCE_DISCOVERY_SOURCES: List<String>
-        get() = PoolEndpoints.bases().map { "$it/api/discovery/tidal" }
+    // The Source Pool deployment (build-configured, vercel.app as ordered fallback) exposes a
+    // health-checked { streaming, api } feed at /api/discovery/tidal.
 
     /**
      * User-configured instance list (base URLs), applied via [setInstances]. When empty there are
@@ -413,8 +409,10 @@ object TidalAudioProvider {
 
     private fun discoverInstancesWithinAttempt(): List<String> {
         val discovered = LinkedHashSet<String>()
-        for (source in INSTANCE_DISCOVERY_SOURCES) {
+        for (base in PoolEndpoints.bases()) {
             if (!PoolAccountManager.isPoolEnabled()) break
+            // Remember the deployment itself — the configured base may already contain a path.
+            val source = "$base/api/discovery/tidal"
             val answered = runCatching {
                 val builder =
                     Request
@@ -428,8 +426,8 @@ object TidalAudioProvider {
                 val request = builder.get().build()
                 healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
                     if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use false
-                    ArchivePoolEndpoints.remember(source.substringBefore("/api/"))
                     if (!response.isSuccessful) {
+                        ArchivePoolEndpoints.remember(base)
                         // Make 401 visible: the pool rejects unauthenticated reads with HTTP 401
                         // and an empty body, which otherwise looks identical to a healthy pool
                         // with no instances contributed.
@@ -445,6 +443,8 @@ object TidalAudioProvider {
                         return@use true
                     }
                     val body = response.body?.string().orEmpty()
+                    // Remember only once the body arrived whole — a reset mid-200 is transport failure.
+                    ArchivePoolEndpoints.remember(base)
                     parseDiscoveredInstances(body).forEach { url ->
                         normalizeInstanceUrl(url)?.let(discovered::add)
                     }

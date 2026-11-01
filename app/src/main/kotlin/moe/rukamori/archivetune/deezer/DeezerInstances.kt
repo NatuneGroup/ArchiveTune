@@ -259,8 +259,9 @@ object DeezerInstances {
             if (discoveredAt != 0L && System.currentTimeMillis() - discoveredAt < DISCOVERY_TTL_MS) return discovered
             val result =
                 runCatching {
-                    for (url in poolFeedUrls()) {
+                    for (base in PoolEndpoints.bases()) {
                         if (!PoolAccountManager.isPoolEnabled()) break
+                        val url = "$base/api/instances/deezer"
                         val builder = Request.Builder().url(url).header("User-Agent", USER_AGENT)
                         if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
                             builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
@@ -270,13 +271,20 @@ object DeezerInstances {
                             try {
                                 client.newCall(builder.get().build()).withAudioSourceAttemptDeadline().execute().use { response ->
                                     if (!PoolAccountManager.isPoolEnabled() || ArchivePoolEndpoints.isFailoverStatus(response.code)) return@use null
-                                    answered = true
-                                    ArchivePoolEndpoints.remember(url.substringBefore("/api/"))
                                     if (!response.isSuccessful) {
+                                        // A definitive API error ends the walk: remember the
+                                        // deployment itself, not a guess carved out of the URL.
+                                        answered = true
+                                        ArchivePoolEndpoints.remember(base)
                                         Timber.tag(TAG).w("pool instance feed answered HTTP %d", response.code)
                                         return@use null
                                     }
-                                    parseFeed(response.body?.string().orEmpty())
+                                    // answered flips only after the body arrived whole: a reset
+                                    // mid-200 is a transport failure worth the next endpoint.
+                                    val body = response.body?.string().orEmpty()
+                                    answered = true
+                                    ArchivePoolEndpoints.remember(base)
+                                    parseFeed(body)
                                 }
                             } catch (failure: Exception) {
                                 failure.rethrowIfAudioSourceCancelled()

@@ -136,123 +136,66 @@ shot 01_home
 log "== search =="
 fg
 try $U tap "Search"; sleep 3
-# tap the search field (Compose EditText) and type
-if ! $U tapcls "EditText" >/dev/null 2>&1; then try $U tapf 0.5 0.08; fi
-sleep 1
+# search bar pill, measured from a real capture: ~x 60-1010, y 330-460
+$U tapf 0.5 0.165; sleep 4
+shot 02a_search_input
 $U text "Daft Punk"; sleep 1
 $U key 66
-if ! $U wait "Albums" 12 >/dev/null 2>&1; then
-  log "no result chips yet — retrying submit"
-  $U key 84 || true
-  sleep 8
-fi
-sleep 6
+sleep 14
 dump search; listd search
 shot 02_search_results
+# back out of the search input if the keyboard screen is still up
+$U key 4; sleep 2
 
-log "== album =="
+log "== album (hero card on home) =="
 fg
-if ! $U tap "Albums" >/dev/null 2>&1; then try $U tapi "album"; fi
-sleep 8
-dump albums; listd albums
-shot 03_search_albums
-if ! $U tap "Random Access Memories" >/dev/null 2>&1; then try $U tapf 0.5 0.35; fi
-sleep 7
+try $U tap "Home"; sleep 4
+# "Thriller — Michael Jackson" hero card: ~x 60-780, y 300-630
+$U tapf 0.39 0.19; sleep 8
 dump album; listd album
 shot 04_album
 
 log "== playback =="
-fg
-if ! $U tap "Play" >/dev/null 2>&1; then
-  if ! $U tap "Shuffle" >/dev/null 2>&1; then try $U tapf 0.5 0.5; fi
-fi
-sleep 12
+# album track rows sit mid-screen; tap the play area then a track
+$U tapf 0.5 0.6; sleep 3
+$U tapf 0.5 0.72; sleep 12
 dump playing; listd playing
-# expand the mini player (bar just above the bottom nav) — only when playback UI exists
-if $U list 2>/dev/null | grep -qE "d='(Pause|Lyrics|Queue|Collapse)'"; then
-  for frac in 0.91 0.87 0.94; do
-    $U tapf 0.5 $frac; sleep 3
-    if $U wait "Lyrics" 4 >/dev/null 2>&1; then log "player expanded at $frac"; break; fi
-  done
-else
-  log "no playback UI detected — skipping expand"
-fi
-sleep 3
+# expand the mini player (floats just above the nav bar, ~y 1950-2100)
+for frac in 0.84 0.80 0.87; do
+  $U tapf 0.5 $frac; sleep 4
+  shot "05_try_$frac"
+done
 dump player; listd player
 shot 05_player
 
-log "== lyrics =="
-try $U tap "Lyrics"; sleep 5
+log "== lyrics (tap artwork) =="
+# in the expanded player the artwork toggles the lyrics view
+$U tapf 0.5 0.38; sleep 5
 dump lyrics; listd lyrics
 shot 06_lyrics
 $U key 4; sleep 2
-
-log "== equalizer (player menu) =="
-if $U tap "More options" >/dev/null 2>&1 || $U tap "More" >/dev/null 2>&1 || $U tapi "menu" >/dev/null 2>&1; then
-  sleep 2
-  try $U tap "Equalizer"; sleep 4
-  dump equalizer; listd equalizer
-  shot 07_equalizer
-  $U key 4; sleep 1; $U key 4; sleep 2
-else
-  log "no player menu found"
-fi
-# collapse player back to mini
 $U key 4; sleep 2
 
 log "== library =="
 fg
-try $U tap "Library"; sleep 4
+try $U tap "Library"; sleep 5
 dump library; listd library
 shot 08_library
 
 log "== settings =="
 fg
-try $U tap "Home"; sleep 3
-if ! $U tap "Settings" >/dev/null 2>&1; then
-  # gear sits top-right on the home header
-  try $U tapf 0.9 0.055
-  sleep 1
-  try $U tap "Settings"
-fi
-sleep 4
+try $U tap "Home"; sleep 4
+# gear sits top-right of the home header at ~ (975, 225)
+$U tapf 0.9 0.094; sleep 5
 dump settings; listd settings
 shot 09_settings
-
-log "== playback settings =="
-$U swipe 540 1900 540 900 400; sleep 1
-if ! $U tap "Playback" >/dev/null 2>&1; then
-  $U swipe 540 1900 540 900 400; sleep 1
-  try $U tap "Playback"
-fi
-sleep 4
+# scroll the settings list and try the Playback category area
+$U swipe 540 1700 540 700 400; sleep 2
+shot 09b_settings_scrolled
+$U tapf 0.5 0.62; sleep 4
 dump playback_settings; listd playback_settings
-shot 10_playback_settings
-$U swipe 540 1900 540 700 500; sleep 1
-shot 10b_playback_settings_scrolled
+shot 10_settings_subpage
 $U key 4; sleep 2
-
-log "== apple music experience (optional) =="
-# back on the settings list; scroll to top so Appearance is visible
-$U swipe 540 700 540 1900 500; sleep 1
-$U swipe 540 700 540 1900 500; sleep 1
-if ! $U tap "Appearance" >/dev/null 2>&1; then
-  $U swipe 540 1900 540 900 400; sleep 1
-  try $U tap "Appearance"
-fi
-sleep 3
-dump appearance; listd appearance
-if $U tap "Apple Music Experience" >/dev/null 2>&1; then
-  sleep 3
-  $U key 4; sleep 2
-  try $U tap "Library"; sleep 2
-  try $U tap "Home"; sleep 2
-  # reopen player if something is still in the queue
-  $U tapf 0.5 0.91; sleep 4
-  dump player_am; listd player_am
-  shot 11_player_apple_music
-fi
-$U key 4 || true
 
 log "== done =="
 adb logcat -d -t 400 2>/dev/null | grep -iE "playback|error|exception|MusicService" | tail -60 || true

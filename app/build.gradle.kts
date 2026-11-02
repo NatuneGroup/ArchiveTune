@@ -269,9 +269,21 @@ android {
             (
                 localProperties.getProperty("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
                     ?: System.getenv("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
-                    ?: "https://natune-status.codmplayer1234.workers.dev"
+                    ?: "https://natune-status.archivepool.workers.dev"
                 ).trim().trimEnd('/')
         buildConfigField("String", "LISTENER_PRESENCE_URL", "\"$listenerPresenceUrl\"")
+
+        // In-app announcements feed ("News"): a JSON index plus Markdown content served
+        // first-party from the Natune site. Precedence: local.properties, then the
+        // NATUNE_NEWS_URL env/CI variable, then the baked-in default. An explicitly blank
+        // value disables the feature and hides the News entry point.
+        val natuneNewsUrl =
+            (
+                localProperties.getProperty("NATUNE_NEWS_URL")
+                    ?: System.getenv("NATUNE_NEWS_URL")
+                    ?: "https://natune.pages.dev/api/news"
+                ).trim().trimEnd('/')
+        buildConfigField("String", "NATUNE_NEWS_URL", "\"$natuneNewsUrl\"")
 
         // Per-app read key for the Source Pool. Sent as a Bearer token on discovery requests so the
         // pool can gate access. Optional: blank works fine while the pool runs unenforced.

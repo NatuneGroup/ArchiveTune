@@ -15,10 +15,23 @@ dump() { $U dump "dumps/$1.xml" >/dev/null 2>&1 || true; }
 listd() { $U list > "dumps/$1.txt" 2>&1 || true; }
 shot() { $U shot "shots/$1.png"; log "shot $1: $(stat -c%s "shots/$1.png" 2>/dev/null) bytes"; }
 try() { "$@" >/dev/null 2>&1 || true; }
+handle_anr() {
+  # ANR dialogs steal the foreground as package "android". If the stuck app
+  # is ours, choose Wait; if it is another process (e.g. the launcher, which
+  # can wedge for the whole boot), Close app so our window can come up.
+  local title
+  title=$($U list 2>/dev/null | grep "isn't responding" | head -1)
+  [ -z "$title" ] && return 1
+  log "ANR: $title"
+  case "$title" in
+    *Natune*|*archivetune*) $U tap "Wait" >/dev/null 2>&1 || true ;;
+    *)                      $U tap "Close app" >/dev/null 2>&1 || true ;;
+  esac
+  sleep 3
+}
 fg() {
-  # ANR/crash dialogs steal the foreground as package "android". Always pick
-  # Wait — never Close app — and let the dialog clear itself.
-  if $U tap "Wait" >/dev/null 2>&1; then log "dismissed system dialog via Wait"; sleep 3; fi
+  # ANR/crash dialogs steal the foreground as package "android".
+  handle_anr
   local p
   p=$($U pkg 2>/dev/null || echo "?")
   if [ "$p" != "$PKG" ]; then
@@ -97,7 +110,7 @@ log "== launch =="
 adb shell am start -n $PKG/.MainActivity || adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1
 sleep 12
 # boot-time ANR on the launcher/app steals input until dismissed
-for i in 1 2 3; do $U tap "Wait" >/dev/null 2>&1 && sleep 3 || break; done
+for i in 1 2 3; do handle_anr || break; done
 
 log "== onboarding =="
 for i in $(seq 1 16); do
@@ -111,7 +124,7 @@ for i in $(seq 1 16); do
   elif $U tap "Start listening" >/dev/null 2>&1; then log "tap Start listening"; sleep 4; break;
   elif $U tap "While using the app" >/dev/null 2>&1; then log "tap While using";
   elif $U tap "ALLOW" >/dev/null 2>&1; then log "tap ALLOW";
-  elif $U tap "Wait" >/dev/null 2>&1; then log "tap Wait (ANR)";
+  elif $U list 2>/dev/null | grep -q "isn't responding"; then handle_anr;
   else
     if $U list 2>/dev/null | grep -q "this device"; then
       $U tap "Allow" >/dev/null 2>&1 && log "granted perm dialog"

@@ -15,6 +15,16 @@ dump() { $U dump "dumps/$1.xml" >/dev/null 2>&1 || true; }
 listd() { $U list > "dumps/$1.txt" 2>&1 || true; }
 shot() { $U shot "shots/$1.png"; log "shot $1: $(stat -c%s "shots/$1.png" 2>/dev/null) bytes"; }
 try() { "$@" >/dev/null 2>&1 || true; }
+fg() {
+  # Make sure our app is foreground; relaunch if a stray tap/background left it.
+  local p
+  p=$($U pkg 2>/dev/null || echo "?")
+  if [ "$p" != "$PKG" ]; then
+    log "foreground=$p — relaunching app"
+    adb shell am start -n $PKG/.MainActivity >/dev/null 2>&1 || true
+    sleep 5
+  fi
+}
 dismiss() {
   # Best-effort close of dialogs/sheets that may block a screen.
   for label in "Later" "Not now" "Dismiss" "Got it" "OK" "Cancel" "Close"; do
@@ -46,7 +56,8 @@ adb shell am start -n $PKG/.MainActivity || adb shell monkey -p $PKG -c android.
 sleep 10
 
 log "== onboarding =="
-for i in $(seq 1 10); do
+for i in $(seq 1 14); do
+  fg
   dump "onboarding_$i"
   listd "onboarding_$i"
   if   $U tap "Let’s go" >/dev/null 2>&1; then log "tap Let's go";
@@ -56,12 +67,23 @@ for i in $(seq 1 10); do
   elif $U tap "Start listening" >/dev/null 2>&1; then log "tap Start listening"; sleep 4; break;
   elif $U tap "While using the app" >/dev/null 2>&1; then log "tap While using";
   elif $U tap "ALLOW" >/dev/null 2>&1; then log "tap ALLOW";
-  else log "no onboarding button found (iter $i)";
+  else
+    log "no onboarding button (iter $i) — scrolling for footer"
+    $U swipe 540 1700 540 600 400 || true
   fi
   sleep 3
   # exit early once the home tabs show up
   if $U list 2>/dev/null | grep -q "d='Settings'"; then log "home reached"; break; fi
 done
+
+# Do not drive the rest of the tour until the main UI is really up.
+if ! $U wait "Settings" 15 >/dev/null 2>&1; then
+  log "ABORT: never reached home UI"
+  dump abort; listd abort
+  shot 00_abort_state
+  ls -la shots/
+  exit 0
+fi
 
 log "== home =="
 sleep 14
@@ -70,17 +92,24 @@ dump home; listd home
 shot 01_home
 
 log "== search =="
+fg
 try $U tap "Search"; sleep 3
 # tap the search field (Compose EditText) and type
 if ! $U tapcls "EditText" >/dev/null 2>&1; then try $U tapf 0.5 0.08; fi
 sleep 1
 $U text "Daft Punk"; sleep 1
 $U key 66
-sleep 14
+if ! $U wait "Albums" 12 >/dev/null 2>&1; then
+  log "no result chips yet — retrying submit"
+  $U key 84 || true
+  sleep 8
+fi
+sleep 6
 dump search; listd search
 shot 02_search_results
 
 log "== album =="
+fg
 if ! $U tap "Albums" >/dev/null 2>&1; then try $U tapi "album"; fi
 sleep 8
 dump albums; listd albums
@@ -91,16 +120,21 @@ dump album; listd album
 shot 04_album
 
 log "== playback =="
+fg
 if ! $U tap "Play" >/dev/null 2>&1; then
   if ! $U tap "Shuffle" >/dev/null 2>&1; then try $U tapf 0.5 0.5; fi
 fi
 sleep 12
 dump playing; listd playing
-# expand the mini player (bar just above the bottom nav)
-for frac in 0.91 0.87 0.94; do
-  $U tapf 0.5 $frac; sleep 3
-  if $U wait "Lyrics" 4 >/dev/null 2>&1; then log "player expanded at $frac"; break; fi
-done
+# expand the mini player (bar just above the bottom nav) — only when playback UI exists
+if $U list 2>/dev/null | grep -qE "d='(Pause|Lyrics|Queue|Collapse)'"; then
+  for frac in 0.91 0.87 0.94; do
+    $U tapf 0.5 $frac; sleep 3
+    if $U wait "Lyrics" 4 >/dev/null 2>&1; then log "player expanded at $frac"; break; fi
+  done
+else
+  log "no playback UI detected — skipping expand"
+fi
 sleep 3
 dump player; listd player
 shot 05_player
@@ -112,7 +146,7 @@ shot 06_lyrics
 $U key 4; sleep 2
 
 log "== equalizer (player menu) =="
-if $U tap "More options" >/dev/null 2>&1 || $U tapi "more" >/dev/null 2>&1; then
+if $U tap "More options" >/dev/null 2>&1 || $U tap "More" >/dev/null 2>&1 || $U tapi "menu" >/dev/null 2>&1; then
   sleep 2
   try $U tap "Equalizer"; sleep 4
   dump equalizer; listd equalizer
@@ -125,11 +159,13 @@ fi
 $U key 4; sleep 2
 
 log "== library =="
+fg
 try $U tap "Library"; sleep 4
 dump library; listd library
 shot 08_library
 
 log "== settings =="
+fg
 try $U tap "Home"; sleep 3
 if ! $U tap "Settings" >/dev/null 2>&1; then
   # gear sits top-right on the home header

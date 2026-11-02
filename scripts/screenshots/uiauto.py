@@ -171,6 +171,14 @@ def main():
         w, h = screen_size()
         print(w, h)
         return 0
+    if cmd == "pkg":
+        root = dump_xml()
+        for n in nodes(root):
+            p = n.get("package")
+            if p:
+                print(p)
+                return 0
+        return 1
     print("unknown cmd", cmd, file=sys.stderr)
     return 2
 

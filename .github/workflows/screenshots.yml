@@ -25,7 +25,10 @@ jobs:
         run: |
           set -e
           mkdir -p apk
-          gh release download --repo NatuneGroup/ArchiveTune \
+          TAG=$(gh release list --repo NatuneGroup/ArchiveTune --limit 30 \
+            --json tagName --jq '[.[] | select(.tagName | startswith("N"))][0].tagName')
+          echo "Latest nightly tag: $TAG"
+          gh release download "$TAG" --repo NatuneGroup/ArchiveTune \
             --pattern 'app-gms-mobile-universal-nightly.apk' \
             --dir apk --clobber
           ls -la apk/

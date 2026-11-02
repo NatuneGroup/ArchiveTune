@@ -60,6 +60,13 @@ walk_onboarding() {
     sleep 2
   done
 }
+close_dialog() {
+  # "Playback confirmation required" is a bottom sheet with no a11y nodes.
+  # Its Close button is the left button in the first action row, but the
+  # sheet height varies — tap both observed positions.
+  $U tapf 0.385 0.596; sleep 1
+  $U tapf 0.385 0.715; sleep 1
+}
 dismiss() {
   # Best-effort close of dialogs/sheets that may block a screen.
   for label in "Later" "Not now" "Dismiss" "Got it" "OK" "Cancel" "Close"; do
@@ -136,18 +143,13 @@ shot 01_home
 log "== search =="
 fg
 try $U tap "Search"; sleep 3
-# search bar pill, measured from a real capture: ~x 60-1010, y 330-460
+# search bar pill: ~x 60-1010, y 330-460
 $U tapf 0.5 0.165; sleep 4
 shot 02a_search_input
 $U text "Daft Punk"; sleep 1
-# tap Gboard's search/go key first (~930,2195) — the definitive submit —
-# then fall back to hardware SEARCH/ENTER codes
-$U tapf 0.86 0.915; sleep 3
-$U key 84 || true; sleep 2
-$U key 66 || true
-sleep 12
-# hide the keyboard so results are unobstructed, then capture
-$U key 4; sleep 2
+# tap Gboard's search/go key (~930,2196) — do NOT press BACK before the shot
+$U tapf 0.86 0.915
+sleep 16
 dump search; listd search
 shot 02_search_results
 $U key 4; sleep 2
@@ -155,54 +157,49 @@ $U key 4; sleep 2
 log "== album (hero card on home) =="
 fg
 try $U tap "Home"; sleep 4
-# "Thriller — Michael Jackson" hero card: ~x 60-780, y 300-630
+# hero card row under "Throwbacks": ~x 60-780, y 300-630
 $U tapf 0.39 0.19; sleep 8
 dump album; listd album
 shot 04_album
 
 log "== playback =="
-# album track rows sit mid-screen; tap the play area then a track
-$U tapf 0.5 0.6; sleep 3
+# playlist page: Play row ~y1330, tracks from ~y1500 down
+$U tapf 0.5 0.61; sleep 3
 $U tapf 0.5 0.72; sleep 14
 dump playing; listd playing
-# a "Playback confirmation required" dialog (no a11y nodes) can block the
-# UI — its Close button sits at ~ (415, 1715); BACK first, then Close.
-$U key 4; sleep 1
-$U tapf 0.385 0.715; sleep 2
+close_dialog
 shot 04b_post_play
-# expand the mini player — the bar sits at ~y 2150-2280, over the nav pill
+# expand the mini player — bar sits ~y 2150-2280 over the nav pill
 for frac in 0.915 0.88 0.94; do
   $U tapf 0.5 $frac; sleep 4
 done
+close_dialog
 dump player; listd player
 shot 05_player
 
-log "== lyrics (tap artwork) =="
-# in the expanded player the artwork toggles the lyrics view
-$U tapf 0.5 0.4; sleep 5
+log "== lyrics =="
+# expanded player bottom row has a Lyrics pill at ~ (665, 2290)
+$U tapf 0.62 0.955; sleep 5
+close_dialog
 dump lyrics; listd lyrics
 shot 06_lyrics
-$U key 4; sleep 2
-$U tapf 0.385 0.715; sleep 1
 $U key 4; sleep 2
 
 log "== library =="
 fg
-# the confirmation dialog may still be up — Close it (no a11y nodes)
-$U tapf 0.385 0.715; sleep 1
+close_dialog
 try $U tap "Library"; sleep 5
 dump library; listd library
 shot 08_library
 
 log "== settings =="
 fg
-$U tapf 0.385 0.715; sleep 1
+close_dialog
 try $U tap "Home"; sleep 4
 # gear sits top-right of the home header at ~ (975, 225)
 $U tapf 0.9 0.094; sleep 5
 dump settings; listd settings
 shot 09_settings
-# scroll the settings list and try the Playback category area
 $U swipe 540 1700 540 700 400; sleep 2
 shot 09b_settings_scrolled
 $U tapf 0.5 0.62; sleep 4

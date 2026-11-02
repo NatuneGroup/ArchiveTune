@@ -124,7 +124,7 @@ object TidalAudioProvider {
     // { "api": [{ "url", "version" }, ...], "streaming": [...], "qobuz": [...] }.
     // (tidal-uptime.geeked.wtf now NXDOMAINs; left empty until a live feed URL is confirmed.)
     //
-    // The Source Pool deployment (build-configured, vercel.app as ordered fallback) exposes a
+    // The Source Pool deployment (build-configured, natune.workers.dev as ordered fallback) exposes a
     // health-checked { streaming, api } feed at /api/discovery/tidal.
 
     /**

@@ -26,7 +26,7 @@ import okhttp3.Response
 /**
  * The ordered ArchivePool deployments one pool request is tried against while the service moves off
  * Vercel onto Cloudflare Workers: the build-configured deployment first, then the public
- * archivepool.vercel.app origin as the fallback. A deployment that produced a definitive API answer
+ * archivepool.natune.workers.dev origin as the fallback. A deployment that produced a definitive API answer
  * is remembered for about [REMEMBER_NS] so a dead primary is not paid for on every call.
  *
  * A request moves to the next endpoint on a transport failure — connection refused, DNS failure,
@@ -38,7 +38,7 @@ import okhttp3.Response
 internal object ArchivePoolEndpoints {
 
     /** The deployment every build falls back to when nothing better is configured or reachable. */
-    const val FALLBACK_BASE_URL = "https://archivepool.vercel.app"
+    const val FALLBACK_BASE_URL = "https://archivepool.natune.workers.dev"
 
     /** How long the deployment that last produced a definitive answer is tried first. */
     private const val REMEMBER_NS = 10L * 60 * 1_000_000_000L
@@ -120,7 +120,7 @@ internal object ArchivePoolEndpoints {
 
 /**
  * OkHttp transport for the ordered ArchivePool deployments [ArchivePoolEndpoints] computes: the
- * build-configured deployment first, the public vercel.app fallback after it, and the deployment
+ * build-configured deployment first, the public natune.workers.dev fallback after it, and the deployment
  * that last produced a definitive API answer first while that memory is fresh (~10 minutes). A call
  * moves to the next endpoint on a transport failure (connection refused, DNS failure, timeout) or a
  * host-level status (402/5xx); API-level answers like 400/401/403/404/429 are definitive and stop

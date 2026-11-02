@@ -283,7 +283,7 @@ object PoolAccountManager {
      * for the narrow account feed so tokens and instance URLs arrive over separate URLs.
      * Falls back to the legacy URL only when the pool deployment predates the split (404).
      * Every request walks the deployments [PoolEndpoints] orders for it: the build-configured
-     * primary first, then the public vercel.app fallback.
+     * primary first, then the public natune.workers.dev fallback.
      */
 
     /** How long an account that just failed to resolve is tried last for. */

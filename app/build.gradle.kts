@@ -243,13 +243,13 @@ android {
             (
                 localProperties.getProperty("SOURCE_PROVIDER_URL")?.takeIf { it.isNotBlank() }
                     ?: System.getenv("SOURCE_PROVIDER_URL")?.takeIf { it.isNotBlank() }
-                    ?: "https://archivepool.vercel.app"
+                    ?: "https://archivepool.natune.workers.dev"
                 ).trim().trimEnd('/')
         buildConfigField("String", "SOURCE_PROVIDER_URL", "\"$sourceProviderUrl\"")
 
         // Dedicated ArchivePool deployment override for the move off Vercel onto Cloudflare
         // Workers: when set (and https) it wins over SOURCE_PROVIDER_URL as the primary endpoint
-        // on every pool request, while the public vercel.app deployment stays the ordered
+        // on every pool request, while the public natune.workers.dev deployment stays the ordered
         // fallback the app fails over to on a host-level failure (402/5xx or unreachable).
         // Same precedence as the pool URL: local.properties, then the ARCHIVEPOOL_BASE_URL
         // env/CI variable, then blank (keep the SOURCE_PROVIDER_URL value as primary).

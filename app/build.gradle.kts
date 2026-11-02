@@ -269,7 +269,7 @@ android {
             (
                 localProperties.getProperty("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
                     ?: System.getenv("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
-                    ?: "https://natune-status.archivepool.workers.dev"
+                    ?: "https://natune-status.natune.workers.dev"
                 ).trim().trimEnd('/')
         buildConfigField("String", "LISTENER_PRESENCE_URL", "\"$listenerPresenceUrl\"")
 

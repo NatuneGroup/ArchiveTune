@@ -11,6 +11,7 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -20,7 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,9 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.navigation.NavController
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
@@ -47,13 +47,13 @@ import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
+import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.menu.CrossServiceImportPlaylistDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.rememberPreference
-import androidx.compose.foundation.layout.asPaddingValues
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -62,13 +62,17 @@ fun IntegrationScreen(
     scrollTo: String? = null,
     spotifyAccountViewModel: SpotifyAccountViewModel = hiltViewModel(),
 ) {
-    val (listenBrainzEnabled, onListenBrainzEnabledChange) = rememberPreference(ListenBrainzEnabledKey, false)
-    val (listenBrainzToken, onListenBrainzTokenChange) = rememberPreference(ListenBrainzTokenKey, "")
+    val (listenBrainzEnabled, onListenBrainzEnabledChange) =
+        rememberPreference(ListenBrainzEnabledKey, false)
+    val (listenBrainzToken, onListenBrainzTokenChange) =
+        rememberPreference(ListenBrainzTokenKey, "")
     val (usePoolAccounts, onUsePoolAccountsChange) = rememberPreference(UsePoolAccountsKey, true)
 
     val spotifyState by spotifyAccountViewModel.uiState.collectAsStateWithLifecycle()
-    val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) = rememberPreference(ShowSpotifyPlaylistsKey, false)
-    val (syncSpotifyHistory, onSyncSpotifyHistoryChange) = rememberPreference(SpotifyHistorySyncEnabledKey, false)
+    val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) =
+        rememberPreference(ShowSpotifyPlaylistsKey, false)
+    val (syncSpotifyHistory, onSyncSpotifyHistoryChange) =
+        rememberPreference(SpotifyHistorySyncEnabledKey, false)
     var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
 
     var showListenBrainzTokenEditor = remember { mutableStateOf(false) }
@@ -111,13 +115,17 @@ fun IntegrationScreen(
         LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
 
         Column(
-            Modifier
-                .padding(top = topPadding)
-                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
-                // Chained before verticalScroll so it measures the viewport, not the scrolling content.
+            Modifier.padding(top = topPadding)
+                .windowInsetsPadding(
+                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal),
+                )
+                // Chained before verticalScroll so it measures the viewport, not the scrolling
+                // content.
                 .then(positions.containerModifier())
                 .verticalScroll(scrollState)
-                .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
+                .padding(
+                    bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
+                ),
         ) {
             // AI integration sits here with the other integrations (Discord, Last.fm, Tidal,
             // Qobuz, Telegram, …).
@@ -374,8 +382,7 @@ fun IntegrationScreen(
     if (showListenBrainzTokenEditor.value) {
         TextFieldDialog(
             initialTextFieldValue =
-                androidx.compose.ui.text.input
-                    .TextFieldValue(listenBrainzToken),
+                androidx.compose.ui.text.input.TextFieldValue(listenBrainzToken),
             onDone = { data ->
                 onListenBrainzTokenChange(data)
                 showListenBrainzTokenEditor.value = false
@@ -418,7 +425,6 @@ fun IntegrationScreen(
     }
 }
 
-
 @Composable
 private fun DiscordPresencePreferenceGroup(
     positions: PreferencePositions,
@@ -438,6 +444,7 @@ private fun DiscordPresencePreferenceGroup(
         }
     }
 }
+
 /** Natune status group: opt-in "while you listen" sharing beside the Discord presence group. */
 @Composable
 private fun NatuneStatusPreferenceGroup(modifier: Modifier = Modifier) {

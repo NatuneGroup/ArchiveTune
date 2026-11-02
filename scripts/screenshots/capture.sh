@@ -140,11 +140,16 @@ try $U tap "Search"; sleep 3
 $U tapf 0.5 0.165; sleep 4
 shot 02a_search_input
 $U text "Daft Punk"; sleep 1
-$U key 66
-sleep 14
+# tap Gboard's search/go key first (~930,2195) — the definitive submit —
+# then fall back to hardware SEARCH/ENTER codes
+$U tapf 0.86 0.915; sleep 3
+$U key 84 || true; sleep 2
+$U key 66 || true
+sleep 12
+# hide the keyboard so results are unobstructed, then capture
+$U key 4; sleep 2
 dump search; listd search
 shot 02_search_results
-# back out of the search input if the keyboard screen is still up
 $U key 4; sleep 2
 
 log "== album (hero card on home) =="
@@ -158,32 +163,40 @@ shot 04_album
 log "== playback =="
 # album track rows sit mid-screen; tap the play area then a track
 $U tapf 0.5 0.6; sleep 3
-$U tapf 0.5 0.72; sleep 12
+$U tapf 0.5 0.72; sleep 14
 dump playing; listd playing
-# expand the mini player (floats just above the nav bar, ~y 1950-2100)
-for frac in 0.84 0.80 0.87; do
+# a "Playback confirmation required" dialog (no a11y nodes) can block the
+# UI — its Close button sits at ~ (415, 1715); BACK first, then Close.
+$U key 4; sleep 1
+$U tapf 0.385 0.715; sleep 2
+shot 04b_post_play
+# expand the mini player — the bar sits at ~y 2150-2280, over the nav pill
+for frac in 0.915 0.88 0.94; do
   $U tapf 0.5 $frac; sleep 4
-  shot "05_try_$frac"
 done
 dump player; listd player
 shot 05_player
 
 log "== lyrics (tap artwork) =="
 # in the expanded player the artwork toggles the lyrics view
-$U tapf 0.5 0.38; sleep 5
+$U tapf 0.5 0.4; sleep 5
 dump lyrics; listd lyrics
 shot 06_lyrics
 $U key 4; sleep 2
+$U tapf 0.385 0.715; sleep 1
 $U key 4; sleep 2
 
 log "== library =="
 fg
+# the confirmation dialog may still be up — Close it (no a11y nodes)
+$U tapf 0.385 0.715; sleep 1
 try $U tap "Library"; sleep 5
 dump library; listd library
 shot 08_library
 
 log "== settings =="
 fg
+$U tapf 0.385 0.715; sleep 1
 try $U tap "Home"; sleep 4
 # gear sits top-right of the home header at ~ (975, 225)
 $U tapf 0.9 0.094; sleep 5

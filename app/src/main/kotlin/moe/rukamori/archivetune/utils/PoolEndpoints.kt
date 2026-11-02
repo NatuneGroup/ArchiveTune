@@ -26,8 +26,8 @@ import okhttp3.Response
 /**
  * The ordered ArchivePool deployments one pool request is tried against while the service moves off
  * Vercel onto Cloudflare Workers: the build-configured deployment first, then the public
- * archivepool.natune.workers.dev origin as the fallback. A deployment that produced a definitive API answer
- * is remembered for about [REMEMBER_NS] so a dead primary is not paid for on every call.
+ * archivepool.natune.workers.dev origin as the fallback. A deployment that produced a definitive
+ * API answer is remembered for about [REMEMBER_NS] so a dead primary is not paid for on every call.
  *
  * A request moves to the next endpoint on a transport failure — connection refused, DNS failure,
  * timeout — or a host-level answer ([isFailoverStatus]: HTTP 402 or 5xx). API-level answers like
@@ -120,13 +120,13 @@ internal object ArchivePoolEndpoints {
 
 /**
  * OkHttp transport for the ordered ArchivePool deployments [ArchivePoolEndpoints] computes: the
- * build-configured deployment first, the public natune.workers.dev fallback after it, and the deployment
- * that last produced a definitive API answer first while that memory is fresh (~10 minutes). A call
- * moves to the next endpoint on a transport failure (connection refused, DNS failure, timeout) or a
- * host-level status (402/5xx); API-level answers like 400/401/403/404/429 are definitive and stop
- * the walk. A report advances only on an explicit 402/5xx answer: a transport failure may mean the
- * report already reached the server, so a transport failure stops its walk and a report is never
- * delivered twice. Nothing here logs a token.
+ * build-configured deployment first, the public natune.workers.dev fallback after it, and the
+ * deployment that last produced a definitive API answer first while that memory is fresh (~10
+ * minutes). A call moves to the next endpoint on a transport failure (connection refused, DNS
+ * failure, timeout) or a host-level status (402/5xx); API-level answers like 400/401/403/404/429
+ * are definitive and stop the walk. A report advances only on an explicit 402/5xx answer: a
+ * transport failure may mean the report already reached the server, so a transport failure stops
+ * its walk and a report is never delivered twice. Nothing here logs a token.
  */
 internal object PoolEndpoints {
 

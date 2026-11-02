@@ -115,17 +115,13 @@ fun IntegrationScreen(
         LaunchedEffect(scrollTo) { positions.scrollToKey(scrollTo, scrollState) }
 
         Column(
-            Modifier.padding(top = topPadding)
-                .windowInsetsPadding(
-                    LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal),
-                )
-                // Chained before verticalScroll so it measures the viewport, not the scrolling
-                // content.
+            Modifier
+                .padding(top = topPadding)
+                .windowInsetsPadding(LocalPlayerAwareWindowInsets.current.only(WindowInsetsSides.Horizontal))
+                // Chained before verticalScroll so it measures the viewport, not the scrolling content.
                 .then(positions.containerModifier())
                 .verticalScroll(scrollState)
-                .padding(
-                    bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding,
-                ),
+                .padding(bottom = playerAwareBottomPadding + SettingsDimensions.ScreenBottomPadding),
         ) {
             // AI integration sits here with the other integrations (Discord, Last.fm, Tidal,
             // Qobuz, Telegram, …).

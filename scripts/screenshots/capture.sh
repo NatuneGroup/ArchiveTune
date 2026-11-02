@@ -16,13 +16,16 @@ listd() { $U list > "dumps/$1.txt" 2>&1 || true; }
 shot() { $U shot "shots/$1.png"; log "shot $1: $(stat -c%s "shots/$1.png" 2>/dev/null) bytes"; }
 try() { "$@" >/dev/null 2>&1 || true; }
 fg() {
-  # Make sure our app is foreground; relaunch if a stray tap/background left it.
+  # ANR/crash dialogs steal the foreground as package "android". Always pick
+  # Wait — never Close app — and let the dialog clear itself.
+  if $U tap "Wait" >/dev/null 2>&1; then log "dismissed system dialog via Wait"; sleep 3; fi
   local p
   p=$($U pkg 2>/dev/null || echo "?")
   if [ "$p" != "$PKG" ]; then
     log "foreground=$p — relaunching app"
     adb shell am start -n $PKG/.MainActivity >/dev/null 2>&1 || true
     sleep 5
+    $U tap "Wait" >/dev/null 2>&1 || true
   fi
 }
 dismiss() {
@@ -53,10 +56,12 @@ adb shell pm grant $PKG android.permission.BLUETOOTH_CONNECT || true
 
 log "== launch =="
 adb shell am start -n $PKG/.MainActivity || adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1
-sleep 10
+sleep 12
+# boot-time ANR on the launcher/app steals input until dismissed
+for i in 1 2 3; do $U tap "Wait" >/dev/null 2>&1 && sleep 3 || break; done
 
 log "== onboarding =="
-for i in $(seq 1 14); do
+for i in $(seq 1 16); do
   fg
   dump "onboarding_$i"
   listd "onboarding_$i"
@@ -67,6 +72,7 @@ for i in $(seq 1 14); do
   elif $U tap "Start listening" >/dev/null 2>&1; then log "tap Start listening"; sleep 4; break;
   elif $U tap "While using the app" >/dev/null 2>&1; then log "tap While using";
   elif $U tap "ALLOW" >/dev/null 2>&1; then log "tap ALLOW";
+  elif $U tap "Wait" >/dev/null 2>&1; then log "tap Wait (ANR)";
   else
     log "no onboarding button (iter $i) — scrolling for footer"
     $U swipe 540 1700 540 600 400 || true

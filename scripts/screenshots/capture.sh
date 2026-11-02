@@ -24,9 +24,41 @@ fg() {
   if [ "$p" != "$PKG" ]; then
     log "foreground=$p — relaunching app"
     adb shell am start -n $PKG/.MainActivity >/dev/null 2>&1 || true
-    sleep 5
+    sleep 6
     $U tap "Wait" >/dev/null 2>&1 || true
   fi
+  # A restart can land back on a restored onboarding page — walk it again.
+  if ! on_home && $U list 2>/dev/null | grep -qE "t='(Welcome to Natune|Review permissions|Stay connected|Sync your listening)'"; then
+    log "onboarding re-shown — walking it"
+    walk_onboarding
+  fi
+}
+on_home() {
+  # Real gate: our app must be foreground AND show a bottom-nav "Library"
+  # node — the Pixel Launcher also has "Settings"/"Home" labels.
+  [ "$($U pkg 2>/dev/null || echo '?')" = "$PKG" ] || return 1
+  $U list 2>/dev/null | grep -qE "(t|d)='Library'"
+}
+walk_onboarding() {
+  # Compact pass through the four onboarding pages; used by the main loop
+  # and again by fg() when a process restart lands back on onboarding.
+  for j in $(seq 1 9); do
+    if   $U tap "Let’s go" >/dev/null 2>&1;        then log "walk: Let's go";
+    elif $U tap "Let's go" >/dev/null 2>&1;         then log "walk: Let's go";
+    elif $U tap "Skip for now" >/dev/null 2>&1;     then log "walk: skip login";
+    elif $U tap "Next" >/dev/null 2>&1;             then log "walk: Next";
+    elif $U tap "Start listening" >/dev/null 2>&1;  then log "walk: start"; sleep 4; break;
+    elif $U tap "Wait" >/dev/null 2>&1;             then log "walk: ANR wait";
+    else
+      if $U list 2>/dev/null | grep -q "this device"; then
+        $U tap "Allow" >/dev/null 2>&1 && log "walk: granted perm dialog"
+      else
+        $U swipe 540 1700 540 600 400 || true
+      fi
+    fi
+    on_home && break
+    sleep 2
+  done
 }
 dismiss() {
   # Best-effort close of dialogs/sheets that may block a screen.
@@ -50,9 +82,9 @@ adb shell cmd uimode night yes || true
 
 log "== install =="
 adb install -r apk/*.apk || { log "INSTALL FAILED"; exit 1; }
-adb shell pm grant $PKG android.permission.POST_NOTIFICATIONS || true
-adb shell pm grant $PKG android.permission.RECORD_AUDIO || true
-adb shell pm grant $PKG android.permission.BLUETOOTH_CONNECT || true
+for perm in POST_NOTIFICATIONS RECORD_AUDIO BLUETOOTH_CONNECT READ_MEDIA_AUDIO GET_ACCOUNTS; do
+  adb shell pm grant $PKG android.permission.$perm 2>/dev/null || true
+done
 
 log "== launch =="
 adb shell am start -n $PKG/.MainActivity || adb shell monkey -p $PKG -c android.intent.category.LAUNCHER 1
@@ -74,16 +106,20 @@ for i in $(seq 1 16); do
   elif $U tap "ALLOW" >/dev/null 2>&1; then log "tap ALLOW";
   elif $U tap "Wait" >/dev/null 2>&1; then log "tap Wait (ANR)";
   else
-    log "no onboarding button (iter $i) — scrolling for footer"
-    $U swipe 540 1700 540 600 400 || true
+    if $U list 2>/dev/null | grep -q "this device"; then
+      $U tap "Allow" >/dev/null 2>&1 && log "granted perm dialog"
+    else
+      log "no onboarding button (iter $i) — scrolling for footer"
+      $U swipe 540 1700 540 600 400 || true
+    fi
   fi
   sleep 3
-  # exit early once the home tabs show up
-  if $U list 2>/dev/null | grep -q "d='Settings'"; then log "home reached"; break; fi
+  if on_home; then log "home reached"; break; fi
 done
 
 # Do not drive the rest of the tour until the main UI is really up.
-if ! $U wait "Settings" 15 >/dev/null 2>&1; then
+for i in 1 2 3; do on_home && break; fg; sleep 5; done
+if ! on_home; then
   log "ABORT: never reached home UI"
   dump abort; listd abort
   shot 00_abort_state

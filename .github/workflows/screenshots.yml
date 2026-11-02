@@ -40,6 +40,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_7
+          ram-size: 4096
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
           disable-animations: true
           script: bash scripts/screenshots/capture.sh

@@ -1,0 +1,60 @@
+name: Capture app screenshots
+
+on:
+  push:
+    branches: [ci/screenshots]
+  workflow_dispatch:
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Download latest nightly APK
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          mkdir -p apk
+          gh release download --repo NatuneGroup/ArchiveTune \
+            --pattern 'app-gms-mobile-universal-nightly.apk' \
+            --dir apk --clobber
+          ls -la apk/
+
+      - name: Boot emulator and capture screenshots
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save -camera-back none -camera-front none
+          disable-animations: true
+          script: bash scripts/screenshots/capture.sh
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shots/*.png
+          if-no-files-found: warn
+
+      - name: Upload UI dumps and log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dumps
+          path: |
+            dumps/
+            capture.log
+          if-no-files-found: warn

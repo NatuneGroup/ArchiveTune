@@ -153,61 +153,42 @@ dismiss
 dump home; listd home
 shot 01_home
 
-log "== search =="
+log "== player =="
 fg
-try $U tap "Search"; sleep 3
-# search bar pill: ~x 60-1010, y 330-460
-$U tapf 0.5 0.165; sleep 4
-shot 02a_search_input
-$U text "Daft Punk"; sleep 1
-# tap Gboard's search/go key (~930,2196) — do NOT press BACK before the shot
-$U tapf 0.86 0.915
-sleep 16
-dump search; listd search
-shot 02_search_results
-$U key 4; sleep 2
-
-log "== album (hero card on home) =="
-fg
-try $U tap "Home"; sleep 4
-# hero card row under "Throwbacks": ~x 60-780, y 300-630
+# hero card opens an album/playlist page; Play pill sits at ~ (510,1330)
 $U tapf 0.39 0.19; sleep 8
 dump album; listd album
-shot 04_album
-
-log "== playback =="
-# playlist page: Play row ~y1330, tracks from ~y1500 down
-$U tapf 0.5 0.61; sleep 3
-$U tapf 0.5 0.72; sleep 14
+shot 02a_opened_page
+$U tapf 0.47 0.555; sleep 16
 dump playing; listd playing
+$U key 4; sleep 1
 close_dialog
 shot 04b_post_play
 # expand the mini player — bar sits ~y 2150-2280 over the nav pill
 for frac in 0.915 0.88 0.94; do
   $U tapf 0.5 $frac; sleep 4
 done
-close_dialog
 dump player; listd player
 shot 05_player
 
 log "== lyrics =="
-# expanded player bottom row has a Lyrics pill at ~ (665, 2290)
+# expanded player bottom row: Queue / like / Lyrics pills at ~ y 2290
 $U tapf 0.62 0.955; sleep 5
-close_dialog
-dump lyrics; listd lyrics
 shot 06_lyrics
+$U tapf 0.75 0.955; sleep 4
+shot 06b_lyrics_alt
 $U key 4; sleep 2
 
 log "== library =="
 fg
-close_dialog
+# single close-tap in case the confirm sheet is up
+$U tapf 0.385 0.715; sleep 1
 try $U tap "Library"; sleep 5
 dump library; listd library
 shot 08_library
 
 log "== settings =="
 fg
-close_dialog
 try $U tap "Home"; sleep 4
 # gear sits top-right of the home header at ~ (975, 225)
 $U tapf 0.9 0.094; sleep 5
@@ -215,8 +196,8 @@ dump settings; listd settings
 shot 09_settings
 $U swipe 540 1700 540 700 400; sleep 2
 shot 09b_settings_scrolled
-$U tapf 0.5 0.62; sleep 4
-dump playback_settings; listd playback_settings
+$U tapf 0.5 0.55; sleep 4
+dump settings_sub; listd settings_sub
 shot 10_settings_subpage
 $U key 4; sleep 2
 

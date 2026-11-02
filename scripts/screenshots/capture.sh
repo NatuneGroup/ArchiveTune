@@ -172,17 +172,16 @@ dump player; listd player
 shot 05_player
 
 log "== lyrics =="
-# expanded player bottom row: Queue / like / Lyrics pills at ~ y 2290
-$U tapf 0.62 0.955; sleep 5
+# expanded player bottom pills: Queue (265,2195) / Lyrics (815,2195)
+$U tapf 0.755 0.915; sleep 5
 shot 06_lyrics
-$U tapf 0.75 0.955; sleep 4
-shot 06b_lyrics_alt
+# collapse the player sheet so the nav bar is reachable again
 $U key 4; sleep 2
+$U key 4; sleep 2
+for i in 1 2 3; do on_home && break; $U key 4; sleep 2; done
 
 log "== library =="
 fg
-# single close-tap in case the confirm sheet is up
-$U tapf 0.385 0.715; sleep 1
 try $U tap "Library"; sleep 5
 dump library; listd library
 shot 08_library

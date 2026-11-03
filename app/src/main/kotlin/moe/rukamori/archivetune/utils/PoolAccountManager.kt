@@ -513,8 +513,8 @@ object PoolAccountManager {
      */
     suspend fun reLeaseOnExpiry(
         context: Context,
-        stillExpired: () -> Boolean,
         timeoutMs: Long = EXPIRY_RELEAS_TIMEOUT_MS,
+        stillExpired: () -> Boolean,
     ): Boolean =
         withContext(Dispatchers.IO) {
             appContext = context.applicationContext

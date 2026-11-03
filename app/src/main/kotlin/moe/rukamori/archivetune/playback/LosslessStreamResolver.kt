@@ -36,6 +36,7 @@ import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolCredentialPolicy
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 
@@ -154,6 +155,10 @@ object LosslessStreamResolver {
                             async(Dispatchers.IO) {
                                 val poolCountry =
                                     poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
+                                // Freshness snapshot BEFORE firing: a 401 from a token that was
+                                // already expired is the expiry we saw, not an account rejection.
+                                val expiredAtAttempt =
+                                    TidalAccountManager.isAccessTokenExpired(poolAccount.token)
                                 runCatching {
                                     TidalAccountManager.resolveDirectStream(
                                         accessToken = poolAccount.token,
@@ -166,7 +171,11 @@ object LosslessStreamResolver {
                                     )
                                 }
                                     .onFailure {
-                                        if (TidalAccountManager.isUnauthorized(it)) {
+                                        if (PoolCredentialPolicy.countsAsAccountDeath(
+                                                TidalAccountManager.isUnauthorized(it),
+                                                expiredAtAttempt,
+                                            )
+                                        ) {
                                             PoolAccountManager.report(
                                                 "tidal",
                                                 "account",
@@ -179,6 +188,12 @@ object LosslessStreamResolver {
                                                 context,
                                                 "tidal",
                                             )
+                                        } else if (TidalAccountManager.isUnauthorized(it)) {
+                                            Timber.tag("LosslessResolver")
+                                                .d(
+                                                    "Tidal pool account %s rejected an already-expired token; not reporting it dead",
+                                                    poolAccount.id,
+                                                )
                                         } else {
                                             Timber.tag("LosslessResolver")
                                                 .w(
@@ -268,29 +283,14 @@ object LosslessStreamResolver {
             // 2) Shared premium Tidal accounts from the community Source Pool. These are real
             // subscriber tokens, so they resolve full-quality FLAC directly via the official API —
             // no proxy instance needed.
-            var poolAccounts = PoolAccountManager.tidalAccounts()
-            // Pooled Tidal access tokens live about an hour, but the app's pool cache is held for
-            // hours, so the cached copies are usually already stale. Using one anyway guarantees a
-            // 401 — and the handler below then reports a healthy account dead, which is how good
-            // accounts used to get disabled. An expired-looking token is a hint, not a rejection:
-            // the throttled refresh decides whether to re-lease and serves the cached lease
-            // meanwhile — forcing the heaviest pool route on every stale token (~hourly per
-            // install) is how the fleet's feed traffic multiplied.
-            if (poolAccounts.any { TidalAccountManager.isAccessTokenExpired(it.token) }) {
-                runCatching {
-                    runBlocking(Dispatchers.IO) { PoolAccountManager.refresh(context) }
-                }
-                    .onFailure {
-                        Timber.tag("LosslessResolver")
-                            .w(it, "Tidal pool re-lease failed; using cached accounts")
-                    }
-                val refreshed = PoolAccountManager.tidalAccounts()
-                if (refreshed.isNotEmpty()) {
-                    poolAccounts = refreshed
-                    Timber.tag("LosslessResolver")
-                        .d("Re-leased %d fresh Tidal pool account(s)", refreshed.size)
-                }
-            }
+            // Pooled Tidal access tokens live ~an hour while the pool cache is held for hours,
+            // so the cached copies are usually already stale — firing one guarantees a 401 that
+            // used to get a healthy account reported dead. rescuedTidalAccounts does the awaited,
+            // bounded, single-flight re-lease BEFORE the race (throttled by failures only, never
+            // the routine 5–24h TTL); if the expiry cannot be cleared the stale tokens still race,
+            // but their 401s are logged, never reported.
+            val poolAccounts = PoolAccountManager.rescuedTidalAccounts(context)
+
             if (poolAccounts.isNotEmpty()) {
                 val stream =
                     raceTidalPoolAccounts(

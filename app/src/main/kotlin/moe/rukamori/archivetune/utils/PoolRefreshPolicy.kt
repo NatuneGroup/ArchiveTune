@@ -26,4 +26,18 @@ object PoolRefreshPolicy {
         if (force || lastAttemptAtMs <= 0L) return true
         return nowMs >= lastAttemptAtMs && nowMs - lastAttemptAtMs >= intervalMs
     }
+
+    /**
+     * Gate for an expiry-driven re-lease. The routine cache TTL ([shouldRefresh] on the last
+     * attempt) exists to keep a healthy cache cheap — it must NOT gate a re-lease for a credential
+     * that is dead on arrival, or expired tokens would sit in service for hours while their
+     * guaranteed 401s get reported as account death. The only throttle that path has is one full
+     * [intervalMs] measured from the last FAILED attempt, so a down or rejecting pool is still not
+     * pounded by every expired token in the fleet.
+     */
+    fun shouldAttemptExpiryReleas(
+        nowMs: Long,
+        lastFailedAttemptAtMs: Long,
+        intervalMs: Long,
+    ): Boolean = shouldRefresh(nowMs, lastFailedAttemptAtMs, intervalMs, force = false)
 }

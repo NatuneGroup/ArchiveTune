@@ -17,14 +17,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.audiosource.AmazonInstance
 import moe.rukamori.archivetune.audiosource.AmazonInstances
 import moe.rukamori.archivetune.canvas.AppleMusicProvider
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.tidal.TidalAccountManager
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -150,6 +153,19 @@ object PoolAccountManager {
 
     private val rejectedRefreshAt = ConcurrentHashMap<String, Long>()
     private const val REJECT_REFRESH_MIN_INTERVAL_MS = 5L * 60 * 1000L
+
+    /**
+     * Throttle for the awaited expiry re-lease ([reLeaseOnExpiry]): stamped when an awaited
+     * re-lease failed to clear the expiry, so a down/rejecting pool is not pounded by every
+     * expired token in the fleet. Unlike the routine 5–24h cache TTL — which exists to keep a
+     * healthy cache cheap — this is the ONLY bound on expiry re-leases; a successful one leaves no
+     * stamp at all.
+     */
+    @Volatile
+    private var lastExpiryReleasFailureAtMs = 0L
+
+    /** Cap on one awaited expiry re-lease; a resolver must not park on the pool for longer. */
+    private const val EXPIRY_RELEAS_TIMEOUT_MS = 8_000L
 
     /** A shared Tidal subscriber token contributed to the pool. */
     data class TidalPoolAccount(
@@ -477,61 +493,157 @@ object PoolAccountManager {
                 ) {
                     return@withLock hasAccounts()
                 }
-                PoolAuthBackoff.awaitReady()
-                if (!isEnabled) {
-                    // isEnabled already guarantees a URL, so this only guards the impossible.
-                    lastFeedError = null
-                    Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
-                } else if (authBackoffActive()) {
-                    // A persisted 401 backoff quiets the feed; the cached lease keeps serving.
-                    Timber.tag(TAG).d("Pool feed auth backoff active; not fetching")
-                    lastFeedError =
-                        "Pool rejected the API key (HTTP 401) — further requests paused after repeated rejections."
-                } else {
-                    // The read key is baked in at build time; there is no on-device override.
-                    val readKey = BuildConfig.SOURCE_PROVIDER_KEY
-                    poolApiKey = readKey.ifBlank { null }
-                    val attemptAt = System.currentTimeMillis()
-                    lastRefreshAtMillis = attemptAt
-                    context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
-
-                    var result = fetchAccounts(context, "/api/accounts", readKey)
-                    // Pool deployment predates the split feed — retry the combined URL.
-                    if (!result.succeeded && result.code == 404) {
-                        Timber.tag(TAG).d("/api/accounts unavailable; falling back to legacy /api/sources")
-                        result = fetchAccounts(context, "/api/sources", readKey)
-                    }
-                    // Record why the fetch failed — or clear it on success — so the settings screen
-                    // can show the reason rather than a generic "failed". refresh()'s own Boolean
-                    // cannot carry this: it reports whether anything is cached, not whether the
-                    // network call actually worked.
-                    lastFeedError =
-                        when {
-                            result.succeeded -> null
-                            // Both the split feed and the legacy combined feed 404'd. That is not
-                            // an "old pool deployment" — nothing at this host serves the pool API
-                            // at all (wrong SOURCE_PROVIDER_URL, or a deployment that no longer
-                            // exists). A missing or invalid read key is a 401, never a 404.
-                            result.code == 404 -> {
-                                Timber.tag(TAG).e(
-                                    "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
-                                        "the configured pool URL points at a host that is not an ArchivePool deployment " +
-                                        "(this is NOT a read-key problem; a bad key answers 401).",
-                                    poolBaseUrl,
-                                )
-                                "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
-                            }
-                            result.code == 401 ->
-                                "Pool rejected the API key (HTTP 401) — SOURCE_PROVIDER_KEY is missing, revoked, " +
-                                    "or issued by a different deployment."
-                            result.code == 0 -> "Could not reach $poolBaseUrl — network error."
-                            else -> "Pool feed returned HTTP ${result.code}."
-                        }
-                } // else (pool URL configured)
+                fetchFeed(context)
 
                 hasAccounts()
             }
         }
+
+    /**
+     * Awaited, bounded, single-flight re-lease fired when the credential a resolver is about to
+     * spend is already expired. [stillExpired] is re-checked under [refreshMutex] so concurrent
+     * callers share one fetch: a caller arriving behind a successful re-lease sees fresh
+     * credentials and returns true without fetching; a caller arriving behind a FAILED one honours
+     * the failure stamp instead of fetching again.
+     *
+     * Unlike [refresh]'s routine 5–24h cache TTL — which exists to keep a healthy cache cheap and
+     * must NOT leave dead tokens in service for hours — this path is gated only by its own
+     * failures ([expiryReleasAllowed]): one full interval after an attempt that could not clear
+     * the expiry, and nothing after a success. The whole wait is capped at [timeoutMs]; a timeout
+     * while another caller is mid-fetch just returns false (the running fetch stamps its own
+     * failure). Returns true only when the expiry was actually cleared. Cancellation propagates.
+     */
+    suspend fun reLeaseOnExpiry(
+        context: Context,
+        stillExpired: () -> Boolean,
+        timeoutMs: Long = EXPIRY_RELEAS_TIMEOUT_MS,
+    ): Boolean =
+        withContext(Dispatchers.IO) {
+            appContext = context.applicationContext
+            if (!isEnabled) return@withContext false
+            loadCached(context)
+            if (!isPoolEnabled() || !stillExpired() || !expiryReleasAllowed()) {
+                return@withContext false
+            }
+            withTimeoutOrNull(timeoutMs) {
+                refreshMutex.withLock {
+                    when {
+                        !isPoolEnabled() -> false
+                        // A concurrent caller's re-lease just landed — share it, don't refetch.
+                        !stillExpired() -> true
+                        // Its attempt failed inside this expiry episode — share the throttle too.
+                        !expiryReleasAllowed() -> false
+                        else -> fetchFeedAndCheckExpiry(context, stillExpired)
+                    }
+                }
+            } == true
+        }
+
+    /**
+     * Fetches the feed (caller holds [refreshMutex]), then reports whether the expiry actually
+     * cleared. A fetch that still leaves expired credentials — a failed request, an auth-backoff
+     * skip, or a server leasing stale tokens — counts as a failure for the throttle: the expiry
+     * is not resolvable right now.
+     */
+    private suspend fun fetchFeedAndCheckExpiry(
+        context: Context,
+        stillExpired: () -> Boolean,
+    ): Boolean {
+        fetchFeed(context)
+        val cleared = !stillExpired()
+        lastExpiryReleasFailureAtMs = if (cleared) 0L else System.currentTimeMillis()
+        return cleared
+    }
+
+    /**
+     * Non-suspend bridge for resolvers that cannot suspend: when a cached Tidal pool token is
+     * already expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller) and
+     * return the freshest account list — the freshly leased set when it lands, else the cached
+     * one. The single entry point for "re-lease before trying", used by every Tidal path.
+     */
+    fun rescuedTidalAccounts(context: Context): List<TidalPoolAccount> {
+        val cached = tidalAccounts()
+        if (cached.none { TidalAccountManager.isAccessTokenExpired(it.token) }) return cached
+        runCatching {
+            runBlocking(Dispatchers.IO) {
+                reLeaseOnExpiry(context) {
+                    tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }
+                }
+            }
+        }
+            .onFailure { Timber.tag(TAG).w(it, "Tidal expiry re-lease failed; using cached accounts") }
+        return tidalAccounts().ifEmpty { cached }
+    }
+
+    /** True while no failed expiry re-lease sits within one routine refresh interval of now. */
+    private fun expiryReleasAllowed(): Boolean =
+        PoolRefreshPolicy.shouldAttemptExpiryReleas(
+            System.currentTimeMillis(),
+            lastExpiryReleasFailureAtMs,
+            refreshIntervalMs(),
+        )
+
+    /**
+     * The network half of a pool refresh, run while [refreshMutex] is held by [refresh] or
+     * [reLeaseOnExpiry]: waits out the persisted 401 backoff, stamps the attempt up-front (even a
+     * failed fetch counts toward the routine TTL throttle), walks the split /api/accounts feed
+     * then the legacy /api/sources on 404, and records [lastFeedError]. Returns the fetch outcome,
+     * or null when no request left the device (no URL configured, or the auth backoff still open).
+     */
+    private suspend fun fetchFeed(context: Context): FeedFetch? {
+        PoolAuthBackoff.awaitReady()
+        if (!isEnabled) {
+            // isEnabled already guarantees a URL, so this only guards the impossible.
+            lastFeedError = null
+            Timber.tag(TAG).d("No Source Pool URL configured; nothing to refresh")
+            return null
+        }
+        if (authBackoffActive()) {
+            // A persisted 401 backoff quiets the feed; the cached lease keeps serving.
+            Timber.tag(TAG).d("Pool feed auth backoff active; not fetching")
+            lastFeedError =
+                "Pool rejected the API key (HTTP 401) — further requests paused after repeated rejections."
+            return null
+        }
+        // The read key is baked in at build time; there is no on-device override.
+        val readKey = BuildConfig.SOURCE_PROVIDER_KEY
+        poolApiKey = readKey.ifBlank { null }
+        val attemptAt = System.currentTimeMillis()
+        lastRefreshAtMillis = attemptAt
+        context.dataStore.edit { it[CACHE_LAST_REFRESH_KEY] = attemptAt }
+
+        var result = fetchAccounts(context, "/api/accounts", readKey)
+        // Pool deployment predates the split feed — retry the combined URL.
+        if (!result.succeeded && result.code == 404) {
+            Timber.tag(TAG).d("/api/accounts unavailable; falling back to legacy /api/sources")
+            result = fetchAccounts(context, "/api/sources", readKey)
+        }
+        // Record why the fetch failed — or clear it on success — so the settings screen can show
+        // the reason rather than a generic "failed"; a Boolean cannot carry the distinction.
+        lastFeedError =
+            when {
+                result.succeeded -> null
+                // Both the split feed and the legacy combined feed 404'd. That is not an "old pool
+                // deployment" — nothing at this host serves the pool API at all (wrong
+                // SOURCE_PROVIDER_URL, or a deployment that no longer exists). A missing or
+                // invalid read key is a 401, never a 404.
+                result.code == 404 -> {
+                    Timber.tag(TAG).e(
+                        "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
+                            "the configured pool URL points at a host that is not an ArchivePool deployment " +
+                            "(this is NOT a read-key problem; a bad key answers 401).",
+                        poolBaseUrl,
+                    )
+                    "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
+                }
+                result.code == 401 ->
+                    "Pool rejected the API key (HTTP 401) — SOURCE_PROVIDER_KEY is missing, revoked, " +
+                        "or issued by a different deployment."
+                result.code == 0 -> "Could not reach $poolBaseUrl — network error."
+                else -> "Pool feed returned HTTP ${result.code}."
+            }
+        return result
+    }
 
     /** Outcome of one feed fetch: the parsed JSON on success, plus the HTTP code (0 = network error). */
     private class FeedFetch(

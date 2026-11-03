@@ -10481,32 +10481,20 @@ class MusicService :
                 if (accountStream != null) return accountStream
             }
 
-            // 2) Shared premium Tidal accounts contributed to the community Source Pool (premium
-            //    first). These are genuine subscriber tokens, so they stream full-quality FLAC via
-            //    the official API without anyone hosting a restream instance.
-            for (poolAccount in PoolAccountManager.tidalAccounts()) {
-                val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                val poolStream =
-                    runCatching { attempt(poolAccount.token, poolCountry) }
-                        .onFailure {
-                            if (TidalAccountManager.isUnauthorized(it)) {
-                                PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                            } else {
-                                Timber.tag("MusicService").w(it, "Tidal pool account resolve failed for %s", query.mediaId)
-                            }
-                        }
-                        .getOrNull()
-                if (poolStream != null) {
-                    Timber.tag("MusicService").d("Tidal resolved via pool account (premium=%s)", poolAccount.premium)
-                    PoolAccountManager.noteAccountSuccess("tidal", poolAccount.id)
-                    return poolStream
-                }
-                // Threw, or returned null because this account has no match. Either way it just
-                // cost up to 20s, so sort it last for a while rather than paying that again on
-                // the next track — the server's own dead-account handling is far slower than a
-                // listening session.
-                PoolAccountManager.noteAccountFailure("tidal", poolAccount.id)
-            }
+            // 2) Shared premium Tidal accounts from the community Source Pool — sequential,
+            //    premium-first; expiry drives a bounded awaited re-lease before trying, and only a
+            //    fresh-token 401 may report an account dead (see TidalPoolResolve).
+            val poolStream =
+                TidalPoolResolve.resolve(
+                    context = this@MusicService,
+                    mediaId = query.mediaId,
+                    title = query.title,
+                    artists = query.artists,
+                    durationMs = query.durationMs,
+                    apiQuality = apiQuality,
+                    cacheDir = cacheDir,
+                )
+            if (poolStream != null) return poolStream
         }
 
         // Fallback: public HiFi/QQDL instances (empty list falls back to built-in defaults).

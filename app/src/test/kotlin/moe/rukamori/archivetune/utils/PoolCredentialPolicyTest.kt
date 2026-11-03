@@ -12,9 +12,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * A 401 from a credential that was already expired when it was sent is the expiry we saw — proof
- * of a stale cache, not a dead account — so it must never be reported to the pool. Only a genuine
- * auth rejection of a credential that was fresh at attempt time counts as account death.
+ * A 401 from a credential that was already expired when it was sent is the expiry we saw — proof of
+ * a stale cache, not a dead account — so it must never be reported to the pool. Only a genuine auth
+ * rejection of a credential that was fresh at attempt time counts as account death.
  */
 class PoolCredentialPolicyTest {
     @Test
@@ -23,7 +23,7 @@ class PoolCredentialPolicyTest {
             PoolCredentialPolicy.countsAsAccountDeath(
                 unauthorized = true,
                 credentialExpiredAtAttempt = true,
-            )
+            ),
         )
     }
 
@@ -33,7 +33,7 @@ class PoolCredentialPolicyTest {
             PoolCredentialPolicy.countsAsAccountDeath(
                 unauthorized = true,
                 credentialExpiredAtAttempt = false,
-            )
+            ),
         )
     }
 
@@ -43,13 +43,13 @@ class PoolCredentialPolicyTest {
             PoolCredentialPolicy.countsAsAccountDeath(
                 unauthorized = false,
                 credentialExpiredAtAttempt = false,
-            )
+            ),
         )
         assertFalse(
             PoolCredentialPolicy.countsAsAccountDeath(
                 unauthorized = false,
                 credentialExpiredAtAttempt = true,
-            )
+            ),
         )
     }
 }

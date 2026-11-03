@@ -156,13 +156,11 @@ object PoolAccountManager {
 
     /**
      * Throttle for the awaited expiry re-lease ([reLeaseOnExpiry]): stamped when an awaited
-     * re-lease failed to clear the expiry, so a down/rejecting pool is not pounded by every
-     * expired token in the fleet. Unlike the routine 5–24h cache TTL — which exists to keep a
-     * healthy cache cheap — this is the ONLY bound on expiry re-leases; a successful one leaves no
-     * stamp at all.
+     * re-lease failed to clear the expiry, so a down/rejecting pool is not pounded by every expired
+     * token in the fleet. Unlike the routine 5–24h cache TTL — which exists to keep a healthy cache
+     * cheap — this is the ONLY bound on expiry re-leases; a successful one leaves no stamp at all.
      */
-    @Volatile
-    private var lastExpiryReleasFailureAtMs = 0L
+    @Volatile private var lastExpiryReleasFailureAtMs = 0L
 
     /** Cap on one awaited expiry re-lease; a resolver must not park on the pool for longer. */
     private const val EXPIRY_RELEAS_TIMEOUT_MS = 8_000L
@@ -507,11 +505,11 @@ object PoolAccountManager {
      * the failure stamp instead of fetching again.
      *
      * Unlike [refresh]'s routine 5–24h cache TTL — which exists to keep a healthy cache cheap and
-     * must NOT leave dead tokens in service for hours — this path is gated only by its own
-     * failures ([expiryReleasAllowed]): one full interval after an attempt that could not clear
-     * the expiry, and nothing after a success. The whole wait is capped at [timeoutMs]; a timeout
-     * while another caller is mid-fetch just returns false (the running fetch stamps its own
-     * failure). Returns true only when the expiry was actually cleared. Cancellation propagates.
+     * must NOT leave dead tokens in service for hours — this path is gated only by its own failures
+     * ([expiryReleasAllowed]): one full interval after an attempt that could not clear the expiry,
+     * and nothing after a success. The whole wait is capped at [timeoutMs]; a timeout while another
+     * caller is mid-fetch just returns false (the running fetch stamps its own failure). Returns
+     * true only when the expiry was actually cleared. Cancellation propagates.
      */
     suspend fun reLeaseOnExpiry(
         context: Context,
@@ -542,8 +540,8 @@ object PoolAccountManager {
     /**
      * Fetches the feed (caller holds [refreshMutex]), then reports whether the expiry actually
      * cleared. A fetch that still leaves expired credentials — a failed request, an auth-backoff
-     * skip, or a server leasing stale tokens — counts as a failure for the throttle: the expiry
-     * is not resolvable right now.
+     * skip, or a server leasing stale tokens — counts as a failure for the throttle: the expiry is
+     * not resolvable right now.
      */
     private suspend fun fetchFeedAndCheckExpiry(
         context: Context,
@@ -558,8 +556,8 @@ object PoolAccountManager {
     /**
      * Non-suspend bridge for resolvers that cannot suspend: when a cached Tidal pool token is
      * already expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller) and
-     * return the freshest account list — the freshly leased set when it lands, else the cached
-     * one. The single entry point for "re-lease before trying", used by every Tidal path.
+     * return the freshest account list — the freshly leased set when it lands, else the cached one.
+     * The single entry point for "re-lease before trying", used by every Tidal path.
      */
     fun rescuedTidalAccounts(context: Context): List<TidalPoolAccount> {
         val cached = tidalAccounts()
@@ -571,7 +569,9 @@ object PoolAccountManager {
                 }
             }
         }
-            .onFailure { Timber.tag(TAG).w(it, "Tidal expiry re-lease failed; using cached accounts") }
+            .onFailure {
+                Timber.tag(TAG).w(it, "Tidal expiry re-lease failed; using cached accounts")
+            }
         return tidalAccounts().ifEmpty { cached }
     }
 
@@ -586,9 +586,9 @@ object PoolAccountManager {
     /**
      * The network half of a pool refresh, run while [refreshMutex] is held by [refresh] or
      * [reLeaseOnExpiry]: waits out the persisted 401 backoff, stamps the attempt up-front (even a
-     * failed fetch counts toward the routine TTL throttle), walks the split /api/accounts feed
-     * then the legacy /api/sources on 404, and records [lastFeedError]. Returns the fetch outcome,
-     * or null when no request left the device (no URL configured, or the auth backoff still open).
+     * failed fetch counts toward the routine TTL throttle), walks the split /api/accounts feed then
+     * the legacy /api/sources on 404, and records [lastFeedError]. Returns the fetch outcome, or
+     * null when no request left the device (no URL configured, or the auth backoff still open).
      */
     private suspend fun fetchFeed(context: Context): FeedFetch? {
         PoolAuthBackoff.awaitReady()
@@ -628,12 +628,13 @@ object PoolAccountManager {
                 // SOURCE_PROVIDER_URL, or a deployment that no longer exists). A missing or
                 // invalid read key is a 401, never a 404.
                 result.code == 404 -> {
-                    Timber.tag(TAG).e(
-                        "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
-                            "the configured pool URL points at a host that is not an ArchivePool deployment " +
-                            "(this is NOT a read-key problem; a bad key answers 401).",
-                        poolBaseUrl,
-                    )
+                    Timber.tag(TAG)
+                        .e(
+                            "No pool API at %s — both /api/accounts and /api/sources returned 404. " +
+                                "the configured pool URL points at a host that is not an ArchivePool deployment " +
+                                "(this is NOT a read-key problem; a bad key answers 401).",
+                            poolBaseUrl,
+                        )
                     "No pool API at $poolBaseUrl (HTTP 404) — that URL is not an ArchivePool deployment."
                 }
                 result.code == 401 ->

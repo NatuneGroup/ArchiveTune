@@ -57,14 +57,14 @@ class PoolRefreshPolicyTest {
                 10_000L,
                 0L,
                 PoolRefreshPolicy.PARTIAL_CACHE_INTERVAL_MS,
-            )
+            ),
         )
         assertTrue(
             PoolRefreshPolicy.shouldAttemptExpiryReleas(
                 10_000L,
                 0L,
                 PoolRefreshPolicy.FULL_CACHE_INTERVAL_MS,
-            )
+            ),
         )
     }
 
@@ -74,9 +74,18 @@ class PoolRefreshPolicyTest {
         val interval = PoolRefreshPolicy.PARTIAL_CACHE_INTERVAL_MS
         // Inside the interval after a failure the next expiry re-lease is suppressed...
         assertFalse(PoolRefreshPolicy.shouldAttemptExpiryReleas(failedAt + 1L, failedAt, interval))
-        assertFalse(PoolRefreshPolicy.shouldAttemptExpiryReleas(failedAt + interval - 1L, failedAt, interval))
-        // ...and allowed again once it passes — the failure throttle is the only bound that path has.
-        assertTrue(PoolRefreshPolicy.shouldAttemptExpiryReleas(failedAt + interval, failedAt, interval))
+        assertFalse(
+            PoolRefreshPolicy.shouldAttemptExpiryReleas(
+                failedAt + interval - 1L,
+                failedAt,
+                interval,
+            ),
+        )
+        // ...and allowed again once it passes — the failure throttle is the only bound that path
+        // has.
+        assertTrue(
+            PoolRefreshPolicy.shouldAttemptExpiryReleas(failedAt + interval, failedAt, interval),
+        )
     }
 
     @Test
@@ -86,7 +95,7 @@ class PoolRefreshPolicyTest {
                 999L,
                 1_000L,
                 PoolRefreshPolicy.PARTIAL_CACHE_INTERVAL_MS,
-            )
+            ),
         )
     }
 }

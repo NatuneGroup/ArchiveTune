@@ -98,4 +98,25 @@ class PoolRefreshPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun failedTimedOutOrCancelledReleasStampsNowAndOnlyARescueClearsIt() {
+        // Every way a fetch-owning re-lease can end short of clearing the expiry — a rejected
+        // fetch, the bounded wait timing out, or the fetch being cancelled — counts as this
+        // episode's failed attempt and earns the throttle, so later plays do not retry the slow
+        // pool unthrottled.
+        assertEquals(
+            5_000L,
+            PoolRefreshPolicy.expiryReleasFailureStamp(cleared = false, nowMs = 5_000L),
+        )
+        assertEquals(
+            60_000L,
+            PoolRefreshPolicy.expiryReleasFailureStamp(cleared = false, nowMs = 60_000L),
+        )
+        // Only a rescue that actually landed clears the stamp.
+        assertEquals(
+            0L,
+            PoolRefreshPolicy.expiryReleasFailureStamp(cleared = true, nowMs = 5_000L),
+        )
+    }
 }

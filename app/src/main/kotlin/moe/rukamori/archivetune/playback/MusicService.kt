@@ -7649,6 +7649,11 @@ class MusicService :
         prefetchingMediaId = mediaId
         nextMediaItemPrefetchJob =
             scope.launch(Dispatchers.IO + SilentHandler) {
+                // Expired pool leases take their awaited re-lease here, inside this job, so a
+                // cancelled prefetch aborts it — the resolver's blocking bridge would otherwise
+                // leave an orphan runBlocking fetch running after this job is gone. Kept outside
+                // runCatching so its CancellationException actually cancels.
+                PoolAccountManager.rescuedTidalAccountsSuspend(this@MusicService)
                 runCatching {
                     Timber.tag(TAG).d("Prefetching stream URL for next media item: %s", mediaId)
                     // First, try multi-source (Qobuz / Tidal) resolution.
@@ -9076,6 +9081,9 @@ class MusicService :
             // (YouTube) stream and never re-try Qobuz/Tidal.
             directStreamCache.remove(mediaId)
             spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
+            // Coroutine callers re-lease expired pool credentials through the suspend entry
+            // point so the wait dies with this job instead of orphaning a runBlocking fetch.
+            PoolAccountManager.rescuedTidalAccountsSuspend(this@MusicService)
             // Re-resolve by calling the same slow-path logic the player uses. We pass a dummy
             // DataSpec because resolveMultiSourceDataSpec only uses it as a buildUpon base —
             // the URI and key are overwritten inside. The returned DataSpec is discarded; we

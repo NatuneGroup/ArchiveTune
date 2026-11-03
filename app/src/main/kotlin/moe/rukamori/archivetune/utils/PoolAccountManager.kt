@@ -15,6 +15,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -133,6 +134,8 @@ object PoolAccountManager {
     private val CACHE_APPLE_KEY = stringPreferencesKey("poolAppleMusicAccounts")
     private val CACHE_AMAZON_KEY = stringPreferencesKey("poolAmazonAccounts")
     private val CACHE_LAST_REFRESH_KEY = longPreferencesKey("poolAccountsLastRefreshAtMillis")
+    private val CACHE_EXPIRY_RELEAS_FAILURE_KEY =
+        longPreferencesKey("poolAccountsExpiryReleasFailureAtMs")
 
     /** Last resolved read key, so fire-and-forget /api/report calls use the same identity. */
     @Volatile
@@ -428,6 +431,13 @@ object PoolAccountManager {
                 )
                 // The persisted backoff is bound to the key that produced it; a changed key starts clean.
                 PoolAuthBackoff.load(context, BuildConfig.SOURCE_PROVIDER_KEY.hashCode().toString())
+                // The expiry-failure stamp restores with the rest of the pool cache so a
+                // restart cannot silently re-enable an unthrottled re-lease storm.
+                lastExpiryReleasFailureAtMs =
+                    PoolRefreshPolicy.latestAttemptAtMs(
+                        lastExpiryReleasFailureAtMs,
+                        context.dataStore.getAsync(CACHE_EXPIRY_RELEAS_FAILURE_KEY) ?: 0L,
+                    )
                 // The persisted cache stores DECRYPTED plaintext JSON (PoolCacheCrypto handles the
                 // at-rest layer), so the parse-time decryptor is a pure pass-through.
                 val passthrough: (String) -> String? = { raw -> raw }
@@ -547,32 +557,92 @@ object PoolAccountManager {
         context: Context,
         stillExpired: () -> Boolean,
     ): Boolean {
-        fetchFeed(context)
-        val cleared = !stillExpired()
-        lastExpiryReleasFailureAtMs = if (cleared) 0L else System.currentTimeMillis()
+        var cleared = false
+        try {
+            fetchFeed(context)
+            cleared = !stillExpired()
+        } finally {
+            // This finally survives the bounded wait cancelling the fetch: a timed-out or
+            // otherwise failed attempt is still THIS expiry episode's failed re-lease, so the
+            // stamp must land or later plays retry the slow pool unthrottled. NonCancellable
+            // keeps the write — including the persist hop — alive past the fetch's
+            // cancellation; the stamp clears only after a rescue that actually landed.
+            withContext(NonCancellable) {
+                setExpiryReleasFailureAtMs(
+                    context,
+                    PoolRefreshPolicy.expiryReleasFailureStamp(
+                        cleared,
+                        System.currentTimeMillis(),
+                    ),
+                )
+            }
+        }
         return cleared
     }
 
     /**
-     * Non-suspend bridge for resolvers that cannot suspend: when a cached Tidal pool token is
-     * already expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller) and
-     * return the freshest account list — the freshly leased set when it lands, else the cached one.
-     * The single entry point for "re-lease before trying", used by every Tidal path.
+     * Records the expiry re-lease failure stamp in memory and in the pool cache. Persistence is
+     * best-effort: the in-memory stamp binds this process either way; a failed write just means
+     * a restart forgets the throttle (the load merges whatever is on disk).
      */
-    fun rescuedTidalAccounts(context: Context): List<TidalPoolAccount> {
-        val cached = tidalAccounts()
-        if (cached.none { TidalAccountManager.isAccessTokenExpired(it.token) }) return cached
-        runCatching {
-            runBlocking(Dispatchers.IO) {
-                reLeaseOnExpiry(context) {
-                    tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }
+    private suspend fun setExpiryReleasFailureAtMs(
+        context: Context,
+        atMs: Long,
+    ) {
+        lastExpiryReleasFailureAtMs = atMs
+        try {
+            context.dataStore.edit { prefs ->
+                if (atMs <= 0L) {
+                    prefs.remove(CACHE_EXPIRY_RELEAS_FAILURE_KEY)
+                } else {
+                    prefs[CACHE_EXPIRY_RELEAS_FAILURE_KEY] = atMs
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Timber.tag(TAG).w(error, "Failed to persist the expiry re-lease failure stamp")
         }
-            .onFailure {
-                Timber.tag(TAG).w(it, "Tidal expiry re-lease failed; using cached accounts")
+    }
+
+    /**
+     * Coroutine entry point for "re-lease before trying": when a cached Tidal pool token is
+     * already expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller)
+     * and return the freshest account list — the freshly leased set when it lands, else the
+     * cached one. A caller cancellation aborts the wait AND its fetch; it is never masked by a
+     * fallback to the cached leases.
+     */
+    suspend fun rescuedTidalAccountsSuspend(context: Context): List<TidalPoolAccount> {
+        val cached = tidalAccounts()
+        if (cached.none { TidalAccountManager.isAccessTokenExpired(it.token) }) return cached
+        try {
+            reLeaseOnExpiry(context) {
+                tidalAccounts().any { TidalAccountManager.isAccessTokenExpired(it.token) }
             }
+        } catch (error: CancellationException) {
+            // Caller cancellation — the coroutine was asked to stop; it must not keep resolving
+            throw error
+        } catch (error: Exception) {
+            Timber.tag(TAG).w(error, "Tidal expiry re-lease failed; using cached accounts")
+        }
         return tidalAccounts().ifEmpty { cached }
+    }
+
+    /**
+     * Blocking bridge for callers pinned to a plain thread (the Media3 loader path): delegates
+     * to [rescuedTidalAccountsSuspend] inside [runBlocking], so inner cancellation surfaces as
+     * [CancellationException] and a thread interrupt as [InterruptedException] — both rethrown,
+     * never masked by a stale-lease fallback.
+     */
+    fun rescuedTidalAccounts(context: Context): List<TidalPoolAccount> {
+        try {
+            return runBlocking(Dispatchers.IO) { rescuedTidalAccountsSuspend(context) }
+        } catch (error: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw error
+        } catch (error: CancellationException) {
+            throw error
+        }
     }
 
     /** True while no failed expiry re-lease sits within one routine refresh interval of now. */

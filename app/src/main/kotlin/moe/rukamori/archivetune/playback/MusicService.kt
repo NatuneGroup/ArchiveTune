@@ -7650,9 +7650,7 @@ class MusicService :
         prefetchingMediaId = mediaId
         nextMediaItemPrefetchJob =
             scope.launch(Dispatchers.IO + SilentHandler) {
-                if (!isLowDataModeActive() && willTryPooledTidal(mediaId)) {
-                    PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
-                }
+                maybeReLeasePool(mediaId, respectLowData = true)
                 runCatching {
                     Timber.tag(TAG).d("Prefetching stream URL for next media item: %s", mediaId)
                     // First, try multi-source (Qobuz / Tidal) resolution.
@@ -9080,9 +9078,7 @@ class MusicService :
             // (YouTube) stream and never re-try Qobuz/Tidal.
             directStreamCache.remove(mediaId)
             spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
-            if (willTryPooledTidal(mediaId)) {
-                PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
-            }
+            maybeReLeasePool(mediaId)
             // Re-resolve by calling the same slow-path logic the player uses. We pass a dummy
             // DataSpec because resolveMultiSourceDataSpec only uses it as a buildUpon base —
             // the URI and key are overwritten inside. The returned DataSpec is discarded; we
@@ -10435,6 +10431,11 @@ class MusicService :
         return override == null || override == AudioSourceType.TIDAL || override !in prefs.enabled
     }
 
+    private suspend fun maybeReLeasePool(mediaId: String, respectLowData: Boolean = false) {
+        if (respectLowData && isLowDataModeActive()) return
+        if (willTryPooledTidal(mediaId)) PoolExpiryReleaser.rescuedTidalAccountsSuspend(this)
+    }
+
     private fun resolveTidalStream(query: SourceQuery): DirectStream? {
         val quality = parseTidalAudioQuality()
         val accountFirst = dataStore.get(TidalAccountFirstKey, true)
@@ -10471,9 +10472,8 @@ class MusicService :
                     try {
                         attempt(token, accountCountry)
                     } catch (e: Throwable) {
-                        // A 401 may surface directly, or wrapped as a *suppressed*/cause exception
-                        // inside an InterruptedException when ExoPlayer interrupts the loader thread
-                        // mid-request. Detect it anywhere in the chain so the refresh path still runs.
+                        // A 401 can surface directly or wrapped inside an InterruptedException when
+                        // ExoPlayer interrupts the loader thread — check the whole chain.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
                             // Clear pending interrupts or the runBlocking refresh/retry aborts.

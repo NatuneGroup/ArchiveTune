@@ -37,6 +37,7 @@ import moe.rukamori.archivetune.tidal.TidalAudioProvider
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PoolCredentialPolicy
+import moe.rukamori.archivetune.utils.PoolExpiryReleaser
 import moe.rukamori.archivetune.utils.dataStore
 import timber.log.Timber
 
@@ -289,7 +290,7 @@ object LosslessStreamResolver {
             // bounded, single-flight re-lease BEFORE the race (throttled by failures only, never
             // the routine 5–24h TTL); if the expiry cannot be cleared the stale tokens still race,
             // but their 401s are logged, never reported.
-            val poolAccounts = PoolAccountManager.rescuedTidalAccounts(context)
+            val poolAccounts = PoolExpiryReleaser.rescuedTidalAccounts(context)
 
             if (poolAccounts.isNotEmpty()) {
                 val stream =

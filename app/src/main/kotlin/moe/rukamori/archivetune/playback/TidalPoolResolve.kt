@@ -16,6 +16,7 @@ import moe.rukamori.archivetune.audiosource.DirectStream
 import moe.rukamori.archivetune.tidal.TidalAccountManager
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.PoolCredentialPolicy
+import moe.rukamori.archivetune.utils.PoolExpiryReleaser
 import timber.log.Timber
 
 /**
@@ -49,7 +50,7 @@ internal object TidalPoolResolve {
         cacheDir: File,
     ): DirectStream? {
         // Awaited, bounded, single-flight re-lease — one call rescues this play.
-        val poolAccounts = PoolAccountManager.rescuedTidalAccounts(context)
+        val poolAccounts = PoolExpiryReleaser.rescuedTidalAccounts(context)
 
         for (poolAccount in poolAccounts) {
             val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"

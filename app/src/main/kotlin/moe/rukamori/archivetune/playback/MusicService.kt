@@ -7650,9 +7650,9 @@ class MusicService :
         prefetchingMediaId = mediaId
         nextMediaItemPrefetchJob =
             scope.launch(Dispatchers.IO + SilentHandler) {
-                // Expired pool leases take their awaited re-lease inside this job so a cancelled
-                // prefetch aborts it — kept outside runCatching so cancellation is not masked.
-                PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
+                if (!isLowDataModeActive() && willTryPooledTidal(mediaId)) {
+                    PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
+                }
                 runCatching {
                     Timber.tag(TAG).d("Prefetching stream URL for next media item: %s", mediaId)
                     // First, try multi-source (Qobuz / Tidal) resolution.
@@ -9080,8 +9080,9 @@ class MusicService :
             // (YouTube) stream and never re-try Qobuz/Tidal.
             directStreamCache.remove(mediaId)
             spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
-            // Coroutine callers re-lease via the suspend entry so the wait dies with this job.
-            PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
+            if (willTryPooledTidal(mediaId)) {
+                PoolExpiryReleaser.rescuedTidalAccountsSuspend(this@MusicService)
+            }
             // Re-resolve by calling the same slow-path logic the player uses. We pass a dummy
             // DataSpec because resolveMultiSourceDataSpec only uses it as a buildUpon base —
             // the URI and key are overwritten inside. The returned DataSpec is discarded; we
@@ -10422,15 +10423,25 @@ class MusicService :
         return out
     }
 
+    // Whether this resolution reaches the pooled-Tidal branch — gates the suspend pool re-lease.
+    private suspend fun willTryPooledTidal(mediaId: String): Boolean {
+        if (!PoolAccountManager.isPoolEnabled()) return false
+        if (!dataStore.get(TidalAccountFirstKey, true)) return false
+        val prefs = sourcePrefsSnapshot()
+        if (AudioSourceType.TIDAL !in PlaybackSourceChain.baseChain(prefs)) return false
+        if (isMusicVideoPlayback(mediaId)) return false
+        val override =
+            SongSourceOverride.get(dataStore.data.first()[SongSourceOverrideKey], mediaId)
+        return override == null || override == AudioSourceType.TIDAL || override !in prefs.enabled
+    }
+
     private fun resolveTidalStream(query: SourceQuery): DirectStream? {
         val quality = parseTidalAudioQuality()
         val accountFirst = dataStore.get(TidalAccountFirstKey, true)
         Timber.tag("MusicService").d("Tidal resolve start | quality=%s accountFirst=%s", quality.name, accountFirst)
 
-        // Account-first: use a real Tidal subscriber token via the official API when available —
-        // first the user's own signed-in account, then shared premium accounts from the community
-        // Source Pool. Both paths yield full-quality FLAC directly, so a proxy instance is only a
-        // last resort.
+        // Account-first: the user's own subscriber token, then shared premium pool accounts —
+        // both yield full-quality FLAC, so a proxy instance is only a last resort.
         if (accountFirst) {
             val apiQuality =
                 when (quality) {
@@ -10451,9 +10462,7 @@ class MusicService :
                     )
                 }
 
-            // 1) The user's own token. Resolve, transparently refreshing and retrying once if the
-            //    API rejects it (401) — the stored token may have been invalidated server-side even
-            //    though it has not expired by our clock.
+            // 1) The user's own Tidal account, transparently refreshed and retried once on 401.
             var token = ensureValidTidalToken()
             Timber.tag("MusicService").d("Tidal account token available=%s", token != null)
             if (token != null) {
@@ -10467,8 +10476,7 @@ class MusicService :
                         // mid-request. Detect it anywhere in the chain so the refresh path still runs.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
-                            // Clear any pending interrupt on this loader thread; otherwise the
-                            // runBlocking calls in refresh + retry would immediately abort.
+                            // Clear pending interrupts or the runBlocking refresh/retry aborts.
                             Thread.interrupted()
                             val refreshed = refreshTidalToken(rejectedToken = token)
                             if (refreshed != null && refreshed != token) {
@@ -10487,9 +10495,7 @@ class MusicService :
                 if (accountStream != null) return accountStream
             }
 
-            // 2) Shared premium Tidal accounts from the community Source Pool — sequential,
-            //    premium-first; expiry drives a bounded awaited re-lease before trying, and only a
-            //    fresh-token 401 may report an account dead (see TidalPoolResolve).
+            // 2) Shared premium pool accounts — sequential, premium-first (see TidalPoolResolve).
             val poolStream =
                 TidalPoolResolve.resolve(
                     context = this@MusicService,

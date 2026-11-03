@@ -10419,16 +10419,20 @@ class MusicService :
         return out
     }
 
-    // Whether this resolution reaches the pooled-Tidal branch — gates the suspend pool re-lease.
     private suspend fun willTryPooledTidal(mediaId: String): Boolean {
         if (!PoolAccountManager.isPoolEnabled()) return false
         if (!dataStore.get(TidalAccountFirstKey, true)) return false
-        val prefs = sourcePrefsSnapshot()
-        if (AudioSourceType.TIDAL !in PlaybackSourceChain.baseChain(prefs)) return false
         if (isMusicVideoPlayback(mediaId)) return false
+        val prefs = sourcePrefsSnapshot()
+        val rejected = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
         val override =
             SongSourceOverride.get(dataStore.data.first()[SongSourceOverrideKey], mediaId)
-        return override == null || override == AudioSourceType.TIDAL || override !in prefs.enabled
+        return AudioSourceType.TIDAL in
+            AudioAuthenticitySourceRetryPolicy.nextChain(
+                PlaybackSourceChain.configuredChain(prefs, override, rejected),
+                PlaybackSourceChain.baseChain(prefs),
+                rejected,
+            )
     }
 
     private suspend fun maybeReLeasePool(mediaId: String, respectLowData: Boolean = false) {
@@ -10441,8 +10445,7 @@ class MusicService :
         val accountFirst = dataStore.get(TidalAccountFirstKey, true)
         Timber.tag("MusicService").d("Tidal resolve start | quality=%s accountFirst=%s", quality.name, accountFirst)
 
-        // Account-first: the user's own subscriber token, then shared premium pool accounts —
-        // both yield full-quality FLAC, so a proxy instance is only a last resort.
+        // Account-first: own subscriber token, then premium pool accounts — FLAC either way.
         if (accountFirst) {
             val apiQuality =
                 when (quality) {
@@ -10463,7 +10466,6 @@ class MusicService :
                     )
                 }
 
-            // 1) The user's own Tidal account, transparently refreshed and retried once on 401.
             var token = ensureValidTidalToken()
             Timber.tag("MusicService").d("Tidal account token available=%s", token != null)
             if (token != null) {
@@ -10472,8 +10474,7 @@ class MusicService :
                     try {
                         attempt(token, accountCountry)
                     } catch (e: Throwable) {
-                        // A 401 can surface directly or wrapped inside an InterruptedException when
-                        // ExoPlayer interrupts the loader thread — check the whole chain.
+                        // A 401 can arrive wrapped in an InterruptedException mid-request.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
                             // Clear pending interrupts or the runBlocking refresh/retry aborts.
@@ -10495,7 +10496,6 @@ class MusicService :
                 if (accountStream != null) return accountStream
             }
 
-            // 2) Shared premium pool accounts — sequential, premium-first (see TidalPoolResolve).
             val poolStream =
                 TidalPoolResolve.resolve(
                     context = this@MusicService,

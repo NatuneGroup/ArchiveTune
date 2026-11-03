@@ -22,10 +22,10 @@ import timber.log.Timber
 
 /**
  * The awaited expiry re-lease for the community Source Pool: when a cached Tidal credential is
- * already dead on arrival, resolvers hand the rescue to [reLeaseOnExpiry] BEFORE spending it —
- * one bounded, single-flight fetch, shared with [PoolAccountManager.refresh] through
- * [PoolAccountManager.refreshMutex]. A failed attempt — including a bounded wait that timed out
- * or was cancelled — stamps [lastExpiryReleasFailureAtMs], persisted in the pool cache keys so a
+ * already dead on arrival, resolvers hand the rescue to [reLeaseOnExpiry] BEFORE spending it — one
+ * bounded, single-flight fetch, shared with [PoolAccountManager.refresh] through
+ * [PoolAccountManager.refreshMutex]. A failed attempt — including a bounded wait that timed out or
+ * was cancelled — stamps [lastExpiryReleasFailureAtMs], persisted in the pool cache keys so a
  * restart cannot silently re-enable an unthrottled re-lease storm; the stamp clears only after a
  * rescue that actually landed.
  */
@@ -41,17 +41,16 @@ internal object PoolExpiryReleaser {
 
     /**
      * Throttle for the awaited expiry re-lease ([reLeaseOnExpiry]): stamped when an awaited
-     * re-lease failed to clear the expiry, so a down/rejecting pool is not pounded by every
-     * expired token in the fleet. Unlike the routine 5–24h cache TTL — which exists to keep a
-     * healthy cache cheap — this is the ONLY bound on expiry re-leases; a successful one leaves
-     * no stamp at all.
+     * re-lease failed to clear the expiry, so a down/rejecting pool is not pounded by every expired
+     * token in the fleet. Unlike the routine 5–24h cache TTL — which exists to keep a healthy cache
+     * cheap — this is the ONLY bound on expiry re-leases; a successful one leaves no stamp at all.
      */
     @Volatile private var lastExpiryReleasFailureAtMs = 0L
 
     /**
      * Merges the persisted failure stamp into memory. Called from [PoolAccountManager.loadCached]
-     * after the auth backoff is loaded, so the stamp rides the same restore path as the rest of
-     * the pool cache before any gate consults it.
+     * after the auth backoff is loaded, so the stamp rides the same restore path as the rest of the
+     * pool cache before any gate consults it.
      */
     suspend fun restoreFailureStamp(context: Context) {
         lastExpiryReleasFailureAtMs =
@@ -69,9 +68,9 @@ internal object PoolExpiryReleaser {
      * caller arriving behind a FAILED one honours the failure stamp instead of fetching again.
      *
      * Unlike [PoolAccountManager.refresh]'s routine 5–24h cache TTL — which exists to keep a
-     * healthy cache cheap and must NOT leave dead tokens in service for hours — this path is
-     * gated only by its own failures ([expiryReleasAllowed]): one full interval after an attempt
-     * that could not clear the expiry, and nothing after a success. The whole wait is capped at
+     * healthy cache cheap and must NOT leave dead tokens in service for hours — this path is gated
+     * only by its own failures ([expiryReleasAllowed]): one full interval after an attempt that
+     * could not clear the expiry, and nothing after a success. The whole wait is capped at
      * [timeoutMs]; a timeout while another caller is mid-fetch just returns false (the running
      * fetch stamps its own failure). Returns true only when the expiry was actually cleared.
      * Cancellation propagates.
@@ -85,9 +84,9 @@ internal object PoolExpiryReleaser {
             PoolAccountManager.loadCached(context)
             if (
                 !PoolAccountManager.isEnabled ||
-                !PoolAccountManager.isPoolEnabled() ||
-                !stillExpired() ||
-                !expiryReleasAllowed()
+                    !PoolAccountManager.isPoolEnabled() ||
+                    !stillExpired() ||
+                    !expiryReleasAllowed()
             ) {
                 return@withContext false
             }
@@ -106,10 +105,10 @@ internal object PoolExpiryReleaser {
         }
 
     /**
-     * Fetches the feed (caller holds [PoolAccountManager.refreshMutex]), then reports whether
-     * the expiry actually cleared. A fetch that still leaves expired credentials — a failed
-     * request, an auth-backoff skip, or a server leasing stale tokens — counts as a failure for
-     * the throttle: the expiry is not resolvable right now.
+     * Fetches the feed (caller holds [PoolAccountManager.refreshMutex]), then reports whether the
+     * expiry actually cleared. A fetch that still leaves expired credentials — a failed request, an
+     * auth-backoff skip, or a server leasing stale tokens — counts as a failure for the throttle:
+     * the expiry is not resolvable right now.
      */
     private suspend fun fetchFeedAndCheckExpiry(
         context: Context,
@@ -140,8 +139,8 @@ internal object PoolExpiryReleaser {
 
     /**
      * Records the expiry re-lease failure stamp in memory and in the pool cache. Persistence is
-     * best-effort: the in-memory stamp binds this process either way; a failed write just means
-     * a restart forgets the throttle (the load merges whatever is on disk).
+     * best-effort: the in-memory stamp binds this process either way; a failed write just means a
+     * restart forgets the throttle (the load merges whatever is on disk).
      */
     private suspend fun setExpiryReleasFailureAtMs(
         context: Context,
@@ -164,11 +163,11 @@ internal object PoolExpiryReleaser {
     }
 
     /**
-     * Coroutine entry point for "re-lease before trying": when a cached Tidal pool token is
-     * already expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller)
-     * and return the freshest account list — the freshly leased set when it lands, else the
-     * cached one. A caller cancellation aborts the wait AND its fetch; it is never masked by a
-     * fallback to the cached leases.
+     * Coroutine entry point for "re-lease before trying": when a cached Tidal pool token is already
+     * expired, fire the awaited [reLeaseOnExpiry] (shared with any concurrent caller) and return
+     * the freshest account list — the freshly leased set when it lands, else the cached one. A
+     * caller cancellation aborts the wait AND its fetch; it is never masked by a fallback to the
+     * cached leases.
      */
     suspend fun rescuedTidalAccountsSuspend(
         context: Context,
@@ -191,8 +190,8 @@ internal object PoolExpiryReleaser {
     }
 
     /**
-     * Blocking bridge for callers pinned to a plain thread (the Media3 loader path): delegates
-     * to [rescuedTidalAccountsSuspend] inside [runBlocking], so inner cancellation surfaces as
+     * Blocking bridge for callers pinned to a plain thread (the Media3 loader path): delegates to
+     * [rescuedTidalAccountsSuspend] inside [runBlocking], so inner cancellation surfaces as
      * [CancellationException] and a thread interrupt as [InterruptedException] — both rethrown,
      * never masked by a stale-lease fallback.
      */

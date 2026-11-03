@@ -42,11 +42,10 @@ object PoolRefreshPolicy {
     ): Boolean = shouldRefresh(nowMs, lastFailedAttemptAtMs, intervalMs, force = false)
 
     /**
-     * The failure stamp a fetch-owning re-lease attempt writes: only a rescue that actually
-     * cleared the expiry clears it (0L); anything short — a failed fetch, a bounded wait that
-     * timed out, or a cancelled fetch — stamps [nowMs] so later plays do not retry the slow
-     * pool unthrottled inside this expiry episode.
+     * The failure stamp a fetch-owning re-lease attempt writes: only a rescue that actually cleared
+     * the expiry clears it (0L); anything short — a failed fetch, a bounded wait that timed out, or
+     * a cancelled fetch — stamps [nowMs] so later plays do not retry the slow pool unthrottled
+     * inside this expiry episode.
      */
-    fun expiryReleasFailureStamp(cleared: Boolean, nowMs: Long): Long =
-        if (cleared) 0L else nowMs
+    fun expiryReleasFailureStamp(cleared: Boolean, nowMs: Long): Long = if (cleared) 0L else nowMs
 }

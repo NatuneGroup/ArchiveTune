@@ -11,6 +11,7 @@ package moe.rukamori.archivetune.ui.screens.settings
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -20,7 +21,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -31,9 +31,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.navigation.NavController
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavController
 import moe.rukamori.archivetune.LocalPlayerAwareWindowInsets
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.constants.ListenBrainzEnabledKey
@@ -41,18 +41,19 @@ import moe.rukamori.archivetune.constants.ListenBrainzTokenKey
 import moe.rukamori.archivetune.constants.ShowSpotifyPlaylistsKey
 import moe.rukamori.archivetune.constants.SpotifyHistorySyncEnabledKey
 import moe.rukamori.archivetune.constants.UsePoolAccountsKey
+import moe.rukamori.archivetune.presence.ListenerPresenceSection
 import moe.rukamori.archivetune.spotify.SpotifyAccountViewModel
 import moe.rukamori.archivetune.ui.component.IconButton
 import moe.rukamori.archivetune.ui.component.InfoLabel
 import moe.rukamori.archivetune.ui.component.PreferenceEntry
 import moe.rukamori.archivetune.ui.component.PreferenceGroup
+import moe.rukamori.archivetune.ui.component.SettingsTopAppBar
 import moe.rukamori.archivetune.ui.component.SwitchPreference
 import moe.rukamori.archivetune.ui.component.TextFieldDialog
 import moe.rukamori.archivetune.ui.menu.CrossServiceImportPlaylistDialog
 import moe.rukamori.archivetune.ui.utils.backToMain
 import moe.rukamori.archivetune.utils.PoolAccountManager
 import moe.rukamori.archivetune.utils.rememberPreference
-import androidx.compose.foundation.layout.asPaddingValues
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,13 +62,17 @@ fun IntegrationScreen(
     scrollTo: String? = null,
     spotifyAccountViewModel: SpotifyAccountViewModel = hiltViewModel(),
 ) {
-    val (listenBrainzEnabled, onListenBrainzEnabledChange) = rememberPreference(ListenBrainzEnabledKey, false)
-    val (listenBrainzToken, onListenBrainzTokenChange) = rememberPreference(ListenBrainzTokenKey, "")
+    val (listenBrainzEnabled, onListenBrainzEnabledChange) =
+        rememberPreference(ListenBrainzEnabledKey, false)
+    val (listenBrainzToken, onListenBrainzTokenChange) =
+        rememberPreference(ListenBrainzTokenKey, "")
     val (usePoolAccounts, onUsePoolAccountsChange) = rememberPreference(UsePoolAccountsKey, true)
 
     val spotifyState by spotifyAccountViewModel.uiState.collectAsStateWithLifecycle()
-    val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) = rememberPreference(ShowSpotifyPlaylistsKey, false)
-    val (syncSpotifyHistory, onSyncSpotifyHistoryChange) = rememberPreference(SpotifyHistorySyncEnabledKey, false)
+    val (showSpotifyPlaylists, onShowSpotifyPlaylistsChange) =
+        rememberPreference(ShowSpotifyPlaylistsKey, false)
+    val (syncSpotifyHistory, onSyncSpotifyHistoryChange) =
+        rememberPreference(SpotifyHistorySyncEnabledKey, false)
     var showSpotifyLogin by rememberSaveable { mutableStateOf(false) }
 
     var showListenBrainzTokenEditor = remember { mutableStateOf(false) }
@@ -134,21 +139,9 @@ fun IntegrationScreen(
                 }
             }
 
-            PreferenceGroup(
-                modifier = positions.modifierFor("discord_presence"),
-                title = stringResource(R.string.general),
-            ) {
-                item {
-                    PreferenceEntry(
-                        modifier = positions.modifierFor("discord_account"),
-                        title = { Text(stringResource(R.string.discord_integration)) },
-                        icon = { Icon(painterResource(R.drawable.discord), null) },
-                        onClick = {
-                            navController.navigate("settings/discord")
-                        },
-                    )
-                }
-            }
+            DiscordPresencePreferenceGroup(positions) { navController.navigate("settings/discord") }
+
+            NatuneStatusPreferenceGroup(modifier = positions.modifierFor("natune_status"))
 
             // "Music Sources" groups every external streaming source together: Tidal, Qobuz,
             // Deezer, Amazon, Apple Music, QQ Music and Telegram. Every sign-in row is always
@@ -385,8 +378,7 @@ fun IntegrationScreen(
     if (showListenBrainzTokenEditor.value) {
         TextFieldDialog(
             initialTextFieldValue =
-                androidx.compose.ui.text.input
-                    .TextFieldValue(listenBrainzToken),
+                androidx.compose.ui.text.input.TextFieldValue(listenBrainzToken),
             onDone = { data ->
                 onListenBrainzTokenChange(data)
                 showListenBrainzTokenEditor.value = false
@@ -426,5 +418,41 @@ fun IntegrationScreen(
             message = error,
             onDismiss = spotifyAccountViewModel::dismissError,
         )
+    }
+}
+
+@Composable
+private fun DiscordPresencePreferenceGroup(
+    positions: PreferencePositions,
+    onOpenDiscord: () -> Unit,
+) {
+    PreferenceGroup(
+        modifier = positions.modifierFor("discord_presence"),
+        title = stringResource(R.string.general),
+    ) {
+        item {
+            PreferenceEntry(
+                modifier = positions.modifierFor("discord_account"),
+                title = { Text(stringResource(R.string.discord_integration)) },
+                icon = { Icon(painterResource(R.drawable.discord), null) },
+                onClick = { onOpenDiscord() },
+            )
+        }
+    }
+}
+
+/** Natune status group: opt-in "while you listen" sharing beside the Discord presence group. */
+@Composable
+private fun NatuneStatusPreferenceGroup(modifier: Modifier = Modifier) {
+    PreferenceGroup(
+        modifier = modifier,
+        title = stringResource(R.string.natune_status),
+    ) {
+        item {
+            ListenerPresenceSection(
+                showMapLink = true,
+                showReset = true,
+            )
+        }
     }
 }

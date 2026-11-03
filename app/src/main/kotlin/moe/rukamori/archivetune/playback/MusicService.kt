@@ -245,6 +245,7 @@ import moe.rukamori.archivetune.constants.SpotifyStreamSpDcKey
 import moe.rukamori.archivetune.constants.QqAudioQuality
 import moe.rukamori.archivetune.constants.QqMusicAudioQualityKey
 import moe.rukamori.archivetune.constants.YouTubeSourceEnabledKey
+import moe.rukamori.archivetune.presence.ListenerPresence
 import moe.rukamori.archivetune.qqmusic.QqMusicAudioProvider
 import moe.rukamori.archivetune.qqmusic.QqMusicSession
 import moe.rukamori.archivetune.constants.JioSaavnEnabledKey
@@ -292,6 +293,7 @@ import moe.rukamori.archivetune.constants.ArtworkProviderOrderKey
 import moe.rukamori.archivetune.constants.DefaultArtworkProviderOrder
 import moe.rukamori.archivetune.constants.deserializeArtworkProviderOrder
 import moe.rukamori.archivetune.utils.PoolAccountManager
+import moe.rukamori.archivetune.utils.PoolExpiryReleaser
 import moe.rukamori.archivetune.utils.PreferenceStore
 import moe.rukamori.archivetune.tidal.TidalInstanceHealthManager
 import moe.rukamori.archivetune.constants.PlayerVolumeKey
@@ -5471,7 +5473,6 @@ class MusicService :
     }
 
 
-
     private fun updateNotification() {
         try {
             val customLayout =
@@ -7649,6 +7650,7 @@ class MusicService :
         prefetchingMediaId = mediaId
         nextMediaItemPrefetchJob =
             scope.launch(Dispatchers.IO + SilentHandler) {
+                maybeReLeasePool(mediaId, respectLowData = true)
                 runCatching {
                     Timber.tag(TAG).d("Prefetching stream URL for next media item: %s", mediaId)
                     // First, try multi-source (Qobuz / Tidal) resolution.
@@ -7954,6 +7956,8 @@ class MusicService :
             scheduleCrossfade()
         }
         updateAudiblePlaybackRecovery()
+
+        ListenerPresence.onPlayingChanged(isPlaying)
 
         widgetUpdater.update()
         widgetUpdater.updateProgressTracking()
@@ -8597,7 +8601,6 @@ class MusicService :
             return
         }
 
-
         if (dataStore.get(AutoSkipNextOnErrorKey, false)) {
             skipOnError()
         } else {
@@ -9075,6 +9078,7 @@ class MusicService :
             // (YouTube) stream and never re-try Qobuz/Tidal.
             directStreamCache.remove(mediaId)
             spotifyStreamTrackByMediaId[mediaId]?.let { SpotifyEchoResolver.invalidateTrack(it.trackUri) }
+            maybeReLeasePool(mediaId)
             // Re-resolve by calling the same slow-path logic the player uses. We pass a dummy
             // DataSpec because resolveMultiSourceDataSpec only uses it as a buildUpon base —
             // the URI and key are overwritten inside. The returned DataSpec is discarded; we
@@ -10415,15 +10419,33 @@ class MusicService :
         return out
     }
 
+    private suspend fun willTryPooledTidal(mediaId: String): Boolean {
+        if (!PoolAccountManager.isPoolEnabled()) return false
+        if (!dataStore.get(TidalAccountFirstKey, true)) return false
+        if (isMusicVideoPlayback(mediaId)) return false
+        val prefs = sourcePrefsSnapshot()
+        val rejected = authenticityRejectedSourcesByMediaId[mediaId].orEmpty()
+        val override =
+            SongSourceOverride.get(dataStore.data.first()[SongSourceOverrideKey], mediaId)
+        return AudioSourceType.TIDAL in
+            AudioAuthenticitySourceRetryPolicy.nextChain(
+                PlaybackSourceChain.configuredChain(prefs, override, rejected),
+                PlaybackSourceChain.baseChain(prefs),
+                rejected,
+            )
+    }
+
+    private suspend fun maybeReLeasePool(mediaId: String, respectLowData: Boolean = false) {
+        if (respectLowData && isLowDataModeActive()) return
+        if (willTryPooledTidal(mediaId)) PoolExpiryReleaser.rescuedTidalAccountsSuspend(this)
+    }
+
     private fun resolveTidalStream(query: SourceQuery): DirectStream? {
         val quality = parseTidalAudioQuality()
         val accountFirst = dataStore.get(TidalAccountFirstKey, true)
         Timber.tag("MusicService").d("Tidal resolve start | quality=%s accountFirst=%s", quality.name, accountFirst)
 
-        // Account-first: use a real Tidal subscriber token via the official API when available —
-        // first the user's own signed-in account, then shared premium accounts from the community
-        // Source Pool. Both paths yield full-quality FLAC directly, so a proxy instance is only a
-        // last resort.
+        // Account-first: own subscriber token, then premium pool accounts — FLAC either way.
         if (accountFirst) {
             val apiQuality =
                 when (quality) {
@@ -10444,9 +10466,6 @@ class MusicService :
                     )
                 }
 
-            // 1) The user's own token. Resolve, transparently refreshing and retrying once if the
-            //    API rejects it (401) — the stored token may have been invalidated server-side even
-            //    though it has not expired by our clock.
             var token = ensureValidTidalToken()
             Timber.tag("MusicService").d("Tidal account token available=%s", token != null)
             if (token != null) {
@@ -10455,13 +10474,10 @@ class MusicService :
                     try {
                         attempt(token, accountCountry)
                     } catch (e: Throwable) {
-                        // A 401 may surface directly, or wrapped as a *suppressed*/cause exception
-                        // inside an InterruptedException when ExoPlayer interrupts the loader thread
-                        // mid-request. Detect it anywhere in the chain so the refresh path still runs.
+                        // A 401 can arrive wrapped in an InterruptedException mid-request.
                         if (isTidalUnauthorized(e)) {
                             Timber.tag("MusicService").w("Tidal account 401 (possibly wrapped); refreshing token + retrying")
-                            // Clear any pending interrupt on this loader thread; otherwise the
-                            // runBlocking calls in refresh + retry would immediately abort.
+                            // Clear pending interrupts or the runBlocking refresh/retry aborts.
                             Thread.interrupted()
                             val refreshed = refreshTidalToken(rejectedToken = token)
                             if (refreshed != null && refreshed != token) {
@@ -10480,32 +10496,17 @@ class MusicService :
                 if (accountStream != null) return accountStream
             }
 
-            // 2) Shared premium Tidal accounts contributed to the community Source Pool (premium
-            //    first). These are genuine subscriber tokens, so they stream full-quality FLAC via
-            //    the official API without anyone hosting a restream instance.
-            for (poolAccount in PoolAccountManager.tidalAccounts()) {
-                val poolCountry = poolAccount.countryCode?.trim()?.ifBlank { null } ?: "US"
-                val poolStream =
-                    runCatching { attempt(poolAccount.token, poolCountry) }
-                        .onFailure {
-                            if (TidalAccountManager.isUnauthorized(it)) {
-                                PoolAccountManager.report("tidal", "account", poolAccount.id, "dead")
-                            } else {
-                                Timber.tag("MusicService").w(it, "Tidal pool account resolve failed for %s", query.mediaId)
-                            }
-                        }
-                        .getOrNull()
-                if (poolStream != null) {
-                    Timber.tag("MusicService").d("Tidal resolved via pool account (premium=%s)", poolAccount.premium)
-                    PoolAccountManager.noteAccountSuccess("tidal", poolAccount.id)
-                    return poolStream
-                }
-                // Threw, or returned null because this account has no match. Either way it just
-                // cost up to 20s, so sort it last for a while rather than paying that again on
-                // the next track — the server's own dead-account handling is far slower than a
-                // listening session.
-                PoolAccountManager.noteAccountFailure("tidal", poolAccount.id)
-            }
+            val poolStream =
+                TidalPoolResolve.resolve(
+                    context = this@MusicService,
+                    mediaId = query.mediaId,
+                    title = query.title,
+                    artists = query.artists,
+                    durationMs = query.durationMs,
+                    apiQuality = apiQuality,
+                    cacheDir = cacheDir,
+                )
+            if (poolStream != null) return poolStream
         }
 
         // Fallback: public HiFi/QQDL instances (empty list falls back to built-in defaults).
@@ -10672,7 +10673,6 @@ class MusicService :
             matchedDurationMs = resolved.durationMs ?: query.durationMs,
         )
     }
-
 
     private fun parseQobuzInstances(): List<String> = parseInstances(QobuzInstancesKey)
 
@@ -11143,7 +11143,6 @@ class MusicService :
         refreshAudioAuthenticityContexts(mediaId)
         Timber.tag("PlaybackDiagnostics").i("Source selected provider=youtube route=terminal_fallback")
 
-
         val authFingerprint = YouTube.currentPlaybackAuthState().fingerprint
         playbackUrlCache[mediaId]
             ?.takeUnless { lowDataModeActive }
@@ -11376,7 +11375,6 @@ class MusicService :
     }
 
 
-
     private fun resolveCachedDataSpec(
         dataSpec: DataSpec,
         mediaId: String,
@@ -11506,7 +11504,6 @@ class MusicService :
                     isCached = span.isCached,
                 )
             }
-
 
     private fun Uri.shouldBypassYouTubeResolver(): Boolean {
         val normalizedScheme = scheme?.lowercase(Locale.US)
@@ -12806,6 +12803,8 @@ class MusicService :
 
     override fun onDestroy() {
         invalidatePlaylistWork()
+        // Service teardown is a stop for presence purposes: emit the final `stopped` beat.
+        ListenerPresence.onPlayingChanged(false)
         initialQueueLoadGeneration++
         // Released before anything else is torn down: once destruction has started no bound client
         // may obtain this service again (and the binder must stop pinning it).

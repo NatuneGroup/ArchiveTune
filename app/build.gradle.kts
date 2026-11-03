@@ -53,8 +53,8 @@ if (localPropertiesFile.exists()) {
 // A pre-release build is named after its release tag instead — "C<yyyyMMddHHmm>" for Canary,
 // "N<yyyyMMddHHmm>" for Nightly, the way rukamori names his nightlies "N<yyyyMMdd>" — so the tag,
 // the release title and the version the app reports are all one string.
-val baseVersionName = "15.0.0"
-val baseVersionCode = 1500
+val baseVersionName = "15.1.0"
+val baseVersionCode = 1501
 
 val forkRevision = runCatching {
     providers.exec {
@@ -243,9 +243,47 @@ android {
             (
                 localProperties.getProperty("SOURCE_PROVIDER_URL")?.takeIf { it.isNotBlank() }
                     ?: System.getenv("SOURCE_PROVIDER_URL")?.takeIf { it.isNotBlank() }
-                    ?: "https://archivepool.vercel.app"
+                    ?: "https://archivepool.natune.workers.dev"
                 ).trim().trimEnd('/')
         buildConfigField("String", "SOURCE_PROVIDER_URL", "\"$sourceProviderUrl\"")
+
+        // Dedicated ArchivePool deployment override for the move off Vercel onto Cloudflare
+        // Workers: when set (and https) it wins over SOURCE_PROVIDER_URL as the primary endpoint
+        // on every pool request, while the public natune.workers.dev deployment stays the ordered
+        // fallback the app fails over to on a host-level failure (402/5xx or unreachable).
+        // Same precedence as the pool URL: local.properties, then the ARCHIVEPOOL_BASE_URL
+        // env/CI variable, then blank (keep the SOURCE_PROVIDER_URL value as primary).
+        val archivePoolBaseUrl =
+            (
+                localProperties.getProperty("ARCHIVEPOOL_BASE_URL")?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ARCHIVEPOOL_BASE_URL")?.takeIf { it.isNotBlank() }
+                    ?: ""
+                ).trim().trimEnd('/')
+        buildConfigField("String", "ARCHIVEPOOL_BASE_URL", "\"$archivePoolBaseUrl\"")
+
+        // Natune status (opt-in listener presence) endpoint: the Cloudflare Worker serving
+        // /api/heartbeat and /api/listeners/active for the public live map. Precedence:
+        // local.properties, then the ARCHIVETUNE_LISTENER_PRESENCE_URL env/CI variable, then
+        // the baked-in default deployment.
+        val listenerPresenceUrl =
+            (
+                localProperties.getProperty("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
+                    ?: System.getenv("ARCHIVETUNE_LISTENER_PRESENCE_URL")?.takeIf { it.isNotBlank() }
+                    ?: "https://natune-status.natune.workers.dev"
+                ).trim().trimEnd('/')
+        buildConfigField("String", "LISTENER_PRESENCE_URL", "\"$listenerPresenceUrl\"")
+
+        // In-app announcements feed ("News"): a JSON index plus Markdown content served
+        // first-party from the Natune site. Precedence: local.properties, then the
+        // NATUNE_NEWS_URL env/CI variable, then the baked-in default. An explicitly blank
+        // value disables the feature and hides the News entry point.
+        val natuneNewsUrl =
+            (
+                localProperties.getProperty("NATUNE_NEWS_URL")
+                    ?: System.getenv("NATUNE_NEWS_URL")
+                    ?: "https://natune.pages.dev/api/news"
+                ).trim().trimEnd('/')
+        buildConfigField("String", "NATUNE_NEWS_URL", "\"$natuneNewsUrl\"")
 
         // Per-app read key for the Source Pool. Sent as a Bearer token on discovery requests so the
         // pool can gate access. Optional: blank works fine while the pool runs unenforced.

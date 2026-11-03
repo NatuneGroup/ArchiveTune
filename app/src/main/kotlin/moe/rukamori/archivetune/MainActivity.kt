@@ -2961,7 +2961,7 @@ class MainActivity : ComponentActivity() {
                                                         ProfileMenuDialog(
                                                             accountName = accountName,
                                                             accountImageUrl = accountImageUrl,
-                                                            items = listOf(
+                                                            items = listOfNotNull(
                                                                 ProfileMenuItem(
                                                                     icon = R.drawable.history,
                                                                     label = stringResource(R.string.history),
@@ -2978,7 +2978,7 @@ class MainActivity : ComponentActivity() {
                                                                         profileMenuExpanded = false
                                                                         navController.navigate("news")
                                                                     },
-                                                                ),
+                                                                ).takeIf { BuildConfig.NATUNE_NEWS_URL.isNotBlank() },
                                                                 ProfileMenuItem(
                                                                     icon = R.drawable.new_release,
                                                                     label = stringResource(R.string.new_release_albums),

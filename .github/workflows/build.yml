@@ -124,8 +124,12 @@ jobs:
           # Public ArchivePool base URL. This is non-sensitive and belongs in Actions variables,
           # but we also fall back to the secret of the same name for forks that stored it as a
           # secret before Actions variables existed. The gradle default
-          # (https://archivepool.vercel.app) applies when neither is set.
+          # (https://archivepool.natune.workers.dev) applies when neither is set.
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          # Dedicated ArchivePool deployment override (e.g. the Cloudflare Workers host). When set
+          # it wins over SOURCE_PROVIDER_URL as the primary; natune.workers.dev stays the fallback.
+          ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL || secrets.ARCHIVEPOOL_BASE_URL }}
+          ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ vars.ARCHIVETUNE_LISTENER_PRESENCE_URL || secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
           # Per-app read key created by ArchivePool's admin page.
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
           # POOL_CLIENT_KEY is intentionally NOT passed anymore: builds speak the v2 feed

@@ -68,8 +68,12 @@ jobs:
           # and 0 discovered instances and falls back to YouTube for every track.
           # Precedence: Actions variable (preferred — non-sensitive), then secret
           # (kept for forks that stored the URL as a secret before vars existed),
-          # then the gradle default (https://archivepool.vercel.app) in build.gradle.kts.
+          # then the gradle default (https://archivepool.natune.workers.dev) in build.gradle.kts.
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          # Dedicated ArchivePool deployment override (e.g. the Cloudflare Workers host); wins over
+          # SOURCE_PROVIDER_URL as the primary when set, natune.workers.dev stays the fallback.
+          ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL || secrets.ARCHIVEPOOL_BASE_URL }}
+          ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ vars.ARCHIVETUNE_LISTENER_PRESENCE_URL || secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
           # POOL_CLIENT_KEY not needed: v2 feed protocol derives encryption from the read key.
 

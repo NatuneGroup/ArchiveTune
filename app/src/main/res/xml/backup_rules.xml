@@ -10,6 +10,9 @@
         domain="file"
         path="./feedback" />
     <exclude
+        domain="file"
+        path="./datastore/listener_presence.preferences_pb" />
+    <exclude
         domain="database"
         path="exoplayer_internal.db" />
 </full-backup-content>

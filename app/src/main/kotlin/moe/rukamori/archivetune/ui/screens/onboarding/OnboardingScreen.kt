@@ -78,6 +78,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import moe.rukamori.archivetune.presence.ListenerPresenceSection
 import com.google.common.collect.ImmutableList
 import moe.rukamori.archivetune.R
 import moe.rukamori.archivetune.onboarding.OnboardingCommunityActionUiModel
@@ -563,12 +564,7 @@ private fun WelcomePage(
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
         item(key = page.id.name, contentType = "welcome") {
-            BoxWithConstraints(
-                modifier =
-                    Modifier
-                        .widthIn(max = OnboardingContentMaxWidth)
-                        .fillMaxWidth(),
-            ) {
+            BoxWithConstraints(Modifier.widthIn(max = OnboardingContentMaxWidth).fillMaxWidth()) {
                 if (maxWidth >= 620.dp) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(28.dp),
@@ -598,6 +594,9 @@ private fun WelcomePage(
                     }
                 }
             }
+        }
+        item(key = "listener-presence", contentType = "presence") {
+            ListenerPresenceSection(Modifier.widthIn(max = OnboardingContentMaxWidth).fillMaxWidth())
         }
         item(key = "welcome-actions", contentType = "actions") {
             OnboardingInlineActions(

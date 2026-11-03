@@ -220,6 +220,10 @@ jobs:
           # (non-sensitive), but fall back to the secret of the same name for forks that stored
           # it as a secret. The gradle default applies when neither is set.
           SOURCE_PROVIDER_URL: ${{ vars.SOURCE_PROVIDER_URL || secrets.SOURCE_PROVIDER_URL }}
+          # Dedicated ArchivePool deployment override (e.g. the Cloudflare Workers host); wins over
+          # SOURCE_PROVIDER_URL as the primary when set, natune.workers.dev stays the fallback.
+          ARCHIVEPOOL_BASE_URL: ${{ vars.ARCHIVEPOOL_BASE_URL || secrets.ARCHIVEPOOL_BASE_URL }}
+          ARCHIVETUNE_LISTENER_PRESENCE_URL: ${{ vars.ARCHIVETUNE_LISTENER_PRESENCE_URL || secrets.ARCHIVETUNE_LISTENER_PRESENCE_URL }}
           # Per-app read key for the pool (secret). Blank is fine while the pool runs unenforced.
           SOURCE_PROVIDER_KEY: ${{ secrets.SOURCE_PROVIDER_KEY }}
           # POOL_CLIENT_KEY not needed: v2 feed protocol derives encryption from the read key.

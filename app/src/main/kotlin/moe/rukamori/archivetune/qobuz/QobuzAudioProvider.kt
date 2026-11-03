@@ -7,7 +7,6 @@
 
 package moe.rukamori.archivetune.qobuz
 
-import moe.rukamori.archivetune.BuildConfig
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptScope
 import moe.rukamori.archivetune.audiosource.AudioSourceAttemptTimeouts
 import moe.rukamori.archivetune.audiosource.DirectStream
@@ -35,7 +34,7 @@ import moe.rukamori.archivetune.utils.withAppProxy
  * arcod-style).
  */
 object QobuzAudioProvider {
-    private const val USER_AGENT = "ArchiveTune-Android"
+    internal const val USER_AGENT = "ArchiveTune-Android"
     private const val SEARCH_LIMIT = 10
     private const val MIN_MATCH_SCORE = 60
     private const val SEARCH_CACHE_MS = 10 * 60 * 1000L
@@ -68,9 +67,6 @@ object QobuzAudioProvider {
 
     @Volatile
     private var poolInstances: List<Instance> = emptyList()
-
-    @Volatile
-    private var poolDiscoveredUrls: List<String> = emptyList()
 
     @Volatile
     private var tokens: List<QobuzToken> = emptyList()
@@ -184,7 +180,7 @@ object QobuzAudioProvider {
                 if (!seen.add(normalized)) return@mapNotNull null
                 Instance(instanceLabel(normalized), normalized)
             }
-        val poolUrls = poolDiscoveredUrls.toSet()
+        val poolUrls = QobuzPoolDiscovery.urls.toSet()
         manualInstances = parsed.filterNot { it.baseUrl in poolUrls }
         poolInstances =
             if (PoolAccountManager.isPoolEnabled()) {
@@ -195,106 +191,21 @@ object QobuzAudioProvider {
         instances = manualInstances + poolInstances
     }
 
-    private fun clearPoolDiscovery() {
+    internal fun clearPoolDiscovery() {
         poolInstances = emptyList()
         instances = manualInstances
-        poolDiscoveredUrls = emptyList()
-        discoveryCache = emptyList()
-        discoveryCacheExpiresAt = 0L
+        QobuzPoolDiscovery.clear()
     }
 
-    // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, derived from the
-    // build-time SOURCE_PROVIDER_URL. Empty when no provider is configured.
-    private val instanceDiscoverySources: List<String> =
-        BuildConfig.SOURCE_PROVIDER_URL
-            .trim()
-            .trimEnd('/')
-            .takeIf { it.isNotEmpty() }
-            ?.let { listOf("$it/api/discovery/qobuz") }
-            ?: emptyList()
-
+    // Community Source Pool discovery feed ({ streaming, api } shape) for Qobuz, resolved from the
+    // build-configured deployment (ARCHIVEPOOL_BASE_URL, else SOURCE_PROVIDER_URL) and its fallback.
     /**
-     * Best-effort discovery of community Qobuz proxy instances from the Source Pool website. Returns
-     * newly discovered valid base URLs (may be empty). Never throws; blocking network I/O, so call
-     * off the main thread.
+     * Best-effort discovery of community Qobuz proxy instances from the Source Pool feed —
+     * cached, single-flight and backoff-aware in [QobuzPoolDiscovery]. Never throws; blocking
+     * network I/O, so call off the main thread.
      */
-    @Volatile
-    private var discoveryCache: List<String> = emptyList()
+    fun discoverInstances(): List<String> = QobuzPoolDiscovery.discover(healthClient)
 
-    @Volatile
-    private var discoveryCacheExpiresAt: Long = 0L
-
-    private const val DISCOVERY_CACHE_MS = 10 * 60 * 1000L
-
-    fun discoverInstances(): List<String> {
-        if (!PoolAccountManager.isPoolEnabled()) {
-            clearPoolDiscovery()
-            return emptyList()
-        }
-        if (instanceDiscoverySources.isEmpty()) return emptyList()
-        val now = System.currentTimeMillis()
-        if (now < discoveryCacheExpiresAt && discoveryCache.isNotEmpty()) return discoveryCache
-        val discovered = LinkedHashSet<String>()
-        for (source in instanceDiscoverySources) {
-            if (!PoolAccountManager.isPoolEnabled()) break
-            runCatching {
-                val builder =
-                    Request
-                        .Builder()
-                        .url(source)
-                        .header("User-Agent", USER_AGENT)
-                // Present the per-app read key when the pool has gating enabled.
-                if (BuildConfig.SOURCE_PROVIDER_KEY.isNotBlank()) {
-                    builder.header("Authorization", "Bearer ${BuildConfig.SOURCE_PROVIDER_KEY}")
-                }
-                val request = builder.get().build()
-                healthClient.newCall(request).withAudioSourceAttemptDeadline().execute().use { response ->
-                    if (!PoolAccountManager.isPoolEnabled()) return@use
-                    if (!response.isSuccessful) {
-                        // A rejected read and a healthy pool with nothing contributed both end up
-                        // as zero instances here, so say which one happened — this is the whole
-                        // difference between "no Qobuz accounts" and "this build's key is wrong".
-                        if (response.code == 401) {
-                            Timber
-                                .tag("QobuzDiscovery")
-                                .w(
-                                    "Pool discovery %s rejected as unauthorized (HTTP 401); " +
-                                        "SOURCE_PROVIDER_KEY is missing or invalid for this build.",
-                                    source,
-                                )
-                        }
-                        return@use
-                    }
-                    val body = response.body?.string().orEmpty()
-                    if (body.isBlank()) return@use
-                    val obj = JSONObject(body)
-                    for (key in listOf("streaming", "instances", "api")) {
-                        val arr = obj.optJSONArray(key) ?: continue
-                        for (i in 0 until arr.length()) {
-                            when (val item = arr.opt(i)) {
-                                is String -> normalizeInstanceUrl(item)?.let(discovered::add)
-                                is JSONObject ->
-                                    (item.optString("url").takeIf { it.isNotBlank() }
-                                        ?: item.optString("host").takeIf { it.isNotBlank() })
-                                        ?.let { normalizeInstanceUrl(it)?.let(discovered::add) }
-                            }
-                        }
-                    }
-                }
-            }.onFailure { it.rethrowIfAudioSourceCancelled() }
-        }
-        if (!PoolAccountManager.isPoolEnabled()) {
-            clearPoolDiscovery()
-            return emptyList()
-        }
-        val result = discovered.toList()
-        if (result.isNotEmpty()) {
-            discoveryCache = result
-            poolDiscoveredUrls = result
-            discoveryCacheExpiresAt = System.currentTimeMillis() + DISCOVERY_CACHE_MS
-        }
-        return result
-    }
 
     /** Normalizes an instance URL to `scheme://host[:port]` form, or null when invalid. */
     fun normalizeInstanceUrl(raw: String): String? {
